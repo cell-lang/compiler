@@ -1,0 +1,479 @@
+implicit program : Program, typedefs : [TypeName -> NeType], context : Context, var_aliases : [[LocVar2]], typed_vars : [StdVar -> NeType] {
+  [TypeCheckingError] typecheck(Expr expr, Type exp_type, [EnvVar -> Type] env) {
+    // Preliminary typechecking, just to make sure we can safely calculate the expression type
+    // For some types of expressions, this ends up being a complete type check
+    errs = pre_typecheck(expr, exp_type, env);
+
+    needs_res_type_check = match (expr)
+      fn_call()     |
+      if_expr()     |
+      match_expr()  |
+      do_expr()     = false,
+      _             = true;
+
+    if errs == [] and needs_res_type_check:
+      // Checking that the result type is (a subset of) the expected one
+      actual_type = expr_type(expr, env);
+      if not is_subset(actual_type, exp_type):
+        errs = match (expr)
+          seq_expr()          |
+          tuple_expr()        |
+          set_expr()          |
+          map_expr()          |
+          bin_rel_expr()      |
+          tern_rel_expr()     |
+          tag_obj_expr()      |
+          unary_pseudo_call() |
+          rel_memb_test()     |
+          accessor()          |
+          accessor_test()     = gen_err_msgs(expr, exp_type, env),
+          _                   = [];
+        errs = type_err_msgs(actual_type, exp_type) if errs == [];
+      ;
+    ;
+
+    return [add_anchor_if_needed(err, expr) : err <- errs];
+  }
+
+
+  [TypeCheckingError] pre_typecheck(Expr expr, Type exp_type, [EnvVar -> Type] env) {
+    return [] if expr :: Var;
+    return match (expr)
+      undefined           = [],
+      object(obj?)        = [],
+      float_lit()         = [],
+      seq_expr(ses?)      = seq_union((typecheck(se, type_any, env) : se <- ses)),
+      tuple_expr(es?)     = seq_union((typecheck(e, type_any, env) : e <- es)),
+      seq_tail_expr()     = typecheck(expr.seq, type_seq, env) & seq_union((typecheck(e, type_any, env) : e <- expr.tail)),
+      set_expr(ses?)      = union([typecheck(se, type_any, env) : se <- ses]),
+      map_expr(es?)       = pre_typecheck_map_expr(es, env),
+      bin_rel_expr(es?)   |
+      tern_rel_expr(es?)  = union([pre_typecheck_rel_entry(e, env) : e <- es]),
+      tag_obj_expr()      = typecheck(expr.tag, atom_type, env) & typecheck(expr.obj, type_any, env),
+      fn_call()           = fully_typecheck_fn_call(expr.fn_id, expr.args, expr.impl_args, exp_type, env),
+      cls_call()          = seq_union((typecheck(e, t, env) : e, t <- zip(expr.args, closures[expr.name].in_types))),
+      builtin_call()      = pre_typecheck_builtin_call(expr.name, expr.args, env),
+      size_expr()         = typecheck(expr.coll, type_coll, env),
+      unary_pseudo_call() = pre_typecheck_unary_pseudo_call(expr.target, expr.arg, env),
+      rel_memb_test()     = pre_typecheck_rel_memb_test(expr.rel, expr.args, env),
+      rel_lookup()        = pre_typecheck_rel_lookup(expr, env),
+      relvar_memb_test()  = pre_typecheck_relvar_memb_test(expr.rel_var, expr.args, env),
+      relvar_lookup()     = pre_typecheck_relvar_lookup(expr, env),
+      and_expr()          = pre_typecheck_and_expr(expr.left, expr.right, env),
+      or_expr()           = pre_typecheck_or_expr(expr.left, expr.right, env),
+      not_expr(e?)        = typecheck(e, type_bool, env),
+      eq()                = pre_typecheck_eq_expr(expr.left, expr.right, env),
+      membership()        = pre_typecheck_membership(expr.obj, expr.type, env),
+      cast_expr()         = pre_typecheck_cast_expr(expr.expr, expr.type, env),
+      accessor()          = pre_typecheck_accessor_expr(expr.expr, expr.field, env),
+      accessor_test()     = typecheck(expr.expr, type_dot_access_target, env),
+      auto_method_call()  = fully_typecheck_auto_method_call(expr, exp_type, env),
+      db_method_call()    = fully_typecheck_db_method_call(expr, exp_type, env),
+      if_expr()           = fully_typecheck_if_expr(expr.cond, expr.then, expr.else, exp_type, env),
+      match_expr()        = fully_typecheck_match_expr(expr.exprs, expr.cases, exp_type, env),
+      do_expr()           = typecheck(expr.body, exp_type, env, typed_vars=expr.typed_vars),
+      ex_qual()           = pre_typecheck_ex_qual_expr(expr.source, expr.cond, env),
+      set_comp()          = pre_typecheck_rel_comp((expr.expr), expr.source, env),
+      map_comp()          = pre_typecheck_rel_comp((expr.key_expr, expr.value_expr), expr.source, env),
+      bin_rel_comp()      |
+      tern_rel_comp()     = pre_typecheck_rel_comp(expr.exprs, expr.source, env),
+      seq_comp()          = pre_typecheck_seq_comp_expr(expr, env),
+      range_comp()        = pre_typecheck_range_comp_expr(expr, env),
+      output_is_def()     = [],
+      output_is_set()     = [];
+  }
+
+
+  [TypeCheckingError] pre_typecheck_builtin_call(BuiltIn name, Expr+ args, [EnvVar -> Type] env) =
+    union([
+      typecheck(a, replace_type_vars_with_type_any(t), env)
+      : a, t <~ zip(args, builtin_signature(name).args_types)
+    ]);
+
+
+  [TypeCheckingError] pre_typecheck_rel_entry((args: Expr+, cond: Expr?) entry, [EnvVar -> Type] env) {
+    if entry.cond?:
+      errs = typecheck(entry.cond, type_bool, env);
+      return errs if errs != [];
+      new_env, unused_var = refine_env(entry.cond, env);
+    else
+      new_env = env;
+    ;
+    return seq_union((typecheck(a, type_any, new_env) : a <- entry.args));
+  }
+
+
+  ## BAD BAD: IT'S ALMOST THE SAME CODE AS ABOVE
+  [TypeCheckingError] pre_typecheck_map_entry((key: Expr, value: Expr, cond: Expr?) entry, [EnvVar -> Type] env) {
+    if entry.cond?:
+      errs = typecheck(entry.cond, type_bool, env);
+      return errs if errs != [];
+      new_env, unused_var = refine_env(entry.cond, env);
+    else
+      new_env = env;
+    ;
+    return typecheck(entry.key, type_any, new_env) & typecheck(entry.value, type_any, new_env);
+  }
+
+
+  [TypeCheckingError] pre_typecheck_map_expr([+(key: Expr, value: Expr, cond: Expr?)] entries, [EnvVar -> Type] env) {
+    errs = union([pre_typecheck_map_entry(e, env) : e <- entries]);
+    return errs if errs != [];
+
+    // This is well-formedness, not type, checking. It's done here because
+    // it's safer to do it with desugared expressions, and because of the
+    // similarities with the check that follows, which involves types and
+    // is critical to avoiding clashes
+    ## THIS CHECK IS NOT CRITICAL AND PROBABLY NOT THAT USEFUL EITHER. MOVE IT TO
+    ## LEVEL 1 WELL-FORMEDNESS CHECKING, OR REMOVE IT ALTOGETHER?
+    dup_key_errs = [duplicate_map_key(k, es) : k, es <- group_by(entries, $.key), |es| > 1];
+    return dup_key_errs if dup_key_errs != [];
+
+    symb_key_entries = [e : e <- entries, is_symb_singl_type(expr_type(e.key, env))];
+    symb_key_entries_by_key = group_by(symb_key_entries, only_symb(expr_type($.key, env)));
+    return [duplicate_map_key(k, es) : k, es <- symb_key_entries_by_key, |es| > 1];
+  }
+
+
+  [TypeCheckingError] pre_typecheck_unary_pseudo_call(Expr target, Expr value, [EnvVar -> Type] env) {
+    errs = typecheck(target, type_unary_pseudocall_target, env);
+    return errs if errs != [];
+
+    target_type = expr_type(target, env);
+    if target_type == empty_type:
+      exp_value_type = type_any;
+    elif is_subset(target_type, atom_type):
+      exp_value_type = type_any;
+    elif is_subset(target_type, type_seq):
+      exp_value_type = integer;
+    elif is_subset(target_type, type_set):
+      exp_value_type = set_elem_supertype(target_type);
+      errs = typecheck(value, type_any, env);
+      return errs if errs != [];
+      actual_value_type = expr_type(value, env);
+      types_are_disjoint = are_ptype_disjoint(actual_value_type, exp_value_type);
+      return [invalid_rel_arg_type(0, actual_value_type, exp_value_type) if types_are_disjoint];
+    else
+      ## BAD BAD: THIS ERROR MESSAGE IS ACTUALLY WRONG...
+      return [unexpected_actual_type(target_type, type_unary_pseudocall_target)];
+    ;
+
+    return typecheck(value, exp_value_type, env);
+  }
+
+
+  [TypeCheckingError] pre_typecheck_rel_memb_test(Expr rel, Maybe[Expr]+ args, [EnvVar -> Type] env) {
+    return match (args)
+      (a0?, a1?)  = pre_typecheck_bin_rel_memb_test(rel, a0, a1, env),
+      (_, _, _)   = pre_typecheck_tern_rel_memb_test(rel, args, env);
+
+
+    [TypeCheckingError] pre_typecheck_bin_rel_memb_test(Expr rel, Maybe[Expr] arg0, Maybe[Expr] arg1, [EnvVar -> Type] env) {
+      errs = typecheck(rel, type_bin_rel, env);
+      errs = errs & union([typecheck(value(a), type_any, env) : a <~ (arg0, arg1), a != nothing]);
+      return errs if errs != [];
+
+      rel_type = expr_type(rel, env);
+      return [] if rel_type == empty_type;
+      exp_arg0_type, exp_arg1_type = bin_rel_args_supertypes(rel_type);
+
+      if arg0 != nothing:
+        actual_arg0_type = expr_type(value(arg0), env);
+        if are_ptype_disjoint(actual_arg0_type, exp_arg0_type):
+          return [invalid_rel_arg_type(0, actual_arg0_type, exp_arg0_type)];
+        ;
+        if rel_type != empty_type and actual_arg0_type != empty_type and is_subset(rel_type, type_map):
+          exp_arg1_type = restricted_bin_rel_arg1_supertype(rel_type, actual_arg0_type);
+        ;
+      ;
+
+      return [] if arg1 == nothing;
+      actual_arg1_type = expr_type(value(arg1), env);
+      types_are_disjoint = actual_arg1_type != empty_type and are_ptype_disjoint(actual_arg1_type, exp_arg1_type);
+      return [invalid_rel_arg_type(0, actual_arg1_type, exp_arg1_type) if types_are_disjoint];
+    }
+
+
+    [TypeCheckingError] pre_typecheck_tern_rel_memb_test(Expr rel, (Maybe[Expr], Maybe[Expr], Maybe[Expr]) args, [EnvVar -> Type] env) {
+      errs = typecheck(rel, type_tern_rel, env);
+      errs = errs & union([typecheck(value(a), type_any, env) : a <~ args, a != nothing]);
+      return errs if errs != [];
+
+      rel_type = expr_type(rel, env);
+      return [] if rel_type == empty_type;
+      rel_arg_types = tern_rel_args_supertypes(rel_type);
+
+      return [
+        invalid_rel_arg_type(i, at, et)
+        : a @ i <~ args, a != nothing, at = expr_type(value(a), env),
+          et = rel_arg_types(i), are_ptype_disjoint(at, et)
+      ];
+    }
+  }
+
+
+  [TypeCheckingError] pre_typecheck_rel_lookup(RelLookup expr, [EnvVar -> Type] env) {
+    args = expr.set_args;
+    return typecheck(expr.rel, type_set, env) if args == ();
+    return match(args)
+      (a?)        = pre_typecheck(expr.rel, a, expr.unknown_arg_idx, env),
+      (a1?, a2?)  = pre_typecheck(expr.rel, a1, a2, expr.unknown_arg_idx, env);
+
+
+    [TypeCheckingError] pre_typecheck(Expr rel, Expr known_arg, Nat unknown_arg_idx, [EnvVar -> Type] env) {
+      errs = typecheck(rel, type_bin_rel, env);
+      return errs if errs != [];
+      rel_type = expr_type(rel, env);
+      assert unknown_arg_idx == 0 or unknown_arg_idx == 1;
+      known_arg_idx = if unknown_arg_idx == 0 then 1 else 0;
+      exp_arg_type = bin_rel_arg_supertype(rel_type, known_arg_idx);
+      return typecheck(known_arg, exp_arg_type, env);
+    }
+
+
+    [TypeCheckingError] pre_typecheck(Expr rel, Expr known_arg_1, Expr known_arg_2, Nat unknown_arg_idx, [EnvVar -> Type] env) {
+      errs = typecheck(rel, type_tern_rel, env);
+      return errs if errs != [];
+      rel_type = expr_type(rel, env);
+      assert unknown_arg_idx :: <0..2>;
+      arg_1_idx = if unknown_arg_idx == 0 then 1 else 0;
+      arg_2_idx = if unknown_arg_idx == 2 then 1 else 2;
+      exp_arg_1_type = tern_rel_arg_supertype(rel_type, arg_1_idx);
+      exp_arg_2_type = tern_rel_arg_supertype(rel_type, arg_2_idx);
+      return typecheck(known_arg_1, exp_arg_1_type, env) & typecheck(known_arg_2, exp_arg_2_type, env);
+    }
+  }
+
+
+  [TypeCheckingError] pre_typecheck_relvar_memb_test(AnyRelVar rel_var, Maybe[Expr]+ args, [EnvVar -> Type] env) {
+    errs = seq_union((typecheck(value(a), type_any, env) : a <- args, a != nothing));
+    return errs if errs != [];
+    args_types = (apply(a, expr_type($, env)) : a <- args);
+    sgns = relvar_signatures(rel_var);
+    for s <- rand_sort(sgns):
+      return [] if not (t @ i <~ args_types : t != nothing and not is_subset(value(t), s(i)));
+    ;
+    agg_sgns = aggregated_relation_signatures(sgns); ## BAD BAD BAD: AGGREGATED SIGNATURES SHOULD BE CACHED
+    for s <- rand_sort(agg_sgns):
+      return [] if not (t @ i <~ args_types : t != nothing and not is_subset(value(t), s(i)));
+    ;
+    return [no_matching_relvar(rel_var, args_types, sgns)];
+  }
+
+
+  [TypeCheckingError] pre_typecheck_relvar_lookup(RelVarLookup expr, [EnvVar -> Type] env) {
+    errs = seq_union((typecheck(a, type_any, env) : a <- expr.set_args));
+    return errs if errs != [];
+    set_args_types = (expr_type(a, env) : a <- expr.set_args);
+    sgns = relvar_signatures(expr.rel_var);
+    target_idx = expr.unknown_arg_idx;
+    for s <- rand_sort(sgns):
+      return [] if not (t @ i <~ set_args_types : not is_subset(t, s(i + bit(i >= target_idx))));
+    ;
+    agg_sgns = aggregated_relation_signatures(sgns); ## BAD BAD BAD: AGGREGATED SIGNATURES SHOULD BE CACHED
+    for s <- rand_sort(agg_sgns):
+      return [] if not (t @ i <~ set_args_types : not is_subset(t, s(i + bit(i >= target_idx))));
+    ;
+    args_types = insert((just(t) : t <- set_args_types), target_idx, nothing);
+    return [no_matching_relvar(expr.rel_var, args_types, sgns)];
+  }
+
+
+  [TypeCheckingError] pre_typecheck_and_expr(Expr left_expr, Expr right_expr, [EnvVar -> Type] env) {
+    errs = typecheck(left_expr, type_bool, env);
+    return errs if errs != [];
+    new_env, unused_var = refine_env(left_expr, env);
+    return typecheck(right_expr, type_bool, new_env);
+  }
+
+
+  [TypeCheckingError] pre_typecheck_or_expr(Expr left_expr, Expr right_expr, [EnvVar -> Type] env) {
+    errs = typecheck(left_expr, type_bool, env);
+    return errs if errs != [];
+    unused_var, new_env = refine_env(left_expr, env);
+    return typecheck(right_expr, type_bool, new_env);
+  }
+
+
+  [TypeCheckingError] pre_typecheck_eq_expr(Expr left_expr, Expr right_expr, [EnvVar -> Type] env) {
+    return typecheck(left_expr, type_any, env) & typecheck(right_expr, type_any, env);
+
+    ## UNCOMMENTING THE FOLLOWING LINES OF CODE, WITHOUT REMOVING
+    ## THE ONE ABOVE CAUSES THE TYPECHECKER TO CRASH
+    // errs = typecheck(left_expr, type_any) & typecheck(right_expr, type_any);
+    // return errs if errs != [];
+    // left_type = expr_type(left_expr, env);
+    // right_type = expr_type(right_expr, env);
+    // // If either type is empty, that means the comparison can never take
+    // // place, and we don't want to produce an error in that case
+    // always_false = left_type != empty_type and right_type != empty_type and
+    //                are_ptype_disjoint(left_type, right_type);
+    // return [expressions_can_never_be_equal(left_type, right_type) if always_false];
+  }
+
+
+  [TypeCheckingError] pre_typecheck_membership(Expr obj, NeType type, [EnvVar -> Type] env) {
+    errs = typecheck(obj, type_any, env);
+    return errs if errs != [];
+    actual_type = expr_type(obj, env);
+    // No error is produced if the expression is never evaluated, i.e. the actual type is empty
+    always_false = actual_type != empty_type and are_ptype_disjoint(actual_type, type);
+    return [expression_can_never_belong_to_type(actual_type, type) if always_false];
+  }
+
+
+  [TypeCheckingError] pre_typecheck_cast_expr(Expr expr, NeType type, [EnvVar -> Type] env) {
+    errs = typecheck(expr, type_any, env);
+    return errs if errs != [];
+    actual_type = expr_type(expr, env);
+    // No error is produced if the expression is never evaluated, i.e. the actual type is empty
+    never_succeeds = actual_type != empty_type and are_ptype_disjoint(actual_type, type);
+    return [expression_can_never_belong_to_type(actual_type, type) if never_succeeds];
+  }
+
+
+  [TypeCheckingError] pre_typecheck_accessor_expr(Expr expr, SymbObj field, [EnvVar -> Type] env) {
+    errs = typecheck(expr, type_dot_access_target, env);
+    return errs if errs != [];
+    target_type = expr_type(expr, env);
+    return [] if target_type == empty_type;
+    return [may_not_have_field(target_type, field) if not always_has_field(target_type, field)];
+  }
+
+
+  [TypeCheckingError] fully_typecheck_auto_method_call(AutoMethodCall expr, Type exp_type, [EnvVar -> Type] env) {
+    errs = seq_union((typecheck(a, type_any, env) : a <- expr.args));
+    return errs if errs != [];
+
+    args_types = (expr_type(a, env) : a <- expr.args);
+    auto_type = if expr.var? then var_type(expr.var) else this_auto_symbol;
+    sgn_set = method_signatures(auto_type, expr.name, |args_types|);
+
+    for s <- rand_sort(sgn_set.sgns):
+      assert s.impl_args == [] and s.constrs == [] and |args_types| == |s.args|;
+      types = zip(args_types, s.args);
+      ## REMOVE THE THREE CALLS TO cast_type()
+      if all((is_subset(at, cast_type(ft)) : at, ft <- types)):
+        return [invalid_return_type(s.ret_type, exp_type) if not is_subset(s.ret_type, exp_type)];
+      elif none((are_ptype_disjoint(at, cast_type(ft)) : at, ft <- types)):
+        return [invalid_return_type(s.ret_type, exp_type)] if not is_subset(s.ret_type, exp_type);
+      ;
+    ;
+    for s <- rand_sort(sgn_set.agg_sgns):
+      return [] if all((is_subset(at, cast_type(ft)) : at, ft <- zip(args_types, s.args)));
+    ;
+    return [no_disp_db_method(expr.name, args_types, exp_type, sgn_set.sgns)];
+  }
+
+
+  [TypeCheckingError] fully_typecheck_db_method_call(DBMethodCall expr, Type exp_type, [EnvVar -> Type] env) {
+    errs = seq_union((typecheck(a, type_any, env) : a <- expr.args));
+    return errs if errs != [];
+
+    args_types = (expr_type(a, env) : a <- expr.args);
+    db_type = if expr.var? then var_type(expr.var) else this_db_symbol;
+    sgn_set = method_signatures(db_type, expr.name, |args_types|);
+
+    for s <- rand_sort(sgn_set.sgns):
+      assert s.impl_args == [] and s.constrs == [] and |args_types| == |s.args|;
+      types = zip(args_types, s.args);
+      ## REMOVE THE THREE CALLS TO cast_type()
+      if all((is_subset(at, cast_type(ft)) : at, ft <- types)):
+        return [invalid_return_type(s.ret_type, exp_type) if not is_subset(s.ret_type, exp_type)];
+      elif none((are_ptype_disjoint(at, cast_type(ft)) : at, ft <- types)):
+        return [invalid_return_type(s.ret_type, exp_type)] if not is_subset(s.ret_type, exp_type);
+      ;
+    ;
+    for s <- rand_sort(sgn_set.agg_sgns):
+      return [] if all((is_subset(at, cast_type(ft)) : at, ft <- zip(args_types, s.args)));
+    ;
+    return [no_disp_db_method(expr.name, args_types, exp_type, sgn_set.sgns)];
+  }
+
+
+  [TypeCheckingError] fully_typecheck_if_expr(Expr cond, Expr then_expr, Expr else_expr, Type exp_type, [EnvVar -> Type] env) {
+    errs = typecheck(cond, type_bool, env);
+    return errs if errs != [];
+    if_true_env, if_false_env = refine_env(cond, env);
+    return typecheck(then_expr, exp_type, if_true_env) &
+           typecheck(else_expr, exp_type, if_false_env);
+  }
+
+
+  [TypeCheckingError] fully_typecheck_match_expr(Expr+ exprs, (ptrns: Pattern+, expr: Expr)+ cases, Type exp_type, [EnvVar -> Type] env) {
+    errs = seq_union((typecheck(e, type_any, env) : e <- exprs));
+    return errs if errs != [];
+    types = (expr_type(e, env) : e <- exprs);
+    return seq_union((fully_typecheck_case(exprs, types, c.ptrns, c.expr, exp_type, env) : c <- cases));
+
+
+    [TypeCheckingError] fully_typecheck_case(Expr+ exprs, Type+ types, Pattern+ ptrns, Expr expr, Type exp_type, [EnvVar -> Type] env) {
+      errs = union([typecheck_pattern(p, t) : p, t <~ zip(ptrns, types)]);
+      return errs if errs != [];
+      case_expr_env = update_env(exprs, ptrns, env);
+      return typecheck(expr, exp_type, case_expr_env);
+    }
+  }
+
+
+  [TypeCheckingError] pre_typecheck_ex_qual_expr(Clause source, Expr cond, [EnvVar -> Type] env) {
+    errs = typecheck(source, env);
+    return errs if errs != [];
+    new_env = generate_env(source, env);
+    return typecheck(cond, type_bool, new_env);
+  }
+
+
+  [TypeCheckingError] pre_typecheck_rel_comp(Expr+ exprs, Clause source, [EnvVar -> Type] env) {
+    errs = typecheck(source, env);
+    return errs if errs != [];
+    iter_tree = full_iter_tree(source, env);
+    return seq_union((pre_typecheck(iter_tree, e) : e <- exprs));
+
+
+    [TypeCheckingError] pre_typecheck(IterTree tree, Expr expr) =
+      never         = [], ## CAN WE DO BETTER HERE?
+      once(e?)      = typecheck(expr, type_any, e),
+      repeated(t?)  = pre_typecheck(t, expr),
+      any(ts?)      = union([pre_typecheck(t, expr) : t <- ts]),
+      all(ts?)      = seq_union((pre_typecheck(t, expr) : t <- ts));
+  }
+
+
+  [TypeCheckingError] pre_typecheck_seq_comp_expr(SeqCompExpr expr, [EnvVar -> Type] env) {
+    nvars = nz_nat(|expr.vars|);
+    exp_src_type = type_seq(if nvars == 1 then type_any else type_tuple(nvars));
+    errs = typecheck(expr.src_expr, exp_src_type, env);
+    return errs if errs != [];
+
+    src_type = expr_type(expr.src_expr, env);
+    elem_type = seq_elem_supertype(src_type);
+    env_delta = asgnm_env_updates(expr.vars, elem_type) & [expr.idx_var -> type_nat if expr.idx_var?];
+    new_env = update(env, env_delta);
+
+    if expr.sel_expr?:
+      errs = typecheck(expr.sel_expr, type_bool, new_env);
+      return errs if errs != [];
+      new_env, unused_var = refine_env(expr.sel_expr, new_env);
+    ;
+
+    return typecheck(expr.expr, type_any, new_env);
+  }
+
+
+  [TypeCheckingError] pre_typecheck_range_comp_expr(RangeCompExpr expr, [EnvVar -> Type] env) {
+    errs = typecheck(expr.bound_expr, integer, env);
+    return errs if errs != [];
+
+    ## BAD: HERE WE COULD TAKE ADVANTAGE OF THE KNOWLEDGE ON THE TYPE OF THE UPPER BOUND
+    new_env = update(env, [expr.var -> type_nat]);
+
+    if expr.sel_expr?:
+      errs = typecheck(expr.sel_expr, type_bool, new_env);
+      return errs if errs != [];
+      new_env, unused_var = refine_env(expr.sel_expr, new_env);
+    ;
+
+    return typecheck(expr.expr, type_any, new_env);
+  }
+}

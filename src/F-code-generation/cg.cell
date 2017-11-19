@@ -1,0 +1,244 @@
+type CompilationOptions = compilation_options(ignore_assertions: Bool);
+
+
+implicit program : Program, options : CompilationOptions {
+  CompiledPrg compiled_program {
+    memb_test_preds = [memb_test_pred(t, memb_test_preds_map, schema_and_typedefs) : t, unused_var <- memb_test_preds_map];
+    fndefs          = [gen_fn_code(fd) : fd <- program.fndefs];
+    proc_defs       = [gen_proc_code(pd) : pd <- program.proc_defs];
+    react_blocks    = [gen_auto_code(automaton=a) : a <- program.auto_defs];
+    static_blocks   = [compiled_database(database=db) : db <- program.data_bases];
+
+    return compiled_prg(
+      typedefs:       program.typedefs,
+      bool_procs:     memb_test_preds,
+      procs:          fndefs & proc_defs & dispatch_functions,
+      react_blocks:   react_blocks,
+      static_blocks:  static_blocks,
+      int_seqs:       int_seqs
+    );
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  [NeType] runtime_checked_root_types =
+    union([retrieve_types(fd.expr) : fd <- program.fndefs]) &
+    union([retrieve_from_nested_exprs(pd.body, retrieve_types) : pd <- program.proc_defs]) &
+    union([retrieve_from_nested_exprs(a, retrieve_types) : a <- program.auto_defs]) &
+    union([retrieve_from_nested_exprs(db, retrieve_types) : db <- program.data_bases]) &
+    [info.type : a <- program.auto_defs, unused_var, info <- a.inputs] &
+    [t : a <- program.auto_defs, m <- a.methods, t, unused_var <~ m.args] &
+    [t : db <- program.data_bases, m <- db.methods, t, unused_var <~ m.args] &
+    [ne_union_type(ts) : db <- program.data_bases, ts = [h.type : h <- db.handlers], ts != []] &
+    [type_ref(schema_type_symbol(untag(db.name))) : db <- program.data_bases] &
+    [deep_state_type(a) : a <- program.auto_defs];
+
+
+  ## CASE STUDY: THINK OF A BETTER WAY TO WRITE THIS FUNCTION
+  [NeType] runtime_checked_types {
+    root_type_symbs = union([retrieve_type_symbs(t) : t <- runtime_checked_root_types]);
+    type_symbs = root_type_symbs;
+    new_type_symbs = type_symbs;
+    while new_type_symbs != []:
+      new_types = [expand_type_ref(ts, schema_and_typedefs) : ts <- new_type_symbs];
+      new_type_symbs = union([retrieve_type_symbs(t) : t <- new_types]) - type_symbs;
+      type_symbs = type_symbs & new_type_symbs;
+    ;
+    nested_types = [type_ref(ts) : ts <- type_symbs];
+    return runtime_checked_root_types & nested_types;
+  }
+
+
+  ## CASE STUDY: THINK OF A BETTER WAY TO WRITE THIS FUNCTION, WITHOUT LOOPS OR SORTING
+  [NeType -> MembTestPredId] memb_test_preds_map {
+    entries = ();
+    next_id = 0;
+    for type <- rand_sort(runtime_checked_types):
+      pred_name, next_id = match (type)
+        type_ref(type_symbol(a?))         |
+        type_ref(schema_type_symbol(a?))  = (memb_test(a), next_id),
+        type_ref(par_type_symbol() ts?)   = pred_name(ts, next_id),
+        _                                 = (memb_test(next_id), nat(next_id + 1));
+      entries = (entries | [type -> pred_name]);
+    ;
+    return merge(entries);
+
+
+    (MembTestPredId, Nat) pred_name(ParTypeSymbol type_symb, Nat next_id) {
+      outer_id = match (type_symb.symbol) type_symbol(a?) = a;
+      inner_id, new_next_id = match (type_symb.params)
+        (type_ref(type_symbol(a?))) = (a, next_id),
+        _                           = (next_id, nat(next_id + 1));
+      return (memb_test(outer_id, inner_id), new_next_id);
+    }
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  ObjProcDef gen_proc_code(Procedure procedure) {
+    fn_res_var, var_gen = next_obj_var(blank_var_gen);
+    tmp_bvar, var_gen = next_bool_var(var_gen);
+
+    body = rand_sort([auto_pre_init(v, t) : v, t <- procedure.auto_vars]) &
+           rand_sort([init_db(v, info.links, info.type) : v, info <- procedure.db_vars]) &
+           (set_var(a.var, fn_arg(i)) : a @ i <- procedure.args);
+
+    // Evaluating the expression
+    proc_body = procedure.body;
+    if proc_body != ():
+      let context=procedure, var_subst_map = [], cls_var_subst_map = [], next_var_gen=var_gen:
+        code = gen_code(proc_body, fn_res_var);
+      ;
+      body = body & (execute_block(code));
+    ;
+
+    body = body & rand_sort([auto_cleanup(v, t) : v, t <- procedure.auto_vars]);
+    body = body & rand_sort([cleanup_db(v, info.type) : v, info <- procedure.db_vars]);
+
+    debug_code = (push_call_info(procedure.id, (just(fn_arg(i)) : p @ i <- procedure.args)));
+
+    val = if procedure.res_type != nothing then fn_res_var else object(:void); ## BAD: HERE I'M CHEATING...
+    body = debug_code & body & (pop_call_info, ret_val(val));
+
+    return obj_proc_def(
+      name:           procedure.id,
+      args:           arity(procedure) * (:obj),
+      impl_args:      [],
+      loc_auto_vars:  procedure.auto_vars,
+      loc_db_vars:    [v -> info.type : v, info <- procedure.db_vars],
+      body:           nonempty(body),
+      cached:         false
+    );
+  }
+
+
+  ObjProcDef gen_fn_code(Function func) {
+    fn_res_var, var_gen = next_obj_var(blank_var_gen);
+    tmp_bvar,   var_gen = next_bool_var(var_gen);
+
+    // Setting named variables for parameters
+    body = (set_var(a.var, fn_arg(i)) : a @ i <- func.args, a :: FormalObjArg and a.var?);
+
+    // Evaluating the expression
+    let context=func, var_subst_map = [], cls_var_subst_map = [], next_var_gen=var_gen:
+      body = body & gen_eval_code(func.expr, fn_res_var);
+    ;
+
+    body = (push_call_info(func.id, (maybe(fn_arg(i), a :: FormalObjArg) : a @ i <- func.args))) & body & (pop_call_info, ret_val(fn_res_var));
+
+    args = (
+      match (a)
+        formal_obj_arg()  = :obj,
+        formal_cls_arg()  = cls(a.var, arity(a.type))
+      : a <- func.args
+    );
+
+    cached = func.args == () and not is_too_simple_to_be_worth_caching(func.expr);
+
+    return obj_proc_def(
+      name:           func.id,
+      args:           args,
+      impl_args:      keys(func.impl_args),
+      loc_auto_vars:  [],
+      loc_db_vars:    [],
+      body:           nonempty(body),
+      cached:         cached
+    );
+
+
+    Bool is_too_simple_to_be_worth_caching(Expr expr) = is_within_complexity_level(expr, 1);
+
+    Bool is_within_complexity_level(Expr expr, <0..1> max_compl) =
+      undefined           = true,
+      object()            = true,
+      float_lit()         = true,
+      set_expr(es?)       = es == [],
+      seq_expr(es?)       = es == (),
+      map_expr(es?)       = es == [],
+      bin_rel_expr(es?)   = es == [],
+      tern_rel_expr(es?)  = es == [],
+      tag_obj_expr()      = max_compl > 0 and is_within_complexity_level(expr.tag, 0) and is_within_complexity_level(expr.obj, 0),
+      _                   = false;
+  }
+
+
+  [ObjProcDef] dispatch_functions {
+    fns_by_name_and_arity = group_by(program.fndefs, family_id($.id));
+    overloaded_fns = [fns : unused_var, fns <- fns_by_name_and_arity, |fns| > 1];
+    return [dispatch_function(fns) : fns <- overloaded_fns];
+  }
+
+
+  ObjProcDef dispatch_function([+Function] fns) {
+    assert |fns| > 1;
+    assert |[family_id(f.id) : f <- fns]| == 1;
+    assert |[|fn.args| : fn <- fns]| == 1; // All functions have the same arity
+    assert |an_elem(fns).args| > 0;
+
+    l0 = lvar(0);
+
+    count = |fns|;
+
+    rand_fn         = an_elem(fns);
+    id              = rand_fn.id;
+    rand_args       = nonempty(rand_fn.args);
+    obj_args        = (i : a @ i <- rand_args, a :: FormalObjArg);
+    rand_impl_args  = rand_fn.impl_args;
+
+    disp_args = choose_disp_args(((a.type : a <- nonempty(fn.args)) : fn <- rand_sort(fns)), program.typedefs);
+    call_args = (if a :: FormalObjArg then fn_arg(i) else cls_var(i) : a @ i <- rand_args);
+
+    ## HERE WE SHOULD LEAVE THE FUNCTION WITH THE MOST EXPENSIVE CHECKING LAST
+    ## SO THAT IT CAN BE MATCHED BY THE CHEAP "ANY" PATTERN.
+    cases = join(({
+      if i < count-1:
+        ptrns = ();
+        for j <- disp_args:
+          pt = pseudotype(cast_type(fn.args(j).type), program.typedefs);
+          // return () if pt == :pseudotype([]); ## THIS SHOULD ACTUALLY WORK
+          return () if not pt :: NePseudoType;
+          ptrns = (ptrns | pseudotype_pattern(pt));
+        ;
+      else
+        ptrns = (ptrn_any : unused_var <- disp_args);
+      ;
+      code = (call_proc(l0, fn.id, call_args), exit_block);
+      return ((ptrns: nonempty(ptrns), code: code));
+    } : fn @ i <- rand_sort(fns)));
+
+    if cases != ():
+      switch_code = gen_switch_code((fn_arg(i) : i <- disp_args), cases, next_var_gen = blank_var_gen);
+      code = (switch_code | ret_val(lvar(0)));
+    else
+      code = (terminate);
+    ;
+
+    args = (
+      match (a)
+        formal_obj_arg()  = obj,
+        formal_cls_arg()  = cls(arity(a.type))
+      : a <- rand_args
+    );
+
+    return obj_proc_def(
+      name:           family_id(id),
+      args:           args,
+      impl_args:      [], ## THIS IS WRONG, BUT IT SHOULDN'T MATTER FOR NOW
+      loc_auto_vars:  [],
+      loc_db_vars:    [],
+      body:           code,
+      cached:         false
+    );
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+[TypeSymbol] retrieve_type_symbs(Type type) =
+  type_ref(ts?) = [ts] & retrieve_from_nested_types(ts, retrieve_type_symbs),
+  _             = retrieve_from_nested_types(type, retrieve_type_symbs);
+
+[NeType] retrieve_types(Expr expr) =
+  membership()  = [expr.type] & retrieve_from_nested_exprs(expr, retrieve_types),
+  _             = retrieve_from_nested_exprs(expr, retrieve_types);

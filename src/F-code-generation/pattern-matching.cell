@@ -1,0 +1,312 @@
+implicit next_var_gen : VarGen, loc_bound_vars : [StdVar], on_match_code : Instr+, tag_vars : [AtomicExpr -> LocVar] {
+  Instr* gen_ptrn_matching_code(Pattern ptrn, AtomicExpr obj, PseudoType ptype) =
+    ptrn_var()        = gen_ptrn_var_matching_code(ptrn.var, ptrn.ptrn, obj, ptype),
+    ptrn_tuple(ps?)   = gen_ptrn_tuple_matching_code(ps, obj, ptype),
+    ptrn_tag_obj()    = gen_ptrn_tag_obj_matching_code(ptrn.tag, ptrn.obj, obj, ptype),
+    ptrn_union(ps?)   = gen_ptrn_union_matching_code(ps, obj, ptype),
+    _                 = opt_do_if(gen_ptrn_matching_expr(ptrn, obj, ptype), on_match_code);
+
+
+  Instr* gen_ptrn_tuple_matching_code(Pattern+ field_ptrns, AtomicExpr obj, PseudoType ptype) {
+    code = gen_ptrn_tuple_matching_code(field_ptrns, obj, 0);
+    code = (do_if(is_eq(get_size(obj), |field_ptrns|), code));
+    code = (do_if(is_ne_seq(obj), code)) if not is_subset(ptype, pseudotype_seqs);
+    return code;
+
+
+    Instr* gen_ptrn_tuple_matching_code(Pattern+ field_ptrns, AtomicExpr obj, Nat offset) {
+      assert offset <= |field_ptrns|;
+      return on_match_code if offset == |field_ptrns|;
+      code = gen_ptrn_tuple_matching_code(field_ptrns, obj, nat(offset+1));
+      tmp_var, var_gen = next_obj_var(next_var_gen);
+      let next_var_gen = var_gen, on_match_code = nonempty(code):
+        code = (set_var(tmp_var, at(obj, offset))) & gen_ptrn_matching_code(field_ptrns(offset), tmp_var, pseudotype_any);
+      ;
+      return code;
+    }
+  }
+
+
+  Instr* gen_ptrn_var_matching_code(StdVar var, Pattern ptrn, AtomicExpr obj, PseudoType ptype) =
+    if in(var, loc_bound_vars)
+      then (do_if(is_eq(obj, var), on_match_code))
+      else gen_ptrn_matching_code(ptrn, obj, ptype, on_match_code = nonempty((set_var(var, obj)) & on_match_code));
+
+
+  Instr* gen_ptrn_tag_obj_matching_code(TagPtrn tag_ptrn, Pattern obj_ptrn, AtomicExpr obj, PseudoType ptype) {
+    return gen_opt_ptrn_tag_obj_matching_code(tag_ptrn, obj_ptrn, obj, ptype) if is_subset(ptype, pseudotype_tag_objs);
+
+    ## DO WE ACTUALLY NEED THIS?
+    if tag_ptrn == ptrn_symbol and obj_ptrn == ptrn_any:
+      // Optimizing for the special case of a catch-all pattern
+      return (do_if(is_tagged_obj(obj), on_match_code));
+    ;
+
+    var, var_gen = next_obj_var(next_var_gen);
+
+    let next_var_gen = var_gen:
+      obj_match_code = gen_ptrn_matching_code(obj_ptrn, var, pseudotype_any);
+      on_tag_match_code = nonempty((set_var(var, get_inner_obj(obj))) & obj_match_code);
+      tag_match_code = gen_ptrn_matching_code(tag_ptrn, var, pseudotype_any, on_match_code=on_tag_match_code);
+      final_code = (do_if(is_tagged_obj(obj), (set_var(var, get_tag(obj))) & tag_match_code));
+    ;
+
+    return final_code;
+  }
+
+
+  Instr* gen_opt_ptrn_tag_obj_matching_code(TagPtrn tag_ptrn, Pattern obj_ptrn, AtomicExpr obj, PseudoType ptype) =
+    ptrn_symbol       = gen_opt_obj_ptrn_matching_code(obj_ptrn, obj),
+    ptrn_symbol(s?)   = { code = gen_opt_obj_ptrn_matching_code(obj_ptrn, obj);
+                          code = (do_if(is_eq(lookup(tag_vars, obj, get_tag(obj)), s), code)) if not is_subset(ptype, pseudotype_tag_obj(bare_obj(s)));
+                          return code;
+                        },
+    ptrn_var()        = (set_var(tag_ptrn.var, lookup(tag_vars, obj, get_tag(obj)))) & gen_opt_obj_ptrn_matching_code(obj_ptrn, obj);
+
+
+  Instr* gen_opt_obj_ptrn_matching_code(Pattern obj_ptrn, AtomicExpr obj) =
+    ptrn_any    = on_match_code,
+    ## BUG BUG BUG: WHAT IF THE VARIABLE HERE IS LOCALLY BOUND?
+    ptrn_var()  = (set_var(obj_ptrn.var, get_inner_obj(obj))) &
+                  gen_ptrn_matching_code(obj_ptrn.ptrn, obj_ptrn.var, pseudotype_any),
+    _           = { var, var_gen = next_obj_var(next_var_gen);
+                    obj_code = gen_ptrn_matching_code(obj_ptrn, var, pseudotype_any, next_var_gen = var_gen);
+                    return (set_var(var, get_inner_obj(obj))) & obj_code;
+                  };
+
+
+  Instr* gen_ptrn_union_matching_code([+Pattern] ptrns, AtomicExpr obj, PseudoType ptype) {
+    ptrns_left = normalize_patterns(ptrns);
+
+    easy_check_ptrns = intersection(ptrns_left, easy_check_ptrns);
+    ptrns_left = ptrns_left - easy_check_ptrns;
+    check_exprs = (gen_ptrn_matching_expr(p, obj, ptype) : p <- rand_sort(easy_check_ptrns));
+
+    ## HERE I COULD PROBABLY OPTIMIZE THE CASE WHERE WE HAVE MULTIPLE INTEGER PATTERNS. WOULD IT BE WORTH IT?
+    int_ptrns = [p : p <- ptrns_left, ptrn_integer() ?= p];
+    ptrns_left = ptrns_left - int_ptrns;
+    check_exprs = check_exprs & (gen_ptrn_matching_expr(p, obj, ptype) : p <- rand_sort(int_ptrns));
+
+    if in(ptrn_symbol, ptrns_left):
+      ptrns_left = ptrns_left - [ptrn_symbol];
+      check_exprs = (check_exprs | gen_ptrn_matching_expr(ptrn_symbol, obj, ptype));
+    ;
+
+    symb_ptrns = [p : p <- ptrns_left, ptrn_symbol() ?= p];
+    ptrns_left = ptrns_left - symb_ptrns;
+    check_exprs = check_exprs & (gen_ptrn_matching_expr(p, obj, ptype) : p <- rand_sort(symb_ptrns));
+
+    if in(ptrn_tag_objs, ptrns_left):
+      ptrns_left = ptrns_left - [ptrn_tag_objs];
+      check_expr = if is_subset(ptype, pseudotype_tag_objs) then true else is_tagged_obj(obj);
+      check_exprs = (check_expr) & check_exprs;
+    ;
+
+    easy_tag_ptrns = [p : p <- ptrns_left, ptrn_tag_obj() ?= p, p.obj == ptrn_any, p.tag :: <ptrn_symbol(SymbObj)>];
+    ptrns_left = ptrns_left - easy_tag_ptrns;
+    easy_tags = [match (tag) ptrn_symbol(s?) = s : p <- easy_tag_ptrns, tag = p.tag, tag :: <ptrn_symbol(SymbObj)>];
+
+    if |easy_tags| == 1:
+      tag = only(easy_tags);
+      check_expr = if is_subset(ptype, pseudotype_tag_obj(bare_obj(tag)))
+        then true
+        else and_then(is_tagged_obj(obj), inline_is_eq(get_tag(obj), tag));
+      check_exprs = (check_expr) & check_exprs;
+    ;
+
+    code = if check_exprs != () then opt_do_if(or_else(check_exprs), on_match_code) else ();
+
+    if |easy_tags| > 1:
+      tag_var, unused_var = next_obj_var(next_var_gen);
+      tag_check_expr = or_else(nonempty((inline_is_eq(tag_var, tag) : tag <- rand_sort(easy_tags))));
+      inner_code = (set_var(tag_var, get_tag(obj))) & opt_do_if(tag_check_expr, on_match_code);
+      if is_subset(ptype, pseudotype_tag_objs):
+        easy_tag_ptrns_code = inner_code;
+      else
+        easy_tag_ptrns_code = (do_if(is_tagged_obj(obj), inner_code));
+      ;
+      code = easy_tag_ptrns_code & code;
+    ;
+
+    other_ptrns_code = join((gen_ptrn_matching_code(p, obj, ptype) : p <- rand_sort(ptrns_left)));
+
+    return other_ptrns_code & code;
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+implicit next_var_gen : VarGen {
+  Instr+ gen_single_ptrn_switch_code(ExprEvalRes expr, (Pattern, Instr+)+ orig_cases) {
+    cases = orig_cases;
+    catch_all_code = nothing;
+    for p, c @ i <- cases:
+      if is_pattern_any(p):
+        // catch_all_code = just(c);
+        // cases = subseq(cases, 0, i);
+        // break;
+        ## BUG BUG BUG: THIS IS A HACK TO WORK AROUND A BUG IN THE TYPECHECKER.
+        ## REENABLE THE ABOVE IMPLEMENTATION AFTER THE BUG IS FIXED.
+        if catch_all_code == nothing:
+          catch_all_code = just(c);
+          cases = subseq(cases, 0, i);
+        ;
+      ;
+    ;
+
+    ## BAD BAD BAD: THERE MUST BE A BETTER WAY TO WRITE THIS KIND OF THINGS...
+    symb_cases      = ((restrict(p, pseudotype_symbols),      c) : p, c <- cases, matches(p, pseudotype_symbols));
+    int_cases       = ((restrict(p, pseudotype_integers),     c) : p, c <- cases, matches(p, pseudotype_integers));
+    float_cases     = ((restrict(p, pseudotype_floats),       c) : p, c <- cases, matches(p, pseudotype_floats));
+    seq_cases       = ((restrict(p, pseudotype_seqs),         c) : p, c <- cases, matches(p, pseudotype_seqs));
+    set_cases       = ((restrict(p, pseudotype_sets),         c) : p, c <- cases, matches(p, pseudotype_sets));
+    bin_rel_cases   = ((restrict(p, pseudotype_ne_bin_rels),  c) : p, c <- cases, matches(p, pseudotype_ne_bin_rels));
+    tern_rel_cases  = ((restrict(p, pseudotype_ne_tern_rels), c) : p, c <- cases, matches(p, pseudotype_ne_tern_rels));
+    tag_obj_cases   = ((restrict(p, pseudotype_tag_objs),     c) : p, c <- cases, matches(p, pseudotype_tag_objs));
+
+    if tag_obj_cases != ():
+      tag_ptypes_to_ptrn = ((tag_ptypes_to_ptrn(value_unsafe(p)), c) : p, c <- tag_obj_cases);
+      cases_by_tag = [];
+      any_tag_cases = ();
+      for pt, code @ i <- tag_ptypes_to_ptrn:
+        if pt(:symbols, *):
+          ## TODO: IMPLEMENT HANDLING
+          assert keys(pt) == [:symbols]; ## REMOVE THIS ASSERTION AS SOON AS POSSIBLE
+          let loc_bound_vars=[], on_match_code=code, tag_vars=[]:
+            mtc_code = gen_ptrn_matching_code(pt[:symbols], expr, pseudotype_tag_objs);
+          ;
+          cases_by_tag = [a -> nonempty(c & mtc_code) : a, c <- cases_by_tag];
+          any_tag_cases = any_tag_cases & mtc_code;
+        else
+          for spt <- rand_sort(keys(pt)):
+            tag_symb = match (spt) symbol(a?) = a;
+            let loc_bound_vars=[], on_match_code=code, tag_vars=[]:
+              mtc_code = gen_ptrn_matching_code(pt[spt], expr, pseudotype_tag_obj(tag_symb));
+            ;
+            updated_case = nonempty(lookup(cases_by_tag, object(tag_symb), ()) & mtc_code);
+            cases_by_tag = update(cases_by_tag, object(tag_symb), updated_case);
+          ;
+        ;
+      ;
+
+      subcases = [(as, is) : is, as <- reverse_relation(cases_by_tag)];
+      code = opt_do_if(is_tagged_obj(expr), opt_symb_switch(get_tag(expr), subcases, any_tag_cases));
+
+    else
+      code = ();
+    ;
+
+    ptypes_info = (
+      // (symb_cases,      pseudotype_symbols,   is_symb(expr)),
+      // (seq_cases,       pseudotype_seqs,      or([inline_is_eq(expr, :empty_seq), is_ne_seq(expr)])),
+      // (set_cases,       pseudotype_sets,      or([inline_is_eq(expr, :empty_rel), is_ne_set(expr)])),
+      // (map_cases,       pseudotype_maps,      or([inline_is_eq(expr, :empty_rel), is_ne_map(expr)]))
+      // (tag_obj_cases,   pseudotype_tag_objs,  is_tagged_obj(expr)),
+      (symb_cases,      pseudotype_any,       true),
+      (int_cases,       pseudotype_integers,  is_int(expr)),
+      (float_cases,     pseudotype_floats,    is_float(expr)),
+      (seq_cases,       pseudotype_any,       true),
+      (set_cases,       pseudotype_any,       true),
+      (bin_rel_cases,   pseudotype_any,       true),
+      (tern_rel_cases,  pseudotype_any,       true)
+    );
+
+    for ptype_cases, pseudotype, memb_expr <- ptypes_info:
+      ptype_code = ();
+      for p, c <- ptype_cases:
+        let loc_bound_vars=[], on_match_code=c, tag_vars=[]:
+          ptype_code = ptype_code & gen_ptrn_matching_code(value_unsafe(p), expr, pseudotype);
+        ;
+      ;
+      code = code & opt_do_if(memb_expr, ptype_code) if ptype_code != ();
+    ;
+
+    if catch_all_code != nothing:
+      code = (execute_block(nonempty(code & value(catch_all_code))));
+    else
+      code = (execute_block((code | terminate)));
+    ;
+
+    return code;
+  }
+
+
+  Instr+ gen_switch_code(ExprEvalRes+ exprs, (ptrns: Pattern+, code: Instr+)+ cases) {
+    if |head(cases).ptrns| == 1:
+      return gen_single_ptrn_switch_code(only_unsafe(exprs), ((only_unsafe(c.ptrns), c.code) : c <- cases));
+    else
+      code = ();
+      for c <- cases:
+        case_code = gen_guarded_case_eval_code(exprs, c.ptrns, c.code);
+        code = code & case_code;
+      ;
+      return (execute_block((code | terminate)));
+    ;
+
+
+    Instr+ gen_guarded_case_eval_code(AtomicExpr* exprs, Pattern* ptrns, Instr+ code) {
+      assert |exprs| == |ptrns|;
+
+      return code if exprs == () or ptrns == (); // Shutting up the typechecker...
+
+      next_step_code = gen_guarded_case_eval_code(tail(exprs), tail(ptrns), code);
+      let loc_bound_vars=[], on_match_code=next_step_code, tag_vars=[]:
+        res = gen_ptrn_matching_code(head(ptrns), head(exprs), pseudotype_any);
+      ;
+      return nonempty(res);
+    }
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+[+Pattern] easy_check_ptrns = [
+    ptrn_float,
+    ptrn_empty_seq, ptrn_ne_seq,
+    ptrn_empty_rel, ptrn_ne_set,
+    ptrn_ne_bin_rel, ptrn_ne_map,
+    ptrn_ne_tern_rel
+  ];
+
+[+Pattern] normalize_patterns([+Pattern] ptrns) = ptrns; ## IMPLEMENT FOR REAL
+
+
+BoolExpr gen_ptrn_matching_expr(Pattern ptrn, AtomicExpr obj, PseudoType ptype) =
+  ptrn_any                      = true,
+  ptrn_symbol                   = if_subset(ptype, pseudotype_symbols,        is_symb(obj)),
+  ptrn_float                    = if_subset(ptype, pseudotype_floats,         is_float(obj)),
+  ptrn_empty_seq                = if_subset(ptype, pseudotype_empty_seq,      is_eq(obj, empty_seq)),
+  ptrn_ne_seq                   = if_subset(ptype, pseudotype_ne_seqs,        is_ne_seq(obj)),
+  ptrn_empty_rel                = if_subset(ptype, pseudotype_empty_rel,      is_eq(obj, empty_rel)),
+  ptrn_ne_set                   = if_subset(ptype, pseudotype_ne_sets,        is_ne_set(obj)),
+  ptrn_ne_map                   = is_ne_map(obj),
+  ptrn_ne_bin_rel               = if_subset(ptype, pseudotype_ne_bin_rels,    is_ne_bin_rel(obj)),
+  ptrn_ne_tern_rel              = if_subset(ptype, pseudotype_ne_tern_rels,   is_ne_tern_rel(obj)),
+  ptrn_symbol(object(s?) so?)   = if_subset(ptype, pseudotype_symbol(s),      is_eq(obj, so)),
+  ptrn_integer(integer)         = if_subset(ptype, pseudotype_integers,       is_int(obj)),
+  ptrn_integer(low_ints() t?)   = if_subset(ptype, pseudotype_integers, is_int(obj), is_le(get_int_val(obj), t.max)),
+  ptrn_integer(high_ints() t?)  = if_subset(ptype, pseudotype_integers, is_int(obj), is_ge(get_int_val(obj), t.min)),
+  ptrn_integer(int_range() t?)  = if_subset(ptype, pseudotype_integers, is_int(obj), and(is_ge(get_int_val(obj), t.min), is_le(get_int_val(obj), max(t)))),
+  _                             = undefined;
+
+
+BoolExpr if_subset(PseudoType ptype, PseudoType ptype_bounds, BoolExpr expr) =
+  if is_subset(ptype, ptype_bounds) then true else expr;
+
+BoolExpr if_subset(PseudoType ptype1, PseudoType ptype2, BoolExpr expr1, BoolExpr expr2) =
+  if is_subset(ptype1, ptype2) then expr2 else and_then(expr1, expr2);
+
+////////////////////////////////////////////////////////////////////////////////
+
+## MAYBE THIS FUNCTION SHOULD BE MOVED TO THE PSEUDOTYPES FILE
+[<symbols, symbol(Atom)> -> Pattern] tag_ptypes_to_ptrn(Pattern ptrn) =
+  ptrn_tag_obj()  = { tag_ptrn = ptrn.tag;
+                      return [ match (tag_ptrn)
+                          ptrn_symbol             = :symbols,
+                          ptrn_symbol(object(a?)) = :symbol(a),
+                          ptrn_var()              = {assert tag_ptrn.ptrn == ptrn_symbol; return :symbols;}
+                        -> ptrn
+                      ];
+                    },
+  ptrn_var()      = [pt -> ptrn_var(ptrn.var, p) : pt, p <- tag_ptypes_to_ptrn(ptrn.ptrn)],
+  ptrn_union(ps?) = [pt -> ptrn_union(ps2) : pt, ps2 <- merge_values([tag_ptypes_to_ptrn(p) : p <- ps])];

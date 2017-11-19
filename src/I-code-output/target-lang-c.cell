@@ -1,0 +1,1101 @@
+type CCodeOutput = (body: String*, header: String*);
+
+CCodeOutput compile_to_c(CompiledPrg prg, Bool include_runtime) {
+  symbs = used_symbols(prg);
+  assert |symbs| <= 64 * 1024; ## IMPLEMENT PROPERLY
+
+  c_code = ("const uint16 " & symb_idx_name(s) & " = " & printed(i) & ";" : s @ i <- symbs) & 4 * ("");
+
+  symb_strs  = ("  \"" & _str_(bare_obj(s)) & "\"," : s <- symbs);
+  c_code     = c_code & ("const char *map_symb_to_str[" & printed(|symbs|) & "] = {") & symb_strs & ("};") & 4 * ("");
+
+  cls_defs = cls_defs(prg);
+
+  env_decl = gen_env_decl(prg) & 4 * ("");
+
+  c_code = c_code & env_decl;
+
+  all_cls_arities = [p.arity : pd <- prg.procs, p <~ pd.args, p != :obj]; ## MAYBE HERE IT WOULD BE BETTER TO DO A NORMAL SORT
+
+  cls_obj_typedef = generate_cls_obj_typedef(all_cls_arities);
+  c_code = c_code & cls_obj_typedef & 4 * ("") if cls_obj_typedef != ();
+
+  all_fn_arities = [in_arity(d) : d <- prg.procs];
+  c_code = c_code & join(intermix((generate_push_call_info_wrapper(a) : a <- rand_sort(all_fn_arities)), 2 * (""))) & 4 * ("");
+
+  int_seqs_decls, int_seqs_defs = gen_int_seqs_decl_and_def(prg.int_seqs);
+
+  c_code = c_code & int_seqs_decls & 4 * ("");
+
+  sorted_cls_defs = rand_sort(cls_defs);
+
+  int_seqs_types_and_lengths = ((int_type_c_name(min(s), max(s)), |s|) : s <- prg.int_seqs);
+
+  // Sorting static blocks in topological order
+  static_blocks_dep_map = [b.name -> values(b.nested_blocks) & set(b.links) : b <- prg.static_blocks];
+  ord_static_block_names = join((rand_sort(bs) : bs <- topological_sort(static_blocks_dep_map)));
+  static_blocks_by_name = [b.name -> b : b <- prg.static_blocks];
+  ord_static_blocks = (static_blocks_by_name(b, !!) : b <- ord_static_block_names);
+
+  // Sorting reactive blocks in topological order
+  react_blocks_dep_map = [b.name -> [t : unused_var, t <- b.nested_auto_vars] : b <- prg.react_blocks];
+  ord_react_blocks_names = join((rand_sort(bs) : bs <- topological_sort(react_blocks_dep_map)));
+  react_blocks_by_name = [b.name -> b : b <- prg.react_blocks];
+  ord_react_blocks = (react_blocks_by_name(b, !!) : b <- ord_react_blocks_names);
+
+  proc_code = compile_to_c(
+    rand_sort(prg.procs),
+    rand_sort(prg.bool_procs),
+    sorted_cls_defs,
+    ord_react_blocks,
+    ord_static_blocks,
+    prg.int_seqs,
+    sorted_cls_defs                 = sorted_cls_defs,
+    int_seqs_types_and_lengths      = int_seqs_types_and_lengths,
+    cached_semi_consts_by_impl_arg  = cached_semi_consts_by_impl_arg(prg)
+  );
+
+  let typedefs = prg.typedefs:
+    auto_wrappers_decls, auto_wrappers_impls = unzip(rand_sort([react_auto_wrapper(block=b) : b <- prg.react_blocks]));
+    static_blocks = [b.name -> b : b <- prg.static_blocks];
+    db_wrappers = (static_auto_wrapper(b, static_blocks) : b <- ord_static_blocks);
+    db_wrappers_decls, db_wrappers_private_decls, db_wrappers_impls = unzip3(db_wrappers);
+  ;
+  wrappers_decls = join(intermix(auto_wrappers_decls & db_wrappers_decls, ("", "")));
+  wrappers_private_decls = join(intermix(auto_wrappers_decls & db_wrappers_private_decls, ("", "")));
+  wrappers_impls = join(intermix(auto_wrappers_impls & db_wrappers_impls, ("", "")));
+
+  has_automata = prg.react_blocks != [] or prg.static_blocks != [];
+
+  gen_code = c_code & proc_code.body & int_seqs_defs & ("", "") & wrappers_private_decls & ("", "") & wrappers_impls;
+
+  body = join((
+    ( "#include <stddef.h>",
+      "#include <stdlib.h>",
+      "#include <string.h>",
+      "#include <ctype.h>",
+      "#include <time.h>",
+      "#include <math.h>",
+      "#include <stdio.h>",
+      "#include <map>",
+      "#include <vector>",
+      "#include <set>",
+      "#include <algorithm>",
+      ""
+    ),
+    ( "#include <tuple>",
+      "#include <memory>",
+      "#include <string>",
+      "#include <sstream>",
+      "#include <ostream>",
+      ""
+    ) if has_automata,
+
+    // Headers for the functional subset of the language
+    standard_headers if include_runtime,
+    ( "#include \"lib.h\"",
+      "#include \"iolib.h\""
+    ) if not include_runtime,
+    (""),
+
+    // Headers for table support code
+    table_headers if include_runtime and has_automata,
+    ("") if include_runtime and has_automata,
+
+    // Headers for interface support code
+    interface_headers if include_runtime and has_automata,
+    ("#include \"lib-cpp.h\"") if not include_runtime and has_automata,
+    ("") if has_automata,
+
+    ("namespace generated {"),
+    indent_lines(gen_code),
+    ("}", ""),
+
+    standard_sources if include_runtime,
+    ("") if include_runtime,
+    table_sources if include_runtime and has_automata,
+    ("") if include_runtime and has_automata,
+    interface_sources if include_runtime and has_automata,
+    ("") if include_runtime and has_automata,
+
+    runtime_callbacks(|symbs|),
+    c_main_fn if (p <- prg.procs : p.name == proc_symbol(:main))
+  ));
+
+  if wrappers_decls != ():
+    header = (
+      "#ifndef CELL_LANG_GEN_",
+      "#define CELL_LANG_GEN_",
+      "",
+      "",
+      "#include <vector>",
+      "#include <string>",
+      "#include <tuple>",
+      "#include <memory>",
+      "#include <ostream>",
+      ""
+    ) & cell_lang_header & (
+      "",
+      "namespace generated {"
+    ) & indent_lines(wrappers_decls) &
+    ( "}",
+      "",
+      "#endif // CELL_LANG_GEN_"
+    );
+  else
+    header = ();
+  ;
+
+  return (body: body, header: header);
+
+
+  () generate_cls_obj_typedef([]) = ();
+
+  String* generate_cls_obj_typedef([+NzNat] arities) =
+    ("struct CLS {", "  union {") &
+    ( "    OBJ (*fn_ptr_" & printed(a) & ")(" & append(a * ("OBJ"), ", ") & ", const OBJ *, const CLS *, ENV &env);"
+      : a <- sort_set(arities, $a < $b)
+    ) &
+    ("  };", "  const OBJ *data;", "  const CLS *cls;", "};");
+}
+
+
+String* gen_env_decl(CompiledPrg prg) {
+  all_impl_args = union([p.impl_args : p <- prg.procs]);
+
+  env_decl = ("struct ENV {") & ("  OBJ " & to_c_var_decl_name(impl_arg(bare_id(a))) & ";" : a <- rand_sort(all_impl_args));
+
+  semi_consts_cache_vars = rand_sort([p.name : p <- prg.procs, p.cached and p.impl_args != []]);
+  semi_consts_cache_vars_decls = ("  OBJ " & to_c_memo_var_name(v) & ";" : v <- semi_consts_cache_vars);
+  env_decl = (env_decl | "") & semi_consts_cache_vars_decls if semi_consts_cache_vars_decls != ();
+
+  env_decl = env_decl & ("};");
+
+
+  return env_decl;
+}
+
+
+String int_type_c_name(Int min_val, Int max_val) {
+  for lb, up, type_name <- type_bounds:
+    return type_name if min_val >= lb and max_val < up;
+  ;
+  return "int64";
+}
+
+
+(Int, Int, String)+ type_bounds = (
+  (0,             pow(2, 8),    "uint8"),
+  (0,             pow(2, 16),   "uint16"),
+  (0,             pow(2, 32),   "uint32"),
+  (-pow(2, 7),    pow(2, 7),    "int8"),
+  (-pow(2, 15),   pow(2, 15),   "int16"),
+  (-pow(2, 31),   pow(2, 31),   "int32")
+);
+
+
+Int pow(Int b, Nat e) {
+  res = 1;
+  for e:
+    res = b * res;
+  ;
+  return res;
+}
+
+
+(String*, String*) gen_int_seqs_decl_and_def(Int+* int_seqs) {
+  decls, defs = unzip((gen_int_seq_decl_and_def(s, i) : s @ i <- int_seqs));
+  return (decls, join(intermix(defs, 2 * (""))));
+}
+
+
+(String, String*) gen_int_seq_decl_and_def(Int+ int_seq, Nat seq_id) {
+  min_elem = min(int_seq);
+  max_elem = max(int_seq);
+
+  type_name = int_type_c_name(min_elem, max_elem);
+
+  sgn = "const " & type_name & " " & const_int_seq_c_name(seq_id) & "[" & printed(|int_seq|) & "]";
+
+  decl = "extern " & sgn & ";";
+
+  strs = (printed(n) : n <- int_seq);
+  total_len = sum((length(s) : s <- strs)) + 2 * |strs|;
+  if total_len < 60:
+    def = (sgn & " = {" & append(strs, ", ") & "};");
+  else
+    max_len = nat(max((length(printed(n)) : n <- (min_elem, max_elem))));
+    last_idx = |int_seq| - 1;
+    strs = (align_text(s, max_len, ascii_space) & if i != last_idx then ", " else "" : s @ i <- strs);
+    cont_lines = ("  " & append(ss) : ss <- split_into_groups(strs, nz_nat(100 / {max_len + 2})));
+    def = (sgn & " = {") & cont_lines & ("};");
+  ;
+
+  return (decl, def);
+
+
+  T+* split_into_groups(T+ items, NzNat max_group_size) {
+    len = |items|;
+    num_of_comp_groups = len / max_group_size;
+    comp_groups_total_size = num_of_comp_groups * max_group_size;
+    last_group_size = len - comp_groups_total_size;
+    groups = (nonempty(subseq(items, i * max_group_size, max_group_size)) : i < num_of_comp_groups);
+    groups = (groups | nonempty(subseq(items, comp_groups_total_size, last_group_size))) if last_group_size > 0;
+    return groups;
+  }
+
+
+  String align_text(String str, Nat len, Nat filler) {
+    str_len = length(str);
+    return {if len >= str_len then string(nat(len-str_len) * (filler)) else ""} & str;
+  }
+}
+
+
+String+ generate_push_call_info_wrapper(Nat arity) {
+  signature = "void push_call_info_wrapper(const char *fn_name" &
+              append((", OBJ " & to_c_var_decl_name(fn_arg(i)) : i < arity)) & ")";
+  code = (signature & " {", "#ifndef NDEBUG");
+  if arity == 0:
+    code = code & ("  push_call_info(fn_name, 0, (OBJ *)0);");
+  else
+    code = code & ("  OBJ *params = new_obj_array(" & printed(arity) & ");");
+    for i < arity:
+      code = code & ("  params[" & printed(i) & "] = " & to_c_var_decl_name(fn_arg(i)) & ";");
+    ;
+    code = code & ("  push_call_info(fn_name, " & printed(arity) & ", params);");
+  ;
+  return nonempty(code & ("#endif", "}"));
+}
+
+
+## THIS SHOULD NOT GO HERE
+type FnCallParam  = blank_obj, ObjExpr, ElemVar, PendingInputVar, VecVar, BoolExpr, IntExpr,
+                    ItVar, StreamVar, AnyClsVar, AnyRelVar, AnyValueStoreId;
+
+
+implicit sorted_cls_defs : ClsDef* {
+  Nat cls2id(ClsDef cls) = index_first(cls, sorted_cls_defs);
+}
+
+
+implicit {
+  sorted_cls_defs                 : ClsDef*,
+  int_seqs_types_and_lengths      : (String, Nat)*,
+  cached_semi_consts_by_impl_arg  : [ImplArg -> [+FnId]];
+
+
+  CCodeOutput compile_to_c(ObjProcDef* obj_proc_defs, BoolProcDef* bool_proc_defs, ClsDef* cls_defs, ReactBlock* react_blocks, StaticBlock* static_blocks, Int+* int_seqs) {
+    type_checking_fn_decls = (gen_c_decl(pd) : pd <- bool_proc_defs) & 4 * ("");
+    // print "Type checking function declarations generated";
+
+    closure_decls = (gen_c_decl(d, i) : d @ i <- cls_defs) & 4 * ("");
+    // print "Closure declarations generated";
+
+    fn_decls = (gen_c_decl(pd) : pd <- obj_proc_defs) & 4 * ("");
+    // print "Function declarations generated";
+
+    type_checking_fns = join((compile_to_c(d) & ("", "") : d <- bool_proc_defs)) & 4 * ("");
+    // print "Type checking functions generated";
+
+    closures = join((compile_to_c(d, i) & ("", "") : d @ i <- cls_defs)) & 4 * ("");
+    // print "Closures generated";
+
+    functions = join((compile_to_c(d) & ("", "") : d <- obj_proc_defs));
+    // print "Functions generated";
+
+    static_blocks_code = (compile_static_block_to_c(b) : b <- static_blocks);
+    static_blocks_decls = join((b.header & ("", "") : b <- static_blocks_code));
+    static_blocks_bodies = join(intermix((b.body : b <- static_blocks_code), ("", "")));
+
+    react_blocks_code = (compile_block_to_c(b) : b <- react_blocks);
+    react_blocks_decls = join((b.header & ("", "") : b <- react_blocks_code));
+    react_blocks_bodies = join(intermix((b.body : b <- react_blocks_code), ("", "")));
+
+    header = join(intermix((fn_decls, static_blocks_decls, react_blocks_decls), ("", "")));
+
+    body = join((
+      type_checking_fn_decls,
+      closure_decls,
+      fn_decls,
+      static_blocks_decls,
+      react_blocks_decls,
+      type_checking_fns,
+      closures,
+      functions,
+      react_blocks_bodies,
+      static_blocks_bodies
+    ));
+
+    return (body: body, header: header);
+  }
+
+
+  String gen_c_decl(ObjProcDef pd) {
+    args_types = (if p == :obj then "OBJ" else "const CLS &" : p <- pd.args);
+    args_list = append(args_types & ("ENV &"), ", ");
+    return "OBJ " & to_c_fn_name(pd.name) & "(" & args_list & ");";
+  }
+
+
+  String gen_c_decl(BoolProcDef pd) {
+    par_list = append(pd.arity * ("OBJ"), ", ");
+    return "bool " & to_c_fn_name(pd.name) & "(" & par_list & ");";
+  }
+
+
+  String gen_c_decl(ClsDef cd, Nat id) {
+    par_list = append(cd.arity * ("OBJ") & ("const OBJ *", "const CLS *", "ENV &"), ", ");
+    return "OBJ lambda_" & printed(id) & "(" & par_list & ");";
+  }
+
+
+  String* compile_to_c(ProcDef pd) {
+    cached = pd.cached? and pd.cached;
+
+    fn_name = to_c_fn_name(pd.name);
+
+    suffix = if cached then "_calculate" else "";
+
+    par_list = gen_fn_pars(pd);
+    par_list_str = append(par_list, ", ");
+
+    signature = ret_type_str(pd) & fn_name & suffix & "(" & par_list_str & ")";
+
+    body = pd.body;
+    auto_vars_types = if pd.loc_auto_vars? then pd.loc_auto_vars else [];
+    db_vars_types = if pd.loc_db_vars? then pd.loc_db_vars else [];
+
+    var_decls = gen_vars_decls(body);
+
+    auto_vars = rand_sort(keys(auto_vars_types));
+    auto_var_decls = (to_c_name(auto_vars_types[v]) & " " & to_c_var_decl_name(v) & ";" : v <- auto_vars);
+
+    db_vars = rand_sort(keys(db_vars_types));
+    db_vars_decls = (to_c_name(db_vars_types[v]) & " " & to_c_var_decl_name(v) & ";" : v <- db_vars);
+
+    comp_body = compile_to_c(body, nothing);
+
+    has_var_decls = var_decls != () or auto_var_decls != () or db_vars_decls != ();
+    code = (signature & " {") & indent_lines(var_decls) & indent_lines(auto_var_decls) &
+           indent_lines(db_vars_decls) & ("" if has_var_decls) & indent_lines(comp_body) & ("}");
+
+    if cached:
+      is_real_const = pd.cached? and pd.impl_args == [];
+      cache_var_name = if is_real_const then "cached_res" else "env." & to_c_memo_var_name(pd.name);
+
+      wrapper_code = (
+        "",
+        "",
+        ret_type_str(pd) & fn_name & "(" & par_list_str & ") {",
+        "  static OBJ " & cache_var_name & " = make_blank_obj();" if is_real_const,
+        "  if (is_blank_obj(" & cache_var_name & ")) {",
+        "     bool in_try_state = is_in_try_state();",
+        "     if (in_try_state)",
+        "       enter_copy_state();",
+        "    " & cache_var_name & " = " & fn_name & suffix & "(env);",
+        "    add_obj_to_cache(" & cache_var_name & ");" if is_real_const,
+        "    if (in_try_state)",
+        "      restore_try_state();",
+        "    else",
+        "      add_ref(" & cache_var_name & ");",
+        "  }",
+        "  else",
+        "    add_ref(" & cache_var_name & ");",
+        "  return " & cache_var_name & ";",
+        "}"
+      );
+      code = code & wrapper_code;
+    ;
+
+    return code;
+
+
+    Nat arity(ProcDef pd) =
+      obj_proc_def()    = in_arity(pd),
+      bool_proc_def()   = pd.arity;
+
+    String ret_type_str(ProcDef) =
+      obj_proc_def()    = "OBJ ",
+      bool_proc_def()   = "bool ";
+
+    String gen_fn_arg(ObjProcPar par, Nat pos) =
+      obj   = "OBJ " & to_c_var_decl_name(fn_arg(pos)),
+      cls() = "const CLS &" & to_c_var_decl_name(if par.name? then par.name else cls_var(pos));
+
+    String* gen_fn_pars(ProcDef pd) =
+      obj_proc_def()  = (gen_fn_arg(p, i) : p @ i <- pd.args) & ("ENV &env"),
+      bool_proc_def() = ("OBJ " & to_c_var_decl_name(fn_arg(n)) : n < arity(pd));
+  }
+
+
+  String* gen_vars_decls(Instr* body) {
+    vars_to_decl = [v : v <- vars_to_declare(body), not v :: AuxVar];
+
+    vector_vars = [v : v <- vars_to_decl, v :: VecVar];
+    scalar_vars = vars_to_decl - vector_vars;
+
+    vec_vars_by_id = group_by(vector_vars, $.id);
+    new_vec_vars = [vvar(id, nz_nat(max([v.size : v <- vs]))) : id, vs <- vec_vars_by_id];
+
+    assert {
+      vec_var_ids  = [v.id : v <- vector_vars];
+      ref_new_vec_vars = [vvar(id, nz_nat(max(nonempty([v.size : v <- vector_vars, v.id == id])))) : id <- vec_var_ids];
+      return new_vec_vars == ref_new_vec_vars;
+    };
+
+    vars_to_decl = scalar_vars & new_vec_vars;
+    return (var_decl(v) : v <- rand_sort(vars_to_decl));
+  }
+
+
+  ## DUPLICATED CODE
+  String* compile_to_c(ClsDef cd, Nat id) {
+    par_list  = ("OBJ " & to_c_var_decl_name(fn_arg(n)) : n < cd.arity) & ("const OBJ *captured", "const CLS *captured_cls", "ENV &env"); ## BAD
+    signature = "OBJ lambda_" & printed(id) & "(" & append(par_list, ", ") & ")";
+
+    vars_decls = gen_vars_decls(cd.body);
+    comp_body = compile_to_c(cd.body, nothing);
+
+    return (signature & " {") & indent_lines(vars_decls) & ("") & indent_lines(comp_body) & ("}");
+  }
+
+
+  String* compile_to_c(Instr* instrs, Maybe[Nat] block_id) = join((compile_to_c(instr, block_id) : instr <- instrs));
+
+  String* compile_to_c(Instr instr, Maybe[Nat] block_id) =
+    init_stream(v?)       = mk_call("init", (v)),
+    append()              = mk_call("append", (instr.stream, instr.obj)),
+    set_at()              = mk_call("set_at", (instr.var, instr.idx, instr.value)),
+    get_set_iter()        = mk_call("get_set_iter", (instr.var, instr.src)),
+    get_seq_iter()        = mk_call("get_seq_iter", (instr.var, instr.src)),
+    get_bin_rel_iter()    = compile_get_bin_rel_iter_to_c(instr.var, instr.src, instr.args),
+    get_tern_rel_iter()   = compile_get_tern_rel_iter_to_c(instr.var, instr.src, instr.args),
+    move_forward(v?)      = compile_move_forward_to_c(v),
+    set_var()             = compile_set_var_to_c(instr.var, instr.value),
+    set_bvar()            |
+    set_ivar()            = mk_assignment(instr.var, instr.value),
+    set_rc_var()          = compile_to_c(instr.value, instr.var),
+    init_memb_var()       = (to_c_var_ref_name(instr.var) & " = " & to_c_const(instr.new_state) & ";"),
+    reset_memb_var()      = (to_c_var_ref_name(instr.var) & " = " & to_c_const(instr.new_state) & ";"),
+    clear_loc_var(v?)     = (to_c_var_ref_name(v) & " = make_null_obj();"),
+    terminate             = ("fail();"),
+    add_ref(v?)           = mk_call("add_ref", (v)),
+    release(v?)           = mk_call("release", (v)),
+    print_obj()           = mk_call("print", (instr.obj)),
+    ret_val(e?)           = ("return " & to_c_expr(e) & ";"),
+    no_op                 = (),
+    repeat(body?)         = compile_repeat_to_c(body, block_id),
+    break_loop            = ("break;"),
+    execute_block(body?)  = { new_block_id = _counter_(:any_value_will_do);
+                              body_code = compile_to_c(body, just(new_block_id));
+                              label = ("block_" & printed(new_block_id) & "_end:;");
+                              return body_code & label;
+                            },
+    try_block()           = compile_try_block_to_c(instr.var, instr.body, block_id),
+    exit_block            = ("goto block_" & printed(value_unsafe(block_id)) & "_end;"),
+    switch_on_nat()       = compile_switch_on_nat_to_c(instr.value, instr.cases, block_id),
+    symb_switch()         = compile_symb_switch_to_c(instr.value, instr.cases, instr.else, block_id),
+    call_proc()           = compile_call_proc_to_c(if instr.var? then just(instr.var) else nothing, instr.name, instr.args, block_id),
+    call_cls()            = mk_cls_call(instr.cls_var, instr.var, instr.args), ## INLINE THE FUNCTION
+    push_call_info()      = { fn_name = (printed(user_repr(instr.fn_name)));
+                              params = (if p == nothing then :blank_obj else value(p) : p <- instr.params);
+                              return (mk_gen_call("push_call_info_wrapper", fn_name, params, ()));
+                            },
+    pop_call_info         = mk_call("pop_call_info", ()),
+    runtime_check()       = compile_runtime_check_to_c(instr.cond, instr.file, instr.line, instr.text, instr.vars),
+    branch()              = compile_branch_to_c(instr.cond, instr.when_true, instr.when_false, block_id),
+    queue_update()        = compile_queue_update_to_c(instr.type, instr.id, instr.args),
+    insert_timer()        = (insert_timer_method_name(instr.type) & "(self, " & to_c_expr(instr.idx) & ", " & to_c_expr(instr.time) & ");"),
+    clear_timer()         = (clear_timer_method_name(instr.type) & "(self, " & to_c_expr(instr.idx) & ");"),
+    auto_pre_init()       = (pre_init_method_name(instr.type) & "(&" & to_c_var_ref_name(instr.var) & ", env);"),
+    auto_cleanup()        = (cleanup_method_name(instr.type) & "(&" & to_c_var_ref_name(instr.var) & ");"),
+    set_input()           = { value_str = to_c_expr(instr.value);
+                              method_name = input_set_method_name(instr.type, instr.input);
+                              return (method_name & "(&" & to_c_var_ref_name(instr.var) & ", " & value_str & ");");
+                            },
+    clear_input()         = { method_name = input_set_method_name(instr.type, instr.input);
+                              target = if instr.var? then "&" & to_c_var_ref_name(instr.var) else "self";
+                              return (method_name & "(" & target & ", make_null_obj());");
+                            },
+    auto_update_node()    = compile_auto_update_node_to_c(instr.type, instr.node, if instr.time_var? then just(instr.time_var) else nothing),
+    auto_apply()          = compile_auto_apply_to_c(if instr.var? then just(instr.var) else nothing, instr.type),
+    set_persistent_state()= compile_set_persistent_state_to_c(instr.auto_var, instr.state, instr.type),
+    init_db()             = (compile_init_db_to_c(instr.db_var, instr.links, instr.type)),
+    cleanup_db()          = (compile_cleanup_db_to_c(instr.db_var, instr.type)),
+    send_msg()            = (compile_send_msg_to_c(instr.db_var, instr.type, instr.msg, instr.is_root, if instr.res_var? then just(instr.res_var) else nothing)),
+    try_update()          = (compile_try_update_to_c(instr.type, instr.update_id, instr.args)),
+    set_state()           = (compile_set_state_to_c(instr.state, instr.db_var, instr.type, if instr.res_var? then just(instr.res_var) else nothing)),
+    invoke_auto_method()  = (compile_invoke_method_to_c(instr.res_var, if instr.auto_var? then just(instr.auto_var) else nothing, instr.type, instr.method_id, instr.args)),
+    invoke_db_method()    = (compile_invoke_method_to_c(instr.res_var, if instr.db_var? then just(instr.db_var) else nothing, instr.type, instr.method_id, instr.args)),
+    init_value_store()    = mk_call("value_store_init", (instr.store)),
+    cleanup_value_store() = mk_call("value_store_cleanup", (instr.store)),
+    init_table()          = compile_init_table_to_c(instr.rel_var, instr.table),
+    cleanup_table()       = compile_cleanup_table_to_c(instr.rel_var, instr.table),
+    set_table()           = compile_set_table_to_c(instr.relvar, instr.table, instr.state, instr.perm),
+    get_table_iter()      = compile_get_table_iter_to_c(instr.it_var, instr.table, instr.args),
+    queue_deletes()       = compile_queue_deletes_to_c(instr.rel_var, instr.args),
+    queue_insert_value()  = (mk_gen_call(instr.res_var, "value_store_insert", (to_c_expr(instr.store), aux_struct_var_ref_name(instr.store)), (instr.value), ())),
+    queue_insert_tuple()  = compile_queue_insert_tuple_to_c(instr.rel_var, instr.tuple);
+
+
+  String* compile_set_persistent_state_to_c(AnyAutoVar auto_var, AtomicExpr state, AutoSymbol type) {
+    proc_name = set_state_proc_name(type);
+    return (proc_name & "(&" & to_c_var_ref_name(auto_var) & ", " & to_c_expr(state) & ");");
+  }
+
+
+  String* compile_queue_update_to_c(AutoSymbol type, BlockNodeId node_id, Nat* args) {
+    method_name = queue_update_method_name(type, node_id);
+    args_str = append((", " & printed(a) : a <- args));
+    return (method_name & "(self" & args_str & ");");
+  }
+
+
+  String* compile_set_table_to_c(RelVar relvar, Table table, AtomicExpr state, Nat+ perm) {
+    fn_name = fn_names[arity(table)];
+    perm_args = match (perm)
+      (_)       = (),
+      (0, 1)    = (false),
+      (1, 0)    = (true),
+      (_, _, _) = perm;
+    str_args = ("&" & to_c_var_ref_name(relvar), "&" & pending_updates_var_ref_name(relvar)) &
+               (to_c_var_ref_name(vs) : vs <- table.value_stores) &
+               (aux_struct_var_ref_name(vs) : vs <- table.value_stores);
+    return (mk_gen_call(fn_name, str_args, (state) & perm_args, ()));
+
+    [NzNat -> String] fn_names = [
+      1 -> "set_unary_table",
+      2 -> "set_binary_table",
+      3 -> "set_ternary_table"
+    ];
+  }
+
+
+  String* compile_get_bin_rel_iter_to_c(BinRelItVar var, AtomicExpr src, (Maybe[AtomicExpr], Maybe[AtomicExpr]) args) =
+    match (args)
+      (nothing,   nothing)    = mk_call("get_bin_rel_iter",   (var, src)),
+      (just(a0?), nothing)    = mk_call("get_bin_rel_iter_0", (var, src, a0)),
+      (nothing,   just(a1?))  = mk_call("get_bin_rel_iter_1", (var, src, a1));
+
+
+  String* compile_get_tern_rel_iter_to_c(TernRelItVar var, AtomicExpr src, (Maybe[AtomicExpr], Maybe[AtomicExpr], Maybe[AtomicExpr]) args) =
+    match (args)
+      (nothing,   nothing,   nothing)     = mk_call("get_tern_rel_iter",    (var, src)),
+      (just(a0?), nothing,   nothing)     = mk_call("get_tern_rel_iter_by", (var, src, 0, a0)),
+      (nothing,   just(a1?), nothing)     = mk_call("get_tern_rel_iter_by", (var, src, 1, a1)),
+      (nothing,   nothing,   just(a2?))   = mk_call("get_tern_rel_iter_by", (var, src, 2, a2)),
+      (just(a0?), just(a1?), nothing)     = mk_call("get_tern_rel_iter_by", (var, src, 0, a0, a1)),
+      (just(a0?), nothing,   just(a2?))   = mk_call("get_tern_rel_iter_by", (var, src, 2, a2, a0)),
+      (nothing,   just(a1?), just(a2?))   = mk_call("get_tern_rel_iter_by", (var, src, 1, a1, a2));
+
+
+  String* compile_try_block_to_c(LocVar var, Instr+ body, Maybe[Nat] block_id) {
+    var_name = to_c_var_ref_name(var);
+    body_code = compile_to_c(body, block_id);
+
+    return (
+      "int depth = get_call_stack_depth();",
+      "enter_try_state();",
+      "try {"
+      ) & indent_lines(body_code) & (
+      "  enter_copy_state();",
+      "  " & var_name & " = copy_obj(" & var_name & ");",
+      "  return_to_normal_state();",
+      "}",
+      "catch (...) {",
+      "  pop_try_mode_call_info(depth);",
+      "  abort_try_state();",
+      "  " & var_name & " = make_null_obj();",
+      "}"
+    );
+  }
+
+  String* compile_init_table_to_c(RelVar rel_var, Table table) {
+    fn_name = fn_names_by_arity[arity(table)];
+    return mk_call(fn_name, (rel_var));
+
+    [NzNat -> String] fn_names_by_arity = [
+      1 -> "unary_table_init",
+      2 -> "binary_table_init",
+      3 -> "ternary_table_init"
+    ];
+  }
+
+
+  String* compile_cleanup_table_to_c(RelVar rel_var, Table table) {
+    fn_name = fn_names_by_arity[arity(table)];
+    return mk_call(fn_name, (rel_var));
+
+    [NzNat -> String] fn_names_by_arity = [
+      1 -> "unary_table_cleanup",
+      2 -> "binary_table_cleanup",
+      3 -> "ternary_table_cleanup"
+    ];
+  }
+
+
+  String* compile_move_forward_to_c(<SeqItVar, SetItVar, BinRelItVar, TernRelItVar> it_var) =
+    mk_call("move_forward", (it_var));
+
+
+  String* compile_move_forward_to_c(TableItVar var) {
+    fn_name = fn_names_by_arity[var.arity];
+    return mk_call(fn_name, (var));
+
+    [NzNat -> String] fn_names_by_arity = [
+      1 -> "unary_table_iter_next",
+      2 -> "binary_table_iter_next",
+      3 -> "ternary_table_iter_next"
+    ];
+  }
+
+
+  String* compile_queue_deletes_to_c(RelVar rel_var, Maybe[IntVar]+ args) {
+    fn_name = fn_names_by_args[(a != nothing : a <- args)];
+    table_arg_str = "&" & to_c_var_ref_name(rel_var);
+    updates_arg_str = "&" & pending_updates_var_ref_name(rel_var);
+    return (mk_gen_call(fn_name, (table_arg_str, updates_arg_str), (value(a) : a <- args, a != nothing), ()));
+
+    [Bool+ -> String] fn_names_by_args = [
+      (true)                  -> "unary_table_delete",
+      (false)                 -> "unary_table_clear",
+      (true,  true)           -> "binary_table_delete",
+      (true,  false)          -> "binary_table_delete_by_col_0",
+      (false, true)           -> "binary_table_delete_by_col_1",
+      (false, false)          -> "binary_table_clear",
+      (true,  true,  true)    -> "ternary_table_delete",
+      (true,  true,  false)   -> "ternary_table_delete_by_cols_01",
+      (true,  false, true)    -> "ternary_table_delete_by_cols_02",
+      (false, true,  true)    -> "ternary_table_delete_by_cols_12",
+      (true,  false, false)   -> "ternary_table_delete_by_col_0",
+      (false, true,  false)   -> "ternary_table_delete_by_col_1",
+      (false, false, true)    -> "ternary_table_delete_by_col_2",
+      (false, false, false)   -> "ternary_table_clear"
+    ];
+  }
+
+
+  String* compile_queue_insert_tuple_to_c(RelVar rel_var, IntVar+ tuple) {
+    fn_name = fn_names_by_arity[|tuple|];
+    return (mk_gen_call(fn_name, ("&" & pending_updates_var_ref_name(rel_var)), tuple, ()));
+
+    [NzNat -> String] fn_names_by_arity = [
+      1 -> "unary_table_insert",
+      2 -> "binary_table_insert",
+      3 -> "ternary_table_insert"
+    ];
+  }
+
+
+  String* compile_get_table_iter_to_c(TableItVar it_var, AnyRelVar table, Maybe[IntVar]+ args) {
+    fn_name = fn_names_by_args[(a != nothing : a <- args)];
+    return mk_call(fn_name, (table, it_var) & (value(a) : a <- args, a != nothing));
+
+    [Bool+ -> String] fn_names_by_args = [
+      (false)                 -> "unary_table_get_iter",
+      (true,  false)          -> "binary_table_get_iter_by_col_0",
+      (false, true)           -> "binary_table_get_iter_by_col_1",
+      (false, false)          -> "binary_table_get_iter",
+      (true,  true,  false)   -> "ternary_table_get_iter_by_cols_01",
+      (true,  false, true)    -> "ternary_table_get_iter_by_cols_02",
+      (false, true,  true)    -> "ternary_table_get_iter_by_cols_12",
+      (true,  false, false)   -> "ternary_table_get_iter_by_col_0",
+      (false, true,  false)   -> "ternary_table_get_iter_by_col_1",
+      (false, false, true)    -> "ternary_table_get_iter_by_col_2",
+      (false, false, false)   -> "ternary_table_get_iter"
+    ];
+  }
+
+
+  String* compile_repeat_to_c(Instr+ body, Maybe[Nat] block_id) {
+    head = body(0);
+    if head :: <branch(cond: BoolExpr, when_true: (<break_loop>), when_false: ())>:
+      cond_str = to_c_expr(neg(head.cond));
+      body_text = indent_lines(compile_to_c(tail(body), block_id)) & ("}");
+      return ("while (" & cond_str & ") {") & body_text;
+    else
+      body_text = indent_lines(compile_to_c(body, block_id)) & ("}");
+      return ("for ( ; ; ) {") & body_text;
+    ;
+  }
+
+
+  String compile_init_db_to_c(AnyDBVar db_var, LocDBVar* links, DBSymbol type) {
+    links_args = ("&" & to_c_var_ref_name(l) : l <- links);
+    return mk_gen_call(init_method_name(type), ("&" & to_c_var_ref_name(db_var)) & links_args & ("env"));
+  }
+
+
+  String compile_cleanup_db_to_c(AnyDBVar db_var, DBSymbol type) =
+    mk_gen_call(cleanup_method_name(type), ("&" & to_c_var_ref_name(db_var)));
+
+
+  String compile_send_msg_to_c(AnyDBVar db_var, DBSymbol type, AtomicExpr msg, Bool is_root, Maybe[BoolVar] maybe_res_var) {
+    if is_root:
+      name_str = update_entry_point_name(type);
+      db_var_str = "&" & to_c_var_ref_name(db_var);
+      return if maybe_res_var == nothing
+        then mk_gen_call(name_str, (db_var_str), (msg), ("env"))
+        else mk_gen_call(value(maybe_res_var), name_str, (db_var_str), (msg), ("env"));
+    else
+      assert db_var :: NestedDBVar;
+      fail if not db_var :: NestedDBVar;
+      name_str = update_name(type, main_handler);
+      db_var_str = "&" & to_c_var_ref_name(db_var);
+      aux_db_var_str = aux_struct_var_ref_name(db_var);
+      return mk_gen_call(name_str, (db_var_str, aux_db_var_str), (msg), ("env")) & " /" & "/ HEREHEREHERE";
+
+    ;
+  }
+
+
+  String compile_try_update_to_c(DBSymbol type, UpdateId id, AtomicExpr* args) =
+    mk_gen_call(update_name(type, id), ("self, self_aux"), args, ("env"));
+
+
+  String compile_set_state_to_c(AtomicExpr state, AnyDBVar db_var, DBSymbol type, Maybe[BoolVar] maybe_res_var) {
+    if maybe_res_var != nothing:
+      proc_name_str = set_state_entry_point_name(type);
+      db_var_str = "&" & to_c_var_ref_name(db_var);
+      return mk_gen_call(value(maybe_res_var), proc_name_str, (db_var_str), (state), ());
+    else
+      fail if not db_var :: NestedDBVar; ## BAD BAD BAD: CHANGE THE DEFINITION OF set_state()
+      proc_name_str = set_state_proc_name(type);
+      self_and_aux_vars = ("&" & to_c_var_ref_name(db_var), aux_struct_var_ref_name(db_var));
+      return mk_gen_call(proc_name_str, self_and_aux_vars, (state), ());
+    ;
+  }
+
+
+  String compile_invoke_method_to_c(WriteObjVar res_var, Maybe[<AnyAutoVar, AnyDBVar>] maybe_target_var,
+    <AutoSymbol, DBSymbol> type, MethodId id, AtomicExpr* args) {
+    name_str = user_def_method_name(type, id);
+    target_var_str = if maybe_target_var != nothing then "&" & to_c_var_ref_name(value(maybe_target_var)) else "self";
+    return mk_gen_call(res_var, name_str, (target_var_str), args, ("env"));
+  }
+
+
+  String* gen_cache_clearing_code(ImplArg arg) {
+    code = ();
+    for fn_id <- rand_sort(lookup(cached_semi_consts_by_impl_arg, arg, [])):
+      cache_var_name = to_c_memo_var_name(fn_id);
+      code = (code | "release(env." & cache_var_name & ");", "env." & cache_var_name & " = make_blank_obj();");
+    ;
+    return code;
+  }
+
+
+  String* compile_set_var_to_c(WriteObjVar var, ObjExpr value) = mk_assignment(var, value);
+
+  String* compile_set_var_to_c(ImplArg var, ObjExpr value) =
+    mk_assignment(var, value) & gen_cache_clearing_code(var);
+
+
+  String* compile_auto_update_node_to_c(AutoSymbol type, BlockNodeId node, Maybe[IntVar] maybe_time_var) {
+    time_arg = if maybe_time_var != nothing then ", " & to_c_var_ref_name(value(maybe_time_var)) else "";
+    return (node_update_method_name(type, node) & "(self" & time_arg & ", self_aux, env);");
+  }
+
+
+  ## BUG BUG BUG: IF THERE IS INSIDE ONE OF THE CASES A BREAK STATEMENT MEANT TO
+  ## TERMINATE AN OUTER LOOP, THAT BREAK WILL TERMINATE THE SWITCH/CASE INSTEAD.
+  String* compile_switch_on_nat_to_c(IntExpr value, Instr*+ cases, Maybe[Nat] block_id) {
+    cases_code = (
+      ("case " & printed(i) & ":") & indent_lines((compile_to_c(c, block_id) | "break;", ""))
+      : c @ i <- cases
+    );
+    return ("switch (" & to_c_expr(value) & ") {") & indent_lines(join(cases_code)) & ("}");
+  }
+
+
+  ## BUG BUG BUG: IF THERE IS INSIDE ONE OF THE CASES A BREAK STATEMENT MEANT TO
+  ## TERMIMATE AN OUTER LOOP, THAT BREAK WILL TERMINATE THE SWITCH/CASE INSTEAD.
+  String* compile_symb_switch_to_c(ObjExpr value, [+([+SymbObj], Instr+)] cases, Instr* else, Maybe[Nat] block_id) {
+    value_str = match (value)
+      get_tag(tag_obj?)   = "get_tag_idx(" & to_c_expr(tag_obj) & ")",
+      _                   = "get_symb_idx(" & to_c_expr(value) & ")";
+
+    body_code = (
+      ("" if i > 0) &
+      ("case " & symb_idx_name(a) & ":" : a <- rand_sort(as)) &
+      indent_lines((compile_to_c(is, block_id) | "break;"))
+      : as, is @ i <- rand_sort(cases)
+    );
+    body_code = (body_code | ("", "default:") & indent_lines(compile_to_c(else, block_id))) if else != ();
+
+    return ("switch (" & value_str & ") {") & indent_lines(join(body_code)) & ("}");
+  }
+
+
+  String* compile_auto_apply_to_c(Maybe[AnyAutoVar] var, AutoSymbol type) {
+    var_str = if var != nothing then "&" & to_c_var_ref_name(value(var)) else "self";
+    name_str = apply_method_name(type);
+    return (mk_gen_call(name_str, (var_str), (), ("env")));
+  }
+
+
+  String* compile_to_c(RefObjExpr expr, WriteObjVar var) =
+    mk_set_from_stream()        = mk_call(var, "build_set",           (expr.stream)),
+    mk_set()                    = mk_call(var, "build_set",           (expr.elems, expr.size)),
+    mk_seq_from_stream()        = mk_call(var, "build_seq",           (expr.stream)),
+    mk_seq()                    = mk_call(var, "build_seq",           (expr.elems, expr.size)),
+    build_const_int_seq()       = compile_build_const_int_seq_to_c(expr.seq_id, var),
+    mk_map_from_streams()       = mk_call(var, "build_map",           (expr.key_stream, expr.value_stream)),
+    mk_map()                    = mk_call(var, "build_map",           (expr.keys, expr.values, expr.size)),
+    mk_bin_rel_from_streams()   = mk_call(var, "build_bin_rel",       expr.streams),
+    mk_bin_rel()                = mk_call(var, "build_bin_rel",       (expr.cols | expr.size)),
+    mk_tern_rel_from_streams()  = mk_call(var, "build_tern_rel",      expr.streams),
+    mk_tern_rel()               = mk_call(var, "build_tern_rel",      (expr.cols | expr.size)),
+    mk_tagged_obj()             = mk_call(var, "build_tagged_obj",    (expr.tag, expr.obj)),
+    mk_array()                  = mk_call(var, "blank_array",         (expr.size)),
+    get_seq_slice()             = mk_call(var, "get_seq_slice",       (expr.seq, expr.idx_first, expr.len)),
+    append_to_seq()             = mk_call(var, "append_to_seq",       (expr.seq, expr.new_elem)),
+    update_seq_at()             = mk_call(var, "update_seq_at",       (expr.seq, expr.idx, expr.value)),
+    join_seqs()                 = mk_call(var, "join_seqs",           (expr.left, expr.right)),
+    rev_seq()                   = mk_call(var, "rev_seq",             (expr.seq)),
+    internal_sort()             = mk_call(var, "internal_sort",       (expr.set)),
+    symb_to_str(e?)             = mk_call(var, "to_str",              (e)),
+    parse_value()               = mk_call(var, "parse_value",         (expr.value)),
+    print_value()               = mk_call(var, "print_value",         (expr.value)),
+
+    copy_state()                = (compile_copy_state_to_c(var, expr.var, expr.type)),
+    copy_table()                = compile_copy_table_to_c(var, expr.relvar, expr.table, expr.perm),
+
+    copy_persistent_state()     = (compile_copy_persistent_state_to_c(var, expr.var, expr.type)),
+
+    lookup_surrogate()          = mk_call(var, "lookup_surrogate",    (expr.store, expr.surrogate)),
+    read_pending_var(v?)        = (to_c_var_ref_name(var) & " = " & to_c_var_ref_name(v) & ";");
+
+
+  String compile_copy_state_to_c(WriteObjVar res_var, AnyDBVar db_var, DBSymbol type) {
+    proc_name_str = copy_state_proc_name(type);
+    db_var_str = "&" & to_c_var_ref_name(db_var);
+    return mk_gen_call(res_var, proc_name_str, (db_var_str), (), ());
+  }
+
+
+  ## BAD: IT'S EXACTLY THE SAME AS THE ABOVE FUNCTIONS, BUT THE TYPECHECKER...
+  String compile_copy_persistent_state_to_c(WriteObjVar res_var, AnyAutoVar auto_var, AutoSymbol type) {
+    proc_name_str = copy_state_proc_name(type);
+    auto_var_str = "&" & to_c_var_ref_name(auto_var);
+    return mk_gen_call(res_var, proc_name_str, (auto_var_str), (), ());
+  }
+
+
+  String* compile_copy_table_to_c(WriteObjVar res_var, RelVar relvar, Table table, Nat+ perm) {
+    fn_name = fn_names[arity(table)];
+    perm_args = match (perm)
+      (_)       = (),
+      (0, 1)    = (false),
+      (1, 0)    = (true),
+      (_, _, _) = perm;
+    args = (relvar) & table.value_stores & perm_args;
+    return mk_call(res_var, fn_name, args);
+
+    [NzNat -> String] fn_names = [
+      1 -> "copy_unary_table",
+      2 -> "copy_binary_table",
+      3 -> "copy_ternary_table"
+    ];
+  }
+
+
+  String* compile_build_const_int_seq_to_c(Nat seq_id, ObjVar var) {
+    type, len = int_seqs_types_and_lengths(seq_id);
+    seq_name = const_int_seq_c_name(seq_id);
+    return (mk_gen_call(var, "build_const_" & type & "_seq", (seq_name, printed(len))));
+  }
+
+  ///////////////////////////////////////////////////////////////////////////////
+
+  String* compile_call_proc_to_c(Maybe[ObjVar] var, ObjFnName name, <ObjExpr, BoundCls>* params, Maybe[Nat] block_id) {
+    pars_info = (gen_par_info(p) : p <- params);
+    code_frags, args = unzip(pars_info);
+    call_code = if var != nothing
+      then mk_fn_call(value(var), to_c_fn_name(name), args)
+      else mk_fn_call(to_c_fn_name(name), args);
+    return join(code_frags) & call_code;
+
+
+    (String*, FnCallParam) gen_par_info(ObjExpr p) = ((), p);
+
+    (String*, FnCallParam) gen_par_info(BoundCls p) =
+      cls_var()       |
+      capt_cls_var()  = ((), p),
+      // fn_ref()    = {
+      //   par_id = _counter_(:any_value_will_do);
+      //   par_var = cls_var(par_id);
+      //   par_name = to_c_expr(par_var);
+      //   code = [
+      //     "CLS " & par_name & ";",
+      //     par_name & ".fn_ptr = " & to_c_fn_name(p.name) & ";",
+      //     par_name & ".data = 0;"
+      //   ];
+      //   return (code, par_var);
+      // },
+      bound_cls()     = {
+        ## BAD: THE FIRST LINES OF CODE ARE THE SAME AS ABOVE...
+        par_id = _counter_(:any_value_will_do);
+        par_var = cls_var(par_id);
+        par_name = to_c_expr(par_var);
+        code = (
+          "CLS " & par_name & ";",
+          par_name & ".fn_ptr_" & printed(p.cls.arity) & " = " & "lambda_" & printed(cls2id(p.cls)) & ";"
+        );
+
+        if p.capt_vars != ():
+          if |p.capt_vars| != 1:
+            var_name = "cd_" & printed(par_id);
+            code = code & ("OBJ " & var_name & "[" & printed(|p.capt_vars|) & "];");
+            for v @ i <- p.capt_vars:
+              code = code & (var_name & "[" & printed(i) & "] = " & to_c_expr(v) & ";");
+            ;
+            code = code & (par_name & ".data = " & var_name & ";");
+          else
+            code = code & (par_name & ".data = &" & to_c_expr(only(p.capt_vars)) & ";");
+          ;
+        else
+          code = code & (par_name & ".data = 0;");
+        ;
+
+        if p.capt_cls_vars != ():
+          if |p.capt_cls_vars| != 1:
+            var_name = "cd_" & printed(par_id);
+            code = code & ("CLS " & var_name & "[" & printed(|p.capt_cls_vars|) & "];");
+            for v @ i <- p.capt_cls_vars:
+              code = code & (var_name & "[" & printed(i) & "] = " & to_c_expr(v) & ";");
+            ;
+            code = code & (par_name & ".cls = " & var_name & ";");
+          else
+            code = code & (par_name & ".cls = &" & to_c_expr(only(p.capt_cls_vars)) & ";");
+          ;
+        else
+          code = code & (par_name & ".cls = 0;");
+        ;
+
+        return (code, par_var);
+      };
+  }
+
+
+  String* compile_branch_to_c(BoolExpr cond, Instr* when_true, Instr* when_false, Maybe[Nat] block_id) {
+    assert when_true != ();
+    code = ("if (" & to_c_expr(cond) & ") {")     &
+           indent_lines(compile_to_c(when_true, block_id)) &
+           ("}");
+    if when_false != ():
+      code = code & ("else {") & indent_lines(compile_to_c(when_false, block_id)) & ("}");
+    ;
+    return code;
+  }
+
+
+  String* compile_runtime_check_to_c(AtomicExpr cond, String file, NzNat line, Maybe[String] text, <StdVar, ImplArg>* vars) {
+    text_arg = if text != nothing then printed(value(text)) else "0";
+    header = (
+      "if (is_symb(" & to_c_expr(cond) & ", " & symb_idx_name(false) & ")) {",
+      "  print_assertion_failed_msg(" & printed(file) & ", " & printed(line) & ", " & text_arg & ");"
+    );
+    vars_content = ("  dump_var(" & printed(_str_(bare_id(v))) & ", " & to_c_var_ref_name(v) & ");" : v <- vars);
+    footer = (
+      "  soft_fail(0);",
+      "}"
+    );
+    return header & vars_content & footer;
+  }
+
+  ///////////////////////////////////////////////////////////////////////////////
+  ///////////////////////////////////////////////////////////////////////////////
+
+  String to_c_arg(FnCallParam arg) {
+    by_ref = arg :: <TableItVar, AnyRelVar>;
+    return {if by_ref then "&" else ""} & to_c_expr(arg);
+  }
+
+  String mk_gen_call(String fn_name, String* leading_params, FnCallParam* params, String* trailing_params) =
+    fn_name & "(" & append(leading_params & (to_c_arg(p) : p <- params) & trailing_params, ", ") & ");";
+
+  String mk_gen_call(AnyVar var, String fn_name, String* leading_params, FnCallParam* params, String* trailing_params) =
+    to_c_var_ref_name(var) & " = " & mk_gen_call(fn_name, leading_params, params, trailing_params);
+
+  String mk_gen_call(AnyVar var, String fn_name, String* params) = mk_gen_call(var, fn_name, params, (), ());
+
+  String mk_gen_call(String fn_name, String* params) = mk_gen_call(fn_name, params, (), ());
+
+  String* mk_call(String fn_name, FnCallParam* params)             = (mk_gen_call(fn_name, (), params, ()));
+  String* mk_call(AnyVar var, String fn_name, FnCallParam* params) = (mk_gen_call(var, fn_name, (), params, ()));
+
+  String* mk_fn_call(String fn_name, FnCallParam* params)             = (mk_gen_call(fn_name, (), params, ("env")));
+  String* mk_fn_call(AnyVar var, String fn_name, FnCallParam* params) = (mk_gen_call(var, fn_name, (), params, ("env")));
+
+  ## AnyVar IS WRONG HERE, SHOULD ONLY BE OBJ/BOOL/INT VARS
+  String* mk_assignment(AnyVar var, AnyTypeExpr value) = (to_c_var_ref_name(var) & " = " & to_c_expr(value) & ";");
+
+
+  String* mk_cls_call(AnyClsVar cls_var, ObjVar var, ObjExpr+ args) =
+    ## NO NEED FOR NOW TO HANDLE THE CASE cls_var(Nat), AS THOSE VARIABLES ARE NEVER "CALLED", ONLY PASSED ON
+    cls_var(<+> symb?) | capt_cls_var(symb?) = {
+      name = to_c_var_ref_name(cls_var);
+      return (mk_gen_call(var, name & ".fn_ptr_" & printed(|args|), (), args, (name & ".data", name & ".cls", "env")));
+    };
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+String* runtime_callbacks(Nat symbs_count) = (
+  "",
+  "const char *symb_repr(uint16 idx) {",
+  "  return generated::map_symb_to_str[idx];",
+  "}",
+  "",
+  "uint32 embedded_symbs_count() {",
+  "  return " & printed(symbs_count) & ";",
+  "}"
+);
+
+
+String* c_main_fn = (
+  "",
+  "#include <stdio.h>",
+  "",
+  "",
+  "int main(int argc, char **argv) {",
+  "  OBJ args = make_empty_seq();",
+  "  if (argc > 1) {",
+  "    OBJ *arg_buff = new OBJ[argc-1];",
+  "    for (int i=0 ; i < argc-1 ; i++)",
+  "      arg_buff[i] = str_to_obj(argv[i+1]);",
+  "    args = build_seq(arg_buff, argc-1);",
+  "  }",
+  "",
+  "  generated::ENV env;",
+  "  memset(&env, 0, sizeof(generated::ENV));",
+  "",
+  "  OBJ res = Main_P(args, env);",
+  "",
+  "  release(args);",
+  "  release(res);",
+  "",
+  "  release_all_cached_objs();",
+  "",
+  "#ifndef NDEBUG",
+  "  if (get_live_objs_count() != 0) {",
+  "    fprintf(stderr, \"\\nMEMORY LEAK DETECTED!\\n\");",
+  "",
+  "    fprintf(stderr, \"\\nNumber of live objects: %d\\n\", get_live_objs_count());",
+  "    fprintf(stderr, \"Max number of live objects: %d\\n\", get_max_live_objs_count());",
+  "    fprintf(stderr, \"Total number of allocated objects: %d\\n\", get_total_objs_count());",
+  "",
+  "    // fprintf(stderr, \"\\nLive memory usage: %d\\n\", get_live_mem_usage());",
+  "    // fprintf(stderr, \"Max live memory usage: %d\\n\", get_max_live_mem_usage());",
+  "    // fprintf(stderr, \"Total memory requested: %d\\n\", get_total_mem_requested());",
+  "",
+  "    // print_all_live_objs();",
+  "  }",
+  "#endif",
+  "",
+  "  return is_int(res) ? get_int_val(res) : 0;",
+  "}"
+);

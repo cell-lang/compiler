@@ -1,0 +1,450 @@
+
+type TokenLineInfo  = token_line_info(token: PlainToken, offset: Nat, length: NzNat);
+
+type LexerError = lexer_error(line: NzNat, col: NzNat);
+
+type LexerResult      = Result[AnnotatedToken*, LexerError];
+type ParseLineResult  = Result[TokenLineInfo*, Nat];
+type ParseTokenResult = Result[TokenLineInfo, Nat];
+
+////////////////////////////////////////////////////////////////////////////////
+
+TokenLineInfo token_line_info(PlainToken token, Nat offset, NzNat length) =
+  token_line_info(token: token, offset: offset, length: length);
+
+AnnotatedToken annotated_token(TokenLineInfo token_info, NzNat line, Nat idx) =
+  annotated_token(
+    token_info.token,
+    line,
+    nz_nat(token_info.offset+1),
+    token_info.length,
+    idx
+  );
+
+LexerError lexer_error(NzNat line, NzNat col) = lexer_error(line: line, col: col);
+
+////////////////////////////////////////////////////////////////////////////////
+
+Atom symb(Nat* bytes) = _symb_(string(bytes)); ## THIS DOESN'T BELONG HERE
+
+////////////////////////////////////////////////////////////////////////////////
+
+Bool is_lower(Nat* bytes, Nat offset)           = is_lower(at(bytes, offset, 0));
+Bool is_upper(Nat* bytes, Nat offset)           = is_upper(at(bytes, offset, 0));
+Bool is_digit(Nat* bytes, Nat offset)           = is_digit(at(bytes, offset, 0));
+Bool is_lower_or_digit(Nat* bytes, Nat offset)  = is_lower_or_digit(at(bytes, offset, 0));
+Bool is_char(Nat* bytes, Nat offset, Nat ch)    = at(bytes, offset, nothing) == ch;
+Bool is_str(Nat* bytes, Nat offset, String str) = subseq(bytes, offset, min(|bytes|-offset, length(str))) == chars(str);
+
+Bool is_alphanum(Nat* bytes, Nat offset, <upper, lower, any> case)  = is_alpha(bytes, offset, case) or is_digit(bytes, offset);
+Bool is_alpha(Nat* bytes, Nat offset, <upper, lower, any> case)     = (case != :lower and is_upper(bytes, offset)) or
+                                                                      (case != :upper and is_lower(bytes, offset));
+
+## THESE TWO FUNCTIONS DO NOT BELONG HERE
+Bool is_alphanum(Nat ch, <upper, lower, any> case)  = is_alpha(ch, case) or is_digit(ch);
+Bool is_alpha(Nat ch, <upper, lower, any> case)     = (case != :lower and is_upper(ch)) or (case != :upper and is_lower(ch));
+
+////////////////////////////////////////////////////////////////////////////////
+
+Bool looks_like_a_lowercase_id(Nat* bytes, Nat offset)           = is_lower(bytes, offset);
+Bool looks_like_a_mixed_or_upper_case_id(Nat* bytes, Nat offset) = is_upper(bytes, offset);
+Bool looks_like_a_qualified_symbol(Nat* bytes, Nat offset)       = is_char(bytes, offset, ascii_colon) and is_lower(bytes, nat(offset+1));
+Bool looks_like_an_integer_float_or_time(Nat* bytes, Nat offset) = is_digit(bytes, offset);
+Bool looks_like_a_string(Nat* bytes, Nat offset)                 = is_char(bytes, offset, ascii_double_quotes);
+Bool looks_like_a_char(Nat* bytes, Nat offset)                   = is_char(bytes, offset, ascii_single_quote);
+Bool looks_like_a_builtin(Nat* bytes, Nat offset)                = is_char(bytes, offset, ascii_underscore) and is_lower(bytes, nat(offset+1));
+Bool looks_like_a_cls_par(Nat* bytes, Nat offset)                = is_char(bytes, offset, ascii_dollar);
+Bool looks_like_a_memb_copy_var(Nat* bytes, Nat offset)          = is_char(bytes, offset, ascii_at) and is_lower(bytes, nat(offset+1));
+
+////////////////////////////////////////////////////////////////////////////////
+
+Bool is_comment(Nat* bytes, Nat offset) =
+  all((is_char(bytes, nat(offset+i), ascii_slash) : i < 2)) or
+  all((is_char(bytes, nat(offset+i), ascii_hash)  : i < 2));
+
+////////////////////////////////////////////////////////////////////////////////
+
+LexerResult lex_src_file(Nat* chars) {
+  lines = split_lines(chars);
+  tokens = ();
+  for l @ i <- lines:
+    res = split_line_into_tokens(l);
+    if is_success(res):
+      start_idx = |tokens|;
+      tokens = tokens & (annotated_token(ti, nz_nat(i+1), nz_nat(start_idx+j+1)) : ti @ j <- get_result(res));
+    else
+      return failure(lexer_error(nz_nat(i+1), nz_nat(get_error(res)+1)));
+    ;
+  ;
+  return success(tokens);
+}
+
+
+ParseLineResult split_line_into_tokens(Nat* bytes) {
+  len = |bytes|;
+  idx = 0;
+  tokens = ();
+  loop
+    while idx < len and is_space(bytes(idx)):
+      idx = nz_nat(idx + 1);
+    ;
+    break if idx >= len or is_comment(bytes, idx);
+    res = if   looks_like_a_lowercase_id(bytes, idx)           then read_lowercase_id(bytes, idx)
+          elif looks_like_a_mixed_or_upper_case_id(bytes, idx) then read_mixed_or_upper_case_id(bytes, idx)
+          elif looks_like_a_qualified_symbol(bytes, idx)       then read_qualified_symbol(bytes, idx)
+          elif looks_like_an_integer_float_or_time(bytes, idx) then read_integer_float_or_time(bytes, idx)
+          elif looks_like_a_string(bytes, idx)                 then read_string(bytes, idx)
+          // elif ooks_like_a_char(bytes, idx)                   then read_char(bytes, idx)
+          elif looks_like_a_builtin(bytes, idx)                then read_builtin(bytes, idx)
+          elif looks_like_a_cls_par(bytes, idx)                then read_cls_par(bytes, idx)
+          elif looks_like_a_memb_copy_var(bytes, idx)          then read_memb_copy_var(bytes, idx)
+                                                               else read_symbolic_token(bytes, idx);
+    return failure(get_error(res)) if not is_success(res); ## IT'S failure(get_error(res)) INSTEAD OF JUST res JUST TO SHUT UP THE TYPECHECKER
+    info = get_result(res);
+    tokens = tokens & (info);
+    assert idx == info.offset;
+    idx = nz_nat(idx + info.length);
+  ;
+  return success(tokens); ## SHOULD ALSO RETURN THE OFFSETS OF THE TOKENS
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+ParseTokenResult read_lowercase_id(Nat* bytes, Nat offset) {
+  len = identifier_length(bytes, offset, :lower);
+  fail if len == 0; // Shutting up the typechecker
+  next_idx = nat(offset + len);
+  next_ch = at(bytes, next_idx, 0);
+  return failure(next_idx) if is_upper(next_ch) or next_ch == ascii_underscore;
+  id = symb(subseq(bytes, offset, len));
+  return success(token_line_info(lowercase_id(id), offset, len));
+}
+
+ParseTokenResult read_mixed_or_upper_case_id(Nat* bytes, Nat offset) {
+  assert is_upper(bytes, offset);
+  len = alphanum_length(bytes, offset);
+  next_idx = nat(offset + len);
+  is_quoted = is_char(bytes, next_idx, ascii_single_quote);
+  fail if len == 0; // Shutting up the typechecker
+  return failure(next_idx) if is_char(bytes, next_idx, ascii_underscore);
+  is_ok = if len > 1 then any((is_lower(bytes, nat(offset+i)) : i < len)) else not is_quoted;
+  return failure(offset) if not is_ok;
+  symbol = symb(to_lower_with_underscores(nonempty(subseq(bytes, offset, len))));
+  token = if len == 1 or is_quoted then uppercase_id(symbol) else mixedcase_id(symbol);
+  return success(token_line_info(token, offset, nz_nat(len + if is_quoted then 1 else 0)));
+}
+
+ParseTokenResult read_qualified_symbol(Nat* bytes, Nat offset) {
+  assert is_char(bytes, offset, ascii_colon) and is_lower(bytes, nat(offset+1));
+  len = identifier_length(bytes, nat(offset+1), :lower);
+  next_idx = nat(offset + 1 + len);
+  next_ch = at(bytes, next_idx, 0);
+  return failure(next_idx) if is_upper(next_ch) or next_ch == ascii_underscore;
+  symbol = symb(subseq(bytes, offset+1, len));
+  return success(token_line_info(qualified_symbol(symbol), offset, nz_nat(len+1)));
+}
+
+
+ParseTokenResult read_integer_float_or_time(Nat* bytes, Nat offset) {
+  assert is_digit(bytes, offset);
+
+  len = digit_length(bytes, offset);
+  fail if len == 0; // Shutting up the typechecker
+  digits = subseq(bytes, offset, len);
+  return failure(offset) if len > 1 and digits(0) == ascii_0;
+  next_idx = nat(offset + len);
+
+  exceeds_bounds = exceeds_integer_bounds(digits);
+  is_single_dot = is_char(bytes, next_idx, ascii_dot) and not is_char(bytes, nat(next_idx+1), ascii_dot);
+
+  // Trying to read a floating point value
+  if is_single_dot or is_char(bytes, next_idx, ascii_lower_e):
+    res = try_read_float(bytes, next_idx, offset, digits);
+    return res if is_success(res);
+  ;
+
+  // Trying to read a time value
+  if not exceeds_bounds and is_lower(bytes, next_idx):
+    value = to_int(digits);
+    if value != 0:
+      res = read_lowercase_id(bytes, next_idx);
+      if is_success(res):
+        time_unit = match (get_result(res).token) lowercase_id(a?) = a;
+        if time_unit_scales(time_unit, *):
+          nanosecs = nz_nat(value * time_unit_scales[time_unit]);
+          return success(token_line_info(nanoseconds(nanosecs), offset, nz_nat(len + length(_str_(time_unit)))));
+        ;
+      ;
+    ;
+  ;
+
+  // Now it can only be an integer. Checking for errors
+  return failure(offset) if exceeds_bounds;
+  is_alpha = is_alpha(bytes, next_idx, :any);
+  return failure(next_idx) if is_alpha or is_single_dot;
+
+  // Everything is fine
+  value = to_int(digits);
+  return success(token_line_info(value, offset, len));
+
+
+  ParseTokenResult try_read_float(Nat* bytes, Nat offset, Nat base_offset, Nat* digits) {
+    exp = 0;
+    mantissa = (d - ascii_0 : d <- digits);
+
+    if is_char(bytes, offset, ascii_dot):
+      dec_len = digit_length(bytes, nat(offset+1));
+      dec_digits = subseq(bytes, nat(offset+1), dec_len);
+      exp = -dec_len;
+      mantissa = mantissa & (d - ascii_0 : d <- dec_digits);
+      new_offset = nat(offset + 1 + dec_len);
+    else
+      new_offset = offset;
+    ;
+
+    if is_char(bytes, new_offset, ascii_lower_e):
+      new_offset = nat(new_offset + 1);
+      if is_char(bytes, new_offset, ascii_minus):
+        exp_is_neg = true;
+        new_offset = nat(new_offset + 1);
+      else
+        exp_is_neg = false;
+      ;
+      exp_len = digit_length(bytes, new_offset);
+      return failure(new_offset) if exp_len == 0 or exp_len > 3;
+      exp_digits = subseq(bytes, new_offset, exp_len);
+      exp_value = to_int(exp_digits);
+      exp_value = -exp_value if exp_is_neg;
+      exp = exp + exp_value;
+      new_offset = nat(new_offset + exp_len);
+    ;
+
+    return failure(new_offset) if is_alpha(bytes, new_offset, :any);
+
+    while |mantissa| > 1 and mantissa(0) == 0:
+      mantissa = subseq(mantissa, 1, :blank, 0);
+    ;
+    while |mantissa| > 1 and rev_at(mantissa, 0) == 0:
+      mantissa = subseq(mantissa, 0, :blank, 1);
+      exp = exp + 1;
+    ;
+
+    fail if not mantissa :: <0..9>+;
+    assert mantissa == (0) or (head(mantissa) != 0 and last(mantissa) != 0);
+
+    float_value = float_lit(mantissa, false, exp);
+    return success(token_line_info(float_value, base_offset, nz_nat(new_offset-base_offset)));
+  }
+
+
+  Bool exceeds_integer_bounds(Nat* digits) {
+    len = |digits|;
+    return true if len > 19;
+    if len == 19:
+      ## BUG BUG BUG: IT'S ACTUALLY (-)9223372036854775808 IF THE NUMBER IS NEGATIVE...
+      digits_max = chars("9223372036854775807");
+      for d, dm <- zip(digits, digits_max):
+        if d > dm:
+          return true;
+        elif d < dm:
+          return false;
+        ;
+      ;
+    ;
+    return false;
+  }
+
+
+  [Atom -> Nat] time_unit_scales = (ns: 1, us: 1000, ms: 1000000, s: 1000000000);
+}
+
+
+ParseTokenResult read_string(Nat* bytes, Nat offset) {
+  assert is_char(bytes, offset, ascii_double_quotes);
+
+  len = |bytes|;
+  chs = ();
+  i = 1;
+  loop
+    idx = offset + i;
+    return failure(len) if idx >= len; ## WOULD BE GOOD TO ADD MORE INFORMATION ABOUT THE FAILURE HERE
+    ch = bytes(idx);
+    i = i + 1;
+    return success(token_line_info(string(chs), nat(offset), nz_nat(i))) if ch == ascii_double_quotes;
+    if ch == ascii_backslash:
+      idx = offset + i;
+      i = i + 1;
+      return failure(len) if idx >= len; ## WOULD BE GOOD TO ADD MORE INFORMATION ABOUT THE FAILURE HERE
+      ch = bytes(idx);
+      if ch == ascii_backslash or ch == ascii_double_quotes:
+        chs = chs & (ch);
+      elif ch == ascii_lower_n:
+        chs = chs & (ascii_newline);
+      else
+        return failure(nat(offset+i)); ## WOULD BE GOOD TO ADD MORE INFORMATION ABOUT THE FAILURE HERE
+      ;
+    else
+      chs = chs & (ch);
+    ;
+  ;
+}
+
+
+ParseTokenResult read_char(Nat* bytes, Nat offset) {
+  fail;
+}
+
+
+ParseTokenResult read_builtin(Nat* bytes, Nat offset) {
+  assert is_char(bytes, offset, ascii_underscore);
+  len = identifier_length(bytes, nat(offset+1), :lower);
+  next_idx = nat(offset + 1 + len);
+  return failure(next_idx) if not is_char(bytes, next_idx, ascii_underscore);
+  symbol = symb(subseq(bytes, offset+1, len));
+  return failure(offset) if not symbol :: BuiltIn; ## WOULD BE GOOD TO ADD MORE INFORMATION ABOUT THE FAILURE HERE
+  return success(token_line_info(builtin(symbol), offset, nz_nat(len+2)));
+}
+
+
+ParseTokenResult read_cls_par(Nat* bytes, Nat offset) {
+  assert is_char(bytes, offset, ascii_dollar);
+  return success(token_line_info(qual_var(0), offset, 1)) if not is_lower(bytes, nat(offset+1));
+  return failure(nat(offset+2)) if is_lower(bytes, nat(offset+2));
+  return success(token_line_info(qual_var(nat(bytes(offset+1)-ascii_lower_a)), offset, 2));
+}
+
+
+ParseTokenResult read_memb_copy_var(Nat* bytes, Nat offset) {
+  assert is_char(bytes, offset, ascii_at) and is_lower(bytes, nat(offset+1));
+  len = identifier_length(bytes, nat(offset+1), :lower);
+  next_idx = nat(offset + 1 + len);
+  next_ch = at(bytes, next_idx, 0);
+  return failure(next_idx) if is_upper(next_ch) or next_ch == ascii_underscore;
+  symbol = symb(subseq(bytes, offset+1, len));
+  return success(token_line_info(pref_lowercase_id(symbol), offset, nz_nat(len+1)));
+}
+
+
+ParseTokenResult read_symbolic_token(Nat* bytes, Nat offset) {
+  return failure(offset) if offset >= |bytes|; ## MAYBE HERE I SHOULD CHANGE THE CALLER
+  trie = string_to_symbol_trie;
+  maybe_symb, len = trie_lookup(trie, nonempty(drop(bytes, offset)));
+  return failure(offset) if maybe_symb == nothing;
+  return success(token_line_info(value(maybe_symb), offset, nz_nat(len)));
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+Nat identifier_length(Nat* bytes, Nat offset, <upper, lower> case) {
+  assert is_alpha(bytes, offset, case);
+  return 0 if not is_alpha(bytes, offset, case);
+  len = 1;
+  loop
+    idx = offset + len;
+    ch = at(bytes, idx, 0);
+    if ch == ascii_underscore:
+      return len if not is_alphanum(bytes, nat(idx+1), case);
+    elif not is_alphanum(ch, case):
+      return len;
+    ;
+    len = nz_nat(len + 1);
+  ;
+ }
+
+## REENABLE THE COMMENTED OUT IMPLEMENTATION AS SOON AS POSSIBLE
+// [Nat^] to_lower_with_underscores([Nat^] bytes) = join([[ascii_underscore if i > 0 and is_upper(b), lower(b)] : b @ i <- bytes]);
+Nat+ to_lower_with_underscores(Nat+ bytes) =
+  nonempty(join((if i > 0 and is_upper(b) then (ascii_underscore, lower(b)) else (lower(b)) : b @ i <- bytes)));
+
+## THINK OF A BETTER WAY TO WRITE ALL THESE FUNCTIONS. THERE MUST BE ONE
+
+Nat alphanum_length(Nat* bytes, Nat offset) {
+  len = 0;
+  while is_alphanum(bytes, nat(offset+len), :any):
+    len = len + 1;
+  ;
+  return nat(len);
+}
+
+Nat digit_length(Nat* bytes, Nat offset) {
+  len = 0;
+  while is_digit(bytes, nat(offset+len)):
+    len = len + 1;
+  ;
+  return nat(len);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+
+Trie[Nat, PlainToken] string_to_symbol_trie {
+  raw_str_to_symb = [nonempty(chars(str)) -> symb : str, symb <- string_to_symbol];
+  return trie(raw_str_to_symb);
+}
+
+
+[String -> PlainToken] string_to_symbol = [
+  "("     ->  left_parenthesis,
+  ")"     ->  right_parenthesis,
+  "["     ->  left_bracket,
+  "]"     ->  right_bracket,
+  "{"     ->  left_brace,
+  "}"     ->  right_brace,
+  ","     ->  comma,
+  ";"     ->  semicolon,
+
+  "?"     ->  question_mark,
+  "="     ->  equals,
+  "|"     ->  pipe,
+  ":"     ->  colon,
+  "_"     ->  underscore,
+  "^"     ->  circumflex,
+  "."     ->  dot,
+  "~"     ->  tilde,
+  "@"     ->  at,
+  "&"     ->  ampersand,
+  "!"     ->  bang,
+  "#"     ->  hash,
+  "$"     ->  dollar,
+
+  "<"     ->  lower,
+  ">"     ->  greater,
+  "+"     ->  plus,
+  "-"     ->  minus,
+  "*"     ->  asterisk,
+  "/"     ->  slash,
+
+  ".."    ->  double_dot,
+
+  "=="    ->  double_equals,
+  "!="    ->  not_equal,
+  "<="    ->  lower_eq,
+  ">="    ->  greater_eq,
+
+  ":="    ->  assign,
+  "?="    ->  try_assign,
+  "->"    ->  right_arrow,
+  "=>"    ->  double_right_arrow,
+  "<-"    ->  left_arrow,
+  "<~"    ->  wavy_left_arrow,
+
+  "..."   ->  triple_dot,
+
+  "::"    ->  double_colon,
+  "||"    ->  double_pipe,
+  "<<"    ->  double_lower,
+  ">>"    ->  double_greater,
+
+  "(-_)"    -> operator(:unary_minus),
+  "(_+_)"   -> operator(:plus),
+  "(_-_)"   -> operator(:minus),
+  "(_*_)"   -> operator(:star),     ## RENAME
+  "(_/_)"   -> operator(:slash),    ## RENAME
+  "(_^_)"   -> operator(:exp),      ## RENAME
+  "(_&_)"   -> operator(:amp),      ## RENAME
+  "(_<_)"   -> operator(:lower),
+  "(_>_)"   -> operator(:greater),
+  "(_<=_)"  -> operator(:lower_eq),
+  "(_>=_)"  -> operator(:greater_eq),
+  "(_[_])"  -> operator(:brackets)
+];

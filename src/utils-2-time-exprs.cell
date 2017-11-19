@@ -1,0 +1,90 @@
+Bool is_const(TimeExpr time_expr) = trigger_times(time_expr) == ();
+
+
+Bool initial_value(BasicTimeExpr time_expr) = left(init_val_and_trigger_times(time_expr));
+
+Bool initial_value(CyclicTimeExpr time_expr) = initial_value(time_expr.expr);
+
+
+Nat initial_slot_length(TimeExpr time_expr) = trigger_times(time_expr)(0);
+
+
+Nat* trigger_times(BasicTimeExpr time_expr) = right(init_val_and_trigger_times(time_expr));
+
+Nat* trigger_times(CyclicTimeExpr time_expr) {
+  unused_var, trigger_times = init_val_and_trigger_times(time_expr.expr);
+  cycle_len = time_expr.nanosecs;
+  return (t : t <- trigger_times, t < cycle_len);
+}
+
+
+(Bool, Nat+) init_val_and_trigger_times(BasicTimeExpr time_expr) =
+  at_least()      = (false, (time_expr.nanosecs)),
+  time_neg(e?)    = {iv, ts = init_val_and_trigger_times(e); return (not iv, ts);},
+  time_and()      = log_op_init_val_and_trigger_times(time_expr.left, time_expr.right, $a and $b),
+  time_or()       = log_op_init_val_and_trigger_times(time_expr.left, time_expr.right, $a or $b);
+
+
+(Bool, Nat+) log_op_init_val_and_trigger_times(BasicTimeExpr left_expr, BasicTimeExpr right_expr, (Bool Bool -> Bool) op) {
+  left_init_val, left_times = init_val_and_trigger_times(left_expr);
+  right_init_val, right_times = init_val_and_trigger_times(right_expr);
+
+  initial_value = op(left_init_val, right_init_val);
+
+  ll = |left_times|;
+  rl = |right_times|;
+
+  li = 0;
+  ri = 0;
+
+  curr_val = initial_value;
+
+  curr_left_val = left_init_val;
+  curr_right_val = right_init_val;
+
+  times = ();
+
+  while li < ll or ri < rl:
+    if li >= ll:
+      new_time = right_times(ri);
+      curr_right_val = not curr_right_val;
+      ri = ri + 1;
+
+    elif ri >= rl:
+      new_time = left_times(li);
+      curr_left_val = not curr_left_val;
+      li = li + 1;
+
+    else
+      left_time = left_times(li);
+      right_time = right_times(ri);
+
+      if left_time == right_time:
+        new_time = left_time;
+        curr_left_val = not curr_left_val;
+        curr_right_val = not curr_right_val;
+        li = li + 1;
+        ri = ri + 1;
+
+
+      elif left_time < right_time:
+        new_time = left_time;
+        curr_left_val = not curr_left_val;
+        li = li + 1;
+
+      else // left_time > right_time
+        new_time = right_time;
+        curr_right_val = not curr_right_val;
+        ri = ri + 1;
+      ;
+    ;
+
+    new_value = op(curr_left_val, curr_right_val);
+    if new_value != curr_val:
+      times = (times | new_time);
+      curr_val = new_value;
+    ;
+  ;
+
+  return (initial_value, nonempty(times));
+}

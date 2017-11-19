@@ -1,0 +1,345 @@
+True  is_type(Type)     = true;
+False is_type(ClsType)  = false;
+
+False is_cls_type(Type)     = false;
+True  is_cls_type(ClsType)  = true;
+
+////////////////////////////////////////////////////////////////////////////////
+
+implicit typedefs : [TypeName -> NeType] {
+  ## MAYBE THIS (AND ALL THE FUNCTIONS IT DEPENDS ON) SHOULD GO IN THE SAME FILE AS is_subset(Type, Type)
+  Bool is_fn_subtype(Type+ arg_types_1, Type ret_type_1, Type+ arg_types_2, Type ret_type_2) {
+    // for (pt1, pt2 : zip(arg_types_1, arg_types_2))
+    //   return false if not is_subset(pt2, replace_type_vars_with_type_any(pt1));
+    // ;
+    // return is_subset(cls_call_type(t1, arg_types_2), ret_type_2);
+
+    assert |arg_types_1| == |arg_types_2|;
+
+    for i < |arg_types_1|:
+      return false if not is_subset(arg_types_2(i), replace_type_vars_with_type_any(arg_types_1(i)));
+    ;
+    // return is_subset(cls_call_type(t1, arg_types_2), ret_type_2);
+    return is_subset(ret_type_1, ret_type_2);
+  }
+
+
+  Bool is_eq(Type    t1, Type    t2)  = is_subset(t1, t2) and is_subset(t2, t1);
+  Bool is_eq(ClsType t1, ClsType t2)  =
+    is_fn_subtype(t1.in_types, t1.out_type, t2.in_types, t2.out_type) and
+    is_fn_subtype(t2.in_types, t2.out_type, t1.in_types, t1.out_type);
+
+
+  ## BAD: IMPROVE THIS...
+  Bool are_ptype_disjoint(Type t1, Type t2) =
+    t1 == empty_type or t2 == empty_type or
+    are_disjoint(pseudotype(t1, typedefs), pseudotype(t2, typedefs));
+
+
+  // ## FIND BETTER NAME
+  // Bool unsafe_is_eq(AnyType t1, AnyType t2):
+  //   Type,     Type      = is_eq(t1, t2),
+  //   ClsType,  ClsType   = is_eq(t1, t2);
+  //   _,        _         = undefined;
+
+
+  [TypeVar -> Type] type_var_instantiations_for_subset(Type* actual_types, Type* formal_types) {
+    type_vars = seq_union((retrieve_type_vars(t, typedefs) : t <- formal_types));
+    conds = merge_value_sets([subset_conds(at, ft) : at, ft <~ zip(actual_types, formal_types)]);
+    return [v -> union_superset(lookup(conds, v, [])) : v <- type_vars];
+  }
+
+
+  // Returns the type of the result when the closure with the given
+  // signature is called with parameters of the given type.
+  ## BUT WHAT HAPPENS WHEN I HAVE A CLOSURE LIKE THIS ONE:
+  ##   Ta -> T?
+  ## DOES THAT EVEN MAKE SENSE?
+  // Type cls_call_type(ClsType signature, [Type^] actual_types) ## FIND BETTER NAME
+  // {
+  //   type_var_insts = type_var_instantiations_for_subset(actual_types, signature.in_types);
+  //   // return replace_known_type_vars(signature.out_type, type_var_insts);
+  //   return replace_type_vars(signature.out_type, type_var_insts);
+  // }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+implicit typedefs : [TypeName -> NeType] {
+  // Here I just assume that the pattern can actually match objects of the specified type
+  // If it cannot, the function is free to fail or return garbage.
+  ## WOULD BE GOOD TO ADD AN ASSERTION THAT CHECKS THAT THE PATTERN CAN ACTUALLY MATCH THE TYPE
+  [EnvVar -> Type] generate_env(Pattern ptrn, Type type) =
+    ptrn_symbol         = [],
+    ptrn_float          = [],
+    ptrn_empty_seq      = [],
+    ptrn_ne_seq         = [],
+    ptrn_empty_rel      = [],
+    ptrn_ne_set         = [],
+    ptrn_ne_map         = [],
+    ptrn_ne_bin_rel     = [],
+    ptrn_ne_tern_rel    = [],
+    ptrn_any            = [],
+    ptrn_symbol()       = [],
+    ptrn_integer()      = [],
+    ptrn_tuple(ps?)     = ptrn_tuple_gen_env(ps, type),
+    ptrn_tag_obj()      = ptrn_tag_obj_gen_env(ptrn.tag, ptrn.obj, type),
+    ptrn_var()          = ptrn_var_gen_env(ptrn.var, ptrn.ptrn, type),
+    ptrn_union(ps?)     = ptrn_union_gen_env(ps, type);
+
+
+  [EnvVar -> Type] ptrn_tuple_gen_env(Pattern+ ps, Type type) {
+    field_supertypes = tuple_field_supertypes(type, |ps|);
+    return merge((generate_env(p, t) : p, t <- zip(ps, field_supertypes)));
+  }
+
+
+  [EnvVar -> Type] ptrn_tag_obj_gen_env(TagPtrn tag_ptrn, Pattern obj_ptrn, Type type) =
+    ptrn_symbol     = generate_env(obj_ptrn, untagged_objs_supertype(type)),
+    ptrn_symbol(object(a?)) = generate_env(obj_ptrn, restricted_untagged_objs_supertype(type, a)),
+    ptrn_var()      = [tag_ptrn.var -> tag_supertype(type)] & ptrn_tag_obj_gen_env(tag_ptrn.ptrn, obj_ptrn, type);
+
+
+  [EnvVar -> Type] ptrn_var_gen_env(EnvVar var, Pattern ptrn, Type type) {
+    assert type == empty_type or may_match(ptrn, type);
+    return [var -> type_pattern_intersection_superset(type, ptrn)] & generate_env(ptrn, type);
+  }
+
+
+  [EnvVar -> Type] ptrn_union_gen_env([+Pattern] ptrns, Type type) {
+    matching_ptrns = [p : p <- ptrns, may_match(p, type)];
+    return [v -> union_superset(ts) : v, ts <- merge_values([generate_env(p, type) : p <- matching_ptrns])];
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////
+
+## IS THIS THE RIGHT PLACE FOR THESE FUNCTIONS? MAYBE I SHOULD ALSO RENAME SOME OF THEM...
+
+implicit typedefs : [TypeName -> NeType] {
+  Bool has_reached_fixpoint([TypeVar -> Type] curr_insts, [TypeVar -> Type] new_insts) {
+    return false if not subset(keys(new_insts), keys(curr_insts));
+    for v <- rand_sort(keys(new_insts)):
+      return false if not is_subset(new_insts[v], curr_insts[v]);
+    ;
+    return true;
+  }
+}
+
+
+[TypeVar -> Type] merge_insts([TypeVar -> Type] curr_insts, [TypeVar -> Type] new_insts) {
+  curr_vars = keys(curr_insts);
+  new_vars = keys(new_insts);
+  modified = [v -> union_superset(curr_insts[v], new_insts[v]) : v <- intersection(curr_vars, new_vars)];
+  unchanged = [v -> curr_insts[v] : v <- curr_vars - new_vars];
+  new = [v -> new_insts[v] : v <- new_vars - curr_vars];
+  return modified & unchanged & new;
+}
+
+
+[EnvVar -> Type] get_updated_env([EnvVar -> Type] env, Maybe[StdVar]+ args, Type+ arg_types) {
+  arity = |args|;
+  env_delta = merge(([fn_arg(i) -> t, value(n) -> t if n != nothing] : n, t @ i <- zip(args, arg_types)));
+  return update(env, env_delta);
+}
+
+
+AnyClsExpr rewrite_cls_expr(AnyClsExpr expr) =
+  fn_ptr(id?) = no_args_cls_expr(arity(expr), fn_call(id, (fn_arg(i) : i < arity(id)))),
+  _           = expr;
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+NeType state_type(Database db) {
+  state_vars = [bare_id(v) -> info.type : v, info <- db.state_vars];
+  nested_dbs = [bare_id(v) -> type_ref(schema_type_symbol(bare_id(t))) : v, t <- db.nested_dbs];
+  rel_vars = [bare_id(v) -> {
+      sgns = info.signatures;
+      arity = only([|s| : s <- sgns]);
+      if arity == 1:
+        assert sgns :: [+(NeType)];
+        elem_type = ne_union_superset([only_unsafe(s) : s <- sgns]);
+        return type_set(elem_type);
+      elif arity == 2:
+        fail if not sgns :: [+(NeType, NeType)];
+        return type_bin_rel(sgns, false);
+      else
+        fail if not sgns :: [+(NeType, NeType, NeType)];
+        return type_tern_rel(sgns, false);
+      ;
+    } : v, info <- db.rel_vars
+  ];
+  fields = [object(f) -> (type: t, optional: false) : f, t <- state_vars | f, t <- nested_dbs | f, t <- rel_vars];
+  return if fields != [] then ne_record_type(fields) else empty_rel_type;
+}
+
+
+implicit program : Program {
+  NeType state_type(Automaton auto) {
+    inputs = [bare_id(v) -> i.type : v, i <- auto.inputs, not i.discrete and not i.volatile];
+    state_vars = [bare_id(v) -> s.type : v, s <- auto.state, not s.volatile];
+    nested_static_autos = [
+      bare_id(v) -> type_ref(schema_type_symbol(bare_id(a.type)))
+      : v, a <- auto.nested_dbs, not a.volatile
+    ];
+    nested_react_autos = [
+      bare_id(v) -> state_type(automaton_by_id(a.type))
+      : v, a <- auto.nested_autos, not a.volatile
+    ];
+    pre_fields = inputs & state_vars & nested_static_autos & nested_react_autos;
+    fields = [object(l) -> (type: t, optional: false) : l, t <- pre_fields];
+    return if fields != [] then ne_record_type(fields) else empty_rel_type;
+  }
+
+
+  ## BAD BAD BAG: WORKAROUND FOR A LIMITATION OF THE TYPECHECKER. FIX THE TYPECHECKER
+  NeType state_type_workaround(<Automaton, Database> auto) =
+    data_base() = state_type(auto),
+    automaton() = state_type(auto);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+implicit typedefs : [TypeName -> NeType] {
+  (Type, Type) branch_types_after_check(Type actual_type, NeType checked_type) {
+    intersection = intersection_superset(actual_type, checked_type, depth=0);
+    if get_type_vars(checked_type) == []:
+      intersection = checked_type if not is_subset(intersection, checked_type);
+    else
+      intersection = actual_type if not is_subset(intersection, actual_type);
+    ;
+    return (intersection, actual_type);
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+implicit typedefs : [TypeName -> NeType], depth : Nat {
+  Type intersection_superset(Type type1, Type type2) {
+    return empty_type if type1 == empty_type or type2 == empty_type;
+    return type_any if depth > 10; ## BUG BUG BUG
+    return match (type1, type2)
+      // Type variables
+      _,                  type_var()          = type1,
+      type_var(),         _                   = type1,
+
+      // Type references
+      type_ref(ts1?),     type_ref(ts2?)      = type_symbols_impl(ts1, ts2),
+      _,                  type_ref(ts?)       = intersection_superset(type1, expand_type_ref(ts, typedefs), depth = nat(depth+1)),
+      type_ref(ts?),      _                   = intersection_superset(expand_type_ref(ts, typedefs), type2, depth = nat(depth+1)),
+
+      // Union types
+      union_type(ts1?),   union_type(ts2?)    = union_types_impl(ts1, ts2),
+      union_type(ts?),    _                   = union_types_impl(ts, [type2]),
+      _,                  union_type(ts?)     = union_types_impl([type1], ts),
+
+      // Symbols
+      symb_type(),        symb_type()         = if type1 == type2 then type1 else empty_type,
+      symb_type(),        atom_type           = type1,
+      atom_type,          symb_type()         = type2,
+      atom_type,          atom_type           = atom_type,
+
+      // Integers
+      integer,            integer             = type2,
+      integer,            low_ints()          = type2,
+      integer,            high_ints()         = type2,
+      integer,            int_range()         = type2,
+      low_ints(),         integer             = type1,
+      low_ints(),         low_ints()          = low_ints(min(type1.max, type2.max)),
+      low_ints(),         high_ints()         = int_range_ex(type2.min, type1.max),
+      low_ints(),         int_range()         = int_range_ex(type2.min, min(type1.max, max(type2))),
+      high_ints(),        integer             = type1,
+      high_ints(),        low_ints()          = int_range_ex(type1.min, type2.max),
+      high_ints(),        high_ints()         = high_ints(max(type1.min, type2.min)),
+      high_ints(),        int_range()         = int_range_ex(max(type1.min, type2.min), max(type2)),
+      int_range(),        integer             = type1,
+      int_range(),        low_ints()          = int_range_ex(type1.min, min(max(type1), type2.max)),
+      int_range(),        high_ints()         = int_range_ex(max(type1.min, type2.min), max(type1)),
+      int_range(),        int_range()         = int_range_ex(max(type1.min, type2.min), min(max(type1), max(type2))),
+
+      // Floating point numbers
+      float_type,         float_type          = float_type,
+
+      // Empty sequences
+      empty_seq_type,     empty_seq_type      = empty_seq_type,
+      empty_rel_type,     empty_rel_type      = empty_rel_type,
+
+      // Non-empty sequences
+      ne_seq_type(),      ne_seq_type()       = ne_seq_type(intersection_superset(type1.elem_type, type2.elem_type)),
+      ne_seq_type(),      tuple_type(ts?)     = tuple_type((intersection_superset(type1.elem_type, t) : t <- ts)),
+      tuple_type(ts?),    ne_seq_type()       = tuple_type((intersection_superset(t, type2.elem_type) : t <- ts)),
+      tuple_type(ts1?),   tuple_type(ts2?)    = if |ts1| == |ts2|
+                                                then tuple_type((intersection_superset(t1, t2) : t1, t2 <- nonempty(zip(ts1, ts2))))
+                                                else empty_type,
+
+      // Non-empty sets
+      ne_set_type(),      ne_set_type()       = ne_set_type(intersection_superset(type1.elem_type, type2.elem_type)),
+
+      // Non-empty binary relations
+      ne_bin_rel_type(),  ne_bin_rel_type()   = ne_bin_rel_impl(type1.signatures, type2.signatures, false),
+      ne_bin_rel_type(),  ne_map_type()       = ne_bin_rel_impl(type1.signatures, [signature(type2)], true),
+      ne_map_type(),      ne_bin_rel_type()   = ne_bin_rel_impl([signature(type1)], type2.signatures, true),
+      ne_map_type(),      ne_map_type()       = ne_bin_rel_impl([signature(type1)], [signature(type2)], true),
+
+      // Non-empty ternary relations
+      ne_tern_rel_type(), ne_tern_rel_type()  = ne_tern_rel_impl(type1.signatures, type2.signatures),
+
+      // Tagged values
+      tag_obj_type(),     tag_obj_type()      = tagged_values_impl(type1, type2),
+
+      // Default
+      _,                  _                   = type1;
+  }
+
+
+  Type type_symbols_impl(TypeSymbol ts1, TypeSymbol ts2) {
+    return type_ref(ts1) if ts1 :: BasicTypeSymbol and ts1 == ts2;
+    t1 = expand_type_ref(ts1, typedefs);
+    t2 = expand_type_ref(ts2, typedefs);
+    return intersection_superset(t1, t2, depth=nat(depth+2));
+  }
+
+
+  Type union_types_impl([+NeType] types1, [+NeType] types2) =
+    union_superset([intersection_superset(t1, t2) : t1 <- types1, t2 <- types2]);
+
+
+  Type ne_bin_rel_impl([+(NeType, NeType)] sgns1, [+(NeType, NeType)] sgns2, Bool is_map) {
+    sgns = union([{
+        at0 = intersection_superset(s1(0), s2(0));
+        at1 = intersection_superset(s1(1), s2(1));
+        return [(at0, at1) if at0 != empty_type and at0 != empty_type];
+      } : s1 <- sgns1, s2 <- sgns2
+    ]);
+    if is_map and |sgns| == 1:
+      key_type, value_type = only(sgns);
+      return ne_map_type(key_type, value_type);
+    ;
+    return if sgns != [] then ne_bin_rel_type(sgns) else empty_type;
+  }
+
+
+  Type ne_tern_rel_impl([+(NeType, NeType, NeType)] sgns1, [+(NeType, NeType, NeType)] sgns2) {
+    sgns = union([{
+        at0 = intersection_superset(s1(0), s2(0));
+        at1 = intersection_superset(s1(1), s2(1));
+        at2 = intersection_superset(s1(2), s2(2));
+        return [(at0, at1, at2) if at0 != empty_type and at1 != empty_type and at2 != empty_type];
+      } : s1 <- sgns1, s2 <- sgns2
+    ]);
+    return if sgns != [] then ne_tern_rel_type(sgns) else empty_type;
+  }
+
+
+  Type tagged_values_impl(TagObjType type1, TagObjType type2) {
+    tag_type = intersection_superset(type1.tag_type, type2.tag_type);
+    return empty_type if tag_type == empty_type;
+    fail if not tag_type :: TagType;
+    obj_type = intersection_superset(type1.obj_type, type2.obj_type);
+    return tag_obj_type(tag_type, obj_type);
+  }
+}

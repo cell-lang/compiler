@@ -1,0 +1,102 @@
+ParType parenthesis           = :parenthesis;
+ParType bracket               = :bracket;
+ParType brace                 = :brace;
+
+AmberSymb left(ParType p)     = :left(p);
+AmberSymb right(ParType p)    = :right(p);
+
+AmberSymb left_parenthesis    = left(parenthesis);
+AmberSymb right_parenthesis   = right(parenthesis);
+AmberSymb left_bracket        = left(bracket);
+AmberSymb right_bracket       = right(bracket);
+AmberSymb left_brace          = left(brace);
+AmberSymb right_brace         = right(brace);
+AmberSymb comma               = :comma;
+AmberSymb semicolon           = :semicolon;
+AmberSymb question_mark       = :question_mark;
+AmberSymb equals              = :equals;
+AmberSymb pipe                = :pipe;
+AmberSymb colon               = :colon;
+AmberSymb underscore          = :underscore;
+AmberSymb circumflex          = :circumflex;
+AmberSymb dot                 = :dot;
+AmberSymb tilde               = :tilde;
+AmberSymb at                  = :at;
+AmberSymb ampersand           = :ampersand;
+AmberSymb bang                = :bang;
+AmberSymb hash                = :hash;
+AmberSymb dollar              = :dollar;
+AmberSymb lower               = :lower;
+AmberSymb greater             = :greater;
+AmberSymb plus                = :plus;
+AmberSymb minus               = :minus;
+AmberSymb asterisk            = :asterisk;
+AmberSymb slash               = :slash;
+AmberSymb double_dot          = :double_dot;
+AmberSymb double_equals       = :double_equals;
+AmberSymb not_equal           = :not_equal;
+AmberSymb lower_eq            = :lower_eq;
+AmberSymb greater_eq          = :greater_eq;
+AmberSymb assign              = :assign;
+AmberSymb try_assign          = :try_assign;
+AmberSymb right_arrow         = :right_arrow;
+AmberSymb double_right_arrow  = :double_right_arrow;
+AmberSymb left_arrow          = :left_arrow;
+AmberSymb wavy_left_arrow     = :wavy_left_arrow;
+AmberSymb triple_dot          = :triple_dot;
+AmberSymb double_colon        = :double_colon;
+AmberSymb double_pipe         = :double_pipe;
+AmberSymb double_lower        = :double_lower;
+AmberSymb double_greater      = :double_greater;
+
+PlainToken lowercase_id(Atom s)       = :lowercase_id(s);
+PlainToken mixedcase_id(Atom s)       = :mixedcase_id(s);
+PlainToken uppercase_id(Atom s)       = :uppercase_id(s);
+PlainToken qualified_symbol(Atom s)   = :qualified_symbol(s);
+PlainToken operator(Operator op)      = :operator(op);
+PlainToken builtin(BuiltIn b)         = :builtin(b);
+PlainToken qual_var(Nat n)            = :qual_var(n);
+PlainToken pref_lowercase_id(Atom s)  = :pref_lowercase_id(s);
+PlainToken nanoseconds(NzNat n)       = :nanoseconds(n);
+
+AnnotatedToken annotated_token(PlainToken t, NzNat l, NzNat c, NzNat len, Nat i) =
+  annotated_token(token: t, line: l, col: c, length: len, index: i);
+
+TokenMatchingRule lowercase_id      = :lowercase_id;
+TokenMatchingRule mixedcase_id      = :mixedcase_id;
+TokenMatchingRule uppercase_id      = :uppercase_id;
+TokenMatchingRule qualified_symbol  = :qualified_symbol;
+// TokenMatchingRule integer           = :integer; ## Conflicts with "IntType integer = :integer;" int utils_2_ctors.h
+TokenMatchingRule float             = :float;
+TokenMatchingRule string            = :string;
+TokenMatchingRule unary_operator    = :unary_operator;
+TokenMatchingRule binary_operator   = :binary_operator;
+TokenMatchingRule builtin           = :builtin;
+TokenMatchingRule qual_var          = :qual_var;
+TokenMatchingRule pref_lowercase_id = :pref_lowercase_id;
+TokenMatchingRule time_span         = :time_span;
+TokenMatchingRule keyword(Atom a)   = :keyword(a);
+
+ParsingRule empty_rule                                                = :empty_rule;
+ParsingRule atomic_rule(TokenMatchingRule r)                          = :atomic_rule(r);
+ParsingRule optional_rule(ParsingRule r)                              = :optional_rule(r);
+ParsingRule maybe_optional_rule(ParsingRule r, Bool optional)         = if optional then optional_rule(r) else r;
+ParsingRule optional_rule_seq(ParsingRule+ rs)                        = :optional_rule(:rule_seq(rs));
+ParsingRule rule_seq(ParsingRule+ rs)                                 = :rule_seq(rs);
+ParsingRule rep_rule(ParsingRule r)                                   = rep_rule(r, 0, empty_rule, false);
+ParsingRule rep_rule(ParsingRule r, ParsingRule s)                    = rep_rule(r, 0, s, false);
+ParsingRule rep_rule(ParsingRule r, Nat c, ParsingRule s, Bool ss)    = rep_rule(rule: r, min_count: c, separator: s, save_sep: ss);
+ParsingRule rep_rule(ParsingRule r, Bool ne)                          = rep_rule(r, bit(ne), empty_rule, false);
+ParsingRule rep_rule(ParsingRule r, ParsingRule s, Bool ne, Bool ss)  = rep_rule(r, bit(ne), s, ss);
+ParsingRule rep_rule_nonempty(ParsingRule r)                          = rep_rule(r, true);
+ParsingRule rule_anon_choice(ParsingRule+ rs)                         = :rule_choice(((rule: r) : r <- rs));
+ParsingRule rule_choice((Atom, ParsingRule)+ rs)                      = :rule_choice(((name: n, rule: r) : n, r <- rs));
+ParsingRule rule_neg(ParsingRule r)                                   = :rule_neg(r);
+ParsingRule block_rule(ParType pt, ParsingRule r)                     = rule_seq((atomic_rule(left(pt)), r, atomic_rule(right(pt))));
+ParsingRule rule_ref(Atom a)                                          = :rule_ref(a); ## MAKE IT MORE SPECIFIC
+
+RuleMatch null_match                              = :null_match;
+RuleMatch atomic_rule_match(AnnotatedToken t)     = :atomic_rule_match(t);
+RuleMatch rule_seq_match(RuleMatch+ rms)          = :rule_seq_match(rms);
+RuleMatch rep_rule_match(RuleMatch* rms)          = :rep_rule_match(rms);
+RuleMatch rule_choice_match(Atom n, RuleMatch m)  = rule_choice_match(name: n, match: m);

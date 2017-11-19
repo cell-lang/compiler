@@ -1,0 +1,442 @@
+implicit block : ReactBlock {
+  String auto_class_name = upper_camel_case(bare_id(block.name));
+  String auto_struct_ptr = "((" & to_c_name(block.name) & " *) ptr)";
+}
+
+
+implicit block : ReactBlock, typedefs : [TypeName -> NeType] {
+  // (String*, String*) record_input_setter(Atom id, RecordTypeFields fields, Maybe[SymbObj] maybe_tag) {
+  //   return ((), ()) if (l, f <- fields : f.optional);
+
+  //   ord_fields = nonempty(rand_sort([bare_obj(l) : l, unused_var <- fields]));
+  //   field_types = (fields(object(l)).type : l <- ord_fields);
+  //   inter_types = maybe_input_interface_types(field_types);
+  //   return ((), ()) if inter_types == nothing;
+  //   inter_types = value(inter_types);
+
+  //   uc_name = uppercase(id);
+  //   meth_name = "set_" & sentence_case(id) & "_" & append((sentence_case(l) : l <- ord_fields), "_");
+  //   args_types = join((input_args_types(it) : it <- inter_types));
+  //   args_decls = join((input_args_decls(it, i) : it @ i <- inter_types));
+
+  //   decl = "  void " & meth_name & "(" & append(args_types, ", ") & ");";
+
+  //   size_str = printed(|ord_fields|);
+  //   impl = (
+  //     "",
+  //     "void " & auto_class_name & "::" & meth_name & "(" & append(args_decls, ", ") & ") {",
+  //     "  OBJ keys[" & size_str & "], values[" & size_str & "];"
+  //   );
+  //   impl = impl & ("  keys[" & printed(i) & "] = " & to_c_expr(object(f)) & ";" : f @ i <- ord_fields);
+  //   for it @ i <- inter_types:
+  //     args_names = input_args_names(it, i);
+  //     impl = (impl | "  values[" & printed(i) & "] = " & constructor_function(it) & "(" & append(args_names, ", ") & ");");
+  //   ;
+  //   ctor_expr = "build_map(keys, values, " & size_str & ")";
+  //   ctor_expr = "build_tagged_obj(" & to_c_expr(value(maybe_tag)) & ", " & ctor_expr & ")" if maybe_tag != nothing;
+  //   impl = impl & (
+  //     "  internal_set_input(" & uc_name & ", " & ctor_expr & ");",
+  //     "}"
+  //   );
+
+  //   return ((decl), impl);
+  // }
+
+
+  // (String*, String*) tuple_input_setter(Atom id, NeType+ field_types, Maybe[SymbObj] maybe_tag) {
+  //   inter_types = maybe_input_interface_types(field_types);
+  //   return ((), ()) if inter_types == nothing;
+  //   inter_types = value(inter_types);
+
+  //   name = sentence_case(id);
+  //   uc_name = uppercase(id);
+  //   args_types = join((input_args_types(it) : it <- inter_types));
+  //   args_list = join((input_args_decls(it, i) : it @ i <- inter_types));
+
+  //   decl = "  void set_" & name & "(" & append(args_types, ", ") & ");";
+
+  //   impl = (
+  //     "",
+  //     "void " & auto_class_name & "::set_" & name & "(" & append(args_list, ", ") & ") {",
+  //     "  OBJ fields[" & printed(|field_types|) & "];"
+  //   );
+  //   for it @ i <- inter_types:
+  //     args_names = input_args_names(it, i);
+  //     impl = (impl | "  fields[" & printed(i) & "] = " & constructor_function(it) & "(" & append(args_names, ", ") & ");");
+  //   ;
+  //   ctor_expr = "build_seq(fields, " & printed(|field_types|) & ")";
+  //   ctor_expr = "build_tagged_obj(" & to_c_expr(value(maybe_tag)) & ", " & ctor_expr & ")" if maybe_tag != nothing;
+  //   impl = impl & (
+  //     "  internal_set_input(" & uc_name & ", " & ctor_expr & ");",
+  //     "}"
+  //   );
+
+  //   return ((decl), impl);
+  // }
+
+
+  (String*, String*) input_setter(Atom id) {
+    type = block.inputs[id].type;
+    inter_type = input_interface_type(type);
+    return ((), ()) if inter_type == :generic;
+    input_type = input_arg_type(inter_type);
+
+    name = sentence_case(id);
+    uc_name = uppercase(id);
+
+    ctor_fn = constructor_function(inter_type);
+
+    decl = "  void set_" & name & "(" & input_type & ");";
+    impl = (
+      "",
+      "void " & auto_class_name & "::set_" & name & "(" & input_type & " value" & ") {",
+      "  " & auto_class_name & "_internal_set_input(ptr, " & uc_name & ", " & ctor_fn & "(value));",
+      "}"
+    );
+
+    return ((decl), impl);
+
+    // input_type = block.inputs(id).type;
+    // return input_setter(id, :string, nothing) if is_subset(input_type, type_string);
+
+    // adj_input_type, maybe_tag = maybe_inner_obj_and_tag_types(input_type);
+
+    // fields = maybe_record_type_fields(adj_input_type);
+    // return record_input_setter(id, value(fields), maybe_tag) if fields != nothing;
+
+    // fields = maybe_tuple_type_fields(adj_input_type);
+    // return tuple_input_setter(id, value(fields), maybe_tag) if fields != nothing;
+
+    // if is_subset(adj_input_type, type_seq(integer)):
+    //   extra_decl, extra_impl = input_setter(id, :int32_seq, maybe_tag);
+    // else
+    //   extra_decl, extra_impl = ((), ());
+    // ;
+
+    // for it <- std_interface_types:
+    //   if is_subset(adj_input_type, internal_type(it)):
+    //     decl, impl = input_setter(id, it, maybe_tag);
+    //     return (extra_decl & decl, extra_impl & impl);
+    //   ;
+    // ;
+
+    // return ((), ());
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////
+
+  (String*, String*) output_getter(Atom id) {
+    output = block.outputs[id];
+    type = output.type;
+    inter_type = output_interface_type(type);
+    ret_type = return_value_type(inter_type);
+
+    base_name = sentence_case(id);
+    var_name = to_c_var_decl_name(signal_var(id));
+
+    decl = "  " & ret_type & "get_" & base_name & "();";
+    impl = (
+      "",
+      ret_type & auto_class_name & "::get_" & base_name & "() {",
+      "  OBJ target = " & auto_struct_ptr & "->" & var_name & ";",
+      "  if (is_null_obj(target)" & {if output.discrete then " | is_blank_obj(target)" else ""} & ")",
+      "    throw 0;",
+      "  return " & export_expr(inter_type, "target") & ";",
+      "}"
+    );
+
+    return ((decl), impl);
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////
+
+  (String*, String*) auto_method_wrapper(MethodId method_id, CompiledMethod method) {
+    if not method_id.id?:
+      base_name = sentence_case(bare_id(method_id.symbol));
+      return method_wrapper(method_id, method, block.name, base_name, auto_class_name);
+    else
+      return ((), ());
+    ;
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////
+
+  (String*, String*) react_auto_wrapper {
+    ord_inputs = block.ord_inputs;
+    ord_outputs = (o : o <- block.ord_outputs, not block.inputs(o, *));
+
+    inputs = (uppercase(i) : i <- ord_inputs);
+    outputs = (uppercase(o) : o <- ord_outputs, not block.inputs(o, *));
+
+    is_time_sensitive = block.memb_vars(elapsed_time); ## BAD BAD: NOT A RELIABLE WAY TO DO IT...
+    apply_ret_type = if is_time_sensitive then "bool" else "void";
+
+    auto_name = to_c_name(block.name);
+
+    pre_init_method_name = pre_init_method_name(block.name);
+    cleanup_method_name = cleanup_method_name(block.name);
+    apply_method_name = apply_method_name(block.name);
+
+    input_set_methods_names = (input_set_method_name(block.name, i) : i <- ord_inputs);
+    output_vars_names = (to_c_var_decl_name(signal_var(o)) : o <- ord_outputs);
+
+    input_memb_test_pred_name = (to_c_fn_name(block.input_memb_preds[i]) : i <- ord_inputs);
+
+    elapsed_time_var_name = to_c_var_decl_name(elapsed_time);
+    changed_outputs_count_var_name = to_c_var_decl_name(changed_outputs_count);
+
+    input_setters_decl, input_setters_impl = unzip((input_setter(i) : i <- ord_inputs));
+    input_setters_decl = join(input_setters_decl);
+    input_setters_impl = join(input_setters_impl);
+
+    output_getters_decl, output_getters_impl = unzip((output_getter(o) : o <- ord_outputs));
+    output_getters_decl = join(output_getters_decl);
+    output_getters_impl = join(output_getters_impl);
+
+    methods_wrappers = rand_sort([auto_method_wrapper(id, m) : id, m <- block.methods]);
+    methods_wrappers_decls, methods_wrappers_impls = (join(ls) : ls <- unzip(methods_wrappers));
+
+    input_enum_decl = if inputs == ()
+        then ()
+      elif sum((length(i) : i <- inputs)) <= 80
+        then ("  enum Input {" & append(inputs, ", ") & "};")
+      else
+        ("  enum Input {") & ("    " & i & "," : i <- inputs) & ("  };");
+
+    output_enum_decl = if outputs == ()
+        then ()
+      elif sum((length(o) : o <- inputs)) <= 80
+        then ("  enum Output {" & append(outputs, ", ") & "};")
+      else
+        ("  enum Output {") & ("    " & o & "," : o <- outputs) & ("  };");
+
+    enums_decl = input_enum_decl & ("" if input_enum_decl != () and output_enum_decl != ()) & output_enum_decl;
+
+    class_decl = (
+      "class " & auto_class_name & " {",
+      "public:"
+    ) & enums_decl & (
+      "",
+      "  " & auto_class_name & "();",
+      "  ~" & auto_class_name & "();",
+      "",
+      "  void set_input(Input input, const char *value);" if inputs != (),
+      "  void read_output(Output output, char *buffer, unsigned int size);" if outputs != (),
+      "" if is_time_sensitive,
+      "  void set_elapsed_millisecs(unsigned long long time);" if is_time_sensitive,
+      "  void set_elapsed_secs(unsigned long long time);" if is_time_sensitive,
+      "",
+      "  " & apply_ret_type & " apply();",
+      "  std::unique_ptr<cell::Value> read_state();",
+      "  void set_state(const char *buffer);",
+      "",
+      "  unsigned int changed_outputs_count();" if outputs != (),
+      "  Output changed_output_id(unsigned int idx);" if outputs != ()
+    );
+
+    class_decl = class_decl & ("") & input_setters_decl if input_setters_decl != ();
+    class_decl = class_decl & ("") & output_getters_decl if output_getters_decl != ();
+    class_decl = class_decl & ("") & methods_wrappers_decls if methods_wrappers_decls != ();
+
+    class_decl = class_decl & (
+      "",
+      "private:",
+      "  void *ptr;",
+      "};"
+    );
+
+    class_impl = (
+      auto_class_name & "::" & auto_class_name & "() {",
+      "  ENV env;",
+      "  memset(&env, 0, sizeof(ENV));",
+      "  ptr = new " & auto_name & ";",
+      "  " & pre_init_method_name & "(" & auto_struct_ptr & ", env);",
+      "}",
+      "",
+      auto_class_name & "::~" & auto_class_name & "() {",
+      "  " & cleanup_method_name & "(" & auto_struct_ptr & ");",
+      "  delete (" & auto_name & " *) ptr;",
+      "}",
+      "",
+      apply_ret_type & " " & auto_class_name & "::apply() {",
+      "  ENV env;",
+      "  memset(&env, 0, sizeof(ENV));",
+      "  " & apply_method_name & "((" & auto_name & " *) ptr, env);",
+      "  return " & auto_struct_ptr & "->" & elapsed_time_var_name & " == 0;" if is_time_sensitive,
+      "}",
+      "",
+      "std::unique_ptr<cell::Value> " & auto_class_name & "::read_state() {",
+      "  OBJ obj = " & copy_state_proc_name(block.name) & "(" & auto_struct_ptr & ");",
+      "  std::unique_ptr<cell::Value> result = export_as_value(obj);",
+      "  release(obj);",
+      "  return result;",
+      "}",
+      "",
+      "void " & auto_class_name & "::set_state(const char *buffer) {",
+      "  if (!" & auto_struct_ptr & "->" & to_c_var_decl_name(is_new) & ")",
+      "    throw 0LL;",
+      "  OBJ obj = convert_text(buffer);",
+      "  if (!" & to_c_fn_name(block.state_memb_pred) & "(obj)) {",
+      "    release(obj);",
+      "    throw 0LL;",
+      "  }",
+      "  " & set_state_proc_name(block.name) & "(" & auto_struct_ptr & ", obj);",
+      "  release(obj);",
+      "}"
+    );
+
+    if is_time_sensitive:
+      class_impl = class_impl & (
+        "",
+        "void " & auto_class_name & "::set_elapsed_millisecs(unsigned long long time) {",
+        "  if (" & auto_struct_ptr & "->is_new | " & auto_struct_ptr & "->" & elapsed_time_var_name & " > 0)",
+        "    throw 0;",
+        "  " & auto_struct_ptr & "->" & elapsed_time_var_name & " = 1000000 * time;",
+        "}",
+        "",
+        "void " & auto_class_name & "::set_elapsed_secs(unsigned long long time) {",
+        "  set_elapsed_millisecs(1000 * time);",
+        "}"
+      );
+    ;
+
+    if inputs != ():
+      class_impl = class_impl & (
+        "",
+        "void " & auto_class_name & "_internal_set_input(void *ptr, " & auto_class_name & "::Input input, OBJ obj) {",
+        "  switch (input) {"
+      );
+      for input @ j <- inputs:
+        class_impl = class_impl & (
+          "" if j > 0,
+          "    case " & auto_class_name & "::" & input & ":",
+          "      if (" & input_memb_test_pred_name(j) & "(obj)) {",
+          "        " & input_set_methods_names(j) & "((" & auto_name & " *) ptr, obj);",
+          "        return;",
+          "      }",
+          "      break;"
+        );
+      ;
+      class_impl = (class_impl |
+        "  }",
+        "  release(obj);",
+        "  throw -1LL;",
+        "}",
+        "",
+        "void " & auto_class_name & "::set_input(Input input, const char *value) {",
+        "  " & auto_class_name & "_internal_set_input(ptr, input, " & constructor_function(:generic) & "(value));",
+        "}"
+      );
+    ;
+
+    if outputs != ():
+      class_impl = class_impl & (
+        "",
+        "unsigned int " & auto_class_name & "::changed_outputs_count() {",
+        "  return " & auto_struct_ptr & "->" & changed_outputs_count_var_name & ";",
+        "}",
+        "",
+        auto_class_name & "::Output " & auto_class_name & "::changed_output_id(unsigned int idx) {",
+        "  if (idx < " & auto_struct_ptr & "->" & changed_outputs_count_var_name & ")",
+        "    return (Output) " & auto_struct_ptr & "->changed_outputs[idx];",
+        "  else",
+        "    throw 0;",
+        "}",
+        "",
+        "void " & auto_class_name & "::read_output(Output output, char *buffer, unsigned int size) {",
+        "  OBJ obj;",
+        "  switch (output) {"
+      );
+      for output @ i <- outputs:
+        class_impl = class_impl & (
+          "" if i > 0,
+          "    case " & output & ":",
+          "      obj = " & auto_struct_ptr & "->" & output_vars_names(i) & ";",
+          "      break;"
+        );
+      ;
+      class_impl = class_impl & (
+        "  }",
+        "  export_literal_as_c_string(obj, buffer, size);",
+        "}"
+      );
+    ;
+
+    class_impl = class_impl & input_setters_impl & output_getters_impl & methods_wrappers_impls;
+
+
+    return (class_decl, class_impl);
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+/////////////// Code shared between static and reactive automata ///////////////
+////////////////////////////////////////////////////////////////////////////////
+
+implicit typedefs : [TypeName -> NeType] {
+  (String*, String*) method_wrapper(MethodId method_id, CompiledMethod method,
+    <AutoSymbol, DBSymbol> block_name, String base_name, String class_name) {
+    args_inter_types = (input_interface_type(t) : t <- method.args_types);
+    inter_ret_type = output_interface_type(method.ret_type);
+    args_types_str = append((input_arg_type(it) : it <- args_inter_types), ", ");
+    ret_val_str = return_value_type(inter_ret_type);
+    args_decls = append((input_arg_type(it) & " arg" & printed(i) : it @ i <- args_inter_types), ", ");
+
+    arity = |method.args_types|;
+    memb_preds = method.args_memb_preds;
+    args_types_by_pos = ([ps(i) : ps <- memb_preds] : i < arity);
+    mono_args = ((i, only(ts)) : ts @ i <- args_types_by_pos, |ts| == 1);
+    poly_args = rand_sort([i : ts @ i <~ args_types_by_pos, |ts| != 1]);
+
+    decl = "  " & ret_val_str & "call_" & base_name & "(" & args_types_str & ");";
+
+    impl = (
+      "",
+      ret_val_str & class_name & "::call_" & base_name & "(" & args_decls & ") {",
+      "  ENV env;",
+      "  " & to_c_name(block_name) & " *self = (" & to_c_name(block_name) & " *) ptr;"
+    ) & (
+      "  OBJ obj" & printed(i) & " = " & constructor_function(it) & "(arg" & printed(i) & ");"
+      : it @ i <- args_inter_types
+    );
+
+    conds = (to_c_fn_name(p) & "(obj" & printed(i) & ")" : i, p <- mono_args);
+    if poly_args != ():
+      poly_conds = ((to_c_fn_name(ps(i)) & "(obj" & printed(i) & ")" : i <- poly_args) : ps <- rand_sort(memb_preds));
+      anded_conds = ({
+          c = append(cs, " && ");
+          c = "(" & c & ")" if |cs| > 1;
+          return c;
+        } : cs <- poly_conds
+      );
+      poly_cond = append(anded_conds, " || ");
+      poly_cond = "(" & poly_cond & ")" if |anded_conds| > 1;
+      conds = (conds | poly_cond);
+    ;
+    cond = append(conds, " && ");
+    cond = "(" & cond & ")" if |conds| > 1;
+
+    if cond != "":
+      release_stmts = ("    release(obj" & printed(i) & ");" : i < arity);
+      impl = impl & ("  if (!" & cond & ") {") & release_stmts & ("    throw 0LL;", "  }");
+    ;
+
+    impl = impl & (
+      "  memset(&env, 0, sizeof(ENV));",
+      "  OBJ res_obj = " & user_def_method_name(block_name, method_id) &
+        "(self, " & append((("obj" & printed(i) : i < arity) | "env"), ", ") & ");"
+    ) & (
+      "  release(obj" & printed(i) & ");" : i < arity
+    ) & (
+      "  " & ret_val_str & "result = " & export_expr(inter_ret_type, "res_obj") & ";",
+      "  release(res_obj);",
+      "  return result;",
+      "}"
+    );
+
+    return ((decl), impl);
+  }
+}

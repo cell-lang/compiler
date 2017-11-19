@@ -1,0 +1,92 @@
+type ParType    = parenthesis, bracket, brace;
+
+type AmberSymb  = left(ParType),
+                  right(ParType),
+                  comma,
+                  semicolon,
+                  question_mark,
+                  equals,
+                  pipe,
+                  colon,
+                  underscore,
+                  circumflex,
+                  dot,
+                  tilde,
+                  at,
+                  ampersand,
+                  bang,
+                  hash,
+                  dollar,
+                  lower,
+                  greater,
+                  plus,
+                  minus,
+                  asterisk,
+                  slash,
+                  double_dot,
+                  double_equals,
+                  not_equal,
+                  lower_eq,
+                  greater_eq,
+                  assign,
+                  try_assign,
+                  right_arrow,
+                  double_right_arrow,
+                  left_arrow,
+                  wavy_left_arrow,
+                  triple_dot,
+                  double_colon,
+                  double_pipe,
+                  double_lower,
+                  double_greater;
+
+type PlainToken = AmberSymb,
+                  lowercase_id(Atom),
+                  mixedcase_id(Atom),
+                  uppercase_id(Atom),
+                  qualified_symbol(Atom),
+                  Int,
+                  FloatLit,
+                  String,
+                  operator(Operator),
+                  builtin(BuiltIn),
+                  qual_var(Nat),
+                  pref_lowercase_id(Atom),
+                  nanoseconds(NzNat);
+
+type AnnotatedToken = annotated_token(token: PlainToken, line: NzNat, col: NzNat, length: NzNat, index: Nat);
+
+////////////////////////////////////////////////////////////////////////////////
+
+type TokenMatchingRule  = AmberSymb,
+                          lowercase_id,
+                          mixedcase_id,
+                          uppercase_id,
+                          qualified_symbol,
+                          integer,
+                          float,
+                          string,
+                          unary_operator,
+                          binary_operator,
+                          builtin,
+                          qual_var,
+                          pref_lowercase_id,
+                          time_span,
+                          keyword(Atom);
+
+type ParsingRule  = empty_rule,
+                    atomic_rule(TokenMatchingRule),
+                    optional_rule(ParsingRule),
+                    rule_seq(ParsingRule+),
+                    rep_rule(rule: ParsingRule, min_count: Nat, separator: ParsingRule, save_sep: Bool),
+                    rule_choice(RuleAltern+),
+                    rule_neg(ParsingRule),
+                    rule_ref(Atom); ## MAKE IT MORE SPECIFIC
+
+type RuleAltern   = (name: Atom?, rule: ParsingRule); ## I DON'T REALLY LIKE EITHER WAY TO DEFINE THIS TYPE
+
+type RuleMatch    = null_match,
+                    atomic_rule_match(AnnotatedToken),
+                    rule_seq_match(RuleMatch+),
+                    rep_rule_match(RuleMatch*),
+                    rule_choice_match(name: Atom, match: RuleMatch);

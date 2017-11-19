@@ -1,0 +1,362 @@
+//  A     Atom integer representation
+//  B     AnyRelVar
+//  C     ClsVar
+//  D
+//  E     Cached no-positional-argument function value
+//  F     Function
+//  G
+//  H
+//  I
+//  J
+//  K     null_locks_count_var()
+//  L
+//  M     MembVar                                                     MethodId
+//  N     Reactive automaton named nodes
+//  O
+//  P                                                                             ProcSymbol
+//  Q
+//  R     AnyAutoVar                                                              AutoSymbol
+//  S     SignalVar
+//  T     AnyDBVar                                                                DBSymbol
+//  U     up_to_date_var()                                            UpdateId
+//  V     StdVar, env. + ImplArg, internal var + description
+//  W
+//  X     update_source_var()
+//  Y
+//  Z
+
+////////////////////////////////////////////////////////////////////////////////
+
+String symb_idx_name(Atom symb) = _str_(symb) & "_A";
+
+String symb_idx_name(SymbObj symb) =
+  object(a?)  = symb_idx_name(a);
+
+////////////////////////////////////////////////////////////////////////////////
+
+String to_c_var_decl_name(<ObjVar, PendingInputVar, BoolVar, IntVar, AnyAutoVar, AnyDBVar, AnyRelVar, AnyValueStoreId> v) = to_c_var_name(v, false);
+String to_c_var_ref_name(<ObjVar, PendingInputVar, BoolVar, IntVar, AnyAutoVar, AnyDBVar, AnyRelVar, AnyValueStoreId> v)  = to_c_var_name(v, true);
+
+String to_c_var_decl_name(<VecVar, ItVar, StreamVar, AnyClsVar> v) = to_c_var_name(v);
+String to_c_var_ref_name(<VecVar, ItVar, StreamVar, AnyClsVar> v)  = to_c_var_name(v);
+
+/////////////////////////////////////////////////////////////////////////////////////
+
+String to_c_var_decl_name(MembIntVectVar v) =
+  nodes_to_update_vect_var()  = "nodes_to_update_" & printed(v.level) & "[" & printed(v.size) & "]",
+  changed_outputs()           = "changed_outputs[" & printed(v.size) & "]";
+
+/////////////////////////////////////////////////////////////////////////////////////
+
+String to_c_var_name(VecVar v)          = "vec_" & printed(v.id);
+String to_c_var_name(SeqItVar v)        = "seq_it_" & printed(bare_id_2(v));
+String to_c_var_name(SetItVar v)        = "set_it_" & printed(bare_id_2(v));
+String to_c_var_name(BinRelItVar v)     = "bin_rel_it_" & printed(bare_id_2(v));
+String to_c_var_name(TernRelItVar v)    = "tern_rel_it" & printed(bare_id_2(v));
+String to_c_var_name(TableItVar v)      = "table_it_" & printed(v.id);
+String to_c_var_name(StreamVar v)       = "stream_" & printed(bare_id_2(v));
+
+String to_c_var_name(AnyClsVar v) =
+  cls_var(<+> a?)     = _str_(a) & "_C",
+  cls_var(<*..*> n?)  = "cls_" & printed(n),
+  capt_cls_var(n?)    = "captured_cls[" & printed(n) & "]";
+
+/////////////////////////////////////////////////////////////////////////////////////
+
+String to_c_var_name(<ObjVar, PendingInputVar> var, Bool add_prefix) {
+  assert match (var)
+    qual_signal_var() |
+    qual_memb_var()   = add_prefix,
+    _                 = true;
+
+  prefix = if add_prefix
+    then match (var)
+      impl_arg()          = "env.",
+      prev_var_value()    |
+      pending_state_var() = "self_aux->",
+      _                   = "self->"
+    else "";
+
+  return match (var)
+    var(<+> a?)                   = _str_(a) & "_V",
+    fn_arg(<*..*> n?)             = "a" & printed(n),
+    impl_arg(<+> a?)              = prefix & _str_(a) & "_V",
+    capt_var(<*..*> n?)           = "captured["  & printed(n) & "]",
+    memb_var(<+> a?)              = prefix & _str_(a) & "_M",
+    signal_var(a?)                = prefix & _str_(a) & "_S",
+    qual_signal_var()             = to_c_var_name(var.auto_var, true) & "." & to_c_var_name(var.memb_var, false),
+    qual_memb_var()               = to_c_var_name(var.db_var, true) & "." & to_c_var_name(var.memb_var, false),
+    watched_signal_value_var(a?)  = prefix & _str_(a) & "_Sw",
+    prev_var_value(v?)            = prefix & ad_hoc_var_name(v) & "d",
+    pending_state_var(a?)         = prefix & _str_(a) & "_Mp",
+    lvar(<*..*> n?)               = "l" & printed(n),
+    evar()                        = "vec_" & printed(var.id) & "[" & to_c_idx_expr(var.idx) & "]",
+    pending_input_var(<+> a?)     = prefix & _str_(a) & "_Sp";
+
+
+  String ad_hoc_var_name(SignalVar var)     = to_c_var_decl_name(var);
+  String ad_hoc_var_name(QualSignalVar var) = ad_hoc_var_name(var.auto_var) & "_" & ad_hoc_var_name(var.memb_var);
+  String ad_hoc_var_name(NestedAutoVar var) = to_c_var_name(var, false);
+  String ad_hoc_var_name(LocAutoVar)        = undefined;
+}
+
+
+String to_c_var_name(BoolVar var, Bool add_prefix) {
+  prefix = if add_prefix
+    then match (var)
+      nested_db_spent() = "self_aux->",
+      _                 = "self->"
+    else "";
+
+  return match (var)
+    bvar(n?)                                      = "b" & printed(n),
+    nested_db_spent(v?)                           = prefix & to_c_var_decl_name(v) & "s",
+    cond_value_var(n?)                            = prefix & "cond_" & printed(n),
+    cond_is_def_var(n?)                           = prefix & "cond_def_" & printed(n),
+    watched_signal_up_to_date_var(a?)             = prefix & _str_(a) & "_Uw",
+    up_to_date_var(std_block_node_id(a?))         = prefix & _str_(a) & "_U",
+    up_to_date_var(cond_node_id(n?))              = prefix & "cond_up_to_date_" & printed(n),
+    up_to_date_var(nested_auto_node_id(a?))       = prefix & _str_(a) & "_Ua",
+    up_to_date_var(nested_auto_input_id() id?)    = prefix & _str_(id.auto) & "_Ua_" & _str_(id.input),
+    is_new                                        = prefix & "is_new",
+    qual_bool_var()     = to_c_var_name(var.auto_var, add_prefix) & "." & to_c_var_name(var.memb_var, false);
+}
+
+
+String to_c_var_name(IntVar v, Bool add_prefix) {
+  assert match (v)
+    changed_output()  |
+    elapsed_time()    = add_prefix,
+    _                 = true;
+
+  prefix = if add_prefix then "self->" else "";
+  return match (v)
+    ivar(n?)                            = "i" & printed(n),
+    curr_time                           = "curr_time",
+    update_time                         = "update_time",
+    update_expr_index                   = "update_expr_index",
+    update_source_var(a?)               = prefix & _str_(a) & "_V_update_source",
+    null_locks_count_var(a?)            = prefix & _str_(a) & "_V_null_locks_count",
+    update_count_var(l?)                = prefix & "update_count_" & printed(l),
+    nodes_to_update_var()               = prefix & "nodes_to_update_" & printed(v.level) & "[" & to_c_idx_expr(v.index) & "]",
+    next_trigger_time_var(a?)           = prefix & _str_(a) & "_V_next_trigger_time",
+    curr_time_slot_var(a?)              = prefix & _str_(a) & "_V_curr_time_slot",
+    time_triggers_count_var             = prefix & "time_triggers_count",
+    trigger_times_heap_var(i?)          = prefix & "trigger_times_heap[" & printed(i) & "]",
+    time_varying_cond_ids_heap_var(i?)  = prefix & "time_varying_cond_ids_heap[" & printed(i) & "]",
+    last_update_time                    = prefix & "last_update_time",
+    elapsed_time                        = prefix & "elapsed_time",
+    changed_outputs_count               = prefix & "changed_outputs_count",
+    changed_output()                    = prefix & "changed_outputs[" & to_c_idx_expr(v.index) & "]",
+    elapsed_time(av?)                   = to_c_var_name(av, false) & ".elapsed_time",
+    nested_auto_int_var()               = to_c_var_name(v.auto_var, true) & "." & to_c_var_name(v.memb_var, false);
+}
+
+
+String to_c_var_name(AnyAutoVar v, Bool add_prefix) =
+  loc_auto_var(a?)    = _str_(a) & "_R",
+  nested_auto_var(a?) = {if add_prefix then "self->" else ""} & _str_(a) & "_R";
+
+
+String to_c_var_name(AnyDBVar v, Bool add_prefix) =
+  loc_db_var(a?)    = _str_(a) & "_T",
+  nested_db_var(a?) = {if add_prefix then "self->" else ""} & _str_(a) & "_T",
+  linked_db_var(n?) = "(*" & {if add_prefix then "self->" else ""} & "linked_auto_" & printed(n) & ")",
+  qual_db_var()     = to_c_var_name(v.outer, add_prefix) & "." & to_c_var_name(v.inner, false);
+
+
+String to_c_var_name(AnyRelVar v, Bool add_prefix) =
+  rel_var(a?)     = {if add_prefix then "self->" else ""} & _str_(a) & "_B",
+  qual_rel_var()  = to_c_var_name(v.db_var, add_prefix) & "." & to_c_var_name(v.rel_var, false);
+
+
+String to_c_var_name(AnyValueStoreId v, Bool add_prefix) =
+  value_store_id(n?)      = {if add_prefix then "&self->" else ""} & "value_store_" & printed(n),
+  nested_value_store_id() = { assert add_prefix;
+                              db_var_str = to_c_var_name(v.db_var, true);
+                              return "&" & db_var_str & "." & to_c_var_name(v.store_id, false);
+                            };
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+String to_c_idx_expr(Nat n)                             = printed(n);
+String to_c_idx_expr(IntVar v)                          = to_c_var_ref_name(v);
+String to_c_idx_expr(<add(val1: IntVar, val2: Nat)> e)  = to_c_var_ref_name(e.val1) & " + " & printed(e.val2);
+
+////////////////////////////////////////////////////////////////////////////////
+
+String pending_updates_var_decl_name(RelVar rel_var) =
+  rel_var(a?) = _str_(a) & "_Bp";
+
+String pending_updates_var_ref_name(RelVar rel_var) = "self_aux->" & pending_updates_var_decl_name(rel_var);
+
+
+String aux_struct_var_decl_name(NestedDBVar db_var) = to_c_var_decl_name(db_var) & "x";
+
+String aux_struct_var_ref_name(NestedDBVar db_var) = "&self_aux->" & aux_struct_var_decl_name(db_var);
+
+String aux_struct_var_decl_name(ValueStoreId vs) =
+  value_store_id(n?)  = "value_store_aux_" & printed(n);
+
+String aux_struct_var_ref_name(ValueStoreId vs) = "&self_aux->" & aux_struct_var_decl_name(vs);
+
+////////////////////////////////////////////////////////////////////////////////
+
+String var_decl(ObjVar v)       = "OBJ "            & to_c_var_decl_name(v) & ";";
+String var_decl(VecVar v)       = "OBJ "            & to_c_var_decl_name(v) & "[" & printed(v.size) & "];";
+String var_decl(BoolVar v)      = "bool "           & to_c_var_decl_name(v) & ";";
+String var_decl(IntVar v)       = "int64 "          & to_c_var_decl_name(v) & ";";
+String var_decl(SeqItVar v)     = "SEQ_ITER "       & to_c_var_decl_name(v) & ";";
+String var_decl(SetItVar v)     = "SET_ITER "       & to_c_var_decl_name(v) & ";";
+String var_decl(BinRelItVar v)  = "BIN_REL_ITER "   & to_c_var_decl_name(v) & ";";
+String var_decl(TernRelItVar v) = "TERN_REL_ITER "  & to_c_var_decl_name(v) & ";";
+String var_decl(StreamVar v)    = "STREAM "         & to_c_var_decl_name(v) & ";";
+String var_decl(TableItVar v)   = table_it_var_type[v.arity] & " " & to_c_var_decl_name(v) & ";";
+
+
+[NzNat -> String] table_it_var_type = [
+  1 -> "UNARY_TABLE_ITER",
+  2 -> "BINARY_TABLE_ITER",
+  3 -> "TERNARY_TABLE_ITER"
+];
+
+
+String pending_updates_var_type(Table table) {
+  return names_by_arity[arity(table)];
+
+  [NzNat -> String] names_by_arity = [
+    1 -> "UNARY_TABLE_UPDATES",
+    2 -> "BINARY_TABLE_UPDATES",
+    3 -> "TERNARY_TABLE_UPDATES"
+  ];
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+String to_c_memo_var_name(<ProcSymbol, MembTestPredId>) = undefined;
+
+String to_c_memo_var_name(FnId id) =
+  fn_family_id()  = to_c_fn_symb_name(id.symbol) & "_E",
+  unique_fn_id()  = to_c_memo_var_name(id.family) & printed(id.id),
+  nested_fn_id()  = to_c_fn_name(id.outer) & "_" & to_c_memo_var_name(id.inner);
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+String to_c_time_slots_table_name(AutoSymbol auto_name, Atom table_id) =
+  to_c_name(auto_name) & "_" & _str_(table_id) & "_Bt";
+
+
+String var_c_type(ObjVar)           = "OBJ";
+String var_c_type(IntVar)           = "int64";
+String var_c_type(MembIntVectVar)   = "int64";
+String var_c_type(BoolVar)          = "bool";
+
+
+String table_c_type(Table table) {
+  return names_by_arity[arity(table)];
+
+  [NzNat -> String] names_by_arity = [
+    1 -> "UNARY_TABLE",
+    2 -> "BINARY_TABLE",
+    3 -> "TERNARY_TABLE"
+  ];
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+String to_c_const(<blank, undefined> state) = if state == :blank then "make_blank_obj()" else "make_null_obj()";
+
+////////////////////////////////////////////////////////////////////////////////
+
+String to_c_name(AutoSymbol) = auto_symbol(a?) = upper_camel_case(a) & "_R";
+
+String to_c_name(DBSymbol) = db_symbol(a?) = upper_camel_case(a) & "_T";
+
+String aux_struct_c_name(<AutoSymbol, DBSymbol> symb) = to_c_name(symb) & "x";
+
+String to_c_name(MethodId meth_id) {
+  id_str = if meth_id.id? then uppercase_encoding(meth_id.id) else "";
+  return _str_(bare_id(meth_id.symbol)) & "_M" & printed(meth_id.arity) & id_str;
+}
+
+String to_c_name(UpdateId id) =
+  main_handler    = "msg_handler",
+  handler_id(n?)  = "msg_handler_" & uppercase_encoding(n),
+  update_id()     = { id_str = if id.id? then uppercase_encoding(id.id) else "";
+                      return _str_(bare_id(id.symbol)) & "_U" & printed(id.arity) & id_str;
+                    };
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+String copy_state_proc_name         (DBSymbol db_type) = to_c_name(db_type) & "_copy_state";
+String set_state_proc_name          (DBSymbol db_type) = to_c_name(db_type) & "_set_state";
+String set_state_entry_point_name   (DBSymbol db_type) = to_c_name(db_type) & "_set_state_entry_point";
+String aux_struct_init_proc_name    (DBSymbol db_type) = to_c_name(db_type) & "_aux_init";
+String aux_struct_cleanup_proc_name (DBSymbol db_type) = to_c_name(db_type) & "_aux_cleanup";
+String updates_copy_proc_name       (DBSymbol db_type) = to_c_name(db_type) & "_copy";
+String updates_apply_proc_name      (DBSymbol db_type) = to_c_name(db_type) & "_apply";
+String updates_finish_proc_name     (DBSymbol db_type) = to_c_name(db_type) & "_finish";
+String updates_check_proc_name      (DBSymbol db_type) = to_c_name(db_type) & "_check";
+String update_entry_point_name      (DBSymbol db_type) = to_c_name(db_type) & "_entry_point";
+String init_method_name             (DBSymbol db_type) = to_c_name(db_type) & "_init";
+String cleanup_method_name          (DBSymbol db_type) = to_c_name(db_type) & "_cleanup";
+
+String state_is_def_proc_name(AutoSymbol auto_type) = to_c_name(auto_type) & "_state_is_def";
+
+String set_state_proc_name(AutoSymbol auto_type) = to_c_name(auto_type) & "_set_state";
+
+String copy_state_proc_name     (AutoSymbol auto_type) = to_c_name(auto_type) & "_copy_state";
+String pre_init_method_name     (AutoSymbol auto_type) = to_c_name(auto_type) & "_preinit";
+String apply_method_name        (AutoSymbol auto_type) = to_c_name(auto_type) & "_apply";
+String cleanup_method_name      (AutoSymbol auto_type) = to_c_name(auto_type) & "_cleanup";
+String insert_timer_method_name (AutoSymbol auto_type) = to_c_name(auto_type) & "_insert_timer";
+String clear_timer_method_name  (AutoSymbol auto_type) = to_c_name(auto_type) & "_clear_timer";
+
+String update_name(DBSymbol db, UpdateId id) = to_c_name(db) & "_" & to_c_name(id);
+String user_def_method_name(<AutoSymbol, DBSymbol> type, MethodId method) = to_c_name(type) & "_" & to_c_name(method);
+
+String input_set_method_name(AutoSymbol auto, Atom input)   = to_c_name(auto) & "_" & _str_(input) & "_S_set";
+
+String node_update_method_name(AutoSymbol auto_type,  BlockNodeId node_id) = node_specific_method_name_prefix(node_id, auto_type) & "_update";
+String queue_update_method_name(AutoSymbol auto_type, BlockNodeId node_id) = node_specific_method_name_prefix(node_id, auto_type) & "_invalidate";
+
+String node_specific_method_name_prefix(BlockNodeId id, AutoSymbol auto) =
+  std_block_node_id(a?)   = to_c_name(auto) & "_" & _str_(a) & "_N",
+  cond_node_id(n?)        = to_c_name(auto) & "_cond_node_" & printed(n),
+  nested_auto_node_id(a?) = to_c_name(auto) & "_" & _str_(a) & "_Na",
+  nested_auto_input_id()  = to_c_name(auto) & "_" & _str_(id.auto) & "_Na_" & _str_(id.input);
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+String const_int_seq_c_name(Nat seq_id) = "const_int_seq_" & printed(seq_id);
+
+//////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////
+
+String to_c_fn_name(FnId id) =
+  fn_family_id()    = to_c_fn_symb_name(id.symbol, id.arity),
+  unique_fn_id()    = to_c_fn_name(id.family) & uppercase_encoding(id.id),
+  nested_fn_id()    = to_c_fn_name(id.outer) & "_" & to_c_fn_name(id.inner);
+
+String to_c_fn_symb_name(FnSymbol fn_symb, Nat arity) =
+  fn_symbol(symb?)    = _str_(symb) & "_F" & printed(arity),
+  op_symbol(op?)      = _str_(op);
+
+String to_c_fn_symb_name(FnSymbol fn_symb) =
+  fn_symbol(symb?)    = _str_(symb),
+  op_symbol(op?)      = _str_(op);
+
+
+String to_c_fn_name(MembTestPredId) =
+  memb_test(<+> a?)         = "is" & upper_camel_case(a),
+  memb_test(<*..*> n?)      = "is_type_" & printed(n),
+  memb_test(a1?, <+> a2?)   = "is" & upper_camel_case(a2) & "_" & upper_camel_case(a1),
+  memb_test(a?, <*..*> n?)  = "is" & upper_camel_case(a) & "_" & printed(n);
+
+
+String to_c_fn_name(ProcSymbol) = proc_symbol(s?)  = upper_camel_case(s) & "_P"; ## UGLY UGLY UGLY

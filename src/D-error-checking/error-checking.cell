@@ -1,0 +1,331 @@
+[CoreWFError] core_wf_errors(Program prg) {
+  let program = prg:
+    errs = core_wf_errors(program = prg, typedefs = schema_and_typedefs);
+  ;
+  return errs;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+implicit program : Program, typedefs : [TypeName -> NeType] {
+  [CoreWFError] core_wf_errors {
+    fndefs_families = group_by(program.fndefs, family_id($.id));
+    functions_errs = union([function_family_errors(fs) : unused_var, fs <- fndefs_families]);
+    return typedefs_errors & functions_errs & databases_errors & automata_errors;
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  [CoreWFError] typedefs_errors {
+    shallow_refs_map = [n -> direct_refs(t) : n, t <- typedefs];
+    deep_refs_map = transitive_closure(shallow_refs_map);
+    return [non_nested_self_ref(t) : t, ts <- deep_refs_map, ts(t)];
+
+    [TypeName] direct_refs(NeType type) =
+      type_ref(type_symbol() ts?)     = [type_name(ts, 0)],
+      type_ref(par_type_symbol() ts?) = [type_name(ts.symbol, |ts.params|)],
+      union_type(ts?)                 = union([direct_refs(t) : t <- ts]),
+      _                               = [];
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  [CoreWFError] function_family_errors([+Function] functions) {
+    ord_fns = rand_sort(functions);
+    return [overlapping_signatures(f1, f2) : f1 @ i1 <~ ord_fns, f2 <~ drop(ord_fns, i1+1), overlap(f1, f2)];
+
+    Bool overlap(Function f1, Function f2) = not (a1, a2 <~ zip(f1.args, f2.args) : are_disjoint(a1, a2));
+
+    Bool are_disjoint(FormalArg arg1, FormalArg arg2) =
+      formal_obj_arg(), formal_obj_arg()  = are_ptype_disjoint(arg1.type, arg2.type),
+      formal_cls_arg(), formal_cls_arg()  = false;
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  [CoreWFError] databases_errors {
+    db_errs = union([database_errors(db) : db <- program.data_bases]);
+
+    shallow_deps = [db.name -> values(db.nested_dbs) & set(db.links) : db <- program.data_bases];
+    deep_deps = transitive_closure(shallow_deps);
+    rec_errs = [recursively_defined_auto_or_db(automaton_by_id(db_type)) : db_type, deps <- deep_deps, deps(db_type)];
+
+    return db_errs & rec_errs;
+  }
+
+
+  [CoreWFError] database_errors(Database database) {
+    method_errs = union([
+      [overlapping_signatures(m1, m2) : m1, m2 <- symmetric_cart_prod(ms), overlap(m1, m2)]
+      : unused_var, ms <- group_by(database.methods, ($.name, arity($)))
+    ]);
+
+    updates_errs = union([
+      [overlapping_signatures(u1, u2) : u1, u2 <- symmetric_cart_prod(us), overlap(u1, u2)]
+      : unused_var, us <- group_by(database.updates, ($.name, arity($)))
+    ]);
+
+    handler_errs = [
+      overlapping_signatures(h1, h2)
+      : h1, h2 <- symmetric_cart_prod(database.handlers), not are_ptype_disjoint(h1.type, h2.type)
+    ];
+
+    errs = method_errs & updates_errs & handler_errs;
+    return [error_cluster(database, errs) if errs != []];
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  [CoreWFError] automata_errors {
+    auto_errs = union([automaton_errors(automaton=a) : a <- program.auto_defs]);
+
+    shallow_deps = [auto.name -> [a.type : unused_var, a <- auto.nested_autos] : auto <- program.auto_defs];
+    deep_deps = transitive_closure(shallow_deps);
+    rec_errs = [recursively_defined_auto_or_db(automaton_by_id(auto_type)) : auto_type, deps <- deep_deps, deps(auto_type)];
+
+    return auto_errs & rec_errs;
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automaton {
+  [CoreWFError] automaton_errors {
+    overlap_errs = union([
+      [overlapping_signatures(m1, m2) : m1, m2 <- symmetric_cart_prod(ms), overlap(m1, m2)]
+      : unused_var, ms <- group_by(automaton.methods, ($.name, arity($)))
+    ]);
+    var_errs = union(union([
+      [param_errs(id, info.value) : id, info <- automaton.params],
+      [state_var_errs(id, state_var) : id, state_var <- automaton.state],
+      [rule_errs(id, expr) : id, expr <- automaton.rules],
+      [time_rule_errs(id, rule) : id, rule <- automaton.time_rules],
+      [discrete_rules_errs(id, rules) : id, rules <- automaton.discrete_rules],
+      [nested_auto_errs(id, info.type, info.args) : id, info <- automaton.nested_autos],
+      [nested_db_errs(id, info.msg_send_rule) : id, info <- automaton.nested_dbs, info.msg_send_rule?]
+    ]));
+    errs = overlap_errs & var_errs & output_errs;
+    errs = dependency_errors if errs == [];
+    return if errs != [] then [error_cluster(automaton, errs)] else [];
+
+
+    [CoreWFError] output_errs {
+      candidate_outputs = merge([
+        [id -> false : id, unused_var <- automaton.params],
+        [id -> input.discrete : id, input <- automaton.inputs],
+        [id -> false : id, unused_var <- automaton.state],
+        [id -> false : id, unused_var <- automaton.rules],
+        [id -> false : id, unused_var <- automaton.time_rules],
+        [id -> true : id, unused_var <- automaton.discrete_rules]
+      ]);
+
+      return [
+        if candidate_outputs(id, *) then wrong_output_nature(id, output.discrete) else undefined_output(id)
+        : id, output <- automaton.outputs, not candidate_outputs(id, *) or candidate_outputs[id] != output.discrete
+      ];
+    }
+
+    [CoreWFError] param_errs(SignalVar id, Expr value) = [
+      invalid_auto_var(v, id, value) : v <- auto_expr_extern_vars(value), not is_key(v, automaton.params)
+    ];
+
+
+    [CoreWFError] state_var_errs(SignalVar id, StateVar state_var) {
+      ## HERE I SHOULD ALSO CHECK THAT THE UPDATES ARE NOT GUARANTEED TO FIRE TOGETHER...
+      init_vars = continuous_signals_level_1;
+      init_errs = [
+        invalid_auto_var(v, id, state_var.init_value)
+        : v <- auto_expr_extern_vars(state_var.init_value),
+          not (v :: QualMembVar or in(v, init_vars))
+      ];
+      update_errs = union([state_var_update_errs(id, u) : u <- state_var.updates]);
+      return init_errs & update_errs;
+    }
+
+
+    [CoreWFError] state_var_update_errs(SignalVar id, StateVarUpdate update) {
+      continuous_signals = continuous_signals_level_2;
+      delayed_signals = delayed_signals;
+      discrete_signals = enabled_discrete_signals(update.cond);
+      // Condition expression check
+      cond_expr_vars = auto_expr_extern_vars(update.cond.cond);
+      cond_expr_errs = [
+        invalid_auto_var(v, id, update.cond.cond)
+        : v <- cond_expr_vars,
+          not (v :: QualMembVar or in(v, continuous_signals) or in(v, discrete_signals))
+      ];
+      // Value expression check
+      value_expr_vars = auto_expr_extern_vars(update.value);
+      value_expr_errs = [
+        invalid_auto_var(v, id, update.value)
+        : v <- cond_expr_vars,
+          not (v :: QualMembVar or in(v, continuous_signals) or in(v, delayed_signals) or in(v, discrete_signals))
+      ];
+      return cond_expr_errs & value_expr_errs;
+    }
+
+
+    [CoreWFError] rule_errs(SignalVar id, Expr value) {
+      signals = continuous_signals_level_2;
+      return [
+        invalid_auto_var(v, id, value)
+        : v <- auto_expr_extern_vars(value), not (v :: QualMembVar or in(v, signals))
+      ];
+    }
+
+
+    [CoreWFError] time_rule_errs(SignalVar id, TimeRule rule) {
+      continuous_signals = continuous_signals_level_2;
+      return match (rule)
+        boolean_time_rule()   |
+        unchanged_time_rule() = [ invalid_auto_var(v, id, rule.expr)
+                                  : v <- auto_expr_extern_vars(rule.expr),
+                                    not (v :: QualMembVar or in(v, continuous_signals))
+                                ],
+        since_time_rule()     = [invalid_auto_var(v, id, v) : v <- rule.signals, not is_discrete(v)];
+    }
+
+
+    // [CoreWFError] discrete_rules_errs(SignalVar id, [+DiscreteRule] rules) {
+    ## RESTORE THE ABOVE SIGNATURE ONE THE TYPECHECKING BUG HAS BEEN FIXED
+    [CoreWFError] discrete_rules_errs(SignalVar id, [DiscreteRule] rules) {
+      ## HERE I SHOULD ALSO CHECK THAT THE RULES ARE NOT GUARANTEED TO FIRE TOGETHER...
+      continuous_signals = continuous_signals_level_2;
+      return [
+        invalid_auto_var(v, id, e)
+        : r <- rules,
+          discrete_signals = enabled_discrete_signals(r.cond),
+          e <- [r.cond.cond, r.value], v <- auto_expr_extern_vars(e),
+          not (v :: QualMembVar or in(v, continuous_signals) or in(v, discrete_signals) or in(v, delayed_signals))
+      ];
+    }
+
+
+    [CoreWFError] nested_auto_errs(NestedAutoVar id, AutoSymbol type, [Atom -> Expr] args) {
+      nested_auto = automaton_by_id(type);
+      exp_inputs = [bare_id(v) : v, unused_var <- nested_auto.inputs];
+      errs  = [invalid_input(id, type, input_id) : input_id, unused_var <- args, not exp_inputs(input_id)] &
+              [undefined_input(id, type, input_id) : input_id <- exp_inputs, not args(input_id, *)];
+      return errs if errs != [];
+      return union([{
+          input_is_discrete = nested_auto.inputs[signal_var(input_id)].discrete;
+          discrete_vars = [v : v <- auto_expr_extern_vars(e), is_discrete(v)];
+          return if input_is_discrete
+            then [continous_expr_for_discrete_input(id, input_id) if discrete_vars == []]
+            else [invalid_nested_auto_input_var(v, id, input_id, e) : v <- discrete_vars];
+        } : input_id, e <- args
+      ]);
+    }
+
+
+    [CoreWFError] nested_db_errs(NestedDBVar id, MsgSendRule rule) {
+      continuous_signals = continuous_signals_level_2;
+      discrete_signals = enabled_discrete_signals(rule.cond);
+      return [
+        invalid_nested_db_msg_var(v, id, rule)
+        : e <- [rule.cond.cond, rule.message], v <- auto_expr_extern_vars(e),
+          not (v :: QualMembVar or in(v, continuous_signals) or in(v, discrete_signals))
+      ];
+    }
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  [CoreWFError] dependency_errors {
+    shallow_deps = merge([
+      [id -> dependencies(info.value) : id, info <- automaton.params],
+      [id -> dependencies(id, sv) : id, sv <- automaton.state],
+      [id -> dependencies(e) : id, e <- automaton.rules],
+      [id -> dependencies(r) : id, r <- automaton.time_rules],
+      [id -> union([dependencies(r) : r <- rs]) : id, rs <- automaton.discrete_rules],
+      [id -> union([dependencies(e) : unused_var, e <- info.args]) : id, info <- automaton.nested_autos],
+      [id -> dependencies(db.msg_send_rule) : id, db <- automaton.nested_dbs, db.msg_send_rule?]
+    ]);
+    deep_deps = transitive_closure(shallow_deps);
+    return [dependency_loop(v, nonempty(ds)) : v, ds <- deep_deps, ds(v)];
+
+
+    [SignalVar]     dependency(SignalVar var)       = [var];
+    [NestedAutoVar] dependency(QualSignalVar var)   = [cast_nested_auto_var(var.auto_var)];
+    [NestedDBVar]   dependency(QualMembVar var)     = [cast_nested_db_var(var.db_var)];
+    []              dependency(PrevVarValue)        = [];
+
+
+    [<SignalVar, NestedAutoVar, NestedDBVar>] dependencies(Expr expr) =
+      union([dependency(v) : v <- auto_expr_extern_vars(expr)]);
+
+
+    [<SignalVar, NestedAutoVar, NestedDBVar>] dependencies(ReactCond cond) {
+      signals_deps = match (cond)
+        react_cond()            = union([dependency(v) : v, unused_var <- cond.signals_state]),
+        on_becoming_true_cond() = [];
+      return dependencies(cond.cond) & signals_deps;
+    }
+
+
+    [<SignalVar, NestedAutoVar, NestedDBVar>] dependencies(SignalVar id, StateVar state_var) {
+      init_deps = dependencies(state_var.init_value);
+      update_deps = union([dependencies(u.value) & dependencies(u.cond) : u <- state_var.updates]) - [id];
+      return init_deps & update_deps;
+    }
+
+
+    [<SignalVar, NestedAutoVar, NestedDBVar>] dependencies(TimeRule rule) =
+      boolean_time_rule()   |
+      unchanged_time_rule() = dependencies(rule.expr),
+      since_time_rule()     = rule.signals;
+
+
+    [<SignalVar, NestedAutoVar, NestedDBVar>] dependencies(DiscreteRule rule) =
+      dependencies(rule.value) & dependencies(rule.cond);
+
+
+    [<SignalVar, NestedAutoVar, NestedDBVar>] dependencies(MsgSendRule rule) =
+      dependencies(rule.message) & dependencies(rule.cond);
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////
+
+  [AnySignalVar] enabled_discrete_signals(ReactCond cond) =
+    on_becoming_true_cond() = [],
+    react_cond()            = [v : v, s <- cond.signals_state, s, is_discrete(v)];
+
+  //////////////////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////
+
+  [SignalVar] continuous_signals_level_1 =
+    keys(automaton.params) &
+    [id : id, input <- automaton.inputs, not input.discrete] &
+    keys(automaton.state) &
+    keys(automaton.rules);
+
+  [AnySignalVar] continuous_signals_level_2 =
+    continuous_signals_level_1 &
+    keys(automaton.time_rules) &
+    [ qual_signal_var(id, out_id)
+      : id, info <- automaton.nested_autos,
+        out_id, out_info <- automaton_by_id(info.type).outputs,
+        not out_info.discrete
+    ];
+
+  [<AnySignalVar, PrevVarValue>] delayed_signals =
+    [prev_var_value(id) : id, input <- automaton.inputs, not input.discrete] &
+    [prev_var_value(id) : id, unused_var <- automaton.state];
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+## THE IMPLICIT ARGUMENTS ARE TOTALLY UNNECESSARY, BUT THE TYPECHECKER IS TO DUMB TO FIGURE THAT OUT
+implicit program : Program, automaton : Automaton {
+  Bool is_discrete(<PrevVarValue, QualMembVar>) = false;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+implicit typedefs : [TypeName -> NeType] {
+  Bool overlap(<Method, Update> d1, <Method, Update> d2) =
+    none((are_ptype_disjoint(left(a1), left(a2)) : a1, a2 <- zip(d1.args, d2.args)));
+}

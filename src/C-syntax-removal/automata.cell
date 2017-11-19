@@ -1,0 +1,213 @@
+implicit syn_prg : SynPrg, artifact : ReactAutoDef {
+  Automaton desugar_automaton {
+    // Inputs
+    inputs = [signal_var(i.name) -> input(desugar_plain_type(i.type), i.discrete, false) : i <~ artifact.inputs];
+
+    // Outputs
+    outputs = [signal_var(o.name) -> output(desugar_plain_type(o.type), o.discrete) : o <~ artifact.outputs];
+
+    // Desugaring constants
+    params = [
+      signal_var(c.name) -> (
+        type:  desugar_plain_type(c.type) if c.type?,
+        value: desugar_auto_expr(c.value)
+      ) : c <~ artifact.consts
+    ];
+
+    // Plain, conditional and foreach rules
+    unmerged_rules, us_1, drs_1 = unzip3([desugar_plain_rule(r) : r <- plain_rule_decls]);
+    us_2, drs_2 = unzip([desugar_when_rule(r) : r <- when_rule_decls]);
+    us_3, drs_3 = unzip([desugar_cond_rule(r) : r <- cond_rule_decls]);
+    us_4, drs_4 = unzip([desugar_foreach_rule(r) : r <- foreach_rule_decls]);
+
+    updates = merge_values(us_1 & us_2 & us_3 & us_4);
+    discrete_rules = merge_values(drs_1 & drs_2 & drs_3 & drs_4);
+
+    // State variables
+    state_vars = [
+      var -> {
+        type = desugar_plain_type(v.type);
+        init_value = desugar_auto_expr(v.init_value);
+        var_updates = lookup(updates, var, []);
+        return state_var(type, init_value, false, var_updates);
+      } : v <~ artifact.state_vars, var = signal_var(v.name)
+    ];
+
+    // Time-varying rules
+    time_rules = [signal_var(r.name) -> desugar_time_rule(r) : r <- time_rule_decls];
+
+    // Message sends
+    msg_sends = merge([desugar_msg_send(c) : c <- msg_send_decls]);
+
+    // Nested databases
+    nested_dbs = [
+      db_var -> (
+        type:           db_symbol(db.type),
+        volatile:       false,
+        msg_send_rule:  msg_sends[db_var] if msg_sends(db_var, *)
+      ) : db <~ artifact.nested_dbs, db_var = nested_db_var(db.name)
+    ];
+
+    // Nested automata
+    nested_autos = [
+      nested_auto_var(na.name) -> {
+        auto_symb = auto_symbol(na.auto_name);
+        auto_def = auto_defs_by_id[auto_symb];
+        args = ([f -> desugar_auto_expr(e)] : f, e <- na.args) &
+               ([auto_def.pos_inputs(i) -> desugar_auto_expr(e)] : e @ i <- na.pos_args);
+        return (type: auto_symb, args: merge(args), volatile: false);
+      } : na <- nested_auto_decls
+    ];
+
+    // Creating shadow member variables for automata with default output
+    def_output_rules = [
+      signal_var(na.name) -> qual_signal_var(nested_auto_var(na.name), signal_var(value(intf.default_output)))
+      : na <- nested_auto_decls, intf = auto_interfaces[auto_symbol(na.auto_name)], intf.default_output != nothing
+    ];
+    rules = merge(unmerged_rules) & def_output_rules;
+
+    // // Identifying and separating constant rules
+    // const_rules_ids = [];
+    // loop
+    //   const_rules_vars = [signal_var(id) : id <- const_rules_ids];
+    //   next_round = [id : e @ id <- rules, subset(extern_vars(e), const_rules_vars)];
+    //   break if next_round == const_rules_ids;
+    //   const_rules_ids = next_round;
+    // ;
+    // const_rules = select_by_key(rules, const_rules_ids);
+    // rules = remove_keys(rules, const_rules_ids);
+
+    methods = [desugar_method(m) : m <- lookup(methods_by_automaton, artifact.name, [])];
+
+    automaton = automaton(
+      name:           auto_symbol(artifact.name),
+      params:         params,
+      inputs:         inputs,
+      outputs:        outputs,
+      state:          state_vars,
+      rules:          rules,
+      time_rules:     time_rules,
+      discrete_rules: discrete_rules,
+      nested_autos:   nested_autos,
+      nested_dbs:     nested_dbs,
+      methods:        methods
+    );
+    return transfer(automaton, artifact);
+  }
+
+
+  [NestedDBVar -> MsgSendRule] desugar_msg_send(MsgSendDecl msg_send_decl) {
+    message = desugar_auto_expr(msg_send_decl.message);
+    cond_expr = if msg_send_decl.cond != nothing
+      then desugar_auto_expr(value(msg_send_decl.cond))
+      else object(true);
+
+    // If the list of discrete signals is not given explicitly, we search
+    // the parameter list and the condition for discrete signals
+    if msg_send_decl.signals != ():
+      signals_state = [signal_var(a) -> true : a <~ msg_send_decl.signals];
+    else
+      signals = auto_expr_extern_vars(message) & auto_expr_extern_vars(cond_expr);
+      signals_state = [s -> true : s <- signals, s :: AnySignalVar, signal_is_discrete(s)];
+    ;
+
+
+    // If no signals have been specified, either implicitly or explicitly,
+    // the action is triggered by the condition becoming true
+    if signals_state == []:
+      cond = on_becoming_true_cond(cond_expr);
+    else
+      cond = react_cond(cond_expr, signals_state);
+    ;
+
+    return [nested_db_var(msg_send_decl.target) -> msg_send_rule(message, cond)];
+  }
+
+
+  Method desugar_method(AutoMethodDef method_def) {
+    args = ((desugar_plain_type(t), just(v)) : t, v <- method_def.args);
+    ret_type = desugar_plain_type(method_def.ret_type);
+    arg_vars = [v : _, v <~ method_def.args];
+    expr = desugar_expr(method_def.expr, arg_vars, artifact = method_def, impl_args = []);
+    method = method(method_symbol(method_def.name), args, ret_type, expr);
+    return transfer(method, method_def);
+  }
+
+
+  ([SignalVar -> Expr], [SignalVar -> StateVarUpdate], [SignalVar -> DiscreteRule]) desugar_plain_rule(PlainRuleDecl rule) {
+    target = signal_var(rule.name);
+    expr = desugar_auto_expr(rule.expr);
+
+    ## WE ARE IGNORING THE output_is_def()/output_is_set() EXPRESSIONS, WHICH SHOULD BE ALLOWED
+    ## ONLY INSIDE THE BODY OF A PROCEDURE (MAKE SURE THAT'S TRUE)
+    discrete_signals = [v : v <- auto_expr_extern_vars(expr), v :: AnySignalVar, signal_is_discrete(v)];
+    assert not rule.discrete or discrete_signals != [];
+
+    // If a plain rule does not contain any discrete signals, then it defines a continuous intermediate signal
+    // Otherwise, it's either a discrete rule or a state variable update
+    if discrete_signals == []:
+      return ([target -> expr], [], []);
+    else
+      cond = react_cond(object(true), [v -> true : v <- discrete_signals]);
+      if rule.discrete:
+        return ([], [], [target -> discrete_rule(expr, cond)]);
+      else
+        return ([], [target -> state_var_update(expr, cond)], []);
+      ;
+    ;
+  }
+
+
+  ([SignalVar -> StateVarUpdate], [SignalVar -> DiscreteRule]) desugar_when_rule(WhenRuleDecl rule_decl) {
+    cond_expr = desugar_auto_expr(rule_decl.cond);
+    expr = desugar_auto_expr(rule_decl.expr);
+    assert {
+      signals = auto_expr_extern_vars(cond_expr) & auto_expr_extern_vars(expr);
+      signals_state = [s -> true : s <- signals, s :: AnySignalVar, signal_is_discrete(s)];
+      return signals_state == [];
+    };
+    cond = on_becoming_true_cond(cond_expr);
+    target = signal_var(rule_decl.name);
+    return (
+        [target -> state_var_update(expr, cond) if not rule_decl.discrete],
+        [target -> discrete_rule(expr, cond)    if rule_decl.discrete]
+    );
+  }
+
+
+  ([SignalVar -> StateVarUpdate], [SignalVar -> DiscreteRule]) desugar_cond_rule(CondRuleDecl rule_decl) {
+    cond_expr = desugar_auto_expr(rule_decl.cond);
+    expr = desugar_auto_expr(rule_decl.expr);
+    signals = auto_expr_extern_vars(cond_expr) & auto_expr_extern_vars(expr);
+    signals_state = [s -> true : s <- signals, s :: AnySignalVar, signal_is_discrete(s)];
+    fail if signals_state == [];
+    cond = react_cond(cond_expr, signals_state);
+    target = signal_var(rule_decl.name);
+    return (
+        [target -> state_var_update(expr, cond) if not rule_decl.discrete],
+        [target -> discrete_rule(expr, cond)    if rule_decl.discrete]
+    );
+  }
+
+
+  ([SignalVar -> StateVarUpdate], [SignalVar -> DiscreteRule]) desugar_foreach_rule(ForeachRuleDecl rule) {
+    value = desugar_auto_expr(rule.value);
+    cond_expr = if rule.cond? then desugar_auto_expr(rule.cond) else object(true);
+    signals_state = [signal_var(id) -> state : id, state <~ rule.signals];
+    cond = react_cond(cond_expr, signals_state);
+    target = signal_var(rule.name);
+    return (
+      [target -> state_var_update(value, cond) if not rule.discrete],
+      [target -> discrete_rule(value, cond)    if rule.discrete]
+    );
+  }
+
+
+  TimeRule desugar_time_rule(TimeRuleDecl rule) =
+    true_for_rule_decl()      = boolean_time_rule(desugar_auto_expr(rule.cond), rule.time_expr),
+    unchanged_for_rule_decl() = unchanged_time_rule(desugar_auto_expr(rule.cond), rule.time_expr),
+    inactive_for_rule_decl()  = since_time_rule([signal_var(s) : s <~ rule.signals], rule.time_expr, rule.starts_at_time_0);
+
+
+  Expr desugar_auto_expr(SynExpr expr) = desugar_expr(expr, [], impl_args = []);
+}

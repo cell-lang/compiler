@@ -1,0 +1,165 @@
+implicit syn_prg : SynPrg {
+  Program desugared_prg = program(
+    typedefs:     typedefs,
+    fndefs:       desugared_fn_defs,
+    proc_defs:    [desugar_proc_def(pd) : pd <- syn_proc_defs],
+    auto_defs:    [desugar_automaton(artifact=a) : a <- resolve_inheritance(react_auto_defs)],
+    data_bases:   [desugared_data_base(artifact=db) : db <- schema_defs]
+  );
+
+  //////////////////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////
+
+  Procedure desugar_proc_def(SynProcDef pd) {
+    args = ((var: p.var, type: desugar_schema_aware_type(p.type, schema_names)) : p <- pd.args);
+    maybe_ret_type = if pd.res_type != nothing
+      then just(desugar_schema_aware_type(value(pd.res_type), schema_names))
+      else nothing;
+    body = desugar_stmts(pd.body, [p.var : p <~ pd.args], artifact = pd, impl_args = []);
+    auto_vars = merge(([loc_auto_var(v.var) -> auto_symbol(v.type)] : v <- pd.auto_or_db_vars, automaton_is_reactive(v.type)));
+    db_vars = merge((
+      [loc_db_var(v.var) -> (type: db_symbol(v.type), links: (loc_db_var(a) : a <- v.args))]
+      : v <- pd.auto_or_db_vars, automaton_is_static(v.type)
+    ));
+
+    proc = procedure(
+      id:         pd.name,
+      args:       args,
+      res_type:   maybe_ret_type,
+      auto_vars:  auto_vars,
+      db_vars:    db_vars,
+      body:       body
+    );
+    return transfer(proc, pd);
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////
+
+  [Function] desugared_fn_defs {
+    fn_defs_by_name_arity = group_by(ext_syn_fn_defs, (left($).name, |left($).args|));
+    return union([desugar_fn_def_family(fds) : unused_var, fds <- fn_defs_by_name_arity]);
+
+
+    [Function] desugar_fn_def_family([+(SynFnDef, [ImplArgDecl])] fn_defs) {
+      multiple = |fn_defs| > 1;
+      return seq_union(({
+        fn_id = fn_family_id(fd.name, |fd.args|);
+        fn_id = unique_fn_id(fn_id, i) if multiple;
+        return desugar_fn_def(fd, fn_id, ias);
+      } : fd, ias @ i <- rand_sort(fn_defs)));
+    }
+
+
+    [Function] desugar_fn_def(SynFnDef fn_def, PlainFnId final_id, [ImplArgDecl] impl_args) {
+      // Grouping nested functions by name and arity
+      nested_fn_def_groups = values(group_by(set(fn_def.local_fns), ($.name, |$.args|)));
+      // Desugaring each group
+      nested_fns = union([desugar_nested_fn_def_family(fds, fn_def, final_id, impl_args) : fds <- nested_fn_def_groups]);
+      // Desugaring the main function
+      let artifact = top_level_fn_def(fn_def, final_id, impl_args):
+        fn = make_fn_def(final_id, fn_def.args, impl_args, fn_def.res_type, fn_def.expr, fn_def.typevars);
+      ;
+      return nested_fns & [transfer(fn, fn_def)];
+    }
+
+
+    [Function] desugar_nested_fn_def_family([+SynFnDef] fn_defs, SynFnDef outer_fn_def, PlainFnId outer_fn_id, [ImplArgDecl] impl_args) {
+      multiple = |fn_defs| > 1;
+      return [
+        desugar_nested_fn_def(fd, maybe(i, multiple), outer_fn_def, outer_fn_id, impl_args)
+        : fd @ i <~ rand_sort(fn_defs)
+      ];
+    }
+
+
+    Function desugar_nested_fn_def(SynFnDef fn_def, Maybe[Nat] maybe_idx, SynFnDef outer_fn_def, PlainFnId outer_fn_id, [ImplArgDecl] impl_args) {
+      local_id = fn_family_id(fn_def.name, |fn_def.args|);
+      local_id = unique_fn_id(local_id, value(maybe_idx)) if maybe_idx != nothing;
+      final_id = nested_fn_id(outer_fn_id, local_id);
+      let artifact = nested_fn_def(fn_def, outer_fn_def, outer_fn_id, impl_args):
+        fn = make_fn_def(final_id, fn_def.args, impl_args, fn_def.res_type, fn_def.expr, fn_def.typevars);
+      ;
+      return transfer(fn, fn_def);
+    }
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+implicit syn_prg : SynPrg, artifact : Artifact {
+  Function make_fn_def(FnId id, SynArg* syn_args, [ImplArgDecl] syn_impl_args, SynType syn_res_type,
+    SynExpr syn_expr, [[+TypeVar -> Atom]] typevars) {
+    // Retrieving all protocol types referenced in the argument types (no need to look at the return type)
+    sorted_prot_types = rand_sort(seq_union((refd_prot_types(a.type, protocol_types) : a <- syn_args)));
+    assert subset(refd_prot_types(syn_res_type, protocol_types), set(sorted_prot_types));
+
+    // Protocol type -> type variable substitution map (just for signature types, not constraints types)
+    subst_map = merge(([a -> type_var(i)] : a @ i <- sorted_prot_types));
+
+    // Desugaring types
+    args = (desugar_formal_arg(a, subst_map) : a <- syn_args);
+    impl_args = [a.name -> desugar_plain_type(a.type) : a <- syn_impl_args];
+    res_type = desugar_arbitrary_type(syn_res_type, subst_map, schema_names);
+
+    // Desugaring expression
+    def_vars = [var(a.name) : a <~ syn_args, obj_arg() ?= a, a.name?];
+    expr = desugar_expr(syn_expr, def_vars, impl_args = [a.name : a <- syn_impl_args]);
+
+    // Creating type variable -> protocol type map for implicitly declared type variables
+    impl_binds = type_vars_bindings(sorted_prot_types);
+
+    // Calculating the type variable constraints from the type variables -> protocol types bindings
+    constrs = constraints(impl_binds & typevars);
+
+    return function(
+      id:         id,
+      args:       args,
+      impl_args:  impl_args,
+      res_type:   res_type,
+      expr:       expr,
+      constrs:    constrs
+    );
+
+
+    [FnSymbol -> [+ClsType]] constraints([[+TypeVar -> Atom]] binds) =
+      merge_value_sets_nonempty([constraints(bs) : bs <- binds]);
+
+
+    [FnSymbol -> [+ClsType]] constraints([+TypeVar -> Atom] binds) {
+      assert |[prot_decl_by_type(t) : unused_var, t <- binds]| == 1;
+
+      bound_types = values(binds);
+      prot = only([prot_decl_by_type(t) : unused_var, t <- binds]);
+      subst_map = reverse(binds);
+
+      return merge_values([{
+          args_types = (desugar_arbitrary_type(t, subst_map, schema_names) : t <- ats);
+          ret_type = desugar_arbitrary_type(rt, subst_map, schema_names);
+          return [n -> cls_type(args_types, ret_type)];
+        } : n, ats, rt <~ prot.methods, subset(refd_prot_types(ats, rt, set(prot.types)), bound_types)
+      ]);
+    }
+
+
+    [[+TypeVar -> Atom]] type_vars_bindings(Atom* sorted_prot_types) {
+      var_type_pairs = seq_union(([(type_var(i), pt)] : pt @ i <- sorted_prot_types));
+      var_type_by_prot = group_by(var_type_pairs, prot_decl_by_type(right($)));
+      return [[left(vt) -> right(vt) : vt <- vts] : p, vts <- var_type_by_prot];
+    }
+
+
+    FormalObjArg desugar_formal_arg(SynObjArg arg, [Atom -> TypeVar] subst_map) =
+      formal_obj_arg(
+        var:  var(arg.name) if arg.name?,
+        type: desugar_arbitrary_type(arg.type, subst_map, schema_names)
+      );
+
+
+    FormalClsArg desugar_formal_arg(SynClsArg arg, [Atom -> TypeVar] subst_map) =
+      formal_cls_arg(
+        var:  cls_var(arg.name),
+        type: desugar_cls_type(arg.type, desugar_arbitrary_type($, subst_map, schema_names))
+      );
+  }
+}

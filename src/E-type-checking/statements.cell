@@ -1,0 +1,255 @@
+implicit program : Program, typedefs : [TypeName -> NeType], context : Context, var_aliases : [[LocVar2]], typed_vars : [StdVar -> NeType] {
+
+  [TypeCheckingError] typecheck(Statement* stmts, Type exp_type, [EnvVar -> Type] env) {
+    curr_env = env;
+    for s <- stmts:
+      errs = typecheck(s, exp_type, curr_env);
+      return errs if errs != [];
+      curr_env = update_env(s, curr_env);
+    ;
+    return [];
+  }
+
+
+  [TypeCheckingError] typecheck(Statement stmt, Type exp_type, [EnvVar -> Type] env) {
+    errs = typecheck_without_annotations(stmt, exp_type, env);
+    return [add_anchor_if_needed(e, stmt) : e <- errs];
+
+
+    [TypeCheckingError] typecheck_without_annotations(Statement stmt, Type exp_type, [EnvVar -> Type] env) =
+      assignment_stmt()   = typecheck_assignment_stmt(stmt.vars, stmt.value, env),
+      return_stmt(e?)     = typecheck(e, exp_type, env),
+      if_stmt()           = typecheck_if_stmt(stmt.cond, stmt.body, stmt.else, exp_type, env),
+      loop_stmt(ss?)      = typecheck_loop_stmt(ss, exp_type, env),
+      foreach_stmt()      = { maybe_idx_var = if stmt.idx_var? then just(stmt.idx_var) else nothing;
+                              return typecheck_foreach_stmt(stmt.vars, maybe_idx_var, stmt.values, stmt.body, exp_type, env);
+                            },
+      for_stmt()          = { maybe_var = if stmt.var? then just(stmt.var) else nothing;
+                              return typecheck_for_stmt(maybe_var, stmt.start_val,
+                                stmt.end_val, stmt.end_val_incl, stmt.body, exp_type, env);
+                            },
+      let_stmt()          = typecheck_let_stmt(stmt.asgnms, stmt.body, exp_type, env),
+      break_stmt          = [],
+      fail_stmt           = [],
+      assert_stmt()       = typecheck(stmt.cond, type_bool, env),
+      print_stmt(e?)      = typecheck(e, type_any, env),
+      seq_update_stmt()   = typecheck_seq_update_stmt(stmt.seq_var, stmt.idx, stmt.value, env),
+
+      send_msg_stmt()     = typecheck_send_msg_stmt(stmt.target, stmt.msg, env),
+      try_update_stmt()   = typecheck_try_update_stmt(stmt.name, stmt.args, env),
+      set_memb_var_stmt() = typecheck_set_memb_var_stmt(stmt.var, stmt.value, env),
+      delete_stmt()       = typecheck_delete_stmt(stmt.var, stmt.fields, env),
+      insert_stmt()       = typecheck_insert_stmt(stmt.var, stmt.fields, stmt.force, env),
+
+      return_stmt         = [],
+      proc_call_stmt()    = typecheck_proc_call_stmt(
+                              if stmt.res_var? then just(stmt.res_var) else nothing,
+                              stmt.proc_name, stmt.args, env
+                            ),
+
+      set_input_ctrl_stmt()         = typecheck_set_input_ctrl_stmt(stmt.var, stmt.input, stmt.value, env),
+      clear_input_ctrl_stmt()       = [],
+      set_elapsed_time_ctrl_stmt()  = typecheck_set_elapsed_time_ctrl_stmt(stmt.var, stmt.time, env),
+      apply_ctrl_stmt()             = [],
+      send_msg_ctrl_stmt()          = typecheck_send_msg_ctrl_stmt(stmt.res_var, stmt.db_var, stmt.msg, env),
+      read_state_ctrl_stmt()        = [],
+      restore_state_ctrl_stmt()     = typecheck_restore_state_ctrl_stmt(stmt.res_var, stmt.auto_var, stmt.state, env);
+  }
+
+
+  [TypeCheckingError] typecheck_seq_update_stmt(StdVar seq_var, Expr idx, Expr value, [EnvVar -> Type] env) {
+    seq_var_errs = typecheck(seq_var, type_seq, env);
+    idx_errs = typecheck(idx, integer, env);
+    value_errs = typecheck(value, type_any, env);
+    return seq_var_errs & idx_errs & value_errs;
+  }
+
+
+  [TypeCheckingError] typecheck_assignment_stmt(Var+ vars, Expr value, [EnvVar -> Type] env) {
+    vars_types = (lookup(typed_vars, v, type_any) : v <- vars);
+    exp_type = if |vars_types| == 1 then only(vars_types) else tuple_type(vars_types);
+    return typecheck(value, exp_type, env);
+  }
+
+
+  [TypeCheckingError] typecheck_if_stmt(Expr cond, Statement+ body, Statement* else_body, Type exp_type, [EnvVar -> Type] env) {
+    errs = typecheck(cond, type_bool, env);
+    return errs if errs != [];
+    if_true_env, if_false_env = refine_env(cond, env);
+    return typecheck(body, exp_type, if_true_env) &
+           typecheck(else_body, exp_type, if_false_env);
+  }
+
+
+  [TypeCheckingError] typecheck_loop_stmt(Statement+ body, Type exp_type, [EnvVar -> Type] env) {
+    out_of_loop_vars = keys(env);
+    entry_env = env;
+    for 2:
+      errs = typecheck(body, exp_type, entry_env);
+      return errs if errs != [];
+      exit_env = select_by_key(update_env(body, entry_env), out_of_loop_vars);
+      return [] if not (v, t <- exit_env : not is_subset(t, entry_env[v]));
+      entry_env = exit_env;
+    ;
+    return [loop_did_not_converge(2)];
+  }
+
+
+  [TypeCheckingError] typecheck_foreach_stmt(StdVar+ vars, Maybe[StdVar] maybe_idx_var, Expr values, Statement+ body, Type exp_type, [EnvVar -> Type] env) {
+    nvars = nz_nat(|vars|);
+    exp_src_type = if nvars == 1 then type_seq else type_seq(type_tuple(nvars));
+    errs = typecheck(values, exp_src_type, env);
+    return errs if errs != [];
+    elem_type = seq_elem_supertype(expr_type(values, env));
+
+    num_vars = nz_nat(|vars|);
+    if num_vars == 1:
+      loop_vars = [vars(0) -> elem_type];
+    else
+      field_types = tuple_field_supertypes(elem_type, num_vars);
+      loop_vars = merge(([v -> t] : v, t <- zip(vars, field_types)));
+    ;
+    loop_vars = loop_vars & [value(maybe_idx_var) -> type_nat] if maybe_idx_var != nothing;
+
+    out_of_loop_vars = keys(env);
+
+    entry_env = env & loop_vars;
+    for 2:
+      errs = typecheck(body, exp_type, entry_env);
+      return errs if errs != [];
+      exit_env = select_by_key(update_env(body, entry_env), out_of_loop_vars);
+      return [] if not (v, t <- exit_env : not is_subset(t, entry_env[v]));
+      entry_env = exit_env & loop_vars;
+    ;
+
+    return [loop_did_not_converge(2)];
+  }
+
+
+  [TypeCheckingError] typecheck_for_stmt(Maybe[StdVar] maybe_var, Expr start_val, Expr end_val, Bool end_val_incl, Statement+ body, Type exp_type, [EnvVar -> Type] env) {
+    errs = typecheck(start_val, integer, env) & typecheck(end_val, integer, env);
+    return errs if errs != [];
+
+    loop_vars = [
+      value(maybe_var) ->
+        loop_var_type(
+          expr_type(start_val, env),
+          expr_type(end_val, env),
+          end_val_incl
+        ) if maybe_var != nothing
+    ];
+
+    out_of_loop_vars = keys(env);
+
+    entry_env = env & loop_vars;
+    for 2:
+      errs = typecheck(body, exp_type, entry_env);
+      return errs if errs != [];
+      exit_env = select_by_key(update_env(body, entry_env), out_of_loop_vars);
+      return [] if not (v, t <- exit_env : not is_subset(t, entry_env[v]));
+      entry_env = exit_env & loop_vars;
+    ;
+    return [loop_did_not_converge(2)];
+  }
+
+
+  [TypeCheckingError] typecheck_let_stmt([ImplArg -> Expr] asgnms, Statement+ body, Type exp_type, [EnvVar -> Type] env) {
+    errs = union([typecheck(e, type_any, env) : v, e <- asgnms]);
+    return errs if errs != [];
+    env_delta = [v -> expr_type(e, env) : v, e <- asgnms];
+    new_env = update(env, env_delta);
+    return typecheck(body, exp_type, new_env); ## BUG BUG BUG (WHY?)
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////
+
+  [TypeCheckingError] typecheck_send_msg_stmt(NestedDBVar target, Expr msg, [EnvVar -> Type] env) {
+    db_type = var_type(target);
+    msg_type = db_msg_type(db_type);
+    return typecheck(msg, msg_type, env);
+  }
+
+
+  [TypeCheckingError] typecheck_try_update_stmt(UpdateSymbol name, Expr* args, [EnvVar -> Type] env) {
+    errs = seq_union((typecheck(a, type_any, env) : a <- args));
+    return errs if errs != [];
+    args_types = (expr_type(a, env) : a <- args);
+    db_type = this_db_symbol;
+    sgns = update_signatures(db_type, name);
+    agg_sgns = update_aggregate_signatures(db_type, name);
+    for s <- rand_sort(sgns) & rand_sort(agg_sgns):
+      return [] if all((is_subset(at, ft) : at, ft <- zip(args_types, s)));
+    ;
+    return [no_disp_db_update(name, args_types, sgns)];
+  }
+
+
+  [TypeCheckingError] typecheck_set_memb_var_stmt(MembVar var, Expr value, [EnvVar -> Type] env) {
+    var_type = memb_var_type(var);
+    return [] if typecheck(value, var_type, env) == [];
+    errs = typecheck(value, type_any, env);
+    return if errs != [] then errs else [unexpected_actual_type(expr_type(value, env), var_type)];
+  }
+
+
+  [TypeCheckingError] typecheck_delete_stmt(RelVar var, Maybe[Expr]+ fields, [EnvVar -> Type] env) {
+    errs = seq_union((typecheck(value(f), type_any, env) : f <- fields, f != nothing));
+    return errs if errs != [];
+    args_types = (apply(f, expr_type($, env)) : f <- fields);
+    sgns = cast_database(context).rel_vars[var].signatures;
+    for s <- rand_sort(sgns):
+      return [] if all((at == nothing or not are_ptype_disjoint(value(at), ft) : at, ft <- zip(args_types, s)));
+    ;
+    return [no_matching_relvar(var, args_types, sgns)];
+  }
+
+
+  [TypeCheckingError] typecheck_insert_stmt(RelVar var, Expr+ fields, Bool force, [EnvVar -> Type] env) {
+    errs = seq_union((typecheck(f, type_any, env) : f <- fields));
+    return errs if errs != [];
+    args_types = (expr_type(f, env) : f <- fields);
+    database = cast_database(context);
+    sgns = database.rel_vars[var].signatures;
+    agg_sgns = relvar_aggregated_signatures(database.name, var);
+    for s <- rand_sort(sgns) & rand_sort(agg_sgns):
+      return [] if all((is_subset(at, ft) : at, ft <- zip(args_types, s)));
+    ;
+    return [no_matching_relvar(var, (just(a) : a <- args_types), sgns)];
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////
+
+  [TypeCheckingError] typecheck_proc_call_stmt(Maybe[StdVar] maybe_res_var, ProcSymbol proc_name, Expr* args, [EnvVar -> Type] env) {
+    args_types, unused_var = procedure_signature(proc_name);
+    return seq_union((typecheck(e, t, env) : e, t <- zip(args, args_types)));
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////
+
+  [TypeCheckingError] typecheck_set_input_ctrl_stmt(LocAutoVar var, Atom input, Expr value, [EnvVar -> Type] env) {
+    auto = automaton_by_id(var_type(var));
+    input_type = auto.inputs[signal_var(input)].type;
+    return typecheck(value, input_type, env);
+  }
+
+
+  [TypeCheckingError] typecheck_set_elapsed_time_ctrl_stmt(LocAutoVar var, Expr time, [EnvVar -> Type] env) {
+    return typecheck(time, integer, env);
+  }
+
+
+  [TypeCheckingError] typecheck_send_msg_ctrl_stmt(StdVar res_var, LocDBVar db_var, Expr msg, [EnvVar -> Type] env) {
+    db = automaton_by_id(var_type(db_var));
+    msg_type = db_msg_type(var_type(db_var));
+    return typecheck(msg, msg_type, env);
+  }
+
+
+  [TypeCheckingError] typecheck_restore_state_ctrl_stmt(StdVar res_var, <LocAutoVar, LocDBVar> auto_var, Expr state, [EnvVar -> Type] env) {
+    auto = automaton_by_id(var_type(auto_var));
+    return typecheck(state, state_type_workaround(auto), env);
+  }
+}

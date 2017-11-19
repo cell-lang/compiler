@@ -1,0 +1,245 @@
+String to_c_expr(InlineObj) =
+  object(<+> a?)    = "make_symb(" & symb_idx_name(a) & ")",
+  object(<*..*> n?) = "make_int(" & printed(n) & ")",
+  empty_seq         = "make_empty_seq()",
+  empty_rel         = "make_empty_rel()";
+
+
+String to_c_expr(StdObjVar var) = to_c_var_ref_name(var);
+
+
+String to_c_expr(NatObjOp expr) =
+  at()                = "at("                 & to_c_expr(expr.seq)    & ", " & to_c_expr(expr.idx) & ")",
+  lookup()            = "lookup("             & to_c_expr(expr.rel)    & ", " & to_c_expr(expr.key) & ")",
+  lookup_field()      = "lookup_field("       & to_c_expr(expr.record) & ", " & symb_idx_name(expr.field) & ")",
+  get_tag(e?)         = "get_tag("            & to_c_expr(e)           & ")",
+  get_inner_obj(e?)   = "get_inner_obj("      & to_c_expr(e)           & ")",
+  bool_obj(e?)        = "make_bool("          & to_c_expr(e)           & ")",
+  int_obj(e?)         = "make_int("           & to_c_expr(e)           & ")",
+  obj_neg(e?)         = "obj_neg("            & to_c_expr(e)           & ")",
+  to_symb(e?)         = "to_symb("            & to_c_expr(e)           & ")",
+  get_curr_obj(v?)    = "get_curr_obj("       & to_c_var_ref_name(v) & ")",
+  get_curr_arg()      = get_curr_arg_to_c_expr(expr.var, expr.arg),
+  rand_elem(e?)       = "rand_set_elem("      & to_c_expr(e)           & ")";
+
+
+String to_c_expr(FloatExpr expr) =
+  float_lit()           = to_c_float_literal(expr),
+  mk_float()            = "make_float(" & printed(expr.mantissa) & "e" & printed(expr.dec_exp) & ")",
+  neg_float(e?)         = "neg_float(" & to_c_expr(e) & ")",
+  add_floats(e1?, e2?)  = "add_floats(" & to_c_expr(e1) & ", " & to_c_expr(e2) & ")",
+  sub_floats(e1?, e2?)  = "sub_floats(" & to_c_expr(e1) & ", " & to_c_expr(e2) & ")",
+  mult_floats(e1?, e2?) = "mult_floats(" & to_c_expr(e1) & ", " & to_c_expr(e2) & ")",
+  div_floats(e1?, e2?)  = "div_floats(" & to_c_expr(e1) & ", " & to_c_expr(e2) & ")",
+  exp_floats(e1?, e2?)  = "exp_floats(" & to_c_expr(e1) & ", " & to_c_expr(e2) & ")",
+  square_root(e?)       = "square_root(" & to_c_expr(e) & ")",
+  floor_op(e?)          = "floor(" & to_c_expr(e) & ")",
+  ceiling_op(e?)        = "ceiling(" & to_c_expr(e) & ")",
+  int_to_float(e?)      = "int_to_float(" & to_c_expr(e) & ")";
+
+
+String to_c_float_literal(FloatLit literal) {
+  res = string((nat(ascii_0 + d) : d <- literal.mantissa));
+  res = "-" & res if literal.negative;
+  res = res & "e" & printed(literal.dec_exp) if literal.dec_exp != 0;
+  return "make_float(" & res & ")";
+}
+
+
+String get_curr_arg_to_c_expr(BinRelItVar var, <0..2> arg) {
+  assert arg != 2;
+  return fn_names[arg] & "(" & to_c_var_ref_name(var) & ")";
+
+  [<0..1> -> String] fn_names = [0 -> "get_curr_left_arg", 1 -> "get_curr_right_arg"];
+}
+
+
+String get_curr_arg_to_c_expr(TernRelItVar var, <0..2> arg) {
+  return item(fn_names, arg) & "(" & to_c_var_ref_name(var) & ")";
+
+  String+ fn_names = (
+    "tern_rel_it_get_left_arg",
+    "tern_rel_it_get_mid_arg",
+    "tern_rel_it_get_right_arg"
+  );
+}
+
+
+String to_c_expr(BoolExpr expr)       = to_c_expr(expr, false);
+String to_c_expr(ObjExpr expr, Bool)  = to_c_expr(expr);
+
+
+String to_c_expr(BoolExpr expr, Bool parentesised) {
+  return to_c_var_ref_name(expr) if expr :: BoolVar;
+  return match (expr)
+    true                  = "true",
+    false                 = "false",
+
+    is_symb(e?)           = "is_symb("        & to_c_expr(e) & ")",
+    is_int(e?)            = "is_int("         & to_c_expr(e) & ")",
+    is_float(e?)          = "is_float("       & to_c_expr(e) & ")",
+    is_ne_set(e?)         = "is_ne_set("      & to_c_expr(e) & ")",
+    is_ne_seq(e?)         = "is_ne_seq("      & to_c_expr(e) & ")",
+    is_ne_map(e?)         = "is_ne_map("      & to_c_expr(e) & ")",
+    is_ne_bin_rel(e?)     = "is_ne_bin_rel("  & to_c_expr(e) & ")",
+    is_ne_tern_rel(e?)    = "is_ne_tern_rel(" & to_c_expr(e) & ")",
+    is_tagged_obj(e?)     = "is_tag_obj(" & to_c_expr(e) & ")",
+
+    neg(is_eq_bool() e?)  = to_nary_op(" != ", (e.expr1, e.expr2), parentesised),
+    neg(is_eq_int() e?)   = to_nary_op(" != ", (e.expr1, e.expr2), parentesised),
+
+    is_eq_bool()          = to_nary_op(" == ", (expr.expr1, expr.expr2), parentesised),
+    is_eq_int()           = to_nary_op(" == ", (expr.expr1, expr.expr2), parentesised),
+
+    is_eq()               = "are_eq(" & to_c_expr(expr.expr1) & ", " & to_c_expr(expr.expr2) & ")",
+
+    // is_gt()               = to_nary_op(" > ",  (expr.expr1, expr.expr2), parentesised),
+    // is_ge()               = to_nary_op(" >= ", (expr.expr1, expr.expr2), parentesised),
+    is_lt()               = to_nary_op(" < ",  (expr.expr1, expr.expr2), parentesised),
+    is_le()               = to_nary_op(" <= ", (expr.expr1, expr.expr2), parentesised),
+
+    inline_is_eq()        = inline_is_eq_to_c_expr(expr.expr, expr.value, parentesised),
+
+    is_flt(e1?, e2?)      = to_float_op(" < ",  e1, e2, parentesised),
+    is_fle(e1?, e2?)      = to_float_op(" <= ", e1, e2, parentesised),
+
+    is_out_of_range(v?)   = is_out_of_range_to_c_expr(v),
+
+    is_blank(v?)          = "is_blank_obj(" & to_c_var_ref_name(v) & ")",
+    is_null(v?)           = "is_null_obj(" & to_c_var_ref_name(v) & ")",
+
+    has_elem()            = "has_elem(" & to_c_expr(expr.set) & ", " & to_c_expr(expr.elt) & ")",
+    has_field()           = "has_field(" & to_c_expr(expr.record) & ", " & symb_idx_name(expr.field) & ")",
+
+    contains()            = contains_to_c_expr(expr.coll, expr.entry),
+    table_contains()      = table_contains_to_c_expr(expr.table, expr.tuple),
+
+    is_member()           = to_c_fn_name(expr.pred) & "(" & to_c_expr(expr.obj) & ")",
+    state_is_def()        = state_is_def_proc_name(expr.type) & "(&" & to_c_var_ref_name(expr.auto_var) & ")",
+
+    neg(e?)               = parentesize("!" & to_c_expr(e, true), parentesised),
+
+    and(es?)              = to_nary_op(" & ",  es, parentesised),
+    or(es?)               = to_nary_op(" | ",  es, parentesised),
+    and_then(es?)         = to_nary_op(" && ", es, parentesised),
+    or_else(es?)          = to_nary_op(" || ", es, parentesised);
+}
+
+
+String is_out_of_range_to_c_expr(<SeqItVar, SetItVar, BinRelItVar, TernRelItVar> var) =
+  "is_out_of_range(" & to_c_var_ref_name(var) & ")";
+
+
+String is_out_of_range_to_c_expr(TableItVar var) {
+  fn_name = fn_names_by_arity[var.arity];
+  return fn_name & "(&" & to_c_var_ref_name(var) & ")";
+
+  [NzNat -> String] fn_names_by_arity = [
+    1 -> "unary_table_iter_is_out_of_range",
+    2 -> "binary_table_iter_is_out_of_range",
+    3 -> "ternary_table_iter_is_out_of_range"
+  ];
+}
+
+
+String contains_to_c_expr(ObjExpr rel, ObjExpr+ tuple) {
+  fn_name = fn_names_by_arity[|tuple|];
+  return fn_name & "(" & append((to_c_expr(a) : a <- (rel) & tuple), ", ") & ")";
+
+  [NzNat -> String] fn_names_by_arity = [
+    1 -> "has_elem",
+    2 -> "has_pair",
+    3 -> "has_triple"
+  ];
+}
+
+
+String table_contains_to_c_expr(AnyRelVar table, IntVar+ tuple) {
+  fn_name = fn_names_by_arity[|tuple|];
+  return fn_name & "(&" & append((to_c_var_ref_name(v) : v <- (table) & tuple), ", ") & ")";
+
+  [NzNat -> String] fn_names_by_arity = [
+    1 -> "unary_table_contains",
+    2 -> "binary_table_contains",
+    3 -> "ternary_table_contains"
+  ];
+}
+
+
+String inline_is_eq_to_c_expr(ObjExpr expr, InlineObj value, Bool parentesised) {
+  expr_str = to_c_expr(expr, false);
+  return match (value)
+    object(<+> a?)    = "is_symb(" & expr_str & ", " & symb_idx_name(a) & ")",
+    object(<*..*> n?) = "is_int("  & expr_str & ", " & printed(n) & ")",
+    empty_seq         = "is_empty_seq(" & expr_str & ")",
+    empty_rel         = "is_empty_rel(" & expr_str & ")";
+}
+
+
+String to_c_expr(IntExpr expr) = to_c_expr(expr, false);
+
+
+String to_c_expr(Int expr, Bool parentesised) = printed(expr);
+
+String to_c_expr(IntConst expr, Bool parentesised)  = to_c_time_slots_table_name(expr.automaton, expr.expr_id) &
+                                                      "[" & to_c_expr(expr.time_slot) & "]";
+
+String to_c_expr(IntVar expr, Bool parentesised) = to_c_var_ref_name(expr);
+
+String to_c_expr(NatIntOp expr, Bool parentesised) =
+  get_int_val(e?)       = "get_int_val("  & to_c_expr(e) & ")",
+  get_size(e?)          = "get_size(" & to_c_expr(e) & ")",
+  minus(e?)             = "-" & to_c_expr(e, true),
+  add()                 = to_nary_op(" + ", (expr.val1, expr.val2), parentesised),
+  sub()                 = to_nary_op(" - ", (expr.val1, expr.val2), parentesised),
+  mult()                = to_nary_op(" * ", (expr.val1, expr.val2), parentesised),
+  div()                 = to_nary_op(" / ", (expr.val1, expr.val2), parentesised),
+  mod()                 = to_nary_op(" % ", (expr.val1, expr.val2), parentesised),
+  bitwise_and(e1?, e2?) = to_nary_op(" & ", (e1, e2), parentesised),
+  bitwise_or(e1?, e2?)  = to_nary_op(" | ", (e1, e2), parentesised),
+  bitwise_xor(e1?, e2?) = to_nary_op(" ^ ", (e1, e2), parentesised),
+  float_bits(e?)        = "float_bits(" & to_c_expr(e) & ")",
+  mantissa(e?)          = "mantissa(" & to_c_expr(e) & ")",
+  dec_exp(e?)           = "dec_exp(" & to_c_expr(e) & ")",
+  rand_nat(e?)          = "rand_nat(" & to_c_expr(e) & ")",
+  lookup_value()        = "lookup_value(" & to_c_expr(expr.store) & ", " & to_c_expr(expr.value) & ")",
+  lookup_value_ex()     = "lookup_value_ex(" & to_c_expr(expr.store) & ", " &
+                            aux_struct_var_ref_name(expr.store) & ", " & to_c_expr(expr.value) & ")",
+  get_tuple_field()     = get_tuple_field_to_c_expr(expr.iter, expr.field),
+  unique_nat            = "unique_nat()",
+  ticks                 = "get_tick_count()";
+
+
+String get_tuple_field_to_c_expr(TableItVar var, Nat field) {
+  fn_name = fn_names_by_arity_and_field[(var.arity, field)];
+  return fn_name & "(&" & to_c_var_ref_name(var) & ")";
+
+  [(NzNat, Nat) -> String] fn_names_by_arity_and_field = [
+    (1, 0) -> "unary_table_iter_get_field",
+    (2, 0) -> "binary_table_iter_get_left_field",
+    (2, 1) -> "binary_table_iter_get_right_field",
+    (3, 0) -> "ternary_table_iter_get_left_field",
+    (3, 1) -> "ternary_table_iter_get_middle_field",
+    (3, 2) -> "ternary_table_iter_get_right_field"
+  ];
+}
+
+
+String to_c_expr(<ElemVar, VecVar, ItVar, StreamVar, AnyClsVar, AnyRelVar, AnyValueStoreId> var) = to_c_var_ref_name(var);
+
+String to_c_expr(<blank_obj>) = "make_blank_obj()";
+String to_c_expr(<null_obj>) = "make_null_obj()";
+
+// String to_c_expr(ClsVar v) = to_c_var_ref_name(v);
+
+String to_nary_op(String op, AnyTypeExpr+ exprs, Bool parentesised) {
+  expr = append((to_c_expr(e, true) : e <- exprs), op);
+  expr = "(" & expr & ")" if |exprs| > 1 and parentesised;
+  return expr;
+}
+
+String to_float_op(String op, ObjExpr expr1, ObjExpr expr2, Bool parentesised) {
+  expr = "get_float(" & to_c_expr(expr1, false) & ") " & op & " get_float(" & to_c_expr(expr2, false) & ")";
+  expr = "(" & expr & ")" if parentesised;
+  return expr;
+}

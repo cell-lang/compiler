@@ -1,0 +1,99 @@
+implicit syn_prg : SynPrg, artifact : SchemaDef {
+  Database desugared_data_base {
+    state_vars = [
+      memb_var(v.name) -> (
+        type:       desugar_plain_type(v.type),
+        init_value: desugar_expr(v.init_value, [], impl_args=[])
+      ) : v <- db_state_vars
+    ];
+
+    methods  = [desugar_db_method(m) : m <- lookup(methods_by_db, artifact.name, [])];
+    updates  = [desugar_update(u)    : u <- lookup(updates_by_db, artifact.name, [])];
+    handlers = [desugar_handler(h)   : h <- lookup(handlers_by_db, artifact.name, [])];
+
+    db = data_base(
+      name:         db_symbol(artifact.name),
+      links:        (db_symbol(id) : id <- artifact.links),
+      state_vars:   state_vars,
+      rel_vars:     desugared_relvars,
+      nested_dbs:   db_vars_types,
+      methods:      methods,
+      updates:      updates,
+      handlers:     handlers
+    );
+
+    return transfer(db, artifact);
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////
+
+  [RelVar -> (signatures: [+NeType+], keys: [[+Nat]])] desugared_relvars {
+    root_relvars_sgns = [
+      [rel_var(v.name) -> (desugar_plain_type(t) : t <- v.col_types)] : v <- db_rel_vars
+    ];
+
+    attr_relvars_sgns = [
+      [rel_var(arv.name) -> (desugar_plain_type(t) : t <- (rv.col_types | arv.type))]
+      : rv <- db_rel_vars, arv <~ rv.attributes
+    ];
+
+    relvars_sgns = merge_values(root_relvars_sgns & attr_relvars_sgns);
+
+    root_relvars_keys = [[rel_var(v.name) -> [set(k) : k <~ v.keys] : v <- db_rel_vars]];
+
+    attr_relvars_keys = [
+      [rel_var(arv.name) -> if arv.cardinality.multiple then [] else [[i : _ @ i <~ rv.col_types]]]
+      : rv <- db_rel_vars, arv <~ rv.attributes
+    ];
+
+    relvars_keys = merge(root_relvars_keys & attr_relvars_keys);
+
+    assert keys(relvars_sgns) == keys(relvars_keys);
+
+    return [v -> (signatures: ss, keys: relvars_keys[v]) : v, ss <- relvars_sgns];
+
+    // root_relvars = [[
+    //   rel_var(v.name) -> (
+    //     types:  (desugar_plain_type(t) | t <- v.col_types),
+    //     keys:   v.keys
+    //   )] | v <- db_rel_vars
+    // ];
+
+    // attr_relvars = [[
+    //   rel_var(arv.name) -> (
+    //     types:  (desugar_plain_type(t) | t <- (rv.col_types || arv.type)),
+    //     keys:   if arv.cardinality.multiple then [] else rv.keys
+    //   )] | rv <- db_rel_vars, arv <~ rv.attributes
+    // ];
+  }
+
+
+  Method desugar_db_method(DBMethodDef method_def) {
+    args = ((desugar_plain_type(t), just(var(n))) : t, n <- method_def.args);
+    ret_type = desugar_plain_type(method_def.ret_type);
+    arg_vars = [var(n) : _, n <~ method_def.args];
+    method_artifact = using_block_method_def(artifact.name, method_def);
+    expr = desugar_expr(method_def.expr, arg_vars, artifact = method_artifact, impl_args = []);
+    method = method(method_symbol(method_def.name), args, ret_type, expr);
+    return transfer(method, method_def);
+  }
+
+
+  Update desugar_update(UpdateDef update_def) {
+    args = ((desugar_plain_type(t), v) : t, v <- update_def.args);
+    arg_vars = [v : _, v <~ update_def.args];
+    update_artifact = using_block_update_def(artifact.name, update_def);
+    body = desugar_stmts(update_def.body, arg_vars, artifact = update_artifact, impl_args = []);
+    update = update(update_symbol(update_def.name), args, body);
+    return transfer(update, update_def);
+  }
+
+
+  Handler desugar_handler(HandlerDef handler_def) {
+    type = desugar_plain_type(handler_def.type);
+    body = desugar_stmts(handler_def.body, [var(:self)], artifact = handler_def, impl_args = []);
+    handler = handler(type, body);
+    return transfer(handler, handler_def);
+  }
+}

@@ -1,0 +1,113 @@
+type AtomicInterType  = bool, integer, float, symbol, string;
+type BasicInterType   = AtomicInterType, generic;
+type InterType        = BasicInterType, tuple(InterType+), seq(InterType), set(InterType), tagged(InterType);
+
+
+NeType internal_type(AtomicInterType) =
+  bool        = type_bool,
+  integer     = integer,
+  float       = float_type,
+  symbol      = atom_type,
+  string      = type_string;
+
+
+String input_arg_type(BasicInterType) =
+  bool        = "bool ",
+  integer     = "long long ",
+  float       = "double ",
+  symbol      |
+  string      |
+  generic     = "const char *";
+
+
+String constructor_function(InterType) =
+  bool        = "make_bool",
+  integer     = "make_int",
+  float       = "make_float",
+  symbol      = "extern_str_to_symb",
+  string      = "str_to_obj",
+  generic     = "convert_text";
+
+
+String return_value_type(InterType) =
+  bool        = "bool ",
+  integer     = "long long ",
+  float       = "double ",
+  symbol      = "const char *",
+  string      = "std::string ",
+  tuple(ts?)  = "std::tuple<" & append((return_value_type(t) : t <- ts), ", ") & "> ",
+  seq(t?)     |
+  set(t?)     = "std::vector<" & return_value_type(t) & "> ",
+  tagged(t?)  = if t != :generic then return_value_type(t) else return_value_type(:generic),
+  generic     = "std::unique_ptr<cell::Value> ";
+
+
+String conversion_trait(InterType) =
+  bool        = "bool_conv",
+  integer     = "int_conv",
+  float       = "float_conv",
+  symbol      = "symb_conv",
+  string      = "string_conv",
+  tuple(ts?)  = "tuple_" & printed(|ts|) & "_conv<" & append((conversion_trait(t) : t <- ts), ", ") & "> ",
+  seq(t?)     |
+  set(t?)     = "vector_conv<" & conversion_trait(t) & "> ",
+  tagged(t?)  = if t != :generic then "tagged_conv<" & conversion_trait(t) & "> " else conversion_trait(:generic),
+  generic     = "generic_conv";
+
+
+String export_expr(InterType it, String expr) =
+  bool        = "get_bool(" & expr & ")",
+  integer     = "get_int(" & expr & ")",
+  float       = "get_float(" & expr & ")",
+  symbol      = "symb_to_raw_str(" & expr & ")",
+  string      = "export_as_std_string(" & expr & ")",
+  tuple(ts?)  = "make_tuple(" & append((export_expr(t, "at(" & expr & ", " & printed(i) & ")") : t @ i <- ts), ", ") & ")",
+  seq(t?)     |
+  set(t?)     = "export_as_vector<" & conversion_trait(t) & ">(" & expr & ")",
+  tagged(t?)  = if t != :generic then export_expr(t, "get_inner_obj(" & expr & ")") else export_expr(:generic, expr),
+  generic     = "export_as_value(" & expr & ")";
+
+////////////////////////////////////////////////////////////////////////////////
+
+implicit typedefs : [TypeName -> NeType] {
+  BasicInterType input_interface_type(NeType type) {
+    for it <- (:bool, :integer, :float, :symbol, :string):
+      return it if is_subset(type, internal_type(it));
+    ;
+    return :generic;
+  }
+
+
+  InterType output_interface_type(NeType type) {
+    for it <- (:bool, :integer, :float, :symbol, :string):
+      return it if is_subset(type, internal_type(it));
+    ;
+
+    maybe_types = maybe_tuple_type_fields(type);
+    if maybe_types != nothing:
+      types = value(maybe_types);
+      size = |types|;
+      return :tuple((output_interface_type(t) : t <- types)) if size >= 2 and size <= 6;
+    ;
+
+    if is_subset(type, type_seq):
+      elem_type = seq_elem_supertype(type);
+      return :seq(output_interface_type(elem_type)) if elem_type != empty_type;
+    ;
+
+    if is_subset(type, type_set):
+      elem_type = set_elem_supertype(type);
+      return :set(output_interface_type(elem_type)) if elem_type != empty_type;
+    ;
+
+    if is_subset(type, type_tagged_obj):
+      tag_type = tag_supertype(type);
+      if is_symb_singl_type(tag_type):
+        obj_type = untagged_objs_supertype(type);
+        return :tagged(output_interface_type(obj_type)) if obj_type != empty_type;
+      ;
+    ;
+
+    return :generic;
+  }
+}

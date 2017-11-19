@@ -1,0 +1,142 @@
+ObjProcDef remove_dead_code(ObjProcDef pd) =
+  obj_proc_def(
+    name:           pd.name,
+    args:           pd.args,
+    impl_args:      pd.impl_args,
+    loc_auto_vars:  pd.loc_auto_vars,
+    loc_db_vars:    pd.loc_db_vars,
+    body:           nonempty(remove_dead_code(pd.body)),
+    cached:         pd.cached
+  );
+
+
+ReactBlock remove_dead_code(ReactBlock block) =
+  react_block(
+    name:                 block.name,
+    ord_inputs:           block.ord_inputs,
+    ord_outputs:          block.ord_outputs,
+    input_memb_preds:     block.input_memb_preds,
+    inputs:               block.inputs,
+    outputs:              block.outputs,
+    memb_vars:            block.memb_vars,
+    nested_auto_vars:     block.nested_auto_vars,
+    nested_static_blocks: block.nested_static_blocks,
+    pre_init_code:        remove_dead_code(block.pre_init_code),
+    cleanup_code:         block.cleanup_code,
+    nodes_update_code:    [id -> remove_dead_code(c) : id, c <- block.nodes_update_code],
+    apply_code:           remove_dead_code(block.apply_code),
+    queue_update_code:    block.queue_update_code,
+    state_is_def_code:    block.state_is_def_code,
+    copy_state_code:      remove_dead_code(block.copy_state_code),
+    set_state_code:       remove_dead_code(block.set_state_code),
+    methods:              [ id -> compiled_method(m.args_types, m.args_memb_preds, m.ret_type, remove_dead_code(m.code))
+                            : id, m <- block.methods
+                          ],
+    const_data:           block.const_data,
+    time_rules_count:     block.time_rules_count,
+    state_memb_pred:      block.state_memb_pred
+  );
+
+
+StaticBlock remove_dead_code(StaticBlock block) =
+  static_block(
+    name:             block.name,
+    links:            block.links,
+    state_vars:       block.state_vars,
+    nested_blocks:    block.nested_blocks,
+    value_stores:     block.value_stores,
+    tables:           block.tables,
+    init_code:        remove_dead_code(block.init_code),
+    cleanup_code:     remove_dead_code(block.cleanup_code),
+    copy_state_code:  remove_dead_code(block.copy_state_code),
+    set_state_code:   remove_dead_code(block.set_state_code),
+    methods:          [ id -> compiled_method(m.args_types, m.args_memb_preds, m.ret_type, remove_dead_code(m.code))
+                        : id, m <- block.methods
+                      ],
+    updates_code:     [id -> remove_dead_code(c) : id, c <- block.updates_code],
+    msg_memb_pred:    block.msg_memb_pred,
+    state_memb_pred:  block.state_memb_pred
+  );
+
+////////////////////////////////////////////////////////////////////////////////
+
+Instr* remove_dead_code(Instr* code) {
+  opt_code = ();
+  for instr <- code:
+    opt_instr = remove_dead_code(instr);
+    opt_code = opt_code & opt_instr;
+    break if not in(falls_through, code_outcomes(opt_instr));
+  ;
+  return opt_code;
+}
+
+
+Instr* remove_dead_code(Instr instr) =
+  no_op               = (),
+  set_var()           = (instr if instr.var != instr.value),
+  set_bvar()          = (instr if instr.var != instr.value), ## BAD: IDENTICAL TO ABOVE CASE
+  set_ivar()          = (instr if instr.var != instr.value), ## DITTO
+  branch()            = remove_dead_branch_code(instr.cond, instr.when_true, instr.when_false),
+  switch_on_nat()     = remove_dead_nat_switch_code(instr.value, instr.cases),
+  symb_switch()       = remove_dead_symb_switch_code(instr.value, instr.cases, instr.else),
+  repeat(is?)         = remove_dead_loop_code(is),
+  execute_block(is?)  = remove_dead_block_code(is),
+  try_block()         = remove_dead_try_block_code(instr.var, instr.body),
+  _                   = (instr);
+
+
+Instr* remove_dead_branch_code(BoolExpr cond, Instr+ if_body, Instr* else_body) {
+  opt_if_body = remove_dead_code(if_body);
+  opt_else_body = remove_dead_code(else_body);
+  return (branch(cond, opt_if_body, opt_else_body) if opt_if_body != () or opt_else_body != ());
+}
+
+
+Instr* remove_dead_nat_switch_code(IntExpr expr, Instr*+ cases) {
+  opt_cases = (remove_dead_code(c) : c <- cases);
+  ## HERE WHEN WE OPTIMIZE THEN SINGLE-CASE SWITCH WE SHOULD ALSO ADD A CHECK TO MAKE SURE THE SWITCH VAR IS 0
+  return if |opt_cases| == 1 then only(opt_cases) else (switch_on_nat(expr, opt_cases));
+}
+
+
+Instr* remove_dead_symb_switch_code(ObjExpr expr, [+([+SymbObj], Instr+)] cases, Instr* else) {
+  opt_cases = [(left(c), opt_code) : c <- cases, opt_code = remove_dead_code(right(c)), opt_code != ()];
+  opt_else = remove_dead_code(else);
+  return opt_symb_switch(expr, opt_cases, opt_else);
+}
+
+
+Instr* remove_dead_loop_code(Instr+ body) {
+  opt_body = remove_dead_code(body);
+  return (repeat(opt_body) if opt_body != ());
+}
+
+
+Instr* remove_dead_block_code(Instr+ body) {
+  opt_body = remove_dead_code(body);
+  opt_body = remove_useless_exit_blocks(opt_body);
+  return () if opt_body == ();
+  return if in(exits_block, code_outcomes(opt_body)) then (execute_block(opt_body)) else opt_body;
+
+  Instr* remove_useless_exit_blocks(Instr* body) =
+    if body != ()
+      then subseq(body, 0, :blank, 1) & remove_useless_exit_blocks(rev_at(body, 0))
+      else ();
+
+  Instr* remove_useless_exit_blocks(Instr instr) =
+    exit_block      = (),
+    branch()        = remove_useless_exit_blocks(instr.cond, instr.when_true, instr.when_false),
+    _               = (instr);
+
+  Instr* remove_useless_exit_blocks(BoolExpr cond, Instr+ if_body, Instr* else_body) {
+    opt_if_body = remove_useless_exit_blocks(if_body);
+    opt_else_body = remove_useless_exit_blocks(else_body);
+    return (branch(cond, opt_if_body, opt_else_body) if opt_if_body != () or opt_else_body != ());
+  }
+}
+
+
+Instr* remove_dead_try_block_code(LocVar var, Instr+ body) {
+  opt_body = remove_dead_code(body);
+  return (try_block(var, opt_body) if opt_body != ());
+}

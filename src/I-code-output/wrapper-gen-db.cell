@@ -1,0 +1,347 @@
+implicit block_name : DBSymbol, db_var_chain : NestedDBVar*, root_block_name : DBSymbol {
+  String external_name(<MembVar, RelVar, MethodSymbol> var) =
+    append((sentence_case(bare_id(v)) : v <- (db_var_chain | var)), "_");
+
+  String db_class_name = upper_camel_case(bare_id(root_block_name));
+
+  String ptr_def_instr {
+    expr = "(" & to_c_name(root_block_name) & " *) ptr";
+    expr = "&(" & expr & ")->" & append((to_c_var_decl_name(v) : v <- db_var_chain), ".") if db_var_chain != ();
+    return "  " & to_c_name(block_name) & " *self = " & expr & ";";
+  }
+}
+
+
+implicit block_name : DBSymbol, db_var_chain : NestedDBVar*, root_block_name : DBSymbol, typedefs : [TypeName -> NeType] {
+  (String*, String*) state_var_accessor(MembVar var, NeType var_type) {
+    inter_type = output_interface_type(var_type);
+    base_name = external_name(var);
+    meth_name = "get_" & base_name;
+    var_name = to_c_var_decl_name(var);
+    ret_type = return_value_type(inter_type);
+
+    decl = "  " & ret_type & meth_name & "();";
+
+    impl = (
+      "",
+      ret_type & db_class_name & "::" & meth_name & "() {",
+      ptr_def_instr,
+      "  return " & export_expr(inter_type, "self->" & var_name) & ";",
+      "}"
+    );
+
+    return ((decl), impl);
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  (String*, String*) unary_table_accessors(RelVar relvar, ValueStoreId value_store_id, NeType elem_type) {
+    input_type = input_interface_type(elem_type);
+    output_type = output_interface_type(elem_type);
+    base_name = external_name(relvar);
+    rel_name = to_c_var_decl_name(relvar);
+    val_store_name = to_c_var_decl_name(value_store_id);
+    ret_elem_type = return_value_type(output_type);
+    arg_type = input_arg_type(input_type);
+    ctor_fn = constructor_function(input_type);
+    conv_trait = conversion_trait(output_type);
+
+    decls = (
+      "",
+      "  bool in_" & base_name & "(" & arg_type & ");",
+      "  std::vector<" & ret_elem_type & "> get_" & base_name & "();"
+    );
+
+    impls = (
+      "",
+      "bool " & db_class_name & "::in_" & base_name & "(" & arg_type & " value) {",
+      ptr_def_instr,
+      "  return table_contains(self->" & rel_name & ", self->" & val_store_name & ", " & ctor_fn & "(value));",
+      "}",
+      "",
+      "std::vector<" & ret_elem_type & "> " & db_class_name & "::get_" & base_name & "() {",
+      ptr_def_instr,
+      "  return get_unary_rel<" & conv_trait & ">(self->" & rel_name & ", self->" & val_store_name & ");",
+      "}"
+    );
+
+    return (decls, impls);
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  (T, T) flip_pair_if((T, T) pair, Bool cond) {
+    if cond:
+      a, b = pair;
+      return (b, a);
+    else
+      return pair;
+    ;
+  }
+
+
+  (String*, String*) binary_table_accessors(RelVar relvar, (ValueStoreId, ValueStoreId) value_store_ids,
+    (NeType, NeType) perm_types, Maybe[Nat] maybe_key_col, Bool flipped) {
+    types = flip_pair_if(perm_types, flipped);
+    input_types = (input_interface_type(t) : t <- types);
+    output_types = (output_interface_type(t) : t <- types);
+    base_name = external_name(relvar);
+    rel_name = to_c_var_decl_name(relvar);
+    ret_types = (return_value_type(t) : t <- output_types);
+    args_types = (input_arg_type(t) : t <- input_types);
+    args_decls = (t & "arg" & printed(i) : t @ i <- args_types);
+    conv_traits = (conversion_trait(it) : it <- output_types);
+    ctor_fns = (constructor_function(it) : it <- input_types);
+    args_convs = flip_pair_if((f & "(arg" & printed(i) & ")" : f @ i <- ctor_fns), flipped);
+
+    vs_names = append(("self->" & to_c_var_decl_name(vs_id) : vs_id <- value_store_ids), ", ");
+
+    decls = ("", "  bool in_" & base_name & "(" & append(args_types, ", ") & ");");
+    impls = (
+      "",
+      "bool " & db_class_name & "::in_" & base_name & "(" & append(args_decls, ", ") & ") {",
+      ptr_def_instr,
+      "  return table_contains(self->" & rel_name & ", " & vs_names & ", " & append(args_convs, ", ") & ");",
+      "}"
+    );
+
+    if maybe_key_col != nothing:
+      key_col = value(maybe_key_col);
+      assert key_col == 0;
+      non_key_col = match (key_col) 0 = 1, 1 = 0;
+      key_col, non_key_col = (non_key_col, key_col) if flipped;
+      in_type = args_types(key_col);
+      out_type = ret_types(non_key_col);
+
+      decls = (decls | "  bool lookup_" & base_name & "(" & in_type & ", " & out_type & "&);");
+      impls = impls & (
+        "",
+        "bool " & db_class_name & "::lookup_" & base_name & "(" & in_type & "in_arg, " & out_type & "&out_arg) {",
+        ptr_def_instr,
+        "  return lookup_by_left_col<" & conv_traits(non_key_col) & ">(self->" &
+          rel_name & ", " & vs_names & ", " & ctor_fns(key_col) & "(in_arg), out_arg);",
+        "}"
+      );
+    ;
+
+    decls = (decls | "  std::vector<std::tuple<" & append(ret_types, ", ") & "> > get_" & base_name & "();");
+    impls = impls & (
+      "",
+      "std::vector<std::tuple<" & append(ret_types, ", ") & "> > " & db_class_name & "::get_" & base_name & "() {",
+      ptr_def_instr,
+      "  return get_binary_rel<" & append(conv_traits, ", ") & ">(self->" & rel_name & ", " &
+        vs_names & ", " & {if flipped then "true" else "false"} & ");",
+      "}"
+    );
+
+    return (decls, impls);
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  (String*, String*) ternary_table_accessors(RelVar relvar,
+    (ValueStoreId, ValueStoreId, ValueStoreId) value_store_ids,
+    (NeType, NeType, NeType) perm_types, (Nat, Nat, Nat) applied_perm) {
+
+    rev_perm = reverse_perm(applied_perm);
+    types = (perm_types(i) : i <- rev_perm);
+    assert (types(i) : i <- applied_perm) == perm_types;
+
+    input_types = (input_interface_type(t) : t <- types);
+    output_types = (output_interface_type(t) : t <- types);
+
+    ret_types = append((return_value_type(t) : t <- output_types), ", ");
+    args_types = (input_arg_type(t) : t <- input_types);
+    ctor_fns = (constructor_function(it) : it <- input_types);
+    base_name = external_name(relvar);
+
+    decls = (
+      "  bool in_" & base_name & "(" & append(args_types, ", ") & ");",
+      "  std::vector<std::tuple<" & ret_types & "> > get_" & base_name & "();"
+    );
+
+    conv_traits = append((conversion_trait(it) : it <- output_types), ", ");
+    args_decls = append((t & "arg" & printed(i) : t @ i <- args_types), ", ");
+    fixed_args = append(("self->" & to_c_var_decl_name(vs_id) : vs_id <- (relvar) & value_store_ids), ", ");
+    cols_perm_args = append((printed(i) : i <- rev_perm), ", ");
+    args_convs = append((ctor_fns(i) & "(arg" & printed(i) & ")" : i <- applied_perm), ", ");
+
+    impls = (
+      "",
+      "bool " & db_class_name & "::in_" & base_name & "(" & args_decls & ") {",
+      ptr_def_instr,
+      "  return table_contains(" & fixed_args & ", " & args_convs & ");",
+      "}",
+      "",
+      "std::vector<std::tuple<" & ret_types & "> > " & db_class_name & "::get_" & base_name & "() {",
+      ptr_def_instr,
+      "  return get_ternary_rel<" & conv_traits & ">(" & fixed_args & ", " & cols_perm_args & ");",
+      "}"
+    );
+
+    return (decls, impls);
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  (String*, String*) table_accessors(RelVar relvar, Table table) {
+    return match (table.value_stores, table.col_types, table.applied_perm)
+      (vs?),     (t?),      (_)       = unary_table_accessors(relvar, vs, t),
+      (_, _),    (_, _),    (_, _)    = binary_table_accessors(relvar, table.value_stores, table.col_types,
+                                          maybe_key_col(table), table.applied_perm != (0, 1)),
+      (_, _, _), (_, _, _), (_, _, _) = ternary_table_accessors(relvar, table.value_stores, table.col_types,
+                                          table.applied_perm);
+
+
+    Maybe[Nat] maybe_key_col(Table table) {
+      keys = table.keys;
+      if |keys| == 1:
+        key = only(keys);
+        return just(only(key)) if |key| == 1;
+      ;
+      return nothing;
+    }
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  (String*, String*) db_method_wrapper(MethodId method_id, CompiledMethod method) {
+    if not method_id.id?:
+      base_name = external_name(method_id.symbol);
+      return method_wrapper(method_id, method, block_name, base_name, db_class_name);
+    else
+      return ((), ());
+    ;
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  (String*, String*) static_auto_accessors(StaticBlock block, [DBSymbol -> StaticBlock] blocks) {
+    state_var_accessors = rand_sort([state_var_accessor(v, t) : v, t <- block.state_vars]);
+    state_var_accessors_decls, state_var_accessors_impls = (join(ls) : ls <- unzip(state_var_accessors));
+
+    table_accessors = rand_sort([table_accessors(v, t) : v, t <- block.tables]);
+    table_accessors_decls, table_accessors_impls = (join(ls) : ls <- unzip(table_accessors));
+
+    methods_wrappers = rand_sort([db_method_wrapper(id, m) : id, m <- block.methods]);
+    methods_wrappers_decls, methods_wrappers_impls = (join(ls) : ls <- unzip(methods_wrappers));
+
+    nested_autos_accessors = rand_sort([
+        static_auto_accessors(blocks[t], blocks, block_name = blocks[t].name, db_var_chain = (db_var_chain | v))
+      : v, t <- block.nested_blocks
+    ]);
+    nested_autos_decls, nested_autos_impls = (join(ls) : ls <- unzip(nested_autos_accessors));
+
+    decls_by_type = (state_var_accessors_decls, table_accessors_decls, methods_wrappers_decls, nested_autos_decls);
+    all_decls = join(intermix((d : d <- decls_by_type, d != ()), ("")));
+
+    all_impls = methods_wrappers_impls & state_var_accessors_impls & table_accessors_impls & nested_autos_impls;
+
+    return (all_decls, all_impls);
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+implicit typedefs : [TypeName -> NeType] {
+  (String*, String*, String*) static_auto_wrapper(StaticBlock root_block, [DBSymbol -> StaticBlock] blocks) {
+    let block_name = root_block.name, db_var_chain = (), root_block_name = root_block.name:
+      accessors_decls, accessors_impls = static_auto_accessors(root_block, blocks);
+      class_name = db_class_name;
+      cast_ptr = "(" & to_c_name(root_block.name) & " *) ptr";
+    ;
+
+    db_name = to_c_name(root_block.name);
+    has_any_updates = root_block.msg_memb_pred != nothing;
+    init_method_name = init_method_name(root_block.name);
+    cleanup_method_name = cleanup_method_name(root_block.name);
+
+    links_types = (upper_camel_case(bare_id(l)) : l <- root_block.links);
+
+    class_decl = (
+      "class " & class_name & " {",
+      "public:",
+      "  " & class_name & "(" & append((t & " *" : t <- links_types), ", ") & ");",
+      "  ~" & class_name & "();",
+      "",
+      "  std::unique_ptr<cell::Value> read_state();",
+      "  void set_state(const char *);",
+      "  void execute(const char *);" if has_any_updates
+    );
+
+    class_decl = class_decl & ("") & accessors_decls if accessors_decls != ();
+
+    private_class_decl = class_decl & (
+      "",
+      "public:",
+      "  void *ptr;",
+      "};"
+    );
+
+    class_decl = class_decl & (
+      "",
+      "private:",
+      "  void *ptr;",
+      "};"
+    );
+
+    ctor_impl_args = (t & " *l" & printed(i) : t @ i <- links_types);
+    init_method_args = (", (" & to_c_name(l) & " *) l" & printed(i) & "->ptr" : l @ i <- root_block.links);
+
+    class_impl = (
+      class_name & "::" & class_name & "(" & append(ctor_impl_args, ", ") & ") {",
+      "  ENV env;",
+      "  memset(&env, 0, sizeof(ENV));",
+      "  ptr = new " & db_name & ";",
+      "  " & init_method_name & "(" & cast_ptr & append(init_method_args) & ", env);",
+      "}",
+      "",
+      class_name & "::~" & class_name & "() {",
+      "  " & cleanup_method_name & "(" & cast_ptr & ");",
+      "  delete " & cast_ptr & ";",
+      "}",
+      "",
+      "std::unique_ptr<cell::Value> " & class_name & "::read_state() {",
+      "  OBJ obj = " & copy_state_proc_name(root_block.name) & "(" & cast_ptr & ");",
+      "  std::unique_ptr<cell::Value> result = export_as_value(obj);",
+      "  release(obj);",
+      "  return result;",
+      "}",
+      "",
+      "void " & class_name & "::set_state(const char *buffer) {",
+      "  OBJ obj = convert_text(buffer);",
+      "  if (!" & to_c_fn_name(root_block.state_memb_pred) & "(obj)) {",
+      "    release(obj);",
+      "    throw 0LL;",
+      "  }",
+      "  bool ok = " & set_state_entry_point_name(root_block.name) & "(" & cast_ptr & ", obj);",
+      "  release(obj);",
+      "  if (!ok)",
+      "    throw 0LL;",
+      "}"
+    );
+
+    if has_any_updates:
+      class_impl = class_impl & (
+        "",
+        "void " & class_name & "::execute(const char *buffer) {",
+        "  ENV env;",
+        "  OBJ obj = convert_text(buffer);",
+        "  if (!" & to_c_fn_name(value_unsafe(root_block.msg_memb_pred)) & "(obj)) {",
+        "    release(obj);",
+        "    throw 0LL;",
+        "  }",
+        "  memset(&env, 0, sizeof(ENV));",
+        "  bool ok = " & update_entry_point_name(root_block.name) & "(" & cast_ptr & ", obj, env);",
+        "  release(obj);",
+        "  if (!ok)",
+        "    throw 0LL;",
+        "}"
+      );
+    ;
+
+    class_impl = class_impl & accessors_impls;
+
+    return (class_decl, private_class_decl, class_impl);
+  }
+}

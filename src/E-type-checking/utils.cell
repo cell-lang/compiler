@@ -1,0 +1,345 @@
+Type union_superset(Type t1, Type t2) = union_superset([t1, t2]);
+
+Type union_superset([Type] types) = union_type(types);
+
+NeType ne_union_superset([+NeType] types) = ne_union_type(types);
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+Type replace_type_vars_with_type_any(Type type) = replace_type_vars_computed(type, type_any);
+
+// ClsType replace_type_vars_with_type_any(ClsType type) = replace_type_vars_computed(type, type_any);
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+## WHERE SHOULD THIS GO? IT LOGICALLY BELONG TO THE CODE THAT CALCULATE THE
+## INTERSECTION OF TWO TYPES, BUT APART FROM THE FACT THAT THAT CODE HAS
+## BEEN REMOVED, IT IS ALSO USED BY THE CODE THAT CALCULATE THE INTERSECTION
+## OF A PATTERN AND A TYPE, AND I DON'T WANT THAT CODE TO DEPEND ON THE CODE
+## THAT CALCULATES THE (APPROXIMATE) INTERSECTION OF TWO TYPES
+
+<IntType, empty_type> int_types_intersection(IntType int_type_1, IntType int_type_2) =
+  integer,      _             = int_type_2,
+
+  low_ints(),   low_ints()    = low_ints(min(int_type_1.max, int_type_2.max)),
+  low_ints(),   high_ints()   = maybe_int_range(int_type_2.min, int_type_1.max),
+  low_ints(),   int_range()   = maybe_int_range(int_type_2.min, min(int_type_1.max, max(int_type_2))),
+
+  high_ints(),  high_ints()   = high_ints(max(int_type_1.min, int_type_2.min)),
+  high_ints(),  int_range()   = maybe_int_range(max(int_type_1.min, int_type_2.min), max(int_type_2)),
+
+  int_range(),  int_range()   = maybe_int_range(max(int_type_1.min, int_type_2.min), min(max(int_type_1), max(int_type_2))),
+
+  _,            _             = int_types_intersection(int_type_2, int_type_1);
+
+
+## THIS SHOULD BE MOVED TO THE utils_2_ctors.h FILE
+<IntType, empty_type> maybe_int_range(Int min, Int max) = if max >= min then int_range(min, max) else empty_type;
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+[TypeVar] retrieve_type_vars(Type type, [TypeName -> NeType] typedefs) =
+  type_var()  = [type],
+  _           = retrieve_from_nested_types(type, retrieve_type_vars($, typedefs));
+
+
+implicit typedefs : [TypeName -> NeType] {
+
+  Bool may_match(Pattern ptrn, Type type) = type_pattern_intersection_superset(type, ptrn) != empty_type;
+
+
+  // The type returned by this function is always a subset of both the
+  // input type and the [type implicitly defined by] the input pattern
+  Type type_pattern_intersection_superset(Type type, Pattern ptrn) =
+    empty_type,         _                 = empty_type,
+
+    _,                  ptrn_any          = type,
+    _,                  ptrn_var()        = type_pattern_intersection_superset(type, ptrn.ptrn),
+    _,                  ptrn_union(ps?)   = union_type([type_pattern_intersection_superset(type, p) : p <- ps]),
+
+    type_var(),         _                 = type_pattern_intersection_superset(type_any, ptrn),
+
+    type_ref(ts?),      _                 = type_pattern_intersection_superset(expand_type_ref(ts, typedefs), ptrn),
+
+    atom_type,          ptrn_symbol       = atom_type,
+    atom_type,          ptrn_symbol(s?)   = symb_type(s),
+    atom_type,          _                 = empty_type,
+
+    symb_type(),        ptrn_symbol       = type,
+    symb_type(ts?),     ptrn_symbol(ps?)  = if ts == ps then type else empty_type,
+    symb_type(),        _                 = empty_type,
+
+    integer | low_ints() | high_ints() | int_range(),   ptrn_integer(t?)  = int_types_intersection(type, t),
+    integer | low_ints() | high_ints() | int_range(),   _                 = empty_type,
+
+    float_type,         _                 = if ptrn == ptrn_float then float_type else empty_type,
+
+    empty_seq_type,     _                 = if ptrn == ptrn_empty_seq then empty_seq_type else empty_type,
+    empty_rel_type,     _                 = if ptrn == ptrn_empty_rel then empty_rel_type else empty_type,
+
+    ne_seq_type(),      ptrn_ne_seq       = type,
+    ne_seq_type(),      ptrn_tuple(ps?)   = tuple_type((type_pattern_intersection_superset(type.elem_type, p) : p <- ps)),
+    ne_seq_type(),      _                 = empty_type,
+
+    tuple_type(ts?),    ptrn_ne_seq       = type,
+    tuple_type(ts?),    ptrn_tuple(ps?)   = if |ts| == |ps|
+                                            then tuple_type((type_pattern_intersection_superset(t, p) : t, p <- nonempty(zip(ts, ps))))
+                                            else empty_type,
+    tuple_type(ts?),    _                 = empty_type,
+
+    ne_set_type(),      _                 = if ptrn == ptrn_ne_set then type else empty_type,
+
+    ne_map_type(),      ptrn_ne_bin_rel   = type,
+    ne_map_type(),      ptrn_ne_map       = type,
+    ne_map_type(),      _                 = empty_type,
+
+    ne_bin_rel_type(),  ptrn_ne_bin_rel   = type,
+    ne_bin_rel_type(),  ptrn_ne_map       = ne_map_type(bin_rel_arg_supertype(type, 0), bin_rel_arg_supertype(type, 1)),
+    ne_bin_rel_type(),  _                 = empty_type,
+
+    ne_tern_rel_type(), _                 = if ptrn == ptrn_ne_tern_rel then type else empty_type,
+
+    ne_record_type(),   ptrn_ne_map       = type,
+    ne_record_type(),   ptrn_ne_bin_rel   = type,
+    ne_record_type(),   _                 = empty_type,
+
+    tag_obj_type(),     ptrn_tag_obj()    = { tag_type_int = type_pattern_intersection_superset(type.tag_type, ptrn.tag);
+                                              obj_type_int = type_pattern_intersection_superset(type.obj_type, ptrn.obj);
+                                              if tag_type_int == empty_type or obj_type_int == empty_type:
+                                                return empty_type;
+                                              else
+                                                fail if not tag_type_int :: TagType; ## BAD BAD BAD. CHEATING. NEEDS SUBSIGNATURES HERE...
+                                                return tag_obj_type(tag_type_int, obj_type_int);
+                                              ;
+                                            },
+
+    tag_obj_type(),     _                 = empty_type,
+
+    union_type(ts?),    _                 = { int_types = [it : t <- ts, it = type_pattern_intersection_superset(t, ptrn), it != empty_type];
+                                              return empty_type if int_types == [];
+                                              // return only(int_types) if |int_types| == 1;
+                                              // The types here are all union-compatible, since they are all
+                                              // subsets of types that were union-compatible to begin with
+                                              return union_type(int_types);
+                                            };
+
+  ////////////////////////////////////////////////////////////////////////////////
+  ////////////////////////////////////////////////////////////////////////////////
+
+  ## THIS IS PRETTY MUCH UNTESTED. IT SHOULD BE TESTED WITH THE TYPE SUBSET TESTING CODE,
+  ## AND MAYBE IT WOULD BE GOOD TO DO SOME MANUAL TESTING, ESPECIALLY FOR TUPLE TYPES
+  Bool type_contains_obj(Type type, Any obj) =
+    empty_type,           _       = false,
+
+    atom_type,            <+>     = true,
+    atom_type,            _       = false,
+
+    symb_type(s?),        _       = obj == bare_obj(s),
+
+    integer,              <*..*>  = true,
+    integer,              _       = false,
+
+    low_ints(),           <*..*>  = obj <= type.max,
+    low_ints(),           _       = false,
+
+    high_ints(),          <*..*>  = obj >= type.min,
+    high_ints(),          _       = false,
+
+    int_range(),          <*..*>  = obj >= type.min and obj <= max(type),
+    int_range(),          _       = false,
+
+    float_type,           <!>     = true,
+    float_type,           _       = false,
+
+    type_var(),           _       = undefined,
+
+    type_ref(ts?),        _       = type_contains_obj(expand_type_ref(ts, typedefs), obj),
+
+    empty_seq_type,       _       = obj == (),
+    empty_rel_type,       _       = obj == [],
+
+    ne_seq_type(),        ()      = obj != () and all((type_contains_obj(type.elem_type, e) : e <- obj)),
+    ne_seq_type(),        _       = false,
+
+    ne_set_type(),        []      = obj != [] and not (e <- obj : not type_contains_obj(type.elem_type, e)),
+    ne_set_type(),        _       = false,
+
+    ne_map_type(),        [->]    = obj != [] and
+                                    not (
+                                      k, v <- obj :
+                                        not type_contains_obj(type.key_type, k) or
+                                        not type_contains_obj(type.value_type, v)
+                                    ),
+    ne_map_type(),        _       = false,
+
+    ne_bin_rel_type(),    [,]     = obj != [] and
+                                    not (
+                                      l, r <- obj :
+                                        not (s <- type.signatures :
+                                          type_contains_obj(s(0), l) and type_contains_obj(s(1), r)
+                                        )
+                                    ),
+    ne_bin_rel_type(),    _       = false,
+
+    ne_tern_rel_type(),   [,,]    = obj != [] and
+                                    not (
+                                      l, m, r <- obj :
+                                        not (s <- type.signatures :
+                                          all((type_contains_obj(s(i), v) : v @ i <- (l, m, r)))
+                                        )
+                                    ),
+    ne_tern_rel_type(),   _       = false,
+
+    ne_record_type(fs?),  [->]    = obj != [] and subset([l : l, f <- fs, not f.optional], keys(obj)) and
+                                    not (k, v <- obj : not is_key(k, fs) or not type_contains_obj(fs[k].type, v)),
+    ne_record_type(fs?),  _       = false,
+
+    tuple_type(ts?),      ()      = |ts| == |obj| and all((type_contains_obj(t, e) : t, e <- zip(ts, obj))),
+    tuple_type(ts?),      _       = false,
+
+    tag_obj_type(),       t?(o?)  = type_contains_obj(type.tag_type, t) and type_contains_obj(type.obj_type, o),
+    tag_obj_type(),       _       = false,
+
+    union_type(ts?),      _       = (t <- ts : type_contains_obj(t, obj));
+
+  ////////////////////////////////////////////////////////////////////////////////
+  ////////////////////////////////////////////////////////////////////////////////
+
+  ## I COULD ASSERT THAT THE RESULTING TYPE IS A SUBSET OF THE ORIGINAL ONE
+  ## THAT WOULD INTRODUCE A CYCLIC DEPENDENCY (ALBEIT ONLY IN DEBUG MODE) BETWEEN
+  ## TYPE UTILS AND SUBTYPE CHECKING. ALSO THE SYNTAX WOULD NOT BE GREAT.
+  Type type_minus_value(Type type, Any obj) =
+    symb_type(object(s?))   = if obj == s then empty_type else type,
+
+    low_ints()              = if obj == type.max then low_ints(type.max-1) else type,
+    high_ints()             = if obj == type.min then high_ints(type.min+1) else type,
+    int_range()             = { new_min = type.min + bit(obj == type.min);
+                                new_max = max(type) - bit(obj == max(type));
+                                return if new_min <= new_max then int_range(new_min, new_max) else empty_type;
+                              },
+
+    type_ref(ts?)           = { exp_type = expand_type_ref(ts, typedefs);
+                                res_type = type_minus_value(exp_type, obj);
+                                return if res_type != exp_type then res_type else type;
+                              },
+
+    empty_seq_type          = if obj == () then empty_type else type,
+    empty_rel_type          = if obj == [] then empty_type else type,
+
+    union_type(ts?)         = { nts = [nt : t <- ts, nt = type_minus_value(t, obj), nt != empty_type];
+                                return if nts == [] then empty_type else union_type(nts);
+                              },
+
+    _                       = type;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+FnType signature(Function fn) =
+  fn_type(
+    args:       (a.type : a <- fn.args),
+    impl_args:  fn.impl_args,
+    ret_type:   fn.res_type,
+    constrs:    fn.constrs
+  );
+
+FnType signature(Method m) =
+  fn_type(
+    args:       (t : t, unused_var <- m.args),
+    ret_type:   m.ret_type,
+    impl_args:  [],
+    constrs:    []
+  );
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+BuiltInType builtin_signature(BuiltIn) =
+  neg             = unary_int_op,
+  add             = binary_int_op,
+  sub             = binary_int_op,
+  mult            = binary_int_op,
+  div             = binary_int_op,
+  mod             = binary_int_op,
+
+  lt              = binary_int_pred,
+  le              = binary_int_pred,
+
+  and             = binary_int_op,
+  or              = binary_int_op,
+  xor             = binary_int_op,
+
+  str             = builtin_type((atom_type),                          type_string),
+  symb            = builtin_type((type_string),                        atom_type),
+  slice           = builtin_type((type_seq_t, integer, integer),       type_seq_t),
+  cat             = builtin_type((type_seq_t, type_seq_t),             type_seq_t),
+  rev             = builtin_type((type_seq_t),                         type_seq_t),
+  isort           = builtin_type((type_set_t),                         type_seq_t),
+
+  tag             = builtin_type((type_tagged_obj),                    atom_type), // The return type is too loose, and it is ignore in the code
+  untag           = builtin_type((type_tagged_obj),                    type_any),  // Ditto
+
+  parse           = builtin_type((type_string),                        type_result(type_any, high_ints(0))),
+  print           = builtin_type((type_any),                           type_string),
+
+  fneg            = unary_float_op,
+  fadd            = binary_float_op,
+  fsub            = binary_float_op,
+  fmult           = binary_float_op,
+  fdiv            = binary_float_op,
+  flt             = binary_float_pred,
+  fle             = binary_float_pred,
+  fexp            = binary_float_op,
+  fsqrt           = unary_float_op,
+  // floor           = ,
+  // ceiling         = ,
+  float           = builtin_type((integer),                            float_type),
+  bits            = builtin_type((float_type),                         integer),
+  mantissa        = builtin_type((float_type),                         integer),
+  dec_exp         = builtin_type((float_type),                         integer),
+
+  rand_nat        = builtin_type((type_nz_nat),                        type_nat),
+  rand_elem       = builtin_type((type_set_t),                         type_var(:t)), ## THE TYPE OF THE ARGUMENT SHOULD BE NONEMPTY SET
+  counter         = builtin_type((type_any),                           type_nat),
+
+  ticks           = builtin_type((type_any),                           integer);
+
+BuiltInType unary_int_op    = builtin_type((integer), integer);
+BuiltInType binary_int_op   = builtin_type((integer, integer), integer);
+BuiltInType binary_int_pred = builtin_type((integer, integer), type_bool);
+
+BuiltInType unary_float_op    = builtin_type((float_type),             float_type);
+BuiltInType binary_float_op   = builtin_type((float_type, float_type), float_type);
+BuiltInType binary_float_pred = builtin_type((float_type, float_type), type_bool);
+
+NeType type_seq_t             = type_seq(type_var(:t));
+NeType type_set_t             = type_set(type_var(:t));
+NeType type_map_t1_t2         = type_map(type_var(:t1), type_var(:t2));
+
+// Type type_bare_list(Type elem_type) = type_ref(par_type_symbol(builtin_type_symbol(:bare_list), (elem_type)));
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+[ProcSymbol -> (NeType*, Maybe[NeType])] builtin_procedures_signatures = [
+  proc_symbol(:file_read)    -> ((type_string), just(type_maybe(type_seq(type_byte)))),
+  proc_symbol(:file_write)   -> ((type_string, type_seq(type_nat)), just(type_bool)),
+  proc_symbol(:print)        -> ((type_string), nothing),
+  proc_symbol(:get_char)     -> ((), just(type_maybe(type_nat)))
+];
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+NeType type_unary_pseudocall_target = ne_union_type([atom_type, type_seq, type_set]);
+
+NeType type_dot_access_target =
+  ne_union_type([
+    type_map(atom_type, type_any),
+    tag_obj_type(atom_type, type_map(atom_type, type_any))
+  ]);
+

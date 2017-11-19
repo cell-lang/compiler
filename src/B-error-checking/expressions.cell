@@ -1,0 +1,358 @@
+type DefVar = StdVar, FnArg; ## FIND BETTER NAME AND PLACE
+
+[StdVar] std_vars([DefVar] vs) = [v : v <- vs, v :: StdVar];
+
+
+implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg], actual_arg_arity : Nat {
+  ExprWFError* expr_wf_errors(SynExpr expr, [DefVar] def_vars) {
+    errs = expr_local_wf_errors(expr, def_vars);
+    errs = expr_nested_wf_errors(expr, def_vars) if errs == ();
+    return (attach_anchor_obj_if_needed(e, expr) : e <- errs);
+  }
+
+
+  ExprWFError* expr_nested_wf_errors(SynExpr expr, [DefVar] def_vars) =
+    undefined           = (),
+    object()            = (),
+    float_lit()         = (),
+    seq_expr(ses?)      = join((expr_wf_errors(se, def_vars) : se <- ses)),
+    seq_tail_expr()     = expr_wf_errors(expr.seq, def_vars) & join((expr_wf_errors(e, def_vars) : e <- expr.tail)),
+    set_expr(ses?)      = join((expr_wf_errors(se, def_vars) : se <- ses)),
+    map_expr(es?)       = join((map_entry_wf_errors(e, def_vars) : e <- es)),
+    bin_rel_expr(es?)   |
+    tern_rel_expr(es?)  = join((rel_entry_wf_errors(e, def_vars) : e <- es)),
+    tag_obj_expr()      = expr_wf_errors(expr.tag, def_vars) & expr_wf_errors(expr.obj, def_vars),
+    fn_arg()            = {assert in(expr, def_vars); return ();},
+    const_or_var()      = (),
+    cls_par()           = (),
+    prev_var_value()    = (),
+    impl_args_call()    = (),
+    unary_op_call()     = expr_wf_errors(expr.expr, def_vars),
+    binary_op_call()    = expr_wf_errors(expr.left_arg, def_vars) & expr_wf_errors(expr.right_arg, def_vars),
+    builtin_call()      = join((expr_wf_errors(e, def_vars) : e <- expr.args)),
+    size_expr()         = expr_wf_errors(expr.coll, def_vars),
+    call_lookalike()    = if not expr.target :: IdChain
+                            then join((expr_wf_errors(e, def_vars) : e <- (expr.target) & expr.args))
+                            else (),
+    rel_memb_test()     = join((expr_wf_errors(value(e), def_vars) : e <- expr.args, e != nothing)),
+    rel_lookup()        = join((expr_wf_errors(value(a), def_vars) : a <- expr.args, a != nothing)),
+    and()               = expr_wf_errors(expr.left, def_vars) & expr_wf_errors(expr.right, def_vars),
+    or()                = expr_wf_errors(expr.left, def_vars) & expr_wf_errors(expr.right, def_vars),
+    not(e?)             = expr_wf_errors(e, def_vars),
+    eq()                = expr_wf_errors(expr.left, def_vars) & expr_wf_errors(expr.right, def_vars),
+    neq()               = expr_wf_errors(expr.left, def_vars) & expr_wf_errors(expr.right, def_vars),
+    membership()        = expr_wf_errors(expr.obj, def_vars) & schema_aware_type_wf_errors(expr.type),
+    cast_expr()         = expr_wf_errors(expr.expr, def_vars) & plain_type_wf_errors(expr.type),
+    accessor()          = if expr :: AccessorChain then () else expr_wf_errors(expr.expr, def_vars),
+    accessor_test()     = if expr.expr :: IdChain then () else expr_wf_errors(expr.expr, def_vars),
+    output_is_def()     = (),
+    ex_qual()           = clauses_exprs_wf_errors(expr.source, (expr.cond), def_vars),
+    set_comp()          = clauses_exprs_wf_errors(expr.source, (expr.expr), def_vars),
+    map_comp()          = clauses_exprs_wf_errors(expr.source, (expr.key_expr, expr.value_expr), def_vars),
+    rel_comp()          = clauses_exprs_wf_errors(expr.source, expr.exprs, def_vars),
+    seq_comp()          = seq_comp_expr_nested_wf_errors(expr, def_vars),
+    range_comp()        = range_comp_expr_nested_wf_errors(expr, def_vars),
+    if_expr()           = expr_wf_errors(expr.else, def_vars) &
+                          join((expr_wf_errors(b.cond, def_vars) &
+                          expr_wf_errors(b.expr, def_vars) : b <- expr.branches)),
+    match_expr()        = match_expr_nested_wf_errors(expr, def_vars),
+    do_expr()           = root_stmt_block_wf_errors(expr.body, expr.typed_vars, def_vars, true, false),
+    let_expr()          = root_stmt_block_wf_errors((expr.stmts | syn_ret_stmt(expr.expr)), (), def_vars, true, false); ## THIS IS WRONG
+
+
+  ExprWFError* clauses_exprs_wf_errors(SynClause+ clauses, SynExpr* exprs, [DefVar] def_vars) {
+    curr_vars = def_vars;
+    clause_errs = ();
+    for c <- clauses:
+      clause_errs = clause_errs & clause_wf_errors(c, curr_vars);
+      curr_vars = curr_vars & syn_new_vars(c);
+    ;
+    expr_errs = join((expr_wf_errors(e, curr_vars) : e <- exprs));
+    return clause_errs & expr_errs;
+  }
+
+
+  ExprWFError* seq_comp_expr_nested_wf_errors(SynLCExpr expr, [DefVar] def_vars) {
+    new_def_vars = def_vars & set(expr.vars) & [expr.idx_var if expr.idx_var?];
+    src_errs = expr_wf_errors(expr.src_expr, def_vars);
+    expr_errs = expr_wf_errors(expr.expr, new_def_vars);
+    sel_expr_errs = if expr.sel_expr? then expr_wf_errors(expr.sel_expr, new_def_vars) else ();
+    return src_errs & expr_errs & sel_expr_errs;
+  }
+
+
+  ExprWFError* range_comp_expr_nested_wf_errors(SynRCExpr expr, [DefVar] def_vars) {
+    new_def_vars = def_vars & [expr.var];
+    bound_expr_errs = expr_wf_errors(expr.bound_expr, def_vars);
+    expr_errs = expr_wf_errors(expr.expr, new_def_vars);
+    sel_expr_errs = if expr.sel_expr? then expr_wf_errors(expr.sel_expr, new_def_vars) else ();
+    return bound_expr_errs & expr_errs & sel_expr_errs;
+  }
+
+
+  ExprWFError* match_expr_nested_wf_errors(SynTryExpr expr, [DefVar] def_vars) {
+    exprs_errs = join((expr_wf_errors(e, def_vars) : e <- expr.exprs));
+    case_exprs_errs = join((expr_wf_errors(c.expr, def_vars & seq_union((syn_new_vars(p) : p <- c.patterns))) : c <- expr.cases));
+    return exprs_errs & case_exprs_errs;
+  }
+
+  ////////////////////////////////////////////////////////////////////////////////
+  ////////////////////////////////////////////////////////////////////////////////
+
+  ExprWFError* expr_local_wf_errors(SynExpr expr, [DefVar] def_vars) =
+    const_or_var(a?)    = const_or_var_local_wf_errors(a, def_vars),
+    prev_var_value(a?)  = prev_var_value_local_wf_errors(a),
+    accessor()          = if expr :: AccessorChain then accessor_local_wf_errors(expr, def_vars) else (),
+    accessor_test()     = if expr :: <accessor_test(expr: IdChain, field: Atom)> ## BAD BAD: WORKING AROUND TYPE CHECKING "BUG"
+                            then accessor_test_local_wf_errors(expr, def_vars)
+                            else (),
+    cls_par(n?)         = (undef_impl_cls_arg(expr) if n >= actual_arg_arity),
+    call_lookalike()    = if expr :: <call_lookalike(target: IdChain, args: SynExpr+)> ## BAD BAD: WORKING AROUND TYPE CHECKING "BUG"
+                            then call_lookalike_local_wf_errors(expr, def_vars)
+                            else (wrong_pseudocall_arity(expr) if not in(|expr.args|, [1, 2])),
+    rel_memb_test()     = rel_memb_test_local_wf_errors(expr, def_vars),
+    rel_lookup()        = rel_lookup_local_wf_errors(expr, def_vars),
+    unary_op_call()     |
+    binary_op_call()    = (undefined_operator(expr) if not top_level_fndefs_by_name_arity(op_symbol(expr.op), *)),
+    impl_args_call()    = impl_args_call_local_wf_errors(expr, def_vars),
+    builtin_call()      = (wrong_builtin_arity(expr.name, expr.args) if |expr.args| != builtin_arities[expr.name]),
+    seq_comp()          = seq_comp_expr_local_wf_errors(expr, def_vars),
+    range_comp()        = (already_def_var(expr.var) if already_def(expr.var, def_vars)), ## BUG BUG BUG
+    match_expr()        = match_expr_local_wf_errors(expr, def_vars),
+    output_is_def()     = output_is_def_local_wf_errors(expr.var, expr.output, def_vars),
+    _                   = ();
+
+
+  ExprWFError* rel_lookup_local_wf_errors(SynRelLookup expr, [DefVar] def_vars) {
+    assert count(expr.args, $ == nothing) == 1;
+
+    arity = |expr.args|;
+    return (wrong_rel_lookup_arity(expr.target, [1, 2, 3])) if arity > 3;
+
+    resols = resolve_by_priority_as_memb_test_target(expr.target, arity, def_vars);
+    return (ambiguous_expr(expr, resols)) if |resols| > 1;
+
+    if resols == []:
+      ## BAD BAD BAD: USING A FIXED MAXIMUM ARITY
+      // Now passing and empty set of defined vars, so we avoid unary or binary pseudocalls
+      valid_arities = set((a : a < 20, resolve_by_priority_as_memb_test_target(expr.target, arity, def_vars) != []));
+      return if valid_arities != []
+        then (wrong_rel_lookup_arity(expr.target, valid_arities))
+        else (invalid_expr(expr));
+    ;
+
+    return ();
+  }
+
+
+  ExprWFError* rel_memb_test_local_wf_errors(SynRelMembTest expr, [DefVar] def_vars) {
+    return (invalid_expr(expr)) if all((a == nothing : a <- expr.args));
+
+    target = expr.target;
+    arity = nz_nat(|expr.args|);
+    if target :: IdChain:
+      symbols = destructure_id_chain(target);
+      resols = resolve_by_priority_as_memb_test_target(symbols, arity, def_vars);
+      return (ambiguous_expr(expr, resols)) if |resols| > 1;
+
+      if resols == []:
+        ## BAD BAD BAD: USING A FIXED MAXIMUM ARITY
+        // Now passing and empty set of defined vars, so we avoid unary or binary pseudocalls
+        valid_arities = set((a : a < 20, resolve_by_priority_as_memb_test_target(symbols, arity, def_vars) != []));
+        return if valid_arities != []
+          then (wrong_rel_test_arity(expr, valid_arities))
+          else (invalid_expr(expr));
+      ;
+
+      return () if is_rel_var(only(resols));
+
+    else
+      errs = expr_wf_errors(target, def_vars);
+      return errs if errs != ();
+    ;
+
+    return if arity != 2 and arity != 3
+        then (wrong_rel_test_arity(expr, [2, 3]))
+      elif all((a == nothing : a <- expr.args))
+        then (invalid_expr(expr))
+      else
+        ();
+  }
+
+
+  ExprWFError* call_lookalike_local_wf_errors(<call_lookalike(target: IdChain, args: SynExpr+)> expr, [DefVar] def_vars) {
+    target = expr.target;
+    arity = |expr.args|;
+    symbols = destructure_id_chain(target);
+
+    resols = resolve_by_priority_as_call_lookalike_target(symbols, arity, def_vars);
+    return (ambiguous_expr(target, resols)) if |resols| > 1;
+
+    if resols == []:
+      ## BAD BAD BAD: USING A FIXED MAXIMUM ARITY
+      // Now passing and empty set of defined vars, so we avoid unary or binary pseudocalls
+      valid_arities = set((a : a < 20, resolve_by_priority_as_call_lookalike_target(symbols, a, []) != []));
+      return if valid_arities != []
+        then (wrong_arity(expr, valid_arities))
+        else (unknown_function_or_method(expr));
+    ;
+
+    resol_target = only(resols);
+    return if resol_target :: <PreFnCall, PreNestedFnCall>
+      then fn_call_wf_errors(fn_family_id(resol_target, arity), expr.args, (), def_vars)
+      else join((expr_wf_errors(e, def_vars) : e <- expr.args));
+  }
+
+
+  ExprWFError* const_or_var_local_wf_errors(Atom symbol, [DefVar] def_vars) {
+    resols = resolve_by_priority_as_expr((symbol), def_vars);
+    return (ambiguous_expr(const_or_var(symbol), resols) if |resols| > 1) if resols != [];
+    invalid_resols = resolve_symbol_chain((symbol), def_vars);
+    return if invalid_resols != []
+      then (not_an_object(const_or_var(symbol), invalid_resols))
+      else (undef_var_or_const(symbol));
+  }
+
+
+  ExprWFError* prev_var_value_local_wf_errors(AnySignalVar var) {
+    fail if not var :: SignalVar;
+    symbol = bare_id(var);
+
+    artifact_is_auto_def = match (artifact) react_auto_def() = true, _ = false;
+    return (invalid_signal_copy_context(symbol)) if not artifact_is_auto_def;
+
+    interface = auto_interfaces[self_auto_type];
+    is_ok = interface.state_vars(symbol) or (interface.inputs(symbol, *) and not interface.inputs[symbol].discrete);
+    return (not_a_copiable_signal(symbol) if not is_ok);
+  }
+
+
+  ExprWFError* accessor_local_wf_errors(AccessorChain expr, [DefVar] def_vars) {
+    symbols = destructure_id_chain(expr);
+    resols = resolve_by_priority_as_expr(symbols, def_vars);
+    return (ambiguous_expr(expr, resols) if |resols| > 1) if resols != [];
+
+    invalid_resols = resolve_symbol_chain(symbols, def_vars);
+    return (not_an_object(expr, invalid_resols)) if invalid_resols != [];
+
+    for i = 1 .. |symbols|:
+      symbols_prefix = nonempty(subseq(symbols, 0, :blank, i));
+      resols = resolve_symbol_chain(symbols_prefix, def_vars);
+      if resols != []:
+        if |resols| == 1:
+          resol = only(resols);
+          next_symb = symbols(i);
+          return (wf_error(expr, resol, next_symb));
+        else
+          return (invalid_expr(expr));
+        ;
+      ;
+    ;
+
+    return (undef_var_or_const(head(symbols)));
+
+
+    ExprWFError wf_error(SynAccExpr expr, SymbChainExpr, Atom) = invalid_expr(expr);
+
+    ExprWFError wf_error(SynAccExpr expr, <ClsVar, AnyRelVar, FnFamilyId, PreCall> resol, Atom) =
+      not_an_object(expr, resol);
+
+    ExprWFError wf_error(SynAccExpr, AnyAutoVar auto_var, Atom field) =
+      unknown_output(field, auto_defs_by_id[auto_var_type(auto_var)]);
+
+    ExprWFError wf_error(SynAccExpr, AnyDBVar db_var, Atom field) =
+      unknown_db_field(field, db_defs_by_id[syn_db_var_type(db_var)]);
+  }
+
+
+  ExprWFError* accessor_test_local_wf_errors(<accessor_test(expr: IdChain, field: Atom)> expr, [DefVar] def_vars) {
+    accessor = accessor(expr: expr.expr, field: expr.field);
+    errs = accessor_local_wf_errors(accessor, def_vars);
+    return if errs == ()
+      then wf_errors(only(resolve_by_priority_as_expr(destructure_id_chain(accessor), def_vars)), expr)
+      else errs;
+
+
+    ExprWFError* wf_errors(QualSignalVar var, SynExpr expr) {
+      var_type = auto_var_type(var.auto_var);
+      interface = auto_interfaces[var_type];
+      output_id = bare_id(var.memb_var);
+      is_discrete = interface.outputs[output_id].discrete;
+      return (not_a_discrete_signal(output_id, auto_defs_by_id[var_type]) if not is_discrete);
+    }
+
+    ExprWFError* wf_errors(SymbChainAcc, SynExpr) = ();
+
+    ExprWFError* wf_errors(<QualMembVar, FnCallExpr, AutoMethodCall, DBMethodCall>, SynExpr expr) =
+      (invalid_expr(expr));
+
+    // This is just not supposed to happen. An accessor cannot resolve to an unqualified variable
+    ExprWFError* wf_errors(<StdVar, ImplArg, MembVar, SignalVar> resol, SynExpr expr) = undefined;
+  }
+
+
+  ExprWFError* seq_comp_expr_local_wf_errors(SynLCExpr expr, [DefVar] def_vars) {
+    new_vars = expr.vars & (expr.idx_var if expr.idx_var?);
+    dupl_vars = duplicates(new_vars);
+    return (dupl_var_mult_asgnm(v) : v <- rand_sort(dupl_vars)) &
+           (already_def_var(v) : v <- rand_sort(already_def_vars(set(new_vars), def_vars)));
+  }
+
+
+  ExprWFError* match_expr_local_wf_errors(SynTryExpr expr, [DefVar] def_vars) {
+    arity = |expr.exprs|;
+    errs = ();
+    for c <- expr.cases:
+      nps = |c.patterns|;
+      return (invalid_case_arity(nps, arity)) if nps != arity;
+      curr_vars = def_vars;
+      for p <- c.patterns:
+        errs = errs & ptrn_wf_errors(p, curr_vars);
+        curr_vars = curr_vars & syn_new_vars(p);
+      ;
+    ;
+    return errs;
+  }
+
+
+  ExprWFError* output_is_def_local_wf_errors(LocAutoVar var, Atom output, [DefVar] def_vars) {
+    return ();
+    ## IMPLEMENT IMPLEMENT IMPLEMENT
+    ## HERE I SHOULD ALSO CHECK THAT THE AUTOMATON DOES HAVE THAT SPECIFIC OUTPUT.
+    // return (undef_react_auto_var(var, already_def(bare_id(var), def_vars)) if not auto_vars(var, *));
+  }
+
+
+  // ExprWFError* is_set_local_wf_errors(Atom var_id, [DefVar] def_vars) {
+  //   errs = const_or_var_local_wf_errors(var_id, def_vars);
+  //   return errs if errs != ();
+
+  //   artifact_is_auto_def = match (artifact) react_auto_def() = true, _ = false;
+  //   ## HERE I COULD BE MORE SPECIFIC
+  //   return (invalid_expr(syn_is_set(var_id))) if not artifact_is_auto_def;
+
+  //   resol = only(resolve_by_priority_as_expr((var_id), def_vars));
+  //   is_discrete = resol :: SignalVar and signal_is_discrete(self_auto_type, resol);
+  //   return (not_a_discrete_signal(var_id, auto_defs_by_id[self_auto_type]) if not is_discrete);
+  // }
+
+  ////////////////////////////////////////////////////////////////////////////////
+  ////////////////////////////////////////////////////////////////////////////////
+
+  ExprWFError* expr_wf_errors(SynCondExpr cond_expr, [DefVar] def_vars) =
+    expr_wf_errors(cond_expr.expr, def_vars) &
+    expr_wf_errors(cond_expr.cond, def_vars);
+
+
+  ExprWFError* map_entry_wf_errors(SynMapExprEntry entry, [DefVar] def_vars) =
+    join((
+      expr_wf_errors(entry.key, def_vars),
+      expr_wf_errors(entry.value, def_vars),
+      expr_wf_errors(entry.cond, def_vars) if entry.cond?
+    ));
+
+
+  ExprWFError* rel_entry_wf_errors(<SynBinRelEntry, SynTernRelEntry> entry, [DefVar] def_vars) =
+    join((expr_wf_errors(e, def_vars) : e <- entry.args & (entry.cond if entry.cond?)));
+
+}

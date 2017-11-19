@@ -1,0 +1,159 @@
+
+//  gen_eval_code(expr, var)
+//    Generates code that evaluates <expr> and stores the result in <var>, reference counted
+
+//  gen_eval_info(expr, var)
+//    Generates code needed to evaluate expr
+//    If need be, the code stores the result in variable var, but it doesn't have to
+//    It also generates an expression that is used to access the result
+//    The expression may not be valid anymore if a variable used in the expression
+//    is updated or goes out of scope
+
+//  gen_eval_info(expr)
+//    Like above, but automatically choses the name of the variable, if one is needed.
+//    Also returns the id of the first free object variable.
+
+type EvalVar        = StdVar, LocVar;
+type EvalDestVar    = StdVar, LocVar, ElemVar, MembVar, SignalVar;
+
+type ExprEvalRes    = StdObjVar, LeafObj;
+
+type EvalInfo       = (eval_code: Instr*, expr: ExprEvalRes, var_used: Bool);
+type ExEvalInfo     = (eval_code: Instr*, expr: ExprEvalRes, var_used: Bool, next_var_gen: VarGen);
+type MultEvalInfo   = (eval_code: Instr*, exprs: ExprEvalRes*, next_var_gen: VarGen);
+type VectorEvalInfo = (code: Instr*, vect_var: VecVar, count_expr: IntExpr);
+
+
+implicit program : Program, context : Context, var_subst_map : [StdVar -> CaptVar],
+  cls_var_subst_map : [ClsVar -> CaptClsVar], next_var_gen : VarGen, options : CompilationOptions {
+
+  (EvalVar, VarGen) pick_temp_var(EvalDestVar res_var) =
+    if res_var :: EvalVar
+      then (res_var, next_var_gen)
+      else next_obj_var(next_var_gen);
+
+
+  EvalInfo gen_eval_info(Expr expr, EvalVar var) =
+    if expr :: LeafObj
+      then (eval_code: (), expr: expr, var_used: false)
+    elif expr :: Var
+      then (eval_code: (), expr: lookup(var_subst_map, expr, expr), var_used: false)
+    else
+      (eval_code: gen_eval_code(expr, var), expr: var, var_used: true);
+
+
+  ExEvalInfo gen_eval_info(Expr expr) {
+    var, var_gen = next_obj_var(next_var_gen);
+    info = gen_eval_info(expr, var, next_var_gen = var_gen); ## BUG? BUG? BUG?
+    var_gen = if info.var_used then var_gen else next_var_gen;
+    ## BAD BAD BAD: SHOULD BE SOMETHING LIKE:
+    ## return (info | next_var_id: if info.var_used then var_gen else next_var_gen)
+    return (eval_code: info.eval_code, expr: info.expr, var_used: info.var_used, next_var_gen: var_gen);
+  }
+
+
+  MultEvalInfo gen_eval_info(Expr* exprs) {
+    eval_code = ();
+    res_exprs = ();
+    var_gen = next_var_gen;
+
+    for e <- exprs:
+      info = gen_eval_info(e, next_var_gen = var_gen);
+      eval_code = eval_code & info.eval_code;
+      res_exprs = res_exprs & (info.expr);
+      var_gen = info.next_var_gen;
+    ;
+
+    return (eval_code: eval_code, exprs: res_exprs, next_var_gen: var_gen);
+  }
+
+
+  ## THIS IS ALL WRONG (WHY?)
+  VectorEvalInfo gen_vector_eval_info(SubExpr+ exprs) {
+    count_var, var_gen = next_int_var(next_var_gen);
+    elems_var, var_gen = next_vector_var(var_gen, nz_nat(|exprs|));
+
+    code, count_expr = gen_vector_eval_code(exprs, elems_var, count_var, next_var_gen = var_gen);
+
+    return (code: code, vect_var: elems_var, count_expr: count_expr);
+
+
+    (Instr*, IntExpr) gen_vector_eval_code(SubExpr* exprs, VecVar elems_var, IntVar count_var) {
+      var_id = elems_var.id;
+      cond_var, var_gen = next_obj_var(next_var_gen);
+
+      has_cond_exprs = (e <~ exprs : e :: CondExpr);
+
+      code = (set_ivar(count_var, 0) if has_cond_exprs);
+
+      no_cond_expr_yet = true;
+      know_offset = 0;
+
+      for e @ i <- exprs:
+        target_var = if no_cond_expr_yet then evar(var_id, i) else evar(var_id, count_var, know_offset);
+
+        if e :: Expr:
+          new_code = gen_eval_code(e, target_var);
+          know_offset = nat(know_offset + 1);
+
+        elif e :: CondExpr:
+          cond_eval_info = gen_eval_info(e.cond, cond_var, next_var_gen = var_gen);
+          // No need to change next_var_gen, as cond_var is not used anymore when running this code
+          expr_eval_code = gen_eval_code(e.expr, target_var);
+          cond_instr = do_if(is_true(cond_eval_info.expr), expr_eval_code & (increment(count_var)));
+          new_code = (cond_eval_info.eval_code | cond_instr);
+          no_cond_expr_yet = false;
+        else
+          fail;
+        ;
+        code = code & new_code;
+      ;
+
+      if has_cond_exprs:
+        count_expr = if know_offset == 0 then count_var else add(count_var, know_offset);
+      else
+        count_expr = know_offset;
+      ;
+
+      return (code, count_expr);
+    }
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////
+
+  BoundCls compiled_closure(ClsVar var) = lookup(cls_var_subst_map, var, var);
+
+
+  BoundCls compiled_closure(FnPtr ptr) {
+    var = lvar(0);
+    ps = (fn_arg(i) : i < arity(ptr));
+    body = (call_proc(var, match (ptr) fn_ptr(id?) = id, ps), ret_val(var));
+    cls = cls_def(arity(ptr), body);
+    return bound_cls(cls, (), ());
+  }
+
+
+  BoundCls compiled_closure(ClsExpr expr) {
+    loc_vs = seq_union(([value(v) if v != nothing, fn_arg(i)] : v @ i <- expr.args));
+    ext_vs = rand_sort(extern_vars(expr.expr) - loc_vs);
+    assert ext_vs :: StdVar*;
+    fail if not ext_vs :: StdVar*;
+
+    cls_vs = rand_sort(cls_vars(expr.expr));
+
+    subst_map = merge(([v -> capt_var(i)] : v @ i <- ext_vs));
+    cls_subst_map = merge(([v -> capt_cls_var(i)] : v @ i <- cls_vs));
+
+    capt_vars = (lookup(var_subst_map, v, v) : v <- ext_vs);
+    capt_cls_vars = (lookup(cls_var_subst_map, v, v) : v <- cls_vs);
+
+    fn_res_var, var_gen = next_obj_var(blank_var_gen);
+    let var_subst_map = subst_map, cls_var_subst_map = cls_subst_map:
+      eval_code = gen_eval_code(expr.expr, fn_res_var, next_var_gen = var_gen);
+    ;
+    cls_body = (set_var(value(v), fn_arg(i)) : v @ i <- expr.args, v != nothing) & eval_code & (ret_val(fn_res_var));
+
+    return bound_cls(cls_def(nz_nat(|expr.args|), nonempty(cls_body)), capt_vars, capt_cls_vars);
+  }
+}

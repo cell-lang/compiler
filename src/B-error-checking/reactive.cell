@@ -1,0 +1,194 @@
+implicit syn_prg : SynPrg {
+  ExprWFError* reactive_auto_wf_errors(ReactAutoDef auto_def, [BasicTypeSymbol -> [+Nat]] type_arity_map) {
+    name = auto_def.name;
+
+    // Checking for conflicts with names of types or static automata
+    confl_type_name = type_symbol(name);
+    if type_arity_map(confl_type_name, *):
+      confl_tdefs = rand_sort([td : td <- syn_tdefs | td <- syn_par_tdefs, td.name == confl_type_name]);
+      return (auto_type_conflict(name, nonempty(confl_tdefs)));
+    ;
+    return (auto_schema_conflict(name, schema_by_id(name))) if in(name, schema_names);
+    return (auto_prot_conflict(name, prot_decl_by_type(name))) if in(name, protocol_types);
+
+    // Checking positional inputs for duplicates
+    errs = (duplicate_pos_input(i) : i <- rand_sort(duplicates(auto_def.pos_inputs)));
+
+    undef_inputs = rand_sort(set(auto_def.pos_inputs) - [i.name : i <~ auto_def.inputs]);
+    errs = errs & (undef_pos_input(i) : i <- undef_inputs);
+
+    if auto_def.def_output?:
+      outputs = [o.name : o <~ auto_def.outputs];
+      errs = (errs | undef_def_output(auto_def.def_output)) if not outputs(auto_def.def_output);
+    ;
+
+    let artifact = auto_def:
+      state_vars_ids = auto_def_state_vars_ids;
+
+      errs = errs & (conflicting_auto_decls(o1, o2) : o1, o2 <- duplicates(auto_def.outputs, just($.name)));
+
+      decls = auto_def.inputs & auto_def.state_vars & auto_def.nested_dbs & auto_def.consts & auto_def.rules;
+      errs = errs & (conflicting_auto_decls(d1, d2) : d1, d2 <- duplicates(decls, auto_decl_key($, state_vars_ids)));
+
+      if errs == ():
+        decls_by_key = [value(k) -> d : d <~ decls, k = auto_decl_key(d, state_vars_ids), k :: Just[Atom]];
+        errs = join((conflicts(r, decls_by_key) : r <- auto_def.rules, auto_decl_key(r, state_vars_ids) == nothing));
+      ;
+
+      if errs == ():
+        errs = join(join((
+          (anchor_to_decl(input_decl_wf_errors(i), i)     : i <- auto_def.inputs),
+          (anchor_to_decl(output_decl_wf_errors(o), o)    : o <- auto_def.outputs),
+          (anchor_to_decl(state_var_decl_wf_errors(v), v) : v <- auto_def.state_vars),
+          (anchor_to_decl(nested_db_decl_wf_errors(a), a) : a <- auto_def.nested_dbs),
+          (anchor_to_decl(const_decl_wf_errors(c), c)     : c <- auto_def.consts),
+          (anchor_to_decl(rule_decl_wf_error(r), r)       : r <- auto_def.rules)
+        )));
+      ;
+    ;
+    return errs;
+
+
+    ExprWFError* conflicts(<PlainRuleDecl, WhenRuleDecl, CondRuleDecl, ForeachRuleDecl> rule, [Atom -> AnyAutoDecl] decls_by_key) {
+      ## WHAT IS THIS ASSERT DOING HERE?
+      assert match (rule)
+        plain_rule_decl() = rule.discrete or (decls_by_key(rule.name, *) and decls_by_key[rule.name] :: StateVarDecl),
+        when_rule_decl() | cond_rule_decl() | foreach_rule_decl() = true;
+      has_conflict = rule.discrete and decls_by_key(rule.name, *);
+      return (conflicting_auto_decls(rule, decls_by_key[rule.name]) if has_conflict);
+    }
+
+    () conflicts(<TimeRuleDecl, NestedAutoDecl, MsgSendDecl>, [Atom -> AnyAutoDecl]) = undefined;
+
+
+    ExprWFError* anchor_to_decl(ExprWFError* errs, Any anchor) = (anchored_errors(errs, anchor) if errs != ());
+  }
+}
+
+
+Maybe[Any] auto_decl_key(PlainRuleDecl decl, [Atom] state_vars) =
+  maybe(decl.name, not (decl.discrete or state_vars(decl.name)));
+
+Maybe[Any] auto_decl_key(InputDecl       decl, [Atom]) = just(decl.name);
+// Maybe[Any] auto_decl_key(OutputDecl      decl, [Atom]) = just(decl.name);
+Maybe[Any] auto_decl_key(StateVarDecl    decl, [Atom]) = just(decl.name);
+Maybe[Any] auto_decl_key(ConstDecl       decl, [Atom]) = just(decl.name);
+Maybe[Any] auto_decl_key(NestedDBDecl    decl, [Atom]) = just(decl.name);
+Maybe[Any] auto_decl_key(WhenRuleDecl    decl, [Atom]) = nothing;
+Maybe[Any] auto_decl_key(CondRuleDecl    decl, [Atom]) = nothing;
+Maybe[Any] auto_decl_key(ForeachRuleDecl decl, [Atom]) = nothing;
+Maybe[Any] auto_decl_key(TimeRuleDecl    decl, [Atom]) = just(decl.name);
+Maybe[Any] auto_decl_key(NestedAutoDecl  decl, [Atom]) = just(decl.name);
+Maybe[Any] auto_decl_key(MsgSendDecl     decl, [Atom]) = just(:msg_send(decl.target));
+
+
+implicit syn_prg : SynPrg, artifact : ReactAutoDef {
+  ExprWFError* auto_expr_wf_errors(SynExpr expr) = expr_wf_errors(expr, [], impl_args=[], actual_arg_arity=0);
+
+  ExprWFError* input_decl_wf_errors(InputDecl input) = plain_type_wf_errors(input.type);
+
+  ExprWFError* output_decl_wf_errors(OutputDecl output) = plain_type_wf_errors(output.type);
+
+  ExprWFError* state_var_decl_wf_errors(StateVarDecl decl) {
+    type_errs = plain_type_wf_errors(decl.type);
+    expr_errs = auto_expr_wf_errors(decl.init_value);
+    return type_errs & expr_errs;
+  }
+
+  ExprWFError* nested_db_decl_wf_errors(NestedDBDecl decl) = (
+    unknown_auto(db_symbol(decl.type)) if not db_defs_by_id(db_symbol(decl.type), *)
+  );
+
+  ExprWFError* const_decl_wf_errors(ConstDecl decl) {
+    type_errs = if decl.type? then plain_type_wf_errors(decl.type) else ();
+    expr_errs = auto_expr_wf_errors(decl.value);
+    return type_errs & expr_errs;
+  }
+
+  ExprWFError* rule_decl_wf_error(PlainRuleDecl decl) {
+    // If there are errors in the expression, we stop here
+    errs = auto_expr_wf_errors(decl.expr);
+    return errs if errs != ();
+
+    // Now we look for the presence or absence of discrete signals
+    state_vars_ids = auto_def_state_vars_ids;
+    is_plain_rule = not decl.discrete and not state_vars_ids(decl.name);
+    signals = [v : v <- auto_expr_extern_vars(desugar_auto_expr(decl.expr)), v :: AnySignalVar];
+    discrete_signals = [v : v <- signals, signal_is_discrete(v)];
+    return if is_plain_rule
+      then (discrete_signals_in_countinuous_rule(decl.name, discrete_signals) if discrete_signals != [])
+      else (no_discrete_signals_in_expr(decl.name, not decl.discrete) if discrete_signals == []);
+  }
+
+  ExprWFError* rule_decl_wf_error(WhenRuleDecl decl) {
+    errs = auto_expr_wf_errors(decl.expr) & auto_expr_wf_errors(decl.cond);
+    return errs if errs != ();
+
+    // Checking that no discrete signal is referenced
+    vars = seq_union((auto_expr_extern_vars(desugar_auto_expr(e)) : e <- (decl.expr, decl.cond)));
+    discrete_signals = [v : v <- vars, v :: AnySignalVar, signal_is_discrete(v)];
+
+    state_vars_ids = auto_def_state_vars_ids;
+    return (
+      unknown_state_var(decl.name) if not decl.discrete and not state_vars_ids(decl.name),
+      discrete_signals_in_countinuous_rule(decl.name, discrete_signals) if discrete_signals != []
+    );
+  }
+
+  ExprWFError* rule_decl_wf_error(CondRuleDecl decl) {
+    errs = auto_expr_wf_errors(decl.expr) & auto_expr_wf_errors(decl.cond);
+    return errs if errs != ();
+
+    // Checking that at least one discrete signal is referenced
+    vars = seq_union((auto_expr_extern_vars(desugar_auto_expr(e)) : e <- (decl.expr, decl.cond)));
+    discrete_signals = [v : v <- vars, v :: AnySignalVar, signal_is_discrete(v)];
+
+    state_vars_ids = auto_def_state_vars_ids;
+    return (
+      unknown_state_var(decl.name) if not decl.discrete and not state_vars_ids(decl.name),
+      no_discrete_signals_in_expr(decl.name, not decl.discrete) if discrete_signals == []
+    );
+  }
+
+  ExprWFError* rule_decl_wf_error(ForeachRuleDecl decl) {
+    value_errs = auto_expr_wf_errors(decl.value);
+    cond_errs = if decl.cond? then auto_expr_wf_errors(decl.cond) else ();
+    let impl_args = [], actual_arg_arity = 0:
+      signal_errs = (not_a_signal(s) : s, unused_var <- decl.signals, not resolve_symbol(s, [])(signal_var(s))); ## BIT UGLY...
+    ;
+    dupl_errs = (duplicate_tracked_signal(a) : a <- rand_sort(duplicates(left(unzip(decl.signals)))));
+    state_vars_ids = auto_def_state_vars_ids;
+    target_errs = (unknown_state_var(decl.name) if not decl.discrete and not state_vars_ids(decl.name));
+    return value_errs & cond_errs & signal_errs & dupl_errs & target_errs;
+  }
+
+  ExprWFError* rule_decl_wf_error(TimeRuleDecl decl) =
+    true_for_rule_decl()      |
+    unchanged_for_rule_decl() = auto_expr_wf_errors(decl.cond),
+    inactive_for_rule_decl()  = ();
+
+  ExprWFError* rule_decl_wf_error(NestedAutoDecl decl) {
+    auto_symb = auto_symbol(decl.auto_name);
+    return (unknown_auto(auto_symb)) if not auto_defs_by_id(auto_symb, *);
+
+    auto_def = auto_defs_by_id[auto_symb];
+    exp_num_of_pos_inputs = |auto_def.pos_inputs|;
+    actual_num_of_pos_inputs = |decl.pos_args|;
+    if actual_num_of_pos_inputs != 0 and actual_num_of_pos_inputs != exp_num_of_pos_inputs:
+      return (wrong_num_of_pos_inputs(decl, exp_num_of_pos_inputs));
+    ;
+
+    args_names, args_exprs = unzip(decl.args);
+    args_name = args_names & auto_def.pos_inputs if actual_num_of_pos_inputs != 0;
+    dupl_args = duplicates(args_names);
+    return (duplicate_actual_inputs(decl, dupl_args)) if dupl_args != [];
+
+    return join((auto_expr_wf_errors(e) : e <- decl.pos_args & args_exprs));
+  }
+
+  ExprWFError* rule_decl_wf_error(MsgSendDecl decl) {
+    msg_errs = auto_expr_wf_errors(decl.message);
+    cond_errs = if decl.cond != nothing then auto_expr_wf_errors(value(decl.cond)) else ();
+    return msg_errs & cond_errs;
+  }
+}

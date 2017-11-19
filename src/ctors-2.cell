@@ -1,0 +1,489 @@
+
+SymbObj object(Atom a) = :object(a);
+IntObj  object(Int n)  = :object(n);
+
+////////////////////////////////////////////////////////////////////////////////
+
+BasicTypeSymbol type_symbol(Atom a)         = :type_symbol(a);
+BasicTypeSymbol schema_type_symbol(Atom a)  = :schema_type_symbol(a);
+BasicTypeSymbol builtin_type_symbol(<any>)  = :builtin_type_symbol(:any);
+
+ParTypeSymbol par_type_symbol(BasicTypeSymbol s, Type+ ps) = par_type_symbol(symbol: s, params: ps);
+
+TypeName type_name(BasicTypeSymbol ts, Nat arity) = type_name(symbol: ts, arity: arity);
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+<empty_type> empty_type = :empty_type;
+
+<atom_type> atom_type = :atom_type;
+
+<float_type> float_type = :float_type;
+
+SymbType symb_type(SymbObj obj) = :symb_type(obj);
+SymbType symb_type(Atom symbol) = :symb_type(:object(symbol));
+
+<integer> integer = :integer; ## IT HAS TO BE <integer> AND NOT IntType BECAUSE THE SAME SYMBOL IS USED FOR A DIFFERENT PURPOSE IN PARSING
+IntType low_ints(Int max) = low_ints(max: max);
+IntType high_ints(Int min) = high_ints(min: min);
+IntType int_range(Int min, Int max) = int_range(min: min, size: nz_nat(max-min+1)); ## BUG: WHAT HAPPENS IF max IS LOWER THAN min?
+
+<empty_type, IntType> int_range_ex(Int min, Int max) = if min <= max then int_range(min, max) else empty_type;
+
+IntType singleton_type(Int n) = int_range(min: n, size: 1);
+
+TypeRef type_ref(TypeSymbol s) = :type_ref(s);
+
+TypeVar type_var(<Atom, Nat> n) = :type_var(n);
+
+<empty_seq_type> empty_seq_type = :empty_seq_type;
+<empty_rel_type> empty_rel_type = :empty_rel_type;
+
+NeSeqType ne_seq_type(NeType t)  = ne_seq_type(elem_type: t);
+NeSetType ne_set_type(NeType t)  = ne_set_type(elem_type: t);
+
+NeMapType ne_map_type(NeType kt, NeType vt) = ne_map_type(key_type: kt, value_type: vt);
+
+NeBinRelType  ne_bin_rel_type_nonvoid([+(NeType, NeType)] ss)           = ne_bin_rel_type(signatures: ss);
+NeTernRelType ne_tern_rel_type_nonvoid([+(NeType, NeType, NeType)] ss)  = ne_tern_rel_type(signatures: ss);
+
+<empty_type> ne_seq_type(<empty_type>) = empty_type;
+<empty_type> ne_set_type(<empty_type>) = empty_type;
+
+<empty_type> ne_map_type(<empty_type>, <empty_type>) = empty_type;
+<empty_type> ne_map_type(NeType, <empty_type>)       = empty_type;
+<empty_type> ne_map_type(<empty_type>, NeType)       = empty_type;
+
+Type ne_bin_rel_type([+(Type, Type)] sgns) {
+  ne_sgns = [(t1, t2) : s <- sgns, (t1?, t2?) ?= s, t1 != empty_type, t2 != empty_type];
+  return if ne_sgns != [] then ne_bin_rel_type_nonvoid(ne_sgns) else empty_type;
+}
+
+Type ne_tern_rel_type([+(Type, Type, Type)] sgns) {
+  ne_sgns = [(t1, t2, t3) : s <- sgns, (t1?, t2?, t3?) ?= s, t1 != empty_type, t2 != empty_type, t3 != empty_type];
+  return if ne_sgns != [] then ne_tern_rel_type_nonvoid(ne_sgns) else empty_type;
+}
+
+RecordType ne_record_type(RecordTypeFields fs) = :ne_record_type(fs);
+
+Type record_type([SymbObj -> (type: Type, optional: Bool)] fs) {
+  return empty_type if (unused_var, f <- fs : f.type == empty_type and not f.optional);
+  rfs = [l -> (type: t, optional: f.optional) : l, f <- fs, t = f.type, t != empty_type];
+  return empty_type if rfs == [];
+  nonempty = (unused_var, f <- rfs : not f.optional);
+  return ne_union_type([:ne_record_type(rfs), empty_rel_type if not nonempty]);
+}
+
+## BAD: IF THE LANGUAGE HAD SUBSIGNATURES, THIS FUNCTION WOULD NOT BE NEEDED
+NeType ne_tuple_type(NeType+ ts) = :tuple_type(ts);
+
+Type tuple_type(Type+ ts) {
+  ne_ts = ();
+  for t <- ts:
+    return empty_type if t == empty_type;
+    ne_ts = (ne_ts | t);
+  ;
+  return :tuple_type(nonempty(ne_ts));
+}
+
+<empty_type> tag_obj_type(TagType, <empty_type>) = empty_type;
+TagObjType   tag_obj_type(TagType tt, NeType ot) = tag_obj_type(tag_type: tt, obj_type: ot);
+
+## BAD: IF THE LANGUAGE HAD SUBSIGNATURES, THIS FUNCTION WOULD NOT BE NEEDED
+NeType ne_union_type([+NeType] ts) {
+  nu_ts = union([nu_types(t) : t <- ts]);
+  return if |nu_ts| == 1 then only(nu_ts) else :union_type(nonempty(nu_ts));
+
+  [+NeType] nu_types(NeType type) =
+    union_type(ts?)  = nonempty(union([nu_types(t) : t <- ts])),
+    _                = [type];
+}
+
+Type union_type([Type] ts) {
+  nu_ts = union([nu_types(t) : t <- ts, t != empty_type]);
+  return if   nu_ts   == [] then empty_type
+         elif |nu_ts| == 1  then only(nu_ts)
+                            else :union_type(nu_ts);
+
+  [+NeType] nu_types(NeType type) =
+    union_type(ts?)  = nonempty(union([nu_types(t) : t <- ts])),
+    _                = [type];
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+ClsType cls_type(NeType+ its, NeType ot) = cls_type(in_types: its, out_type: ot);
+
+FnType fn_type(AnyType* as, NeType rt) = fn_type(as, [], rt, []);
+
+FnType fn_type(AnyType* as, [ImplArg -> NeType] nas, NeType rt, [FnSymbol -> [+ClsType]] rs) =
+  fn_type(args: as, impl_args: nas, ret_type: rt, constrs: rs);
+
+BuiltInType builtin_type(NeType+ pts, NeType rt) = builtin_type(args_types: pts, ret_type: rt);
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+NeType type_true  = symb_type(true);
+NeType type_false = symb_type(false);
+
+NeType type_bool = ne_union_type([type_true, type_false]);
+
+NeType type_nat = high_ints(0);
+NeType type_nz_nat = high_ints(1);
+
+NeType type_byte = int_range(0, 255);
+
+NeType type_seq = type_seq(type_any);
+NeType type_set = type_set(type_any);
+NeType type_map = type_map(type_any, type_any);
+NeType type_bin_rel = type_bin_rel([(type_any, type_any)], false);
+NeType type_tern_rel = type_tern_rel([(type_any, type_any, type_any)], false);
+
+NeType type_set_rel = ne_union_type([type_set, type_bin_rel, type_tern_rel]);
+
+NeType type_coll = ne_union_type([type_seq, type_set, type_bin_rel, type_tern_rel]);
+
+NeType type_ne_seq      = ne_seq_type(type_any);
+NeType type_ne_set      = ne_set_type(type_any);
+NeType type_ne_map      = ne_map_type(type_any, type_any);
+NeType type_ne_bin_rel  = ne_bin_rel_type_nonvoid([(type_any, type_any)]);
+NeType type_ne_tern_rel = ne_tern_rel_type_nonvoid([(type_any, type_any, type_any)]);
+
+TagObjType type_tagged_obj = tag_obj_type(atom_type, type_any);
+
+NeType type_seq(NeType elem_type, Bool nonempty) = if nonempty then ne_seq_type(elem_type) else type_seq(elem_type);
+NeType type_set(NeType elem_type, Bool nonempty) = if nonempty then ne_set_type(elem_type) else type_set(elem_type);
+
+Type type_seq(<empty_type>, Bool nonempty) = if nonempty then empty_type else empty_seq_type;
+Type type_set(<empty_type>, Bool nonempty) = if nonempty then empty_type else empty_rel_type;
+
+NeType type_map(NeType key_type, NeType value_type, Bool nonempty) =
+  if nonempty then ne_map_type(key_type, value_type) else type_map(key_type, value_type);
+
+NeType type_seq(NeType elem_type)  = ne_union_type([empty_seq_type, ne_seq_type(elem_type)]);
+NeType type_set(NeType elem_type)  = ne_union_type([empty_rel_type, ne_set_type(elem_type)]);
+NeType type_mset(NeType elem_type) = ne_union_type([empty_rel_type, ne_map_type(elem_type, high_ints(1))]);
+
+NeType type_tuple(<2..*> size)  = ne_tuple_type(nonempty(size * (type_any)));
+
+NeType type_map(NeType key_type, NeType value_type) =
+  ne_union_type([empty_rel_type, ne_map_type(key_type, value_type)]);
+
+NeType type_bin_rel([+(NeType, NeType)] signatures, Bool nonempty) {
+  type = ne_bin_rel_type_nonvoid(signatures);
+  type = ne_union_type([empty_rel_type, type]) if not nonempty;
+  return type;
+}
+
+NeType type_tern_rel([+(NeType, NeType, NeType)] signatures, Bool nonempty) {
+  type = ne_tern_rel_type_nonvoid(signatures);
+  type = ne_union_type([empty_rel_type, type]) if not nonempty;
+  return type;
+}
+
+NeType type_string = tag_obj_type(symb_type(:string), ne_union_type([empty_seq_type, ne_seq_type(type_nat)]));
+
+NeType type_any = type_ref(builtin_type_symbol(:any));
+
+NeType type_maybe(NeType type) = ne_union_type([symb_type(:nothing), tag_obj_type(symb_type(:just), type)]);
+
+NeType type_result(NeType res_type, NeType err_type) =
+  ne_union_type([
+    tag_obj_type(symb_type(:success), res_type),
+    tag_obj_type(symb_type(:failure), err_type)
+  ]);
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+TagPtrn ptrn_symbol                             = :ptrn_symbol;
+Pattern ptrn_integer                            = :ptrn_integer(:integer);
+<ptrn_float> ptrn_float                         = :ptrn_float;
+
+Pattern ptrn_empty_seq                          = :ptrn_empty_seq;
+Pattern ptrn_ne_seq                             = :ptrn_ne_seq;
+
+Pattern ptrn_empty_rel                          = :ptrn_empty_rel;
+Pattern ptrn_ne_set                             = :ptrn_ne_set;
+Pattern ptrn_ne_map                             = :ptrn_ne_map;
+Pattern ptrn_ne_bin_rel                         = :ptrn_ne_bin_rel;
+Pattern ptrn_ne_tern_rel                        = :ptrn_ne_tern_rel;
+
+Pattern ptrn_seq                                = ptrn_union([ptrn_empty_seq, ptrn_ne_seq]);
+Pattern ptrn_set                                = ptrn_union([ptrn_empty_rel, ptrn_ne_set]);
+Pattern ptrn_map                                = ptrn_union([ptrn_empty_rel, ptrn_ne_map]);
+Pattern ptrn_bin_rel                            = ptrn_union([ptrn_empty_rel, ptrn_ne_bin_rel]);
+Pattern ptrn_tern_rel                           = ptrn_union([ptrn_empty_rel, ptrn_ne_tern_rel]);
+
+<ptrn_any> ptrn_any                             = :ptrn_any;
+TagPtrn ptrn_symbol(Atom a)                     = :ptrn_symbol(:object(a));
+TagPtrn ptrn_symbol(SymbObj s)                  = :ptrn_symbol(s);
+Pattern ptrn_integer(Int n)                     = ptrn_integer(int_range(n, n));
+Pattern ptrn_integer(IntObj n)                  = ptrn_integer(bare_obj(n));
+Pattern ptrn_integer(IntType type)              = :ptrn_integer(type);
+Pattern ptrn_tuple(Pattern+ ps)                 = :ptrn_tuple(ps);
+Pattern ptrn_tag_obj(TagPtrn tag, Pattern obj)  = ptrn_tag_obj(tag: tag, obj: obj);
+Pattern ptrn_var(StdVar v, Pattern p)           = ptrn_var(var: v, ptrn: p);
+
+Pattern ptrn_union([+Pattern] ps) {
+  return only(ps) if |ps| == 1;
+  return ptrn_any if in(ptrn_any, ps);
+  norm_ps = union([patterns(p) : p <- ps]);
+  ## HERE I SHOULD LOOK OUT FOR THE CASE WHEN THE SET OF PATTERNS COLLECTIVELY FORM A PATTERN "ANY"
+  ## I COULD ALSO ELIMINATE PATTERNS THAT ARE SUBSETS OF OTHER PATTERNS IN THE SET
+  return :ptrn_union(ps);
+
+  [Pattern] patterns(Pattern ptrn) =
+    ptrn_union(ps?)   = union([patterns(p) : p <- ps]),
+    _                 = [ptrn];
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+Pattern ptrn_tag_objs   = ptrn_tag_obj(ptrn_symbol, ptrn_any);
+
+////////////////////////////////////////////////////////////////////////////////
+
+StdFnSymb fn_symbol(Atom a)       = :fn_symbol(a);
+OpSymb    op_symbol(Operator op)  = :op_symbol(op);
+
+PlainFnFamilyId fn_family_id(FnSymbol s, Nat a)         = fn_family_id(symbol: s, arity: a);
+UniqueFnId      unique_fn_id(PlainFnFamilyId f, Nat id) = unique_fn_id(family: f, id: id);
+
+NestedFnFamilyId nested_fn_id(PlainFnId o, PlainFnFamilyId i) = nested_fn_id(outer: o, inner: i);
+NestedFnId       nested_fn_id(PlainFnId o, UniqueFnId i)      = nested_fn_id(outer: o, inner: i);
+
+MethodSymbol  method_symbol(Atom n) = :method_symbol(n);
+UpdateSymbol  update_symbol(Atom n) = :update_symbol(n);
+
+<msg_handler> msg_handler = :msg_handler;
+
+AutoSymbol auto_symbol(Atom a)  = :auto_symbol(a);
+DBSymbol   db_symbol(Atom a)    = :db_symbol(a);
+
+StdVar    var(Atom a)         = :var(a);
+FnArg     fn_arg(Nat n)       = :fn_arg(n);
+ImplArg   impl_arg(Atom a)    = :impl_arg(a);
+MembVar   memb_var(Atom a)    = :memb_var(a);
+SignalVar signal_var(Atom a)  = :signal_var(a);
+
+QualMembVar   qual_memb_var(AnyDBVar dbv, MembVar mv)       = qual_memb_var(db_var: dbv, memb_var: mv);
+QualSignalVar qual_signal_var(AnyAutoVar av, SignalVar mv)  = qual_signal_var(auto_var: av, memb_var: mv);
+
+PrevVarValue prev_var_value(AnySignalVar v) = :prev_var_value(v);
+
+LocAutoVar    loc_auto_var(Atom a)    = :loc_auto_var(a);
+NestedAutoVar nested_auto_var(Atom a) = :nested_auto_var(a);
+
+LocDBVar    loc_db_var(Atom a)    = :loc_db_var(a);
+NestedDBVar nested_db_var(Atom a) = :nested_db_var(a);
+LinkedDBVar linked_db_var(Nat n)  = :linked_db_var(n);
+
+QualDBVar qual_db_var(AnyDBVar ov, <NestedDBVar, LinkedDBVar> iv) = qual_db_var(outer: ov, inner: iv);
+
+RelVar rel_var(Atom a)  = :rel_var(a);
+
+QualRelVar qual_rel_var(AnyDBVar dbv, RelVar rv) = qual_rel_var(db_var: dbv, rel_var: rv);
+
+ClsVar cls_var(<Atom, Nat> a)     = :cls_var(a);
+
+FloatLit float_lit(<0..9>+ m, Bool n, Int e)  = float_lit(mantissa: m, negative: n, dec_exp: e);
+
+Expr seq_expr(SubExpr* es)          = :seq_expr(es);
+Expr seq_tail_expr(Expr s, Expr+ t) = seq_tail_expr(seq: s, tail: t);
+
+Expr tuple_expr(Expr+ es) = :tuple_expr(es);
+
+Expr set_expr([SubExpr] ses) = :set_expr(ses);
+
+Expr map_expr([+(key: Expr, value: Expr, cond: Expr?)] es) = :map_expr(es);
+
+BinRelExpr  bin_rel_expr([+(args: (Expr, Expr), cond: Expr?)] es)        = :bin_rel_expr(es);
+TernRelExpr tern_rel_expr([+(args: (Expr, Expr, Expr), cond: Expr?)] es) = :tern_rel_expr(es);
+
+Expr tag_obj_expr(Expr t, Expr o)   = tag_obj_expr(tag: t, obj: o);
+
+FnCallExpr fn_call(FnFamilyId n, AnyExpr* as) = fn_call(n, as, []);
+FnCallExpr fn_call(FnFamilyId n, AnyExpr* as, [ImplArg -> Expr] nas) = fn_call(fn_id: n, args: as, impl_args: nas);
+
+Expr builtin_call(BuiltIn n, Expr+ as)  = builtin_call(name: n, args: as);
+Expr cls_call(ClsVar v, Expr+ as)       = cls_call(name: v, args: as);
+
+SizeExpr size_expr(Expr e) = size_expr(coll: e);
+
+UnaryPseudoCall unary_pseudo_call(Expr c, Expr v) = unary_pseudo_call(target: c, arg: v);
+
+RelMembTest rel_memb_test(Expr r, Maybe[Expr]+ as) = rel_memb_test(rel: r, args: as);
+
+RelLookup rel_lookup(Expr r, Expr* as, Nat i) = rel_lookup(rel: r, set_args: as, unknown_arg_idx: i);
+
+RelVarMembTest relvar_memb_test(AnyRelVar v, Maybe[Expr]+ as) = relvar_memb_test(rel_var: v, args: as);
+
+RelVarLookup relvar_lookup(AnyRelVar v, Expr* as, Nat i) = relvar_lookup(rel_var: v, set_args: as, unknown_arg_idx: i);
+
+Expr and_expr(Expr l, Expr r) = and_expr(left: l, right: r);
+Expr or_expr(Expr l, Expr r) = or_expr(left: l, right: r);
+Expr not_expr(Expr e) = :not_expr(e);
+
+Expr and_expr(Expr+ es) {
+  expr = last(es);
+  for i = 1..|es|:
+    expr = and_expr(rev_at(es, i), expr);
+  ;
+  return expr;
+}
+
+Expr or_expr(Expr+ es) {
+  expr = last(es);
+  for i = 1..|es|:
+    expr = or_expr(rev_at(es, i), expr);
+  ;
+  return expr;
+}
+
+Expr eq(Expr l, Expr r) = eq(left: l, right: r);
+
+Expr accessor(Expr e, SymbObj f) = accessor(expr: e, field: f);
+Expr accessor_test(Expr e, SymbObj f) = accessor_test(expr: e, field: f);
+
+OutputIsDefExpr output_is_def(LocAutoVar v, Atom o)  = output_is_def(var: v, output: o);
+OutputIsSetExpr output_is_set(LocAutoVar v, Atom o)  = output_is_set(var: v, output: o);
+
+AutoMethodCall auto_method_call(AnyAutoVar v, MethodSymbol m, Expr* as)  = auto_method_call(var: v, name: m, args: as);
+AutoMethodCall auto_method_call(MethodSymbol m, Expr* as)                = auto_method_call(name: m, args: as);
+
+DBMethodCall db_method_call(AnyDBVar v, MethodSymbol m, Expr* as)  = db_method_call(var: v, name: m, args: as);
+DBMethodCall db_method_call(MethodSymbol m, Expr* as)              = db_method_call(name: m, args: as);
+
+Expr cast_expr(Expr, <empty_type>)  = undefined; ## TRY TO REMOVE...
+Expr membership(Expr, <empty_type>) = undefined; ## TRY TO REMOVE...
+
+Expr cast_expr(Expr e, NeType t) = cast_expr(expr: e, type: t);
+Expr membership(Expr obj, NeType type) = membership(obj: obj, type: type);
+
+Expr if_expr(Expr cond, Expr true_expr, Expr false_expr) = if_expr(cond: cond, then: true_expr, else: false_expr);
+
+Expr match_expr(Expr+ es, (ptrns: Pattern+, expr: Expr)+ cs) = match_expr(exprs: es, cases: cs);
+
+Expr do_expr(Statement+ b, [StdVar -> NeType] vs) = do_expr(body: b, typed_vars: vs);
+
+ExQualExpr  ex_qual(Clause s, Expr c)                           = ex_qual(source: s, cond: c);
+SetCompExpr set_comp(Expr e, Clause c)                          = set_comp(expr: e, source: c);
+MapCompExpr map_comp(Expr ke, Expr ve, Clause c)                = map_comp(key_expr: ke, value_expr: ve, source: c);
+BinRelCompExpr bin_rel_comp((Expr, Expr) es, Clause c)          = bin_rel_comp(exprs: es, source: c);
+TernRelCompExpr tern_rel_comp((Expr, Expr, Expr) es, Clause c)  = tern_rel_comp(exprs: es, source: c);
+
+////////////////////////////////////////////////////////////////////////////////
+
+CondExpr cond_expr(Expr e, Expr c) = cond_expr(expr: e, cond: c);
+
+////////////////////////////////////////////////////////////////////////////////
+
+FnPtr fn_ptr(FnFamilyId id) = :fn_ptr(id);
+
+ClsExpr cls_expr(Maybe[StdVar]+ as, Expr e)     = cls_expr(args: as, expr: e);
+ClsExpr no_args_cls_expr(NzNat a, Expr e)       = cls_expr((nothing : unused_var < a), e);
+ClsExpr impl_args_cls_expr(StdVar+ as, Expr e)  = cls_expr(args: (just(a) : a <- as), expr: e);
+
+////////////////////////////////////////////////////////////////////////////////
+
+Clause set_clause(StdVar v, Expr e)         = set_clause(var: v, src: e);
+Clause seq_clause(Maybe[StdVar]+ vs, Maybe[StdVar] iv, Expr e) = seq_clause(vars: vs, idx_var: iv, src: e);
+Clause and_clause(Clause l, Clause r)       = and_clause(left: l, right: r);
+Clause or_clause(Clause l, Clause r)        = or_clause(left: l, right: r);
+Clause match_clause(Pattern p, Expr e)      = match_clause(ptrn: p, expr: e);
+Clause asgnm_clause(StdVar v, Expr e)       = asgnm_clause(var: v, expr: e);
+Clause filter_clause(Expr e)                = :filter_clause(e);
+
+Clause rel_clause(StdVar+ vs, Expr e, Maybe[Expr]+ as) {
+  assert |vs| == count(as, $ == nothing) and (|as| == 2 or |as| == 3);
+  return rel_clause(vars: vs, src: e, args: as);
+}
+
+Clause relvar_clause(StdVar+ vs, AnyRelVar rv, Maybe[Expr]+ as) {
+  assert |vs| == count(as, $ == nothing) and |as| >= 1 and |as| <= 3;
+  return relvar_clause(vars: vs, rel_var: rv, args: as);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+AtomicFnStmt assignment_stmt(StdVar+ vs, Expr v)        = assignment_stmt(vars: vs, value: v);
+AtomicFnStmt return_stmt(Expr e)                        = :return_stmt(e);
+AtomicFnStmt print_stmt(Expr e)                         = :print_stmt(e);
+AtomicFnStmt seq_update_stmt(StdVar s, Expr i, Expr v)  = seq_update_stmt(seq_var: s, idx: i, value: v);
+AtomicFnStmt assert_stmt(Expr c, [<StdVar, ImplArg>] vs, String f, NzNat l, Maybe[String] t) = assert_stmt(cond: c, env: vs, file: f, line: l, text: t);
+<break_stmt> break_stmt                                 = :break_stmt;
+<fail_stmt>  fail_stmt                                  = :fail_stmt;
+
+AtomicUpdateStmt send_msg_stmt(NestedDBVar v, Expr m)         = send_msg_stmt(target: v, msg: m);
+AtomicUpdateStmt try_update_stmt(UpdateSymbol n, Expr* as)    = try_update_stmt(name: n, args: as);
+AtomicUpdateStmt set_memb_var_stmt(MembVar v, Expr e)         = set_memb_var_stmt(var: v, value: e);
+AtomicUpdateStmt delete_stmt(RelVar v, Maybe[Expr]+ fs)       = delete_stmt(var: v, fields: fs);
+AtomicUpdateStmt insert_stmt(RelVar v, Expr+ fs, Bool f)      = insert_stmt(var: v, fields: fs, force: f);
+
+<return_stmt> return_stmt = :return_stmt;
+
+CtrlStmt set_input_ctrl_stmt(LocAutoVar v, Atom i, Expr e)    = set_input_ctrl_stmt(var: v, input: i, value: e);
+CtrlStmt clear_input_ctrl_stmt(LocAutoVar v, Atom i)          = clear_input_ctrl_stmt(var: v, input: i);
+CtrlStmt set_elapsed_time_ctrl_stmt(LocAutoVar v, Expr t)     = set_elapsed_time_ctrl_stmt(var: v, time: t);
+CtrlStmt apply_ctrl_stmt(LocAutoVar av, StdVar rv)            = apply_ctrl_stmt(auto_var: av, res_var: rv);
+CtrlStmt send_msg_ctrl_stmt(StdVar rv, LocDBVar dbv, Expr m)  = send_msg_ctrl_stmt(res_var: rv, db_var: dbv, msg: m);
+CtrlStmt read_state_ctrl_stmt(StdVar rv, <LocAutoVar, LocDBVar> av) = read_state_ctrl_stmt(res_var: rv, auto_var: av);
+CtrlStmt restore_state_ctrl_stmt(StdVar rv, <LocAutoVar, LocDBVar> av, Expr e) = restore_state_ctrl_stmt(res_var: rv, auto_var: av, state: e);
+
+CompositeStmt[T] if_stmt(Expr c, T+ b, T* e)            = if_stmt(cond: c, body: b, else: e);
+CompositeStmt[T] loop_stmt(T+ ss)                       = :loop_stmt(ss);
+CompositeStmt[T] let_stmt([ImplArg -> Expr] as, T+ b)   = let_stmt(asgnms: as, body: b);
+
+CompositeStmt[T] foreach_stmt(StdVar+ vs, Maybe[StdVar] iv, Expr svs, T+ b) =
+  foreach_stmt(vars: vs, idx_var: value(iv) if iv != nothing, values: svs, body: b);
+
+CompositeStmt[T] for_stmt(Maybe[StdVar] v, Expr sv, Expr ev, Bool evi, T+ b) =
+  for_stmt(var: value(v) if v != nothing, start_val: sv, end_val: ev, end_val_incl: evi, body: b);
+
+////////////////////////////////////////////////////////////////////////////////
+
+ProcSymbol proc_symbol(Atom a) = :proc_symbol(a);
+
+////////////////////////////////////////////////////////////////////////////////
+
+FormalObjArg formal_obj_arg(NeType t)             = formal_obj_arg(type: t);
+FormalObjArg formal_obj_arg(StdVar v, NeType t)   = formal_obj_arg(var: v, type: t);
+FormalClsArg formal_cls_arg(ClsVar v, ClsType t)  = formal_cls_arg(var: v, type: t);
+
+////////////////////////////////////////////////////////////////////////////////
+
+Method method(MethodSymbol n, (NeType, Maybe[StdVar])* as, NeType t, Expr e) = method(name: n, args: as, ret_type: t, expr: e);
+
+Update update(UpdateSymbol n, (NeType, StdVar)* as, Statement* ss)    = update(name: n, args: as, body: ss);
+
+Handler handler(NeType t, Statement* ss)  = handler(type: t, body: ss);
+
+////////////////////////////////////////////////////////////////////////////////
+
+BasicTimeExpr at_least(Nat ns)                                = at_least(nanosecs: ns);
+BasicTimeExpr time_neg(BasicTimeExpr te)                      = :time_neg(te);
+BasicTimeExpr time_and(BasicTimeExpr te1, BasicTimeExpr te2)  = time_and(left: te1, right: te2);
+BasicTimeExpr time_or(BasicTimeExpr te1, BasicTimeExpr te2)   = time_or(left: te1, right: te2);
+
+CyclicTimeExpr every(BasicTimeExpr te, NzNat ns)  = every(expr: te, nanosecs: ns);
+
+TimeRule boolean_time_rule(Expr c, TimeExpr te) = boolean_time_rule(expr: c, time_expr: te);
+TimeRule unchanged_time_rule(Expr c, TimeExpr te) = unchanged_time_rule(expr: c, time_expr: te);
+TimeRule since_time_rule([+SignalVar] ss, TimeExpr te, Bool at0) = since_time_rule(signals: ss, time_expr: te, starts_at_time_0: at0);
+
+Input  input(NeType t, Bool d, Bool v)    = input(type: t, discrete: d, volatile: v);
+Output output(NeType t, Bool d)   = output(type: t, discrete: d);
+
+ReactCond on_becoming_true_cond(Expr c) = on_becoming_true_cond(cond: c);
+ReactCond react_cond(Expr c, [+AnySignalVar -> Bool] ss) = react_cond(cond: c, signals_state: ss);
+
+StateVar state_var(NeType t, Expr e, Bool v, [StateVarUpdate] us) = state_var(type: t, init_value: e, volatile: v, updates: us);
+StateVarUpdate state_var_update(Expr v, ReactCond c) = state_var_update(value: v, cond: c);
+
+DiscreteRule discrete_rule(Expr v, ReactCond c) = discrete_rule(value: v, cond: c);
+
+MsgSendRule msg_send_rule(Expr m, ReactCond c) = msg_send_rule(message: m, cond: c);

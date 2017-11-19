@@ -1,0 +1,244 @@
+implicit {
+  sorted_cls_defs                 : ClsDef*,
+  int_seqs_types_and_lengths      : (String, Nat)*,
+  cached_semi_consts_by_impl_arg  : [ImplArg -> [+FnId]];
+
+
+  CCodeOutput compile_block_to_c(ReactBlock block) {
+    has_time_rules = block.time_rules_count != 0;
+
+    name_str = to_c_name(block.name);
+
+    memb_vars_decl = (var_c_type(v) & " " & to_c_var_decl_name(v) & ";" : v <- rand_sort(block.memb_vars));
+    auto_vars_decl = (to_c_name(t) & " " & to_c_var_decl_name(v) & ";" : v, t <- rand_sort_pairs(block.nested_auto_vars));
+    db_vars_decl = (to_c_name(t) & " " & to_c_var_decl_name(v) & ";" : v, t <- rand_sort_pairs(block.nested_static_blocks));
+    vars_decl = memb_vars_decl & auto_vars_decl & db_vars_decl;
+
+    if block.time_rules_count != 0:
+      size_str = printed(block.time_rules_count);
+      vars_decl = vars_decl & (
+        "int64 trigger_times_heap[" & size_str & "];",
+        "int time_varying_cond_ids_heap[" & size_str & "];"
+      );
+    ;
+
+    decl = ("struct " & name_str & " {") & indent_lines(vars_decl) & ("};");
+
+    pre_init_vars_decl = gen_vars_decls(block.pre_init_code);
+    pre_init_vars_decl = pre_init_vars_decl & ("") if pre_init_vars_decl != ();
+    pre_init_body = pre_init_vars_decl & compile_to_c(block.pre_init_code, nothing);
+    pre_init_sgn = "void " & pre_init_method_name(block.name) & "(" & name_str & " *self, ENV &env)";
+    pre_init_decl = (pre_init_sgn & ";");
+    pre_init_proc = (pre_init_sgn & " {") & indent_lines(pre_init_body) & ("}");
+
+    cleanup_body = compile_to_c(block.cleanup_code, nothing);
+    cleanup_sgn = "void " & cleanup_method_name(block.name) & "(" & name_str & " *self)";
+    cleanup_decl = (cleanup_sgn & ";");
+    cleanup_proc = (cleanup_sgn & " {") & indent_lines(cleanup_body) & ("}");
+
+    all_loc_vars = vars_to_declare(block.apply_code) & union([vars_to_declare(c) : id, c <- block.nodes_update_code]);
+    aux_vars = [v : v <- all_loc_vars, v :: AuxVar] & [curr_time if has_time_rules];
+    aux_name_str = aux_struct_c_name(block.name);
+    aux_decls = ("struct " & aux_name_str & " {") & indent_lines((var_decl(v) : v <- rand_sort(aux_vars))) & ("};");
+
+    apply_method_vars_decls = (
+      gen_vars_decls(block.apply_code) |
+      aux_name_str & " self_aux_;",
+      aux_name_str & " *self_aux = &self_aux_;"
+    );
+    apply_method_vars_decls = (apply_method_vars_decls | "") if apply_method_vars_decls != ();
+
+    apply_body = apply_method_vars_decls & compile_to_c(block.apply_code, nothing);
+    apply_sgn = "void " & apply_method_name(block.name) & "(" & name_str & " *self, ENV &env)";
+    apply_decl = (apply_sgn & ";");
+    apply_proc = (apply_sgn & " {") & indent_lines(apply_body) & ("}");
+
+    update_node_bodies = [
+      id -> {
+        lines = gen_vars_decls(c);
+        lines = (lines | "") if lines != ();
+        return lines & compile_to_c(c, nothing);
+      } : id, c <- block.nodes_update_code
+    ];
+    time_arg = if has_time_rules then ", int64 " & to_c_var_decl_name(curr_time) else "";
+    update_node_sngs = [
+      id -> "void " & node_update_method_name(block.name, id) &
+            "(" & name_str & " *self" & time_arg & ", " & aux_name_str & " *self_aux, ENV &env)"
+      : id, unused_var <- block.nodes_update_code
+    ];
+    update_node_decls = rand_sort([s & ";" : unused_var, s <- update_node_sngs]);
+    update_node_procs_unsorted = [
+      (update_node_sngs[id] & " {") & indent_lines(update_node_bodies[id]) & ("}")
+      : id, unused_var <- block.nodes_update_code
+    ];
+    update_node_procs = join(intermix(rand_sort(update_node_procs_unsorted), ("", "")));
+
+    queue_methods_decls_and_impls = [
+      gen_queue_update_method(block.name, id, method.body, method.args)
+      : id, method <- block.queue_update_code
+    ];
+    queue_methods_decls, queue_methods_impls = unzip(rand_sort(queue_methods_decls_and_impls));
+    queue_methods_impls = join(intermix(queue_methods_impls, ("", "")));
+
+    state_is_def_decl, state_is_def_impl = compile_state_is_def_code(block.name, block.state_is_def_code);
+    copy_state_decl, copy_state_impl = compile_copy_state_code(block.name, block.copy_state_code);
+    set_state_decl, set_state_impl = compile_set_state_code(block.name, block.set_state_code);
+
+    insert_timer_method_decl, insert_timer_method_impl = gen_insert_timer_method(block.name);
+    clear_timer_method_decl, clear_timer_method_impl = gen_clear_timer_method(block.name);
+
+    queue_input_updates = |block.ord_inputs| > 2; ## BAD BAD BAD: THE NUMBER 2 IS REPEATED IN THE CODE GENERATION PHASE
+    input_decls, input_impls = unzip((gen_input_setter(block.name, id, i, queue_input_updates) : id @ i <- block.ord_inputs));
+    input_impls = join(intermix(input_impls, ("", "")));
+
+    method_decls, method_impls = unzip(rand_sort([gen_user_def_method(block.name, id, m.code) : id, m <- block.methods]));
+    method_impls = join(intermix(method_impls, ("", "")));
+
+    const_data = rand_sort([gen_const_data(block.name, c) : c <- block.const_data]);
+
+    all_decls = (
+      decl, aux_decls, const_data, pre_init_decl, cleanup_decl, apply_decl, update_node_decls,
+      input_decls, queue_methods_decls, (state_is_def_decl, copy_state_decl, set_state_decl), method_decls,
+      (insert_timer_method_decl, clear_timer_method_decl) if has_time_rules
+    );
+
+    all_impls = (
+      pre_init_proc, cleanup_proc, apply_proc, update_node_procs, input_impls,
+      queue_methods_impls, state_is_def_impl, copy_state_impl, set_state_impl, method_impls,
+      insert_timer_method_impl if has_time_rules, clear_timer_method_impl  if has_time_rules
+    );
+
+    return (
+      body:   join(intermix(all_impls, ("", ""))),
+      header: join(intermix(all_decls, ("", "")))
+    );
+  }
+
+
+  (String, String*) compile_state_is_def_code(AutoSymbol name, Instr* code) {
+    vars_decls = gen_vars_decls(code);
+    body = vars_decls & ("" if vars_decls != ()) & compile_to_c(code, nothing);
+    sng = "bool " & state_is_def_proc_name(name) & "(" & to_c_name(name) & " *self)";
+    return (sng & ";", (sng & " {") & indent_lines(body) & ("}"));
+  }
+
+
+  (String, String*) compile_copy_state_code(AutoSymbol name, Instr* code) {
+    vars_decls = gen_vars_decls(code);
+    body = vars_decls & ("" if vars_decls != ()) & compile_to_c(code, nothing);
+    sgn = "OBJ " & copy_state_proc_name(name) & "(" & to_c_name(name) & " *self)";
+    return (sgn & ";", (sgn & " {") & indent_lines(body) & ("}"));
+  }
+
+
+  (String, String*) compile_set_state_code(AutoSymbol name, Instr* code) {
+    vars_decls = gen_vars_decls(code);
+    body = vars_decls & ("" if vars_decls != ()) & compile_to_c(code, nothing);
+    ## WHY DOES THIS RETURN AN OBJ?
+    sgn = "void " & set_state_proc_name(name) & "(" & to_c_name(name) & " *self, OBJ a0)";
+    return (sgn & ";", (sgn & " {") & indent_lines(body) & ("}"));
+  }
+
+
+  String gen_const_data(AutoSymbol block_name, ConstBlockData const) =
+    "const int64 " & to_c_time_slots_table_name(block_name, const.expr_id) & "[] = {" &
+    append((printed(l) & "LL" : l <- const.lengths), ", ") & "};";
+
+
+  (String, String*) gen_user_def_method(AutoSymbol block_name, MethodId name, Instr* body) {
+    args_str = append((to_c_name(block_name) & " *self") & ("OBJ " & to_c_var_decl_name(fn_arg(i)) : i < name.arity), ", ");
+    sgn = "OBJ " & user_def_method_name(block_name, name) & "(" & args_str & ", ENV &env)";
+    vars_decls = gen_vars_decls(body);
+    body_text = vars_decls & ("" if vars_decls != ()) & compile_to_c(body, nothing);
+    return (sgn & ";", (sgn & " {") & indent_lines(body_text) & ("}"));
+  }
+
+
+  (String, String*) gen_input_setter(AutoSymbol block_name, Atom input_name, Nat node_idx, Bool queue_node) {
+    sgn = "void " & input_set_method_name(block_name, input_name) & "(" & to_c_name(block_name) & " *self, OBJ new_val)";
+    pending_input_var_str = to_c_var_ref_name(pending_input_var(input_name));
+    up_to_date_var = to_c_var_ref_name(up_to_date_var(std_block_node_id(input_name)));
+    body = (
+      sgn,
+      "{",
+      "  if (!" & up_to_date_var & ") {",
+      "    release(" & pending_input_var_str & ");",
+      "    " & pending_input_var_str & " = new_val;",
+      "  }",
+      "  else {",
+      "    " & pending_input_var_str & " = new_val;",
+      "    int64 idx = self->update_count_0;" if queue_node,
+      "    self->nodes_to_update_0[idx] = " & printed(node_idx) & ";" if queue_node,
+      "    self->update_count_0 = idx + 1;" if queue_node,
+      "    " & up_to_date_var & " = false;",
+      "  }",
+      "}"
+    );
+    return (sgn & ";", body);
+  }
+
+
+  (String, String*) gen_queue_update_method(AutoSymbol block_name, BlockNodeId node_id, Instr* body, IntVar* args) {
+    method_name = queue_update_method_name(block_name, node_id);
+    args_str = append((", " & var_c_type(v) & " " & to_c_var_decl_name(v) : v <- args));
+    sgn = "void " & method_name & "(" & to_c_name(block_name) & " *self" & args_str & ")";
+    vars_decl_text = gen_vars_decls(body);
+    vars_decl_text = (vars_decl_text | "") if vars_decl_text != ();
+    body_text = vars_decl_text & compile_to_c(body, nothing);
+    return (sgn & ";", (sgn & " {") & indent_lines(body_text) & ("}"));
+  }
+
+
+  (String, String*) gen_insert_timer_method(AutoSymbol block_name) {
+    method_name = insert_timer_method_name(block_name);
+    sgn = "void " & method_name & "(" & to_c_name(block_name) & " *self, int64 cond_idx, int64 time)";
+
+    body_text = (
+      "int n = self->time_triggers_count;",
+      "int64 *tt = self->trigger_times_heap;",
+      "int *ids = self->time_varying_cond_ids_heap;",
+
+      "int i = 0;",
+      "while (i < n && tt[i] < time)",
+      "  i++;",
+
+      "for (int j=n ; j > i ; j--) {",
+      "  tt[j] = tt[j-1];",
+      "  ids[j] = ids[j-1];",
+      "}",
+
+      "tt[i] = time;",
+      "ids[i] = cond_idx;",
+
+      "self->time_triggers_count = n + 1;"
+    );
+
+    return (sgn & ";", (sgn & " {") & indent_lines(body_text) & ("}"));
+  }
+
+
+  (String, String*) gen_clear_timer_method(AutoSymbol block_name) {
+    method_name = clear_timer_method_name(block_name);
+    sgn = "void " & method_name & "(" & to_c_name(block_name) & " *self, int64 cond_idx)";
+
+    body_text = (
+      "int n = self->time_triggers_count;",
+      "int64 *tt = self->trigger_times_heap;",
+      "int *ids = self->time_varying_cond_ids_heap;",
+
+      "int i = 0;",
+      "while (i < n && ids[i] != cond_idx)",
+      "  i++;",
+
+      "if (i < n)",
+      "  self->time_triggers_count = n - 1;",
+
+      "for ( ; i < n - 1 ; i++) {",
+      "  tt[i] = tt[i+1];",
+      "  ids[i] = ids[i+1];",
+      "}"
+    );
+
+    return (sgn & ";", (sgn & " {") & indent_lines(body_text) & ("}"));
+  }
+}
