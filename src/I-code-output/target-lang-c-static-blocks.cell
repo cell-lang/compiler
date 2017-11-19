@@ -1,0 +1,423 @@
+implicit {
+  sorted_cls_defs                 : ClsDef*,
+  int_seqs_types_and_lengths      : (String, Nat)*,
+  cached_semi_consts_by_impl_arg  : [ImplArg -> [+FnId]];
+
+
+  CCodeOutput compile_static_block_to_c(StaticBlock block) {
+    links_decls = (to_c_name(l) & " *linked_auto_" & printed(i) & ";" : l @ i <- block.links);
+    state_vars_decls = ["OBJ " & to_c_var_decl_name(v) & ";" : v, unused_var <- block.state_vars];
+    value_store_decls = ["VALUE_STORE " & to_c_var_decl_name(v) & ";" : v <- block.value_stores];
+    table_decls = [table_c_type(t) & " " & to_c_var_decl_name(v) & ";" : v, t <- block.tables];
+    nested_blocks_decls = [to_c_name(t) & " " & to_c_var_decl_name(v) & ";" : v, t <- block.nested_blocks];
+
+    memb_decls = links_decls & rand_sort(state_vars_decls) & rand_sort(value_store_decls) & rand_sort(table_decls) & rand_sort(nested_blocks_decls);
+    struct_decl = ("struct " & to_c_name(block.name) & " {") & indent_lines(memb_decls) & ("};");
+
+    aux_vars_decls = ["OBJ " & to_c_var_decl_name(pending_state_var(bare_id(v))) & ";" : v, unused_var <- block.state_vars];
+    aux_bool_vars_decls = ["bool " & to_c_var_decl_name(nested_db_spent(v)) & ";" : v, unused_var <- block.nested_blocks];
+    aux_stores_decls = ["VALUE_STORE_UPDATES " & aux_struct_var_decl_name(vs) & ";" : vs <- block.value_stores];
+    aux_tables_decls = [
+      pending_updates_var_type(t) & " " & pending_updates_var_decl_name(v) & ";"
+      : v, t <- block.tables
+    ];
+    nested_aux_blocks_decls = [aux_struct_c_name(t) & " " & aux_struct_var_decl_name(v) & ";" : v, t <- block.nested_blocks];
+    aux_memb_decls = rand_sort(aux_vars_decls) & rand_sort(aux_bool_vars_decls) & rand_sort(aux_stores_decls) &
+      rand_sort(aux_tables_decls) & rand_sort(nested_aux_blocks_decls);
+    aux_struct_decl = ("struct " & aux_struct_c_name(block.name) & " {") & indent_lines(aux_memb_decls) & ("};");
+
+    init_decl, init_impl = compile_init_code_to_c(block.name, block.links, block.init_code);
+    cleanup_decl, cleanup_impl = compile_cleanup_code_to_c(block.name, block.cleanup_code);
+
+    copy_state_decl, copy_state_impl = compile_copy_state_code_to_c(block.name, block.copy_state_code);
+    set_state_decl, set_state_impl = compile_set_state_code_to_c(block.name, block.set_state_code);
+
+    if block.updates_code(main_handler, *):
+      entry_point_decl, entry_point_impl = update_entry_point(block.name);
+    else
+      entry_point_decl = "";
+      entry_point_impl = ();
+    ;
+
+    set_state_entry_point_decl, set_state_entry_point_impl = set_state_entry_point(block.name);
+
+    check_decl, check_impl = updates_check_code(block);
+
+    copy_decl, copy_impl = updates_copy_code(block);
+
+    apply_decl, apply_impl = updates_apply_code(block);
+
+    finish_decl, finish_impl = updates_finish_code(block);
+
+    aux_init_decl, aux_init_impl = aux_struct_init_code(block);
+
+    aux_cleanup_decl, aux_cleanup_impl = aux_struct_cleanup_code(block);
+
+    methods_decls, methods_impls = unzip(rand_sort([gen_user_def_method(block.name, id, m.code) : id, m <- block.methods]));
+    methods_impls = join(intermix(methods_impls, ("", "")));
+
+    updates_decls, updates_impls = unzip(rand_sort([gen_update(block.name, id, b) : id, b <- block.updates_code]));
+    updates_impls = join(intermix(updates_impls, ("", "")));
+
+    all_decls = (
+      struct_decl, aux_struct_decl, (init_decl, cleanup_decl, copy_state_decl, set_state_decl,
+      aux_init_decl, aux_cleanup_decl, check_decl, copy_decl, apply_decl, finish_decl, entry_point_decl,
+      set_state_entry_point_decl), methods_decls, updates_decls
+    );
+
+    all_impls = (
+      init_impl, cleanup_impl, copy_state_impl, set_state_impl, aux_init_impl, aux_cleanup_impl, check_impl,
+      copy_impl, apply_impl, finish_impl, entry_point_impl, set_state_entry_point_impl, methods_impls, updates_impls
+    );
+
+    header = join(intermix(all_decls, ("", "")));
+    body   = join(intermix(all_impls, ("", "")));
+
+    return (body: body, header: header);
+  }
+
+
+  (String, String*) compile_init_code_to_c(DBSymbol name, DBSymbol* links, Instr* init_code) {
+    init_links = ("self->linked_auto_" & printed(i) & " = linked_auto_" & printed(i) & ";" : i < |links|);
+    init_vars_decl = gen_vars_decls(init_code);
+    init_vars_decl = init_vars_decl & ("") if init_vars_decl != ();
+    init_body = init_links & init_vars_decl & compile_to_c(init_code, nothing);
+    link_args = append((", " & to_c_name(l) & " *linked_auto_" & printed(i) : l @ i <- links));
+    init_sgn = "void " & init_method_name(name) & "(" & to_c_name(name) & " *self" & link_args & ", ENV &env)";
+    init_decl = init_sgn & ";";
+    init_proc = (init_sgn & " {") & indent_lines(init_body) & ("}");
+    return (init_decl, init_proc);
+  }
+
+
+  (String, String*) compile_cleanup_code_to_c(DBSymbol name, Instr* cleanup_code) {
+    cleanup_body = compile_to_c(cleanup_code, nothing);
+    cleanup_sgn = "void " & cleanup_method_name(name) & "(" & to_c_name(name) & " *self)";
+    cleanup_decl = cleanup_sgn & ";";
+    cleanup_proc = (cleanup_sgn & " {") & indent_lines(cleanup_body) & ("}");
+    return (cleanup_decl, cleanup_proc);
+  }
+
+
+  (String, String*) compile_copy_state_code_to_c(DBSymbol name, Instr* code) {
+    vars_decls = gen_vars_decls(code);
+    body = vars_decls & ("" if vars_decls != ()) & compile_to_c(code, nothing);
+    sgn = "OBJ " & copy_state_proc_name(name) & "(" & to_c_name(name) & " *self)";
+    return (sgn & ";", (sgn & " {") & indent_lines(body) & ("}"));
+  }
+
+
+  (String, String*) compile_set_state_code_to_c(DBSymbol name, Instr* code) {
+    vars_decls = gen_vars_decls(code);
+    body = vars_decls & ("" if vars_decls != ()) & compile_to_c(code, nothing);
+    sgn = "OBJ " & set_state_proc_name(name) & "(" & to_c_name(name) & " *self, " &
+          aux_struct_c_name(name) & " *self_aux, OBJ a0)";
+    return (sgn & ";", (sgn & " {") & indent_lines(body) & ("}"));
+  }
+
+
+  (String, String*) update_entry_point(DBSymbol block_name) {
+    sgn = "bool " & update_entry_point_name(block_name) & "(" & to_c_name(block_name) & " *self, OBJ a0, ENV &env)";
+
+    aux_var_decl = aux_struct_c_name(block_name) & " self_aux;";
+    aux_struct_init_call = mk_gen_call(aux_struct_init_proc_name(block_name), ("self", "&self_aux"), (), ());
+    handler_call = mk_gen_call(update_name(block_name, main_handler), ("self", "&self_aux"), (fn_arg(0)), ("env"));
+    updates_check_call = mk_gen_call(updates_check_proc_name(block_name), ("self", "&self_aux"), (), ());
+    updates_copy_call = mk_gen_call(updates_copy_proc_name(block_name), ("self", "&self_aux"), (), ());
+    updates_apply_call = mk_gen_call(updates_apply_proc_name(block_name), ("self", "&self_aux"), (), ());
+    updates_finish_code = mk_gen_call(updates_finish_proc_name(block_name), ("self", "&self_aux"), (), ());
+    aux_struct_cleanup_call = mk_gen_call(aux_struct_cleanup_proc_name(block_name), ("&self_aux"), (), ());
+
+    body = (
+      aux_var_decl,
+      aux_struct_init_call,
+      "bool ok = false;",
+      "int depth = get_call_stack_depth();",
+      "try {",
+      "  enter_try_state();",
+      "  " & handler_call,
+      "  ok = " & updates_check_call,
+      "  enter_copy_state();",
+      "  if (ok) {",
+      "    " & updates_copy_call,
+      "    " & updates_apply_call,
+      "    " & updates_finish_code,
+      "  }",
+      "  return_to_normal_state();",
+      "}",
+      "catch (...) {",
+      "  pop_try_mode_call_info(depth);",
+      "  abort_try_state();",
+      "}",
+      aux_struct_cleanup_call,
+      "return ok;"
+    );
+
+    return (sgn & ";", (sgn & " {") & indent_lines(body) & ("}"));
+  }
+
+
+  (String, String*) set_state_entry_point(DBSymbol block_name) {
+    sgn = "bool " & set_state_entry_point_name(block_name) & "(" & to_c_name(block_name) & " *self, OBJ a0)";
+
+    aux_var_decl = aux_struct_c_name(block_name) & " self_aux;";
+    aux_struct_init_call = mk_gen_call(aux_struct_init_proc_name(block_name), ("self", "&self_aux"), (), ());
+    set_state_call = mk_gen_call(set_state_proc_name(block_name), ("self", "&self_aux"), (fn_arg(0)), ());
+    updates_check_call = mk_gen_call(updates_check_proc_name(block_name), ("self", "&self_aux"), (), ());
+    updates_copy_call = mk_gen_call(updates_copy_proc_name(block_name), ("self", "&self_aux"), (), ());
+    updates_apply_call = mk_gen_call(updates_apply_proc_name(block_name), ("self", "&self_aux"), (), ());
+    updates_finish_call = mk_gen_call(updates_finish_proc_name(block_name), ("self", "&self_aux"), (), ());
+    aux_struct_cleanup_call = mk_gen_call(aux_struct_cleanup_proc_name(block_name), ("&self_aux"), (), ());
+
+    body = (
+      aux_var_decl,
+      aux_struct_init_call,
+      "enter_try_state();",
+      set_state_call,
+      "bool ok = " & updates_check_call,
+      "enter_copy_state();",
+      "if (ok) {",
+      "  " & updates_copy_call,
+      "  " & updates_apply_call,
+      "  " & updates_finish_call,
+      "}",
+      "return_to_normal_state();",
+      aux_struct_cleanup_call,
+      "return ok;"
+    );
+
+    return (sgn & ";", (sgn & " {") & indent_lines(body) & ("}"));
+  }
+
+
+  (String, String*) updates_check_code(StaticBlock block) {
+    tables_check_code = [
+      "ok &= " & mk_gen_call(fn_names[arity(t)][t.keys], (), (v), ("&" & pending_updates_var_ref_name(v)))
+      : v, t <- block.tables, t.keys != []
+    ];
+
+    nested_blocks_check_code = [
+      "ok &= " & mk_gen_call(updates_check_proc_name(t), ("&" & to_c_var_ref_name(v), aux_struct_var_ref_name(v)), (), ())
+      : v, t <- block.nested_blocks
+    ];
+
+    body = ("bool ok = true;") & rand_sort(tables_check_code) & rand_sort(nested_blocks_check_code) & ("return ok;");
+
+    sgn = "bool " & updates_check_proc_name(block.name) &  "(" & to_c_name(block.name) &
+          " *self, " & aux_struct_c_name(block.name) & " *self_aux)";
+
+    return (sgn & ";", (sgn & " {") & indent_lines(body) & ("}"));
+
+
+    [NzNat -> [[[+Nat]] -> String]] fn_names = [
+      // 1 -> [[] -> "unary_table_updates_check"],
+      2 -> [
+        // []                        -> "binary_table_updates_check",
+        [[0]]                     -> "binary_table_updates_check_0",
+        [[1]]                     -> "binary_table_updates_check_1",
+        [[0], [1]]                -> "binary_table_updates_check_0_1"
+      ],
+      3 -> [
+        // []                        -> "ternary_table_updates_check",
+        [[0, 1]]                  -> "ternary_table_updates_check_01",
+        [[0, 1], [2]]             -> "ternary_table_updates_check_01_2",
+        [[0, 1], [1, 2]]          -> "ternary_table_updates_check_01_12",
+        [[0, 1], [1, 2], [2, 0]]  -> "ternary_table_updates_check_01_12_20"
+      ]
+    ];
+  }
+
+
+  (String, String*) updates_copy_code(StaticBlock block) {
+    var_ids = (bare_id(v) : v <- rand_sort(keys(block.state_vars)));
+    vars_copy_code = join((var_copy_code(id) : id <- var_ids));
+
+    value_stores_copy_code = (
+      mk_gen_call("value_store_copy", (), (vs), (aux_struct_var_ref_name(vs)))
+      : vs <- rand_sort(block.value_stores)
+    );
+
+    nested_blocks_copy_code = [
+      mk_gen_call(updates_copy_proc_name(t), ("&" & to_c_var_ref_name(v), aux_struct_var_ref_name(v)), (), ())
+      : v, t <- block.nested_blocks
+    ];
+
+    body = vars_copy_code & value_stores_copy_code & rand_sort(nested_blocks_copy_code);
+
+    sgn = "void " & updates_copy_proc_name(block.name) & "(" & to_c_name(block.name) &
+          " *self, " & aux_struct_c_name(block.name) & " *self_aux)";
+
+    return (sgn & ";", (sgn & " {") & indent_lines(body) & ("}"));
+  }
+
+
+  (String, String*) updates_apply_code(StaticBlock block) {
+    value_stores_apply_code = (
+      mk_gen_call("value_store_apply", (), (vs), (aux_struct_var_ref_name(vs)))
+      : vs <- rand_sort(block.value_stores)
+    );
+
+    tables_apply_code = [{
+        other_args = ("&" & pending_updates_var_ref_name(v)) & (to_c_var_ref_name(vs) : vs <- t.value_stores);
+        return mk_gen_call(fn_names_by_arity[arity(t)], (), (v), other_args);
+      } : v, t <- block.tables
+    ];
+
+    nested_blocks_apply_code = [
+      mk_gen_call(updates_apply_proc_name(t), ("&" & to_c_var_ref_name(v), aux_struct_var_ref_name(v)), (), ())
+      : v, t <- block.nested_blocks
+    ];
+
+    body = value_stores_apply_code & rand_sort(tables_apply_code) & rand_sort(nested_blocks_apply_code);
+
+    sgn = "void " & updates_apply_proc_name(block.name) & "(" & to_c_name(block.name) &
+          " *self, " & aux_struct_c_name(block.name) & " *self_aux)";
+
+    return (sgn & ";", (sgn & " {") & indent_lines(body) & ("}"));
+
+
+    [NzNat -> String] fn_names_by_arity = [
+      1 -> "unary_table_updates_apply",
+      2 -> "binary_table_updates_apply",
+      3 -> "ternary_table_updates_apply"
+    ];
+  }
+
+
+  (String, String*) updates_finish_code(StaticBlock block) {
+    var_ids = (bare_id(v) : v <- rand_sort(keys(block.state_vars)));
+    vars_copy_code = join((var_apply_code(id) : id <- var_ids));
+
+    tables_finish_code = [{
+        other_args = ("&" & pending_updates_var_ref_name(v)) & (to_c_var_ref_name(vs) : vs <- t.value_stores);
+        return mk_gen_call(fn_names_by_arity[arity(t)], (), (), other_args);
+      } : v, t <- block.tables
+    ];
+
+    nested_blocks_finish_code = [
+      mk_gen_call(updates_finish_proc_name(t), ("&" & to_c_var_ref_name(v), aux_struct_var_ref_name(v)), (), ())
+      : v, t <- block.nested_blocks
+    ];
+
+    body = vars_copy_code & rand_sort(tables_finish_code) & rand_sort(nested_blocks_finish_code);
+
+    sgn = "void " & updates_finish_proc_name(block.name) & "(" & to_c_name(block.name) &
+          " *self, " & aux_struct_c_name(block.name) & " *self_aux)";
+
+    return (sgn & ";", (sgn & " {") & indent_lines(body) & ("}"));
+
+
+    [NzNat -> String] fn_names_by_arity = [
+      1 -> "unary_table_updates_finish",
+      2 -> "binary_table_updates_finish",
+      3 -> "ternary_table_updates_finish"
+    ];
+  }
+
+
+  (String, String*) aux_struct_init_code(StaticBlock block) {
+    var_ids = (bare_id(v) : v <- rand_sort(keys(block.state_vars)));
+    init_vars_code = (to_c_var_ref_name(pending_state_var(id)) & " = make_blank_obj();" : id <- var_ids);
+
+    bool_vars_ids = rand_sort(keys(block.nested_blocks));
+    bool_vars_init_code = (to_c_var_ref_name(nested_db_spent(v)) & " = false;" : v <- bool_vars_ids);
+
+    value_stores_init_code = (
+      mk_gen_call("value_store_updates_init", (), (vs), (aux_struct_var_ref_name(vs)))
+      : vs <- rand_sort(block.value_stores)
+    );
+
+    tables_init_code = [
+      mk_gen_call(fn_names_by_arity[arity(t)], ("&" & pending_updates_var_ref_name(v)), (), ())
+      : v, t <- block.tables
+    ];
+
+    nested_blocks_init_code = [
+      mk_gen_call(aux_struct_init_proc_name(t), ("&" & to_c_var_ref_name(v), aux_struct_var_ref_name(v)), (), ())
+      : v, t <- block.nested_blocks
+    ];
+
+    body = init_vars_code & bool_vars_init_code & value_stores_init_code & rand_sort(tables_init_code) &
+          rand_sort(nested_blocks_init_code);
+
+    sgn = "void " & aux_struct_init_proc_name(block.name) & "(" & to_c_name(block.name) & " *self, " & aux_struct_c_name(block.name) & " *self_aux)";
+
+    return (sgn & ";", (sgn & " {") & indent_lines(body) & ("}"));
+
+
+    [NzNat -> String] fn_names_by_arity = [
+      1 -> "unary_table_updates_init",
+      2 -> "binary_table_updates_init",
+      3 -> "ternary_table_updates_init"
+    ];
+  }
+
+
+  (String, String*) aux_struct_cleanup_code(StaticBlock block) {
+    // var_ids = (bare_id(v) | v <- rand_sort(block.state_vars));
+    // init_vars_code = (to_c_var_ref_name(pending_state_var(id)) & " = make_blank_obj();" | id <- var_ids);
+
+    value_stores_cleanup_code = (mk_gen_call("value_store_updates_cleanup", (aux_struct_var_ref_name(vs)), (), ()) : vs <- rand_sort(block.value_stores));
+
+    tables_init_code = [
+      mk_gen_call(fn_names_by_arity[arity(t)], ("&" & pending_updates_var_ref_name(v)), (), ())
+      : v, t <- block.tables
+    ];
+
+    nested_blocks_init_code = [
+      mk_gen_call(aux_struct_cleanup_proc_name(t), (aux_struct_var_ref_name(v)), (), ())
+      : v, t <- block.nested_blocks
+    ];
+
+    body = value_stores_cleanup_code & rand_sort(tables_init_code) & rand_sort(nested_blocks_init_code);
+
+    sgn = "void " & aux_struct_cleanup_proc_name(block.name) & "(" & aux_struct_c_name(block.name) & " *self_aux)";
+
+    return (sgn & ";", (sgn & " {") & indent_lines(body) & ("}"));
+
+
+    [NzNat -> String] fn_names_by_arity = [
+      1 -> "unary_table_updates_cleanup",
+      2 -> "binary_table_updates_cleanup",
+      3 -> "ternary_table_updates_cleanup"
+    ];
+  }
+
+
+  String* var_copy_code(Atom var_id) {
+    psv_str = to_c_var_ref_name(pending_state_var(var_id));
+    return (psv_str & " = copy_obj(" & psv_str & ");");
+  }
+
+
+  String* var_apply_code(Atom var_id) {
+    psv_str = to_c_var_ref_name(pending_state_var(var_id));
+    mv_str = to_c_var_ref_name(memb_var(var_id));
+    return (
+      "if (!is_blank_obj(" & psv_str & ")) {",
+      "  release(" & mv_str & ");",
+      "  " & mv_str & " = " & psv_str & ";",
+      "}"
+    );
+  }
+
+
+  (String, String*) gen_user_def_method(DBSymbol block_name, MethodId method_id, Instr* body) {
+    args_str = append((to_c_name(block_name) & " *self") & ("OBJ " & to_c_var_decl_name(fn_arg(i)) : i < method_id.arity), ", ");
+    sgn = "OBJ " & user_def_method_name(block_name, method_id) & "(" & args_str & ", ENV &env)";
+    vars_decls = gen_vars_decls(body);
+    body_text = vars_decls & ("" if vars_decls != ()) & compile_to_c(body, nothing);
+    return (sgn & ";", (sgn & " {") & indent_lines(body_text) & ("}"));
+  }
+
+
+  (String, String*) gen_update(DBSymbol block_name, UpdateId update_id, Instr* body) {
+    impl_args_strs = (to_c_name(block_name) & " *self", aux_struct_c_name(block_name) & " *self_aux");
+    expl_args_strs = ("OBJ " & to_c_var_decl_name(fn_arg(i)) : i < arity(update_id));
+    args_str = append(impl_args_strs & expl_args_strs, ", ");
+    sgn = "void " & update_name(block_name, update_id) & "(" & args_str & ", ENV &env)";
+    vars_decls = gen_vars_decls(body);
+    body_text = vars_decls & ("" if vars_decls != ()) & compile_to_c(body, nothing);
+    return (sgn & ";", (sgn & " {") & indent_lines(body_text) & ("}"));
+  }
+}

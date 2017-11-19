@@ -1,0 +1,142 @@
+implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg], actual_arg_arity : Nat {
+  ExprWFError* clause_wf_errors(SynClause cls, [DefVar] def_vars) =
+    iter_clause()       = iter_clause_wf_errors(cls.vars, cls.src, def_vars),
+    seq_clause()        = seq_clause_wf_errors(cls.vars, cls.idx_var, cls.src, def_vars),
+    and_clause(cs?)     = and_clause_wf_errors(cs, def_vars),
+    or_clause(cs?)      = join((clause_wf_errors(c, def_vars) : c <- cs)),
+    match_clause()      = ptrn_wf_errors(cls.ptrn, def_vars) & expr_wf_errors(cls.expr, def_vars),
+    asgnm_clause()      = (already_def_var(cls.var) if already_def(cls.var, def_vars)) & expr_wf_errors(cls.expr, def_vars), ## BAD: ALMOST THE SAME AS THE TWO ABOVE
+    filter_clause()     = expr_wf_errors(cls.cond, def_vars);
+
+
+  ExprWFError* iter_clause_wf_errors(StdVar+ vars, [DefVar] def_vars) {
+    arity = |vars|;
+    dupl_vars = duplicates(vars);
+    errs  = (already_def_var(v) : v <- vars, already_def(v, def_vars)) &
+            (dupl_var_mult_asgnm(v) : v <- rand_sort(dupl_vars)) &
+            (iter_clause_wrong_arity(vars, [1, 2, 3]) if not in(arity, [1, 2, 3]));
+    return errs;
+  }
+
+
+  ExprWFError* iter_clause_wf_errors(StdVar+ vars, SynExpr src_expr, [DefVar] def_vars) {
+    errs = iter_clause_wf_errors(vars, def_vars);
+    return errs if errs != ();
+
+    if src_expr :: IdChain:
+      symbols = destructure_id_chain(src_expr);
+      resols = resolve_by_priority_as_memb_test_target(symbols, def_vars);
+      if |resols| == 1:
+        resol = only(resols);
+        if resol :: AnyRelVar:
+          relvar_arity = relvar_arity(resol);
+          return (iter_clause_wrong_arity(vars, [relvar_arity]) if |vars| != relvar_arity);
+        ;
+      ;
+    ;
+
+    return expr_wf_errors(src_expr, def_vars);
+  }
+
+
+  ExprWFError* iter_clause_wf_errors(StdVar+ vars, SynProj src_expr, [DefVar] def_vars) {
+    errs = iter_clause_wf_errors(vars, def_vars);
+    return errs if errs != ();
+
+    target = src_expr.target;
+    args = src_expr.args;
+
+    ## BAD BAD RETURNING THE WRONG ERRORS...
+    return (invalid_expr(const_or_var(last(target)))) if not (s <~ args : s != nothing);
+
+    // Checking the arguments first
+    args_errs = join((expr_wf_errors(value(a), def_vars) : a <- args, a != nothing));
+    return args_errs if args_errs != ();
+
+    exp_clause_arity = nz_nat(count(args, $ == nothing));
+    return (iter_clause_wrong_arity(vars, [exp_clause_arity])) if |vars| != exp_clause_arity;
+
+    // Trying to resolve the relation name
+    resols = resolve_by_priority_as_memb_test_target(target, |args|, def_vars);
+    ## BAD BAD RETURNING THE WRONG ERRORS...
+    return (undef_var_or_const(last(target))) if resols == [];
+    return (ambiguous_expr(const_or_var(last(target)), resols)) if |resols| != 1;
+    resol = only(resols);
+
+    // Now checking one particular case: target identify a relvar
+    if resol :: AnyRelVar:
+      relvar_arity = relvar_arity(resol);
+      exp_clause_arity = nz_nat(count(args, $ == nothing));
+      return if |args| != relvar_arity
+        then (invalid_rel_var_arity(last(target), |args|, relvar_arity)) ## BAD BAD RETURNING THE WRONG ERRORS
+        else ();
+    ;
+
+    // Since we are here, target can only be a normal (relation-valued) expression
+    return ();
+  }
+
+
+  ExprWFError* seq_clause_wf_errors(Maybe[Atom]+ vars, Maybe[Atom] idx_var, SynExpr src, [DefVar] def_vars) {
+    all_vars = (value(v) : v <- (vars | idx_var), v != nothing);
+    dupl_vars = duplicates(all_vars);
+    var_redef_errs = (already_def_var(var(v)) : v <- all_vars, already_def(v, def_vars));
+    dupl_var_errs = (dupl_var_mult_asgnm(var(v)) : v <- rand_sort(dupl_vars));
+    src_errs = expr_wf_errors(src, def_vars);
+    return var_redef_errs & dupl_var_errs & src_errs;
+  }
+
+
+  ExprWFError* and_clause_wf_errors(SynClause+ clauses, [DefVar] def_vars) {
+    errs = ();
+    curr_vars = def_vars;
+    for c <- clauses:
+      errs = errs & clause_wf_errors(c, curr_vars);
+      curr_vars = curr_vars & syn_new_vars(c);
+    ;
+    return errs;
+  }
+
+
+  ExprWFError* ptrn_wf_errors(SynPtrn ptrn, [DefVar] def_vars) =
+    ptrn_symbol       = (),
+    ptrn_float        = (),
+    ptrn_seq          = (),
+    ptrn_set          = (),
+    ptrn_map          = (),
+    ptrn_bin_rel      = (),
+    ptrn_tern_rel     = (),
+    ptrn_tag_obj      = (),
+    ptrn_any          = (),
+    ptrn_symbol()     = (),
+    ptrn_integer()    = (),
+    ptrn_tuple(ps?)   = ptrn_tuple_wf_errors(ps, def_vars),
+    ptrn_tag_obj()    = ptrn_wf_errors(ptrn.tag, def_vars) & ptrn_wf_errors(ptrn.obj, def_vars),
+    ptrn_var()        = (already_def_var(ptrn.var) if already_def(ptrn.var, def_vars)) & ptrn_wf_errors(ptrn.ptrn, def_vars & [ptrn.var]),
+    ptrn_union(ps?)   = ptrn_union_wf_errors(ps, def_vars);
+
+
+  ExprWFError* ptrn_tuple_wf_errors(SynPtrn+ ptrns, [DefVar] def_vars) {
+    curr_vars = def_vars;
+    for p <- ptrns:
+      errs = ptrn_wf_errors(p, curr_vars);
+      return errs if errs != ();
+      curr_vars = curr_vars & syn_new_vars(p);
+    ;
+    return ();
+  }
+
+
+  ExprWFError* ptrn_union_wf_errors(SynPtrn+ ptrns, [DefVar] def_vars) {
+    assert |ptrns| > 1;
+    errs = join((ptrn_wf_errors(p, def_vars) : p <- ptrns));
+    return errs if errs != ();
+    new_vars = (syn_new_vars(p) : p <- ptrns);
+    vs0 = new_vars(0);
+    for vs <- new_vars:
+      return (diff_var_sets_in_ptrn_union(ptrns)) if vs != vs0;
+    ;
+    return ();
+    ## CHECK THAT THE PATTERNS DO NOT OVERLAP?
+  }
+}

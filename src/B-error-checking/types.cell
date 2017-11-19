@@ -1,0 +1,147 @@
+[WFError] typedefs_preliminary_wf_errors([Typedef] tdefs, [ParTypedef] par_tdefs) = [
+    dupl_typedef(ord_tds(0), ord_tds(1)) // It's enought to show just two, if there's more than two
+    : unused_var, tds <- group_by(tdefs, $.name) | unused_var, tds <- group_by(par_tdefs, ($.name, arity($))),
+      |tds| > 1, ord_tds = rand_sort(tds)
+  ];
+
+
+[WFError] typedefs_wf_errors([Typedef] tdefs, [ParTypedef] par_tdefs, [BasicTypeSymbol -> [+Nat]] type_arity_map) {
+  ## TODO: CHECK FOR CYCLES IN THE SUBSET GRAPH
+  return union([typedef_wf_errors(td, type_arity_map) : td <- tdefs | td <- par_tdefs]);
+
+  [WFError] typedef_wf_errors(AnyTypedef tdef, [BasicTypeSymbol -> [+Nat]] type_arity_map) {
+    tvars = type_vars(tdef);
+    errs = type_wf_errors(tdef.type, typedef_type_wf_errors($, tvars, type_arity_map));
+    return [typedef_errors(tdef, errs) if errs != ()];
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+implicit syn_prg : SynPrg {
+  TypeWFError* plain_type_wf_errors(SynType type) = plain_type_wf_errors(type, type_arity_map);
+
+  // Type variables, but not schemas or protocols
+  TypeWFError* param_type_wf_errors(SynType type, [TypeVar] type_vars) =
+    type_wf_errors(type, param_type_wf_errors($, type, type_vars, type_arity_map));
+
+  // Schemas, but not protocols nor type variables
+  TypeWFError* schema_aware_type_wf_errors(SynType type) =
+    type_wf_errors(type, schema_aware_type_wf_errors($, type, type_arity_map, schema_names));
+
+  // Anything goes
+  TypeWFError* arbitrary_type_wf_errors(SynType type) =
+    type_wf_errors(type, arbitrary_type_wf_errors($, type, type_prot_arity_map, schema_names));
+
+  TypeWFError* arbitrary_type_wf_errors(SynClsType type) =
+    join((arbitrary_type_wf_errors(t) : t <- type.in_types)) & arbitrary_type_wf_errors(type.out_type);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+// No schemas, not protocols and no type variables
+TypeWFError* plain_type_wf_errors(SynType type, [BasicTypeSymbol -> [+Nat]] type_arity_map) =
+  type_wf_errors(type, plain_type_wf_errors($, type, type_arity_map));
+
+// No schemas, no type variables and only listed protocols
+TypeWFError* prot_sgn_type_wf_errors(SynType type, [BasicTypeSymbol -> [+Nat]] type_arity_map, [Atom] protocols) =
+  type_wf_errors(type, prot_sgn_type_wf_errors($, type, type_arity_map, protocols));
+
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+TypeWFError* typedef_type_wf_errors(<SynTypeRef, SynTypeVar> type, [TypeVar] type_vars, [BasicTypeSymbol -> [+Nat]] type_arity_map) =
+  type_var()    = (undef_type_var(type) if not type_vars(type)),
+  type_ref(ts?) = type_symb_wf_errors(ts, type_arity_map, [], typedef_type_wf_errors($, type_vars, type_arity_map));
+
+
+TypeWFError* plain_type_wf_errors(<SynTypeRef, SynTypeVar> type, SynType root_type, [BasicTypeSymbol -> [+Nat]] type_arity_map) =
+  type_var()    = (type_vars_not_allowed(root_type, type)),
+  type_ref(ts?) = type_symb_wf_errors(ts, type_arity_map, [], plain_type_wf_errors($, root_type, type_arity_map));
+
+
+TypeWFError* param_type_wf_errors(<SynTypeRef, SynTypeVar> type, SynType root_type, [TypeVar] type_vars, [BasicTypeSymbol -> [+Nat]] type_arity_map) =
+  type_var()    = (undef_type_var(type) if not type_vars(type)),
+  type_ref(ts?) = type_symb_wf_errors(ts, type_arity_map, [], param_type_wf_errors($, root_type, type_vars, type_arity_map));
+
+
+TypeWFError* schema_aware_type_wf_errors(<SynTypeRef, SynTypeVar> type, SynType root_type, [BasicTypeSymbol -> [+Nat]] type_arity_map, [Atom] schemas) =
+  type_var()    = (type_vars_not_allowed(root_type, type)),
+  type_ref(ts?) = type_symb_wf_errors(ts, type_arity_map, schemas, schema_aware_type_wf_errors($, root_type, type_arity_map, schemas));
+
+
+TypeWFError* prot_sgn_type_wf_errors(<SynTypeRef, SynTypeVar> type, SynType root_type, [BasicTypeSymbol -> [+Nat]] type_arity_map, [Atom] protocols) =
+  type_var()    = (type_vars_not_allowed(root_type, type)),
+  type_ref(ts?) = { is_prot = match (ts) type_symbol(id?) = protocols(id);
+                    return () if is_prot;
+                    return type_symb_wf_errors(ts, type_arity_map, [], prot_sgn_type_wf_errors($, root_type, type_arity_map, protocols));
+                  };
+
+
+TypeWFError* arbitrary_type_wf_errors(<SynTypeRef, SynTypeVar> type, SynType root_type, [BasicTypeSymbol -> [+Nat]] type_arity_map, [Atom] schemas) =
+  type_var()    = (),
+  type_ref(ts?) = type_symb_wf_errors(ts, type_arity_map, schemas, arbitrary_type_wf_errors($, root_type, type_arity_map, schemas));
+
+////////////////////////////////////////////////////////////////////////////////
+
+TypeWFError* type_symb_wf_errors(BasicTypeSymbol type_symb, [BasicTypeSymbol -> [+Nat]] type_arity_map,
+            [Atom] schemas, (<SynTypeRef, SynTypeVar> -> TypeWFError*) wf_errors) {
+
+  bare_id = match (type_symb) type_symbol(id?) = id;
+  is_def = type_arity_map(type_symb, *) or schemas(bare_id);
+  return (undef_type(type_symb) if not is_def);
+}
+
+
+TypeWFError* type_symb_wf_errors(SynParTypeSymbol type_symb, [BasicTypeSymbol -> [+Nat]] type_arity_map,
+  [Atom] schemas, (<SynTypeRef, SynTypeVar> -> TypeWFError*) wf_errors) {
+
+  return (undef_type(type_symb.symbol)) if not type_arity_map(type_symb.symbol, *);
+  arity = arity(type_symb);
+  arities = type_arity_map[type_symb.symbol];
+  return (undef_type_arity(type_symb.symbol, arity, arities)) if not in(arity, arities);
+
+  return join((type_wf_errors(t, wf_errors) : t <- type_symb.params));
+
+  ## CHECK ALL THE TYPE PARAMETERS...
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+TypeWFError* type_wf_errors(SynType type, (<SynTypeRef, SynTypeVar> -> TypeWFError*) wf_errors) {
+  return () if type :: LeafType;
+  return match(type)
+    syn_int_range()     = (invalid_int_range(type) if type.min > type.max),
+    type_ref()          = wf_errors(type),
+    type_var()          = wf_errors(type),
+    ne_seq_type()       = type_wf_errors(type.elem_type, wf_errors),
+    ne_set_type()       = type_wf_errors(type.elem_type, wf_errors),
+    ne_map_type()       = type_wf_errors(type.key_type, wf_errors) &
+                          type_wf_errors(type.value_type, wf_errors),
+    ne_bin_rel_type()   |
+    ne_tern_rel_type()  = join((join((type_wf_errors(t, wf_errors) : t <- s)) : s <- type.signatures)),
+    record_type(fs?)    = record_type_wf_errors(fs, wf_errors),
+    tuple_type(ts?)     = join((type_wf_errors(t, wf_errors) : t <- ts)),
+    tag_obj_type()      = (invalid_tag_type(type.tag_type) if not type.tag_type :: TagType) &
+                          type_wf_errors(type.obj_type, wf_errors),
+    union_type(ts?)     = union_type_wf_errors(ts, wf_errors);
+
+
+  TypeWFError* record_type_wf_errors(SynRecordField+ fields, (<SynTypeRef, SynTypeVar> -> TypeWFError*) wf_errors) {
+    errs = ();
+    for f1 @ i1 <- fields ; f2 <- drop(fields, i1+1):
+      errs = (errs | dupl_record_field(f1, f2)) if f1.label == f2.label;
+    ;
+    return errs & join((type_wf_errors(f.type, wf_errors) : f <- fields));
+  }
+
+
+  TypeWFError* union_type_wf_errors(SynType+ types, (<SynTypeRef, SynTypeVar> -> TypeWFError*) wf_errors) {
+    errs = if |types| > 1 then (type_var_in_union(t) : t <- types, t :: TypeVar) else ();
+    return errs & join((type_wf_errors(t, wf_errors) : t <- types));
+  }
+}

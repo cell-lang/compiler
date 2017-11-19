@@ -1,0 +1,707 @@
+implicit program : Program, automaton : Automaton, options : CompilationOptions {
+  Instr+ gen_node_update_code(AutoInputNode node) {
+    id = get_inner_id(node.id);
+
+    l0 = lvar(0);
+    l1 = lvar(1);
+    memb_var = signal_var(id);
+    pending_input_var = pending_input_var(id);
+
+    body = (set_var(memb_var, l0)) &
+           (queue_update(n) : n <- rand_sort(node.downstream_nodes)) &
+           flag_as_changed_if_output(id);
+
+    return nonempty((read_pending_var(l0, pending_input_var), init_memb_var(pending_input_var, :blank)) & body) if node.discrete;
+
+    return (
+      read_pending_var(l0, pending_input_var),
+      init_memb_var(pending_input_var, :blank),
+      set_var(l1, memb_var),
+      do_if_not(is_eq(l0, l1), body)
+    );
+  }
+
+
+  Instr+ gen_node_update_code(AutoDerivedNode node) {
+    id = get_inner_id(node.id);
+
+    var = signal_var(id);
+    nv_var, var_gen = next_obj_var(blank_var_gen);
+    eval_code = gen_safe_eval_code(node.expr, nv_var, next_var_gen = var_gen);
+    eval_code = (try_block(nv_var, eval_code)) if not is_total(node.expr);
+    cond = neg(is_eq(var, nv_var));
+    body = (set_var(var, nv_var)) &
+           (queue_update(n) : n <- rand_sort(node.downstream_nodes)) &
+           flag_as_changed_if_output(id);
+    return (eval_code | do_if(cond, body));
+  }
+
+
+  Instr+ gen_node_update_code(AutoStateNode node) {
+    id = get_inner_id(node.id);
+
+    var = signal_var(id);
+    nv_var, var_gen = next_obj_var(blank_var_gen);
+    let next_var_gen = var_gen:
+      cases = nonempty((gen_safe_eval_code(e, nv_var) : e <- node.exprs) & ((clear_loc_var(nv_var))));
+      eval_instr = switch_on_nat(update_source_var(id), cases);
+    ;
+    eval_instr = try_block(nv_var, (eval_instr)) if (e <~ node.exprs : not is_total(e));
+    cond = neg(is_eq(var, nv_var));
+    body = (set_var(var, nv_var)) &
+           (queue_update(n) : n <- rand_sort(node.downstream_nodes)) &
+           flag_as_changed_if_output(id);
+    lock_check_instr = if |node.exprs| > 1
+      then do_if_not(is_eq(null_locks_count_var(id), 0), set_ivar(update_source_var(id), |node.exprs|))
+      else no_op;
+    return (lock_check_instr, eval_instr, do_if(cond, body));
+  }
+
+
+  Instr+ gen_node_update_code(AutoDiscDerivedNode node) {
+    id = get_inner_id(node.id);
+
+    var = signal_var(id);
+    nv_var, var_gen = next_obj_var(blank_var_gen);
+    let next_var_gen = var_gen:
+      cases = nonempty((gen_safe_eval_code(e, nv_var) : e <- node.exprs) & ((clear_loc_var(nv_var))));
+      eval_instr = switch_on_nat(update_source_var(id), cases);
+    ;
+    eval_instr = try_block(nv_var, (eval_instr)) if (e <~ node.exprs : not is_total(e));
+    lock_check_instr = if |node.exprs| > 1
+      then do_if_not(is_eq(null_locks_count_var(id), 0), set_ivar(update_source_var(id), |node.exprs|))
+      else no_op;
+    return nonempty(
+      (lock_check_instr, eval_instr, set_var(var, nv_var)) &
+      (queue_update(n) : n <- rand_sort(node.downstream_nodes)) &
+      flag_as_changed_if_output(id)
+    );
+  }
+
+
+  Instr* gen_node_update_code(AutoCondNode node) {
+    id = get_inner_id(node.id);
+
+    l0 = lvar(0);
+    b0 = bvar(0);
+    b1 = bvar(1);
+    id_var = cond_value_var(id);
+    cond_is_def_var = cond_is_def_var(id);
+
+    // Evaluating the condition and storing the result in l0
+    l0, var_gen = next_obj_var(blank_var_gen);
+    cond_eval_code = gen_safe_eval_code(node.cond, l0, next_var_gen = var_gen);
+    cond_eval_code = (try_block(l0, cond_eval_code)) if not is_total(node.cond);
+
+    // Base case, the condition stays defined. b1 holds the value of the condition, b0 whether it has changed
+    // If the condition has changed, we queue the updates for the appropriate branch
+    cond_stays_def_branch = (
+      set_bvar(b1, inline_is_eq(l0, obj_true)),
+      set_bvar(b0, neg(is_eq(id_var, b1))),
+      set_bvar(id_var, b1),
+      do_if(
+        and((b0, neg(is_new))),
+        ( branch_or_no_op(
+            b1,
+            join(rand_sort([gen_update_code(a) : a <- node.actions])),
+            ()
+          )
+        )
+      )
+    );
+
+    // If the condition is now defined. If it was already defined before, we run the
+    // standard code. Otherwise, there's nothing to do, except storing its new value.
+    // In either case, we propagate the update to all dependent nodes
+    cond_is_def_branch = (
+      branch(
+        cond_is_def_var,
+        cond_stays_def_branch,
+        ( set_bvar(id_var, inline_is_eq(l0, obj_true)),
+          set_bvar(cond_is_def_var, true)
+        )
+      )
+    );
+
+    // The condition is undefined. If it already was, there's nothing we need to do.
+    // If, on the other hand, it has just become undefined, we need execute all the
+    // assignments with a null value. We also propagate the update to all dependent conditions.
+    cond_is_undef_branch = (
+      do_if(
+        cond_is_def_var,
+        ( set_bvar(cond_is_def_var, false),
+          do_if_not(is_new, join((gen_clear_code(a) : a <- rand_sort(node.actions))))
+        )
+      )
+    );
+
+    return cond_eval_code & (branch(is_null(l0), cond_is_undef_branch, cond_is_def_branch));
+  }
+
+
+  Instr* gen_node_update_code(AutoRepCondNode node) {
+    id = node.id;
+
+    // Evaluating the condition and storing the result in l0
+    l0, var_gen = next_obj_var(blank_var_gen);
+    cond_eval_code = gen_safe_eval_code(node.cond, l0, next_var_gen = var_gen);
+    cond_eval_code = (try_block(l0, cond_eval_code)) if not is_total(node.cond);
+
+    continuous_signals = rand_sort([v : v, unused_var <- node.signals_state, not is_discrete(v)]);
+    discrete_signals = rand_sort([v : v, unused_var <- node.signals_state, is_discrete(v)]);
+
+    if discrete_signals != ():
+      signals_cond_is_undef = or((is_null(v) : v <- discrete_signals));
+      signals_cond = and((
+          if node.signals_state[v] then neg(is_blank(v)) else is_blank(v)
+        : v <- discrete_signals
+      ));
+      cond_eval_code = (
+        branch(
+          signals_cond_is_undef,
+          clear_loc_var(l0),
+          branch(signals_cond, cond_eval_code, (set_var(l0, obj_false)))
+        )
+      );
+    ;
+
+    if continuous_signals != ():
+      signals_cond_is_undef = or((is_null(v) : v <- continuous_signals));
+      signals_cond_was_undef = or((is_null(prev_var_value(v)) : v <- continuous_signals));
+      signals_cond = and(({
+          neg_cond = is_eq(v, prev_var_value(v));
+          return if node.signals_state[v] then neg(neg_cond) else neg_cond;
+        } : v <- continuous_signals
+      ));
+      locks_count_vars = (null_locks_count_var(a.target_var) : a <- rand_sort(node.actions), requires_null_locking(a));
+      locking_code = (increment(v) : v <- locks_count_vars);
+      unlocking_code = (decrement(v) : v <- locks_count_vars);
+      cond_eval_code = (
+        branch(
+          signals_cond_is_undef,
+          (opt_do_if(neg(signals_cond_was_undef), locking_code) | clear_loc_var(l0)),
+          ( branch(
+              signals_cond_was_undef,
+              (unlocking_code | clear_loc_var(l0)),
+              (branch(signals_cond, cond_eval_code, (set_var(l0, obj_false))))
+            )
+          )
+        )
+      );
+    ;
+
+    // Executing all the actions associated with the condition
+    action_exec_code = (
+      branch(
+        is_null(l0),
+
+        // The condition is not defined, we execute all assignments with a null value
+        join(rand_sort([gen_clear_code(a) : a <- node.actions])),
+
+        // The condition is defined, we run the normal actions
+        ( branch_or_no_op(
+            inline_is_eq(l0, obj_true),
+            join(rand_sort([gen_update_code(a) : a <- node.actions])),
+            ()
+          )
+        )
+      )
+    );
+
+    return (do_if_not(is_new, cond_eval_code & action_exec_code));
+  }
+
+
+  Instr* gen_node_update_code(AutoTimeVaryingNode node) {
+    node_id = node.id;
+    id = get_inner_id(node_id);
+    time_expr = node.time_expr;
+
+    time_varying_node_idx = time_varying_nodes_indexes[node_id];
+
+    init_val = initial_value(time_expr);
+    init_slot_len = initial_slot_length(time_expr);
+
+    i0 = ivar(0);
+    i1 = ivar(1);
+    i2 = ivar(2);
+    i3 = ivar(3);
+
+    l0, var_gen = next_obj_var(blank_var_gen);
+    cond_var = signal_var(id);
+
+    watched_signal_up_to_date_var = watched_signal_up_to_date_var(id);
+    watched_signal_value_var = watched_signal_value_var(id);
+
+    next_trigger_time_var = next_trigger_time_var(id);
+    curr_time_slot_var = curr_time_slot_var(id);
+
+    // We enter any of the following four regions of code (defined/undefined -> defined/undefined)
+    // with the new value for the watched signal stored in lvar(0) and the old one in
+    // watched_signal_value_var(_). The new value is copied in place only at the end of the section
+
+    // The watched signal is now undefined and either this is the first update, or it was defined before
+    // Possible state transitions for unchanged-for rules: A/C/D/E -> B
+    // Possible state transitions for boolean rules: A/C/D/E/F -> B
+    // We first clear any pending timer (there could be one if we come from D)
+    // We also reset the next trigger time and the current time slot (needed when coming from D or E)
+    watched_signal_becomes_undefined_code = (
+      set_ivar(next_trigger_time_var, -1),
+      set_ivar(curr_time_slot_var, -1),
+      clear_timer(automaton.name, time_varying_node_idx)
+    );
+
+    // // The watched signal was undefined and has just become defined.
+    // // Possible state transitions for unchanged-for rules: B -> C
+    // // Possible state transitions for boolean rules: B -> C/F
+    // // Nothing to do here. Since there's no code to run, we don't even bother with this branch
+    // watched_signal_becomes_defined_code = [];
+
+    // // The watched signal stays undefined
+    // // Possible state transitions: B -> B
+    // // Nothing to do here. Since there's no code to run, we don't even bother with this branch
+    // watched_signal_stays_undefined_code = [];
+
+    // The timer has expired expired before the watched signal changed
+    // Possible state transitions: D -> D/E
+    // In order to figure out if a timer has expired, we compare the current time
+    // with the next trigger time. Since the next trigger time is always -1 if we
+    // are not in state D, that should be the only check we need.
+    // If the timer has actually expired, we do (or not do) the following:
+    //    The timer has already been removed, so no need to do that again here ## AM I SURE ABOUT THIS ONE? CHECK
+    //    We increment the current time slot
+    //    If it's the last slot:
+    //      We reset the next trigger time
+    //    Otherwise:
+    //      We set the next trigger time
+    //      We insert the new timer
+    timer_expires_instr =
+      do_if(
+        is_eq(next_trigger_time_var, curr_time),
+        ( set_ivar(i1, add(curr_time_slot_var, 1)),
+          set_ivar(curr_time_slot_var, i1),
+          set_ivar(i2, time_slot_length(time_expr, automaton.name, id, i1)),
+          branch(
+            neg(is_eq(i2, 0)),
+            ( set_ivar(i3, add(curr_time, i2)),
+              set_ivar(next_trigger_time_var, i3),
+              insert_timer(automaton.name, time_varying_node_idx, i3)
+            ),
+            (set_ivar(next_trigger_time_var, -1))
+          )
+        )
+      );
+
+    if node.rule_type == :unchanged:
+      //  These are the possible states for an unchanged-for time rule:
+      //
+      //  State   Watched   Overall     Next      Current   Timer
+      //  ID      signal    condition   trigger   time      set
+      //                                time      slot
+      //
+      //  A)      blank     blank       -1        -1        no      Initial state
+      //  B)      null      null        -1        -1        no      Watched signal is null
+      //  C)      set       null        -1        -1        no      Watched signal is non-null now, but it was null before it assumed its current value
+      //  D)      set       set         set       set       yes     Standard good state, with ongoing timer
+      //  E)      set       set         -1        set       no      Standard good state, all time triggers already expired
+
+      // The watched signal was, and remains, defined. We act only if it has actually changed
+      // Possible state transitions for unchanged-for rules: A/C/D/E -> D
+      //   First we clear any pending timer (There's one set up only if coming from D)
+      //   Then we set the next trigger time and the current time slot and set up the new timer
+      watched_signal_stays_defined_code = (
+        do_if_not(
+          is_eq(l0, watched_signal_value_var),
+          ( clear_timer(automaton.name, time_varying_node_idx),
+            set_ivar(curr_time_slot_var, 0),
+            set_ivar(i0, add(curr_time, init_slot_len)),
+            set_ivar(next_trigger_time_var, i0),
+            insert_timer(automaton.name, time_varying_node_idx, i0)
+          )
+        )
+      );
+
+      // Recalculation of the overall condition. Possible states at this stage:
+      //  B)      null      null        -1        -1        no      Watched signal is null
+      //  C)      set       null        -1        -1        no      Watched signal is non-null now, but it was null before it assumed its current value
+      //  D)      set       set         set       set       yes     Standard good state, with ongoing timer
+      //  E)      set       set         -1        set       no      Standard good state, all time triggers already expired
+      overall_cond_recalc_instr = branch(
+        neg(is_eq(curr_time_slot_var, -1)),
+        // If the current time slot is set, then we are now either in state D or E,
+        // and the time slot decides the current value of the time-varying condition
+        (set_var(l0, bool_obj(if init_val == true then is_even(curr_time_slot_var) else is_odd(curr_time_slot_var)))),
+        // Otherwise we are either in state B or C, and the time-varying condition is undefined
+        (clear_loc_var(l0))
+      );
+
+    else
+      //  Here are the possible states for a boolean time rule:
+      //
+      //  State   Watched   Overall     Next      Current   Timer
+      //  ID      signal    condition   trigger   time      set
+      //                                time      slot
+      //
+      //  A)      blank     blank       -1        -1        no      Initial state
+      //  B)      null      null        -1        -1        no      Watched signal is null
+      //  C)      true      null        -1        -1        no      Watched signal is true now, but it was null before it became true
+      //  D)      true      true/false  set       set       yes     Standard true state, with ongoing timer
+      //  E)      true      true/false  -1        set       no      Standard true state, all time triggers already expired
+      //  F)      false     false       -1        -1        no      Standard false state
+
+      // The watched signal was, and remains, defined. We act only if it has actually changed
+      // Possible state transitions for unchanged-for rules: A/C/D/E/F -> D/F
+      watched_signal_stays_defined_code = (
+        do_if_not(
+          is_eq(l0, watched_signal_value_var),
+          ( branch(
+              is_true(l0),
+              // Here the old value of the watched signal can only be false or blank
+              // The possible transitions are: A/F -> D
+              // No timer can be active at this stage, so there's nothing to clear
+              // We set the current time slot and the next trigger time
+              // We also set up a new timer
+              ( set_ivar(curr_time_slot_var, 0),
+                set_ivar(i0, add(curr_time, init_slot_len)),
+                set_ivar(next_trigger_time_var, i0),
+                insert_timer(automaton.name, time_varying_node_idx, i0)
+              ),
+              // The old value of the watched signal can only be true or blank
+              // The possible transitions are: A/C/D/E -> F
+              // First we clear any pending timer (There's one set up only if coming from D)
+              // We need to clear the next trigger time and the current time slot
+              // Any existing timer has already been cleared
+              ( clear_timer(automaton.name, time_varying_node_idx),
+                set_ivar(next_trigger_time_var, -1),
+                set_ivar(curr_time_slot_var, -1)
+              )
+            )
+          )
+        )
+      );
+
+      // Recalculation of the overall condition. Here's again the list of possible states at this stage:
+      //   B)      null      null        -1        -1        no      Watched signal is null
+      //   C)      true      null        -1        -1        no      Watched signal is true now, but it was null before it became true
+      //   D)      true      true/false  set       set       yes     Standard true state, with ongoing timer
+      //   E)      true      true/false  -1        set       no      Standard true state, all time triggers already expired
+      //   F)      false     false       -1        -1        no      Standard false state
+      overall_cond_recalc_instr = branch(
+        neg(is_eq(curr_time_slot_var, -1)),
+        // If the current time slot is set, then we are now either in state D or E,
+        // and the time slot decides the current value of the time-varying condition
+        (set_var(l0, bool_obj(if init_val == true then is_even(curr_time_slot_var) else is_odd(curr_time_slot_var)))),
+        // Otherwise we are either in state B, C or F.
+        // In state F (watched_signal_value_var == false) the overall condition is false.
+        // Otherwise it is undefined.
+        (branch(is_eq(watched_signal_value_var, obj_false), (set_var(l0, obj_false)), (clear_loc_var(l0))))
+      );
+    ;
+
+    cond_eval_code = gen_safe_eval_code(node.cond, l0, next_var_gen = var_gen);
+    cond_eval_code = (try_block(l0, cond_eval_code)) if not is_total(node.cond);
+
+    // Final node code
+    return (
+      // First we recalculate the watched signal, if needed, and then execute
+      // the code for the four possible cases listed above
+      do_if_not(
+        watched_signal_up_to_date_var,
+        cond_eval_code &
+        ( branch(
+            is_null(l0),
+            (do_if_not(is_null(watched_signal_value_var), watched_signal_becomes_undefined_code)),
+            (do_if_not(is_null(watched_signal_value_var), watched_signal_stays_defined_code))
+          ),
+          set_var(watched_signal_value_var, l0),
+          set_bvar(watched_signal_up_to_date_var, true)
+        )
+      ),
+      // Then we check if a timer has expired and act accordingly
+      timer_expires_instr,
+      // We can now recalculate the value of the overall condition
+      overall_cond_recalc_instr,
+      // If the condition has changed, we update it and we add the downstream nodes to the update queue
+      do_if_not(
+        is_eq(cond_var, l0),
+        (set_var(cond_var, l0)) &
+        (queue_update(n) : n <- rand_sort(node.downstream_nodes)) &
+        flag_as_changed_if_output(id)
+      )
+    );
+  }
+
+
+  Instr* gen_node_update_code(AutoDiscTimeVaryingNode node) {
+    node_id = node.id;
+    id = get_inner_id(node_id);
+    time_expr = node.time_expr;
+    signals = rand_sort(node.signals);
+
+    time_varying_node_idx = time_varying_nodes_indexes[node_id];
+
+    init_val = initial_value(time_expr);
+    init_slot_len = initial_slot_length(time_expr);
+
+    i0 = ivar(0);
+    i1 = ivar(1);
+    i2 = ivar(2);
+
+    l0 = lvar(0);
+    cond_var = signal_var(id);
+
+    next_trigger_time_var = next_trigger_time_var(id);
+    curr_time_slot_var = curr_time_slot_var(id);
+
+    clear_timer_instr = clear_timer(automaton.name, time_varying_node_idx);
+    update_l0_instr = set_var(l0, bool_obj(if init_val == true then is_even(curr_time_slot_var) else is_odd(curr_time_slot_var)));
+
+    // Handling the case in which all the watched signals are undefined.
+    // The resulting signals is undefined too. Note that this happens
+    // only if all the watched signals are undefined. It's enought that
+    // one of them is defined to restart the timer
+    cond_is_undef_code = (
+      clear_timer_instr,
+      set_ivar(curr_time_slot_var, -1),
+      set_ivar(next_trigger_time_var, -1),
+      clear_loc_var(l0)
+    );
+
+    // Here we handle the case when at least one of the watched signals is set
+    // The same code is also run during the first update if the timer starts at 0
+    restart_timer_code = (
+      clear_timer_instr,
+      set_ivar(curr_time_slot_var, 0),
+      set_ivar(i0, add(curr_time, init_slot_len)),
+      set_ivar(next_trigger_time_var, i0),
+      insert_timer(automaton.name, time_varying_node_idx, i0),
+      update_l0_instr
+    );
+
+    // Now handling the case in which the timer has expired before any of the
+    // watched signals was set again
+    advance_to_next_time_slot_code = (
+      do_if_not(is_eq(next_trigger_time_var, curr_time), terminate),
+      set_ivar(i0, add(curr_time_slot_var, 1)),
+      set_ivar(curr_time_slot_var, i0),
+      set_ivar(i1, time_slot_length(time_expr, automaton.name, id, i0)),
+      branch(
+        is_eq(i1, 0),
+        (set_ivar(next_trigger_time_var, -1)),
+        ( set_ivar(i2, add(curr_time, i1)),
+          set_ivar(next_trigger_time_var, i2),
+          insert_timer(automaton.name, time_varying_node_idx, i2)
+        )
+      ),
+      update_l0_instr
+    );
+
+    // All possible cases and subcases:
+    //   A) At least one of the signals is non-blank and non-null
+    //      We restart the timer.
+    //   B) No signal is both non-blank and non-null, and at least one is null
+    //      We clear the timer, and set the condition to null
+    //   C) The signals are all blank
+    //      C1) This is the first update
+    //          If the timer starts at time 0 we restart the timer
+    //          Otherwise we just set the condition to false
+    //      C2) A timer has just expired
+    //          We advance to the next time slot
+
+    restart_timer_conds = (is_neither_blank_nor_null(s) : s <- signals);
+    restart_timer_conds = (restart_timer_conds | is_new) if node.starts_at_time_0;
+    restart_timer_cond = or(restart_timer_conds);
+
+    advance_to_next_time_slot_cond = and((is_blank(s) : s <- signals));
+
+    code = (
+      branch(
+        restart_timer_cond,
+        restart_timer_code,
+        ( branch(
+            advance_to_next_time_slot_cond,
+            advance_to_next_time_slot_code,
+            cond_is_undef_code
+          )
+        )
+      )
+    );
+
+    code = (branch(is_new, (set_var(l0, obj_false)), code)) if not node.starts_at_time_0;
+
+    update_memb_var_instr =
+      do_if_not(
+        is_eq(cond_var, l0),
+        (set_var(cond_var, l0)) &
+        (queue_update(n) : n <- rand_sort(node.downstream_nodes)) &
+        flag_as_changed_if_output(id)
+      );
+
+    return (code | update_memb_var_instr);
+  }
+
+  Instr* gen_node_update_code(AutoNestedAutoInputNode node) {
+    nv_var, var_gen = next_obj_var(blank_var_gen);
+    node_id = node.id;
+    auto_var = nested_auto_var(node_id.auto);
+
+    eval_code = gen_safe_eval_code(node.value, nv_var, next_var_gen = var_gen);
+    eval_code = (try_block(nv_var, eval_code)) if not is_total(node.value);
+
+    set_var_code = (
+      ## SHOULD I CHECK THAT THE INPUT IS NOT NULL BEFORE SETTING IT, OR IS THIS ALREADY DONE
+      ## INSIDE THE NESTED AUTOMATON?
+      set_input(auto_var, auto_vars_types[auto_var], node_id.input, nv_var),
+      queue_update(nested_auto_node_id(node_id.auto))
+    );
+
+    code = eval_code & set_var_code;
+
+    discrete_vars = rand_sort(node.discrete_signals);
+    if discrete_vars != ():
+      cond = and((is_not_blank(v) : v <- discrete_vars));
+      code = (do_if(cond, code));
+    ;
+
+    return code;
+  }
+
+
+  Instr* gen_node_update_code(AutoNestedAutoNode node) {
+    inner_id = get_inner_id(node.id);
+
+    auto_var = nested_auto_var(inner_id);
+    auto_type = auto_vars_types[auto_var];
+
+    is_time_sensitive = is_time_sensitive(auto_type);
+
+    update_code = (
+      set_ivar(
+        nested_auto_int_var(auto_var, elapsed_time),
+        sub(curr_time, nested_auto_int_var(auto_var, last_update_time))
+      ) if is_time_sensitive,
+      auto_apply(auto_var, auto_type)
+    );
+
+    ## CURRENTLY WE PROPAGATE THE UPDATE WITHOUT CHECKING WHAT INPUTS (IF ANY) HAVE CHANGED. FIX
+    prop_code = (queue_update(id) : id <- rand_sort(union(values(node.downstream_nodes_by_output))));
+
+    triggers_count_var = nested_auto_int_var(auto_var, time_triggers_count_var);
+    first_trigger_var  = nested_auto_int_var(auto_var, trigger_times_heap_var(0));
+    timer_code = (
+      do_if(
+        is_gt(triggers_count_var, 0),
+        insert_timer(automaton.name, time_varying_nodes_indexes[node.id], first_trigger_var)
+      ) if is_time_sensitive
+    );
+
+    return update_code & prop_code & timer_code;
+  }
+
+
+  Instr* gen_node_update_code(AutoNestedDBNode node) {
+    inner_id = get_inner_id(node.id);
+
+    db_var = nested_db_var(inner_id);
+    db_type = automaton.nested_dbs[db_var].type;
+
+    if is_total(node.message):
+      msg_eval_info = gen_safe_eval_info(node.message, next_var_gen = blank_var_gen);
+      eval_code = msg_eval_info.eval_code;
+      atomic_msg_expr = msg_eval_info.expr;
+    else
+      nv_var, var_gen = next_obj_var(blank_var_gen);
+      eval_code = (try_block(nv_var, gen_safe_eval_code(node.message, nv_var, next_var_gen = var_gen)));
+      atomic_msg_expr = nv_var;
+    ;
+
+    msg_send_instr = send_msg(db_var, db_type, atomic_msg_expr, true);
+
+    ## CURRENTLY WE PROPAGATE THE UPDATE WITHOUT CHECKING WHAT INPUTS (IF ANY) HAVE CHANGED. FIX
+    prop_code = (queue_update(id) : id <- rand_sort(union(values(node.downstream_nodes_by_state_var))));
+
+    msg_send_code = (msg_send_instr) & prop_code;
+    msg_send_code = (do_if_not(is_null(atomic_msg_expr), msg_send_code)) if atomic_msg_expr :: NullableVar;
+
+    return eval_code & msg_send_code;
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////
+
+  Instr+ gen_update_code(AutoNodeAction action) =
+    state_update_action()   = (queue_update(std_block_node_id(action.target_var), action.expr_idx)),
+    msg_send_action()       = (queue_update(std_block_node_id(action.target_db)));
+
+
+  Instr* gen_clear_code(AutoNodeAction action) =
+    state_update_action()   = { node_id = std_block_node_id(action.target_var);
+                                return (queue_update(node_id, multivalue_node_expr_count[node_id]));
+                              },
+    msg_send_action()       = ();
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+implicit program : Program, automaton : Automaton {
+  Instr queue_update(BlockNodeId node_id) = queue_update(automaton.name, node_id);
+  Instr queue_update(BlockNodeId node_id, Nat expr_idx) = queue_update(automaton.name, node_id, expr_idx);
+
+
+  Instr* flag_as_changed_if_output(Atom id) {
+    return () if not automaton.outputs(signal_var(id), *);
+    return (
+      set_ivar(changed_output(changed_outputs_count), outputs_indexes[id]),
+      increment(changed_outputs_count)
+    );
+
+    [Atom -> Nat] outputs_indexes = merge(([a -> i] : a @ i <- sorted_outputs_ids));
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+(body: Instr*, args: IntVar*) queue_update_method(AutoNode node, Nat index, Nat level_size) {
+  return match (node)
+    state()             |
+    derived_discrete()  = (body: method_body(node.id, node.exprs, node.level, index, level_size), args: (update_expr_index)),
+    time_varying_node() = (body: method_body(node, index, level_size), args: ()),
+    _                   = (body: std_method_body(node.id, node.level, index, level_size), args: ());
+
+
+  Instr* method_body(StdBlockNodeId node_id, Expr* exprs, Nat level, Nat index, Nat level_size) {
+    update_source_var = update_source_var(get_inner_id(node_id));
+    return (branch(
+      up_to_date_var(node_id),
+      (std_action(node_id, level, index, level_size) | set_ivar(update_source_var, update_expr_index)),
+      (do_if_not(is_eq(update_source_var, update_expr_index), set_ivar(update_source_var, |exprs|)))
+    ));
+  }
+
+
+  Instr* method_body(AutoTimeVaryingNode node, Nat index, Nat level_size) {
+    watched_signal_up_to_date_var = watched_signal_up_to_date_var(get_inner_id(node.id));
+    inval_cache_instr = set_bvar(watched_signal_up_to_date_var, false);
+    return (std_method_body(node.id, node.level, index, level_size) | inval_cache_instr);
+  }
+
+
+  Instr* std_method_body(BlockNodeId node_id, Nat level, Nat index, Nat level_size) =
+    (do_if(up_to_date_var(node_id), std_action(node_id, level, index, level_size)));
+
+
+  Instr* std_action(BlockNodeId node_id, Nat level, Nat index, Nat level_size) {
+    idx_var = ivar(0);
+    up_to_date_var = up_to_date_var(node_id);
+    count_var = update_count_var(level);
+    nodes_var = nodes_to_update_var(level, idx_var);
+    return (
+      set_bvar(up_to_date_var, false),
+      set_ivar(idx_var, count_var)          if level_size > 2,
+      set_ivar(nodes_var, index)            if level_size > 2,
+      set_ivar(count_var, add(idx_var, 1))  if level_size > 2
+    );
+  }
+}

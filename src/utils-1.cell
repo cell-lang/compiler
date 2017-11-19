@@ -1,0 +1,369 @@
+[StdVar] syn_new_vars(SynPtrn ptrn) =
+    ptrn_var()      = [ptrn.var] & syn_new_vars(ptrn.ptrn),
+    ptrn_tuple(ps?) = seq_union((syn_new_vars(p) : p <- ps)),
+    ptrn_tag_obj()  = syn_new_vars(ptrn.tag) & syn_new_vars(ptrn.obj),
+    ptrn_union(ps?) = intersection([syn_new_vars(p) : p <~ ps]),
+    _               = [];
+
+
+[StdVar] syn_new_vars(SynStmt stmt) =
+  assignment_stmt()         = set(stmt.vars),
+  if_stmt()                 = { bodies = [b.body : b <~ stmt.branches] & [stmt.else];
+                                return intersection([syn_new_vars(ss) : ss <- bodies, syn_may_fall_through(ss)]);
+                              },
+  let_stmt()                = syn_new_vars(stmt.body),
+  proc_call_stmt()          = [stmt.res_var if stmt.res_var?],
+  apply_ctrl_stmt()         |
+  send_msg_ctrl_stmt()      |
+  read_state_ctrl_stmt()    |
+  restore_state_ctrl_stmt() = [var(stmt.res_var)],
+  _                         = [];
+
+
+[StdVar] syn_new_vars(<SynStmt, SynClause>* objs) = seq_union((syn_new_vars(obj) : obj <- objs));
+
+
+[StdVar] syn_new_vars(SynClause clause) =
+  iter_clause()         = set(clause.vars),
+  seq_clause()          = [var(value(v)) : v <~ (clause.vars | clause.idx_var), v != nothing],
+  and_clause(cs?)       = seq_union((syn_new_vars(c) : c <- cs)),
+  or_clause(cs?)        = intersection([syn_new_vars(c) : c <~ cs]),
+  match_clause()        = syn_new_vars(clause.ptrn),
+  asgnm_clause()        = [clause.var],
+  filter_clause()       = [];
+
+
+[StdVar] syn_new_vars(SynIter iter) =
+  seq_iter()    = set(iter.vars) & [iter.idx_var if iter.idx_var?],
+  range_iter()  = [iter.var if iter.var?];
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+[TypeVar] syn_type_vars(SynClsType type) = seq_union((syn_type_vars(t) : t <- type.in_types)) & syn_type_vars(type.out_type);
+
+[TypeVar] syn_type_vars(SynType type) {
+  return [] if type :: SynLeafType;
+  return match (type)
+    type_ref(ts?)       = syn_type_vars(ts),
+    type_var()          = [type],
+    ne_seq_type()       = syn_type_vars(type.elem_type),
+    ne_set_type()       = syn_type_vars(type.elem_type),
+    ne_map_type()       = syn_type_vars(type.key_type) & syn_type_vars(type.value_type),
+    ne_bin_rel_type()   |
+    ne_tern_rel_type()  = seq_union((seq_union((syn_type_vars(t) : t <- s)) : s <- type.signatures)),
+    record_type(fs?)    = seq_union((syn_type_vars(f.type) : f <- fs)),
+    tuple_type(ts?)     = seq_union((syn_type_vars(t) : t <- ts)),
+    tag_obj_type()      = syn_type_vars(type.tag_type) & syn_type_vars(type.obj_type),
+    union_type(ts?)     = seq_union((syn_type_vars(t) : t <- ts));
+}
+
+[] syn_type_vars(BasicTypeSymbol) = [];
+[TypeVar] syn_type_vars(SynParTypeSymbol type_symb) = seq_union((syn_type_vars(t) : t <- type_symb.params));
+
+[TypeVar] syn_type_vars(SynFnDef fndef) = seq_union((syn_type_vars(a.type) : a <- fndef.args));
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+NeType desugar_plain_type(SynType type) =
+  desugar_type(
+    type,
+    match ($)
+      type_var() = $,
+      type_ref() = desugar_type_ref($, desugar_plain_type)
+  );
+
+
+NeType desugar_schema_aware_type(SynType type, [Atom] schemas) =
+  desugar_type(
+    type,
+    match ($)
+      // type_var()                    = undefined,
+      type_ref(type_symbol(a?) ts?) = type_ref(if schemas(a) then schema_type_symbol(a) else ts),
+      type_ref(par_type_symbol())   = desugar_type_ref($, desugar_schema_aware_type($, schemas))
+  );
+
+
+NeType desugar_par_type_def(SynType type, TypeVar+ sorted_type_vars) =
+  desugar_type(
+    type,
+    match ($)
+      type_var() = type_var(index_first($, sorted_type_vars)),
+      type_ref() = desugar_type_ref($, desugar_par_type_def($, sorted_type_vars))
+  );
+
+
+NeType desugar_arbitrary_type(SynType type, [Atom -> TypeVar] subst_map, [Atom] schemas) {
+  assert disjoint(keys(subst_map), schemas);
+  return desugar(type, subst_map, schemas);
+
+
+  NeType desugar(SynType type, [Atom -> TypeVar] subst_map, [Atom] schemas) =
+    desugar_type(
+      type,
+      match ($)
+        type_var()                = $,
+        type_ref(type_symbol(a?)) = if subst_map(a, *)
+                                      then subst_map[a]
+                                    elif schemas(a)
+                                      then type_ref(schema_type_symbol(a))
+                                    else
+                                      $,
+        type_ref()                = desugar_type_ref($, desugar($, subst_map, schemas))
+    );
+}
+
+
+////////////////////////////////////////////////////////////////////////////////
+
+ClsType desugar_cls_type(SynClsType type, (SynType -> NeType) desugar) =
+  cls_type((desugar(t) : t <- type.in_types), desugar(type.out_type));
+
+////////////////////////////////////////////////////////////////////////////////
+
+NeType desugar_type_ref(SynTypeRef, (<SynTypeRef, SynTypeVar> -> NeType) desugar) =
+  type_ref(ts?) = type_ref(desugar_type_symb(ts, desugar));
+
+
+BasicTypeSymbol desugar_type_symb(BasicTypeSymbol type_symb, (<SynTypeRef, SynTypeVar> -> NeType) desugar) = type_symb;
+
+TypeSymbol desugar_type_symb(SynParTypeSymbol type_symb, (<SynTypeRef, SynTypeVar> -> NeType) desugar) {
+  type_pars = (desugar_type(p, desugar) : p <- type_symb.params);
+  return par_type_symbol(type_symb.symbol, type_pars);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+NeType desugar_type(SynType type, (<SynTypeRef, SynTypeVar> -> NeType) desugar) {
+  return type if type :: LeafType;
+  return match(type)
+    type_var()          = desugar(type),
+    type_ref()          = desugar(type),
+    syn_int_range()     = int_range(type.min, type.max),
+    ne_seq_type()       = ne_seq_type(desugar_type(type.elem_type, desugar)),
+    ne_set_type()       = ne_set_type(desugar_type(type.elem_type, desugar)),
+    ne_map_type()       = ne_map_type(desugar_type(type.key_type, desugar), desugar_type(type.value_type, desugar)),
+    ne_bin_rel_type()   = ne_bin_rel_type_nonvoid([(desugar_type(t, desugar) : t <- s) : s <~ type.signatures]),
+    ne_tern_rel_type()  = ne_tern_rel_type_nonvoid([(desugar_type(t, desugar) : t <- s) : s <~ type.signatures]),
+    record_type(fs?)    = ne_record_type([f.label -> (type: desugar_type(f.type, desugar), optional: f.optional) : f <~ fs]),
+    tuple_type(ts?)     = ne_tuple_type((desugar_type(t, desugar) : t <- ts)),
+    tag_obj_type()      = { tag_type = type.tag_type;
+                            fail if not tag_type :: TagType; ## BAD: HANDLE THE ERROR
+                            return tag_obj_type(tag_type, desugar_type(type.obj_type, desugar));
+                          },
+    union_type(ts?)     = ne_union_type([desugar_type(t, desugar) : t <~ ts]);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+[Atom] refd_prot_types(SynType type, [Atom] prot_types) {
+  return [] if type :: LeafType;
+  return match (type)
+    type_ref(ts?)       = {match (ts) type_symbol(a?) = [a if prot_types(a)], _ = []},
+    type_var()          = [],
+    syn_int_range()     = [],
+    ne_seq_type()       = refd_prot_types(type.elem_type, prot_types),
+    ne_set_type()       = refd_prot_types(type.elem_type, prot_types),
+    ne_map_type()       = refd_prot_types(type.key_type, prot_types) & refd_prot_types(type.value_type, prot_types),
+    ne_bin_rel_type()   |
+    ne_tern_rel_type()  = seq_union((seq_union((refd_prot_types(t, prot_types) : t <- s)) : s <- type.signatures)),
+    record_type(fs?)    = seq_union((refd_prot_types(f.type, prot_types) : f <- fs)),
+    tuple_type(ts?)     = seq_union((refd_prot_types(t, prot_types) : t <- ts)),
+    tag_obj_type()      = refd_prot_types(type.obj_type, prot_types),
+    union_type(ts?)     = seq_union((refd_prot_types(t, prot_types) : t <- ts));
+}
+
+
+[Atom] refd_prot_types(SynClsType type, [Atom] prot_types) =
+  seq_union((refd_prot_types(t, prot_types) : t <- type.in_types)) &
+  refd_prot_types(type.out_type, prot_types);
+
+
+[Atom] refd_prot_types(SynType+ args_types, SynType ret_type, [Atom] prot_types) {
+  args_prot_types = seq_union((refd_prot_types(t, prot_types) : t <- args_types));
+  ret_prot_types  = refd_prot_types(ret_type, prot_types);
+  return args_prot_types & ret_prot_types;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+[TypeName -> NeType] create_type_map([Typedef] tdefs, [ParTypedef] par_tdefs) {
+  type_map = [type_name(td.name, 0) -> desugar_plain_type(td.type) : td <- tdefs];
+  par_type_map = [
+    type_name(td.name, |td.params|) ->
+    desugar_par_type_def(td.type, td.params)
+    : td <- par_tdefs
+  ];
+  return type_map & par_type_map;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+## THIS IS JUST A COPY OF THE CORRENSPONDING FUNCTIONS FOR CORE/LEVEL 2 STATEMENTS
+## IS THERE A WAY TO WRITE THEM JUST ONCE?
+[+StmtOutcome] syn_outcomes(SynStmt* stmts) {
+  os = [:falls_through];
+  for s <- stmts:
+    os = {os - [:falls_through]} & syn_outcomes(s);
+    break if not os(:falls_through);
+  ;
+  return nonempty(os);
+}
+
+
+[+StmtOutcome] syn_outcomes(SynStmt stmt) =
+  return_stmt                   = [:returns],
+  return_stmt()                 = [:fails, :returns],
+  if_stmt()                     = nonempty(
+                                    [:fails] & syn_outcomes(stmt.else) &
+                                    seq_union((syn_outcomes(b.body) : b <- stmt.branches))
+                                  ),
+  loop_stmt(body?)              = loop_stmt_syn_outcomes(stmt.skip_first, stmt.body),
+  inf_loop_stmt(ss?)            = inf_loop_stmt_syn_outcomes(ss),
+  for_stmt()                    = [:fails, :falls_through, :returns if syn_outcomes(stmt.body)(:returns)],
+  let_stmt()                    = nonempty([:fails] & syn_outcomes(stmt.body)),
+  break_stmt                    = [:breaks],
+  fail_stmt                     = [:fails],
+  assignment_stmt()             |
+  assert_stmt()                 |
+  print_stmt()                  |
+  seq_update_stmt()             |
+  proc_call_stmt()              |
+  send_msg_stmt()               |
+  try_update_stmt()             |
+  set_memb_var_stmt()           |
+  delete_stmt()                 |
+  insert_stmt()                 |
+  set_input_ctrl_stmt()         |
+  clear_input_ctrl_stmt()       |
+  set_elapsed_time_ctrl_stmt()  |
+  apply_ctrl_stmt()             |
+  send_msg_ctrl_stmt()          |
+  read_state_ctrl_stmt()        |
+  restore_state_ctrl_stmt()     = [:falls_through, :fails];
+
+
+[+StmtOutcome] loop_stmt_syn_outcomes(Bool skip_first, SynStmt+ body) {
+  os = syn_outcomes(body);
+  return [
+    :falls_through  if os(:falls_through) or os(:breaks) or not skip_first,
+    :returns        if os(:returns),
+    :fails
+  ];
+}
+
+
+[+StmtOutcome] inf_loop_stmt_syn_outcomes(SynStmt+ body) {
+  os = syn_outcomes(body);
+  return nonempty([
+    :falls_through  if os(:breaks),
+    :returns        if os(:returns),
+    :fails          if os(:fails) or os(:falls_through)
+  ]);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+Bool syn_may_fall_through(SynStmt stmt) = syn_outcomes(stmt)(:falls_through);
+
+Bool syn_may_fall_through(SynStmt* stmts) = syn_outcomes(stmts)(:falls_through);
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+[Var] already_def_vars([Var] new_vars, [Var] curr_vars) = [v : v <- new_vars, already_def(v, curr_vars)];
+
+Bool already_def(Var var, [Var] vars) =
+  var(n?)       = already_def(n, vars),
+  impl_arg(n?)  = already_def(n, vars),
+  memb_var(n?)  = already_def(n, vars),
+  _             = vars(var);
+
+Bool already_def(Atom var_name, [Var] vars) =
+  vars(var(var_name))       or
+  vars(impl_arg(var_name))  or
+  vars(memb_var(var_name));
+
+FnSymbol impl_arg_to_fn_symb(ImplArg p) =
+  impl_arg(n?)   = fn_symbol(n);
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+Atom rule_id(ConstDecl decl)  = decl.name;
+
+Atom rule_id(RuleDecl decl) =
+  plain_rule_decl()         |
+  cond_rule_decl()          |
+  foreach_rule_decl()       |
+  true_for_rule_decl()      |
+  unchanged_for_rule_decl() |
+  inactive_for_rule_decl()  |
+  nested_auto_decl()        = decl.name,
+  msg_send_decl()           = decl.target;
+
+
+## THIS IS CALLED TWICE IN THE SYNTAX REMOVAL STAGE. CONSIDER USING AN IMPLICIT PARAMETER
+[ReactAutoDef] resolve_inheritance([ReactAutoDef] automata) {
+  autos_by_id = [auto_symbol(a.name) -> a : a <- automata];
+
+  parent_child_rels = [auto_symbol(a.name) -> [auto_symbol(a.parent) if a.parent?] : a <- automata];
+  sorted_auto_ids = topological_sort(parent_child_rels);
+
+  resolved_autos_by_id = [];
+  for ids <- sorted_auto_ids:
+    layer_autos_by_id = [id -> resolve_inheritance(autos_by_id[id], resolved_autos_by_id) : id <- ids];
+    resolved_autos_by_id = resolved_autos_by_id & layer_autos_by_id;
+  ;
+
+  return values(resolved_autos_by_id);
+}
+
+
+ReactAutoDef resolve_inheritance(ReactAutoDef child, [AutoSymbol -> ReactAutoDef] resolved_autos_by_id) {
+  return child if not child.parent?;
+  parent = resolved_autos_by_id[auto_symbol(child.parent)];
+
+  overriding_ids = [rule_id(d) : d <~ child.rules & child.consts];
+  overriding_state_vars_ids = [d.name : d <~ child.state_vars];
+
+  inherited_inputs = (i : i <- parent.inputs, not overriding_ids(i.name));
+  inherited_state_vars = (v : v <- parent.state_vars, not overriding_state_vars_ids(v.name));
+  inherited_consts = (c : c <- parent.consts, not overriding_ids(c.name));
+  inherited_rules  = (r : r <- parent.rules,  not overriding_ids(rule_id(r)));
+
+  res_child = react_auto_def(
+    name:       child.name,
+    pos_inputs: child.pos_inputs,
+    def_output: child.def_output if child.def_output?,
+    inputs:     inherited_inputs & child.inputs,
+    outputs:    parent.outputs & child.outputs,
+    state_vars: inherited_state_vars & child.state_vars,
+    nested_dbs: parent.nested_dbs & child.nested_dbs,
+    consts:     inherited_consts & child.consts,
+    rules:      inherited_rules & child.rules
+  );
+
+  return transfer(res_child, child);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+## NOT SURE THIS IS THE RIGHT PLACE FOR THIS STUFF
+
+type AccessorChain = accessor(expr: <ConstOrVar, AccessorChain>, field: Atom);
+
+type IdChain = ConstOrVar, AccessorChain;
+
+(Atom) destructure_id_chain(ConstOrVar expr) =
+  const_or_var(a?)  = (a);
+
+Atom+ destructure_id_chain(AccessorChain expr) =
+  match (expr.expr)
+    const_or_var(a?)  = (a, expr.field),
+    accessor()        = (destructure_id_chain(expr.expr) | expr.field);

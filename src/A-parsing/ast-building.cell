@@ -1,0 +1,2123 @@
+PrgDecl* build_amber_file_ast(RuleMatch file, String filename, Nat** lines) =
+  (build_declaration_ast(m, filename=filename, lines=lines) : m <- rep_rule_nodes(file));
+
+implicit filename : String, lines : Nat** {
+  PrgDecl build_declaration_ast(RuleMatch mtc) {
+    inner_match = get_rule_match(mtc);
+    decl = match (get_rule_name(mtc))
+      typedef             = build_typedef_ast(inner_match),
+      par_typedef         = build_par_typedef_ast(inner_match),
+      unary_op            = build_unary_op_def_ast(inner_match),
+      binary_op           = build_binary_op_def_ast(inner_match),
+      fndef               = build_std_fndef_ast(inner_match),
+      fndef_proc          = build_proc_fndef_ast(inner_match),
+      fndef_match         = build_match_fndef_ast(inner_match),
+      impl_block_1        = build_impl_block_1_ast(inner_match),
+      impl_block_2        = build_impl_block_2_ast(inner_match),
+      proc_def            = build_proc_def_ast(inner_match),
+      db_def              = build_db_def_ast(inner_match),
+      auto_def            = build_auto_def_ast(inner_match),
+      std_auto_method     = build_std_method_def_ast(inner_match),
+      match_auto_method   = build_match_method_def_ast(inner_match),
+      proc_auto_method    = build_proc_method_def_ast(inner_match),
+      msg_handler         = build_handler_def_ast(inner_match),
+      using_block         = build_using_block_ast(inner_match),
+      typevar             = build_typevar_decl_ast(inner_match),
+      protocol            = build_prot_decl_ast(inner_match);
+
+    return attach_src_code_info(decl, filename, mtc);
+  }
+
+  ////////////////////////////////////////////////////////////////////////////////
+
+  ProtDecl build_prot_decl_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 5;
+    types = (get_lowercase_id(n) : n <- rep_rule_nodes(nodes(1)));
+    methods = (build_prot_method_ast(n) : n <- rep_rule_nodes(nodes(3)));
+    return prot_decl(nonempty(types), nonempty(methods));
+
+    (FnSymbol, SynType+, SynType) build_prot_method_ast(RuleMatch mtc) {
+      label = get_rule_name(mtc);
+      inner_match = get_rule_match(mtc);
+      return match(label)
+        unary_op    = build_unary_op_prot_method_ast(inner_match),
+        binary_op   = build_binary_op_prot_method_ast(inner_match),
+        function    = build_fn_prot_method_ast(inner_match);
+    }
+
+    (FnSymbol, SynType+, SynType) build_unary_op_prot_method_ast(RuleMatch mtc) {
+      nodes = rule_seq_nodes(mtc);
+      assert |nodes| == 5;
+      operator = match (get_token(nodes(0))) operator(op?) = op_symbol(op);
+      arg_type = build_type_ast(nodes(2));
+      ret_type = build_type_ast(nodes(4));
+      return (operator, (arg_type), ret_type);
+    }
+
+    (FnSymbol, SynType+, SynType) build_binary_op_prot_method_ast(RuleMatch mtc) {
+      nodes = rule_seq_nodes(mtc);
+      assert |nodes| == 7;
+      operator = match (get_token(nodes(0))) operator(op?) = op_symbol(op);
+      arg1_type = build_type_ast(nodes(2));
+      arg2_type = build_type_ast(nodes(4));
+      ret_type = build_type_ast(nodes(6));
+      return (operator, (arg1_type, arg2_type), ret_type);
+    }
+
+    (FnSymbol, SynType+, SynType) build_fn_prot_method_ast(RuleMatch mtc) {
+      nodes = rule_seq_nodes(mtc);
+      assert |nodes| == 5;
+      name = fn_symbol(get_lowercase_id(nodes(0)));
+      args_types = (build_type_ast(n) : n <- rep_rule_nodes(nodes(2)));
+      ret_type = build_type_ast(nodes(4));
+      return (name, nonempty(args_types), ret_type);
+    }
+  }
+
+  TypeVarDecl build_typevar_decl_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 5;
+    type_vars = (get_lowercase_id(n) : n <- rep_rule_nodes(nodes(1)));
+    prot_types = (nonempty((get_lowercase_id(n2) : n2 <- rep_rule_nodes(n1))) : n1 <- rep_rule_nodes(nodes(3)));
+    return typevar_decl(nonempty(type_vars), nonempty(prot_types));
+  }
+
+  Typedef build_typedef_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert is_annotated_token(nodes(0), lowercase_id(:type));
+    name = build_basic_type_symbol_ast(nodes(1));
+    assert is_annotated_token(nodes(2), equals);
+    pretypes = (build_pretype_ast(n) : n <- rep_rule_nodes(nodes(3)));
+    assert is_annotated_token(nodes(4), semicolon);
+    return typedef(name, syn_union_type(nonempty(pretypes)));
+  }
+
+  ParTypedef build_par_typedef_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert is_annotated_token(nodes(0), lowercase_id(:type));
+    name = build_basic_type_symbol_ast(nodes(1));
+    params = (build_type_var_ast(p) : p <- rep_rule_nodes(block_node(nodes(2))));
+    assert is_annotated_token(nodes(3), equals);
+    pretypes = (build_pretype_ast(n) : n <- rep_rule_nodes(nodes(4)));
+    assert is_annotated_token(nodes(5), semicolon);
+    return par_typedef(name, nonempty(params), syn_union_type(nonempty(pretypes)));
+  }
+
+  SynType build_pretype_ast(RuleMatch pretype) =
+    match (get_rule_name(pretype))
+      type              = build_type_ast(get_rule_match(pretype)),
+      type_tag_obj      = build_tag_obj_type_ast(get_rule_match(pretype)),
+      type_tag_record   = build_tag_record_type_ast(get_rule_match(pretype)),
+      type_symbol       = build_symbol_type(get_rule_match(pretype));
+
+  SynType build_type_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    basic_type_node = nodes(0);
+    submatch = get_rule_match(basic_type_node);
+    res_type = match (get_rule_name(basic_type_node))
+      type_name           = build_type_ref_ast(submatch),
+      type_name_par       = build_par_type_ref_ast(submatch),
+      type_var            = build_type_var_ast(submatch),
+      type_union          = build_type_union_ast(submatch),
+      type_any_tag_obj    = build_any_tag_obj_type(submatch),
+      type_any_symbol     = atom_type,
+      type_integer        = build_integer_type_ast(submatch),
+      type_float          = float_type,
+      type_empty_rel      = empty_rel_type,
+      type_set            = build_set_type_ast(submatch),
+      type_map            = build_map_type_ast(submatch),
+      type_bin_rel        = build_bin_rel_type_ast(submatch),
+      type_tern_rel       = build_tern_rel_type_ast(submatch),
+      type_record         = build_record_type_ast(submatch),
+      type_empty_seq      = empty_seq_type,
+      type_tuple          = build_tuple_type_ast(submatch);
+    for s <- rep_rule_nodes(nodes(1)):
+      assert get_rule_name(s) == :seq or get_rule_name(s) == :ne_seq;
+      res_type = syn_seq_type(res_type, get_rule_name(s) == :ne_seq);
+    ;
+    return res_type;
+  }
+
+  SynType build_tag_obj_type_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 2;
+    tag_type = symb_type(object(get_lowercase_id(nodes(0))));
+    ts = (build_pretype_ast(t) : t <- nonempty(rep_rule_nodes(block_node(nodes(1)))));
+    obj_type = if |ts| > 1 then syn_tuple_type(ts) else only_unsafe(ts);
+    return syn_tag_obj_type(tag_type, obj_type);
+  }
+
+  SynType build_tag_record_type_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 2;
+    tag_type = symb_type(object(get_lowercase_id(nodes(0))));
+    obj_type = build_record_type_ast(nodes(1));
+    return syn_tag_obj_type(tag_type, obj_type);
+  }
+
+  SymbType build_symbol_type(RuleMatch mtc) = symb_type(get_lowercase_id(mtc));
+
+  SynType build_type_ref_ast(RuleMatch mtc) = syn_type_ref(type_symbol(get_lowercase_id(mtc)));
+
+  SynType build_par_type_ref_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 2;
+    ts = type_symbol(get_lowercase_id(nodes(0)));
+    ps = (build_type_ast(n) : n <- rep_rule_nodes(block_node(nodes(1))));
+    return syn_type_ref(ts, nonempty(ps));
+  }
+
+  SynTypeVar build_type_var_ast(RuleMatch mtc) = syn_type_var(get_lowercase_id(mtc));
+
+  SynType build_type_union_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 3;
+    types = (build_pretype_ast(n) : n <- rep_rule_nodes(nodes(1)));
+    return syn_union_type(nonempty(types));
+  }
+
+  SynType build_integer_type_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 5;
+    assert is_annotated_token(nodes(0), lower) and is_annotated_token(nodes(2), double_dot) and is_annotated_token(nodes(4), greater);
+    min_node = nodes(1);
+    max_node = nodes(3);
+    maybe_min = bound(get_rule_name(min_node), get_rule_match(min_node));
+    maybe_max = bound(get_rule_name(max_node), get_rule_match(max_node));
+    return match (maybe_min, maybe_max)
+      nothing,    nothing     = integer,
+      nothing,    just(max?)  = low_ints(max),
+      just(min?), nothing     = high_ints(min),
+      just(min?), just(max?)  = syn_int_range(min, max);
+
+    Maybe[Int] bound(Atom bound_type, RuleMatch mtc) =
+      asterisk      = nothing,
+      integer       = just(get_integer(mtc)),
+      neg_integer   = just(-get_integer(mtc, 1)),
+      _             = undefined;
+  }
+
+  SynType build_set_type_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(block_node(mtc));
+    assert |nodes| == 2;
+    elem_type = build_type_ast(nodes(1));
+    return syn_set_type(elem_type, nodes(0) != null_match);
+  }
+
+  SynType build_map_type_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(block_node(mtc));
+    assert |nodes| == 4;
+    key_type = build_type_ast(nodes(1));
+    value_type = build_type_ast(nodes(3));
+    return syn_map_type(key_type, value_type, nodes(0) != null_match);
+  }
+
+  SynType build_bin_rel_type_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(block_node(mtc));
+    assert |nodes| == 2;
+    never_empty = nodes(0) != null_match;
+    signatures = ({
+        sgn_nodes = rule_seq_nodes(sgn_node);
+        assert |sgn_nodes| == 3;
+        return (build_type_ast(sgn_nodes(i)) : i <- (0, 2));
+      } : sgn_node <- nonempty(rep_rule_nodes(nodes(1)))
+    );
+    return syn_bin_rel_type(signatures, never_empty);
+  }
+
+  SynType build_tern_rel_type_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(block_node(mtc));
+    assert |nodes| == 2;
+    never_empty = nodes(0) != null_match;
+    signatures = ({
+        sgn_nodes = rule_seq_nodes(sgn_node);
+        assert |sgn_nodes| == 5;
+        return (build_type_ast(sgn_nodes(i)) : i <- (0, 2, 4));
+      } : sgn_node <- nonempty(rep_rule_nodes(nodes(1)))
+    );
+    return syn_tern_rel_type(signatures, never_empty);
+  }
+
+  SynRecordType build_record_type_ast(RuleMatch mtc) {
+    fields = (build_record_field_ast(n) : n <- rep_rule_nodes(block_node(mtc)));
+    return syn_record_type(nonempty(fields));
+
+    (label: SymbObj, type: SynType, optional: Bool) build_record_field_ast(RuleMatch mtc) {
+      nodes = rule_seq_nodes(mtc);
+      assert |nodes| == 4;
+      label = object(get_lowercase_id(nodes(0)));
+      type = build_pretype_ast(nodes(2));
+      optional = nodes(3) != null_match;
+      return (label: label, type: type, optional: optional);
+    }
+  }
+
+  SynTupleType build_tuple_type_ast(RuleMatch mtc) =
+    syn_tuple_type(nonempty((build_type_ast(n) : n <- rep_rule_nodes(block_node(mtc)))));
+
+  SynType build_any_tag_obj_type(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 2;
+    obj_type = build_type_ast(block_node(nodes(1)));
+    return syn_any_tag_obj_type(obj_type);
+  }
+
+  ////////////////////////////////////////////////////////////////////////////////
+
+  SynFnDef build_unary_op_def_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 6;
+    operator = match (get_token(nodes(1))) operator(op?) = op_symbol(op);
+    return syn_fn_def(
+      name:       operator,
+      args:       (build_obj_arg_ast(rule_seq_nodes(block_node(nodes(2))))),
+      res_type:   build_type_ast(nodes(0)),
+      expr:       build_expr_ast(nodes(4)),
+      local_fns:  (),
+      typevars:   []
+    );
+  }
+
+  SynFnDef build_binary_op_def_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 6;
+    operator = match (get_token(nodes(1))) operator(op?) = op_symbol(op);
+    arg_nodes = rule_seq_nodes(block_node(nodes(2)));
+    arg1 = build_obj_arg_ast(subseq(arg_nodes, 0, 2));
+    arg2 = build_obj_arg_ast(subseq(arg_nodes, 3, 2));
+    return syn_fn_def(
+      name:       operator,
+      args:       (arg1, arg2),
+      res_type:   build_type_ast(nodes(0)),
+      expr:       build_expr_ast(nodes(4)),
+      local_fns:  (),
+      typevars:   []
+    );
+  }
+
+  ////////////////////////////////////////////////////////////////////////////////
+
+  SynFnDef build_fndef_ast(RuleMatch mtc) =
+    match (get_rule_name(mtc))
+      std     = build_std_fndef_ast(get_rule_match(mtc)),
+      proc    = build_proc_fndef_ast(get_rule_match(mtc)),
+      match   = build_match_fndef_ast(get_rule_match(mtc));
+
+  SynFnDef build_std_fndef_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 6;
+    ret_type  = build_type_ast(nodes(0));
+    return syn_fn_def(
+      name:       fn_symbol(get_lowercase_id(nodes(1))),
+      args:       build_fn_args_ast(nodes(2)),
+      res_type:   ret_type,
+      expr:       build_expr_ast(nodes(4)),
+      local_fns:  (),
+      typevars:   []
+    );
+  }
+
+  SynFnDef build_proc_fndef_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 4;
+    ret_type = build_type_ast(nodes(0));
+
+    body_nodes = rule_seq_nodes(block_node(nodes(3)));
+    assert |body_nodes| == 2 or |body_nodes| == 3;
+
+    var_decls = (build_var_decl(n) : n <- rep_rule_nodes(body_nodes(0)));
+    stmts = build_stmts_ast(body_nodes(1));
+    loc_fds = if |body_nodes| == 3
+      then (build_loc_fndef_ast(n) : n <- rep_rule_nodes(body_nodes(2)))
+      else ();
+
+    return syn_fn_def(
+      name:       fn_symbol(get_lowercase_id(nodes(1))),
+      args:       build_fn_args_ast(nodes(2)),
+      res_type:   ret_type,
+      expr:       syn_do_expr(nonempty(stmts), var_decls),
+      local_fns:  loc_fds,
+      typevars:   []
+    );
+
+    (Atom, SynType) build_var_decl(RuleMatch mtc) {
+      nodes = rule_seq_nodes(mtc);
+      assert |nodes| == 4;
+      name = get_lowercase_id(nodes(0));
+      type = build_type_ast(nodes(2));
+      return attach_src_code_info((name, type), mtc);
+    }
+
+    SynFnDef build_loc_fndef_ast(RuleMatch mtc) = attach_src_code_info(build_fndef_ast(mtc), filename, mtc);
+  }
+
+  SynFnDef build_match_fndef_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 6;
+    ret_type = build_type_ast(nodes(0));
+    args = build_fn_args_ast(nodes(2));
+    cases = (build_match_case_ast(n) : n <- rep_rule_nodes(nodes(4)));
+    arity = syn_case_arity(cases(0));
+    expr = syn_try_expr(nonempty((fn_arg(i) : i < arity)), nonempty(cases));
+    return syn_fn_def(
+      name:       fn_symbol(get_lowercase_id(nodes(1))),
+      args:       args,
+      res_type:   ret_type,
+      expr:       expr,
+      local_fns:  (),
+      typevars:   []
+    );
+  }
+
+  ImplBlock build_impl_block_1_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 3;
+    return build_impl_block_ast(nodes(1), block_node(nodes(2)));
+  }
+
+  ImplBlock build_impl_block_2_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    nodes = rule_seq_nodes(block_node(nodes(1)));
+    assert |nodes| == 3;
+    return build_impl_block_ast(nodes(0), nodes(2));
+  }
+
+  ImplBlock build_impl_block_ast(RuleMatch impl_args, RuleMatch fndefs) =
+    impl_block(
+      nonempty((attach_src_code_info(build_impl_arg_ast(n), filename, n)  : n  <- rep_rule_nodes(impl_args))),
+      nonempty((attach_src_code_info(build_fndef_ast(fd),   filename, fd) : fd <- rep_rule_nodes(fndefs)))
+    );
+
+  ImplArgDecl build_impl_arg_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 3;
+    name = impl_arg(get_lowercase_id(nodes(0)));
+    type = build_type_ast(nodes(2));
+    return impl_arg_decl(name, type);
+  }
+
+  UsingBlock build_using_block_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 3;
+    target = get_lowercase_id(nodes(1));
+    decls = (build_using_block_decl_ast(n) : n <- rep_rule_nodes(block_node(nodes(2))));
+    block = using_block(target, decls);
+    return attach_src_code_info(block, filename, mtc);
+  }
+
+  <DBMethodDef, UpdateDef> build_using_block_decl_ast(RuleMatch mtc) {
+    inner_match = get_rule_match(mtc);
+    decl = match (get_rule_name(mtc))
+      std_method      = build_std_db_method_ast(inner_match),
+      match_method    = build_match_db_method_ast(inner_match),
+      proc_method     = build_proc_db_method_ast(inner_match),
+      update          = build_update_def_ast(inner_match);
+    return attach_src_code_info(decl, filename, inner_match);
+  }
+
+  DBMethodDef build_std_db_method_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 6;
+    arg_nodes = if nodes(2) != null_match then rep_rule_nodes(block_node(nodes(2))) else ();
+    args = ((build_type_ast(rule_seq_node(n, 0)), get_lowercase_id(rule_seq_node(n, 1))) : n <- arg_nodes);
+    return db_method_def(
+      name:       get_lowercase_id(nodes(1)),
+      args:       args,
+      ret_type:   build_type_ast(nodes(0)),
+      expr:       build_expr_ast(nodes(4))
+    );
+  }
+
+  DBMethodDef build_proc_db_method_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 4;
+    arg_nodes = if nodes(2) != null_match then rep_rule_nodes(block_node(nodes(2))) else ();
+    args = ((build_type_ast(rule_seq_node(n, 0)), get_lowercase_id(rule_seq_node(n, 1))) : n <- arg_nodes);
+    return db_method_def(
+      name:       get_lowercase_id(nodes(1)),
+      args:       args,
+      ret_type:   build_type_ast(nodes(0)),
+      expr:       syn_do_expr(nonempty(build_stmts_ast(block_node(nodes(3)))), ())
+    );
+  }
+
+  DBMethodDef build_match_db_method_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 6;
+    arg_nodes = rep_rule_nodes(block_node(nodes(2)));
+    args = ((build_type_ast(rule_seq_node(n, 0)), get_lowercase_id(rule_seq_node(n, 1))) : n <- arg_nodes);
+    cases = (build_match_case_ast(n) : n <- rep_rule_nodes(nodes(4)));
+    expr = syn_try_expr(nonempty((fn_arg(i) : i < syn_case_arity(cases(0)))), nonempty(cases));
+    return db_method_def(
+      name:       get_lowercase_id(nodes(1)),
+      args:       args,
+      ret_type:   build_type_ast(nodes(0)),
+      expr:       expr
+    );
+  }
+
+  SynProcDef build_proc_def_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 3;
+
+    if get_rule_name(nodes(0)) == :ret_val:
+      ns = rule_seq_nodes(get_rule_match(nodes(0)));
+      assert |ns| == 2;
+      res_type = just(build_type_ast(ns(0)));
+      name = proc_symbol(get_lowercase_id(ns(1)));
+    else
+      res_type = nothing;
+      name = proc_symbol(get_lowercase_id(get_rule_match(nodes(0))));
+    ;
+
+    args = ((type: build_type_ast(rule_seq_node(ns, 0)), var: var(get_lowercase_id(rule_seq_node(ns, 1)))) : ns <- rep_rule_nodes(block_node(nodes(1))));
+
+    body_nodes = rule_seq_nodes(block_node(nodes(2)));
+    auto_or_db_vars = (build_auto_or_db_var_decl(n) : n <- rep_rule_nodes(body_nodes(0)));
+    body = (build_stmt_ast(n) : n <- rep_rule_nodes(body_nodes(1)));
+
+    return syn_proc_def(
+      name:             name,
+      args:             args,
+      res_type:         res_type,
+      auto_or_db_vars:  auto_or_db_vars,
+      body:             body
+    );
+
+    (var: Atom, args: Atom*, type: Atom) build_auto_or_db_var_decl(RuleMatch mtc) {
+      nodes = rule_seq_nodes(mtc);
+      assert |nodes| == 5;
+      var = get_lowercase_id(nodes(0));
+      args = if nodes(1) != null_match
+        then (get_lowercase_id(n) : n <-rep_rule_nodes(block_node(nodes(1))))
+        else ();
+      type = get_lowercase_id(nodes(3));
+      return (var: var, args: args, type: type);
+    }
+  }
+
+  SynArg* build_fn_args_ast(RuleMatch mtc) = if mtc != null_match then (build_fn_arg_ast(m) : m <- rep_rule_nodes(block_node(mtc))) else (); ## MAYBE rep_rule_nodes (AND seq_rule_nodes) SHOULD RETURN THE EMPTY SEQUENCE WHEN INVOKED WITH A null_match PARAMETER
+
+  SynArg build_fn_arg_ast(RuleMatch mtc) {
+    label = get_rule_name(mtc);
+    nodes = rule_seq_nodes(get_rule_match(mtc));
+    assert |nodes| == 2;
+    if label == :obj:
+      return build_obj_arg_ast(nodes);
+    else
+      assert label == :cls;
+      return cls_arg(build_cls_type_ast(nodes(0)), get_lowercase_id(nodes(1)));
+    ;
+  }
+
+  SynObjArg build_obj_arg_ast(RuleMatch* nodes) {
+    assert |nodes| == 2;
+    type = build_type_ast(nodes(0));
+    return if nodes(1) != null_match
+      then obj_arg(type, get_lowercase_id(nodes(1)))
+      else obj_arg(type);
+  }
+
+  SynClsType build_cls_type_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(block_node(mtc));
+    assert |nodes| == 3;
+    in_types = (build_type_ast(n) : n <- rep_rule_nodes(nodes(0)));
+    out_type = build_type_ast(nodes(2));
+    return syn_cls_type(nonempty(in_types), out_type);
+  }
+
+  ////////////////////////////////////////////////////////////////////////////////
+
+  ## WITH AN IMPROVED PATTERN MATCHING, THIS FUNCTION COULD BE WRITTEN LIKE THIS:
+  // SynExpr try_to_rewrite_seq_expr_into_log_expr(SynExpr expr):
+  //   seq_expr((and() | or() e?))   = e,
+  //   _                             = expr;
+  SynExpr try_to_rewrite_seq_expr_into_log_expr(SynExpr expr) {
+    return match(expr)
+      seq_expr(es?)   = if |es| == 1 then try_rewrite(only(es), expr) else expr,
+      _               = expr;
+
+    SynExpr try_rewrite(SynSubExpr elem_expr, SynSeqExpr seq_expr) =
+      and()   = elem_expr,
+      or()    = elem_expr,
+      _       = seq_expr;
+  }
+
+  ////////////////////////////////////////////////////////////////////////////////
+
+  SynExpr build_expr_ast(RuleMatch mtc) = build_expr_9_ast(mtc);
+
+  SynExpr build_expr_9_ast(RuleMatch mtc) {
+    nodes = rep_rule_nodes(mtc);
+    expr = build_expr_8_ast(nodes(0));
+    expr = try_to_rewrite_seq_expr_into_log_expr(expr) if |nodes| > 1;
+    i = 1;
+    while i < |nodes|:
+      right_expr = try_to_rewrite_seq_expr_into_log_expr(build_expr_8_ast(nodes(i+1)));
+      op = get_lowercase_id(nodes(i));
+      if op == :and:
+        expr = syn_and(expr, right_expr);
+      else
+        assert op == :or;
+        expr = syn_or(expr, right_expr);
+      ;
+      i = i + 2;
+    ;
+    return attach_src_code_info(expr, mtc);
+  }
+
+  SynExpr build_expr_8_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 2;
+    expr = build_expr_7_ast(nodes(0));
+    return expr if nodes(1) == null_match;
+    nodes = rule_seq_nodes(nodes(1));
+    op = get_token(nodes(0));
+    right_expr = build_expr_7_ast(nodes(1));
+    if op == :double_equals:
+      expr = syn_eq(expr, right_expr);
+    else
+      assert op == :not_equal;
+      expr = syn_neq(expr, right_expr);
+    ;
+    return attach_src_code_info(expr, mtc);
+  }
+
+  SynExpr build_expr_7_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 2;
+    expr = build_expr_6_ast(nodes(0));
+    return expr if nodes(1) == null_match;
+    nodes = rule_seq_nodes(nodes(1));
+    op = token_to_binary_operator(get_token(nodes(0)));
+    right_expr = build_expr_6_ast(nodes(1));
+    return attach_src_code_info(syn_op_call(op, expr, right_expr), mtc);
+  }
+
+  SynExpr build_expr_6_ast(RuleMatch mtc) {
+    nodes = rep_rule_nodes(mtc);
+    expr = build_expr_5_ast(nodes(0));
+    i = 1;
+    while i < |nodes|:
+      op = token_to_binary_operator(get_token(nodes(i)));
+      right_expr = build_expr_5_ast(nodes(i+1));
+      expr = syn_op_call(op, expr, right_expr);
+      i = i + 2;
+    ;
+    return attach_src_code_info(expr, mtc);
+  }
+
+  SynExpr build_expr_5_ast(RuleMatch mtc) {
+    nodes = rep_rule_nodes(mtc);
+    expr = build_expr_4_ast(nodes(0));
+    i = 1;
+    while i < |nodes|:
+      op = token_to_binary_operator(get_token(nodes(i)));
+      right_expr = build_expr_4_ast(nodes(i+1));
+      expr = syn_op_call(op, expr, right_expr);
+      i = i + 2;
+    ;
+    return attach_src_code_info(expr, mtc);
+  }
+
+  SynExpr build_expr_4_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 2;
+    expr = build_expr_3_ast(nodes(1));
+    prefix = nodes(0);
+    if prefix != null_match:
+      op = annotated_token(prefix).token;
+      if op == :minus:
+        expr = match (expr)
+          object(<*..*> n?) = object(-n),
+          float_lit()       = float_lit(expr.mantissa, not expr.negative, expr.dec_exp),
+          _                 = syn_op_call(:unary_minus, expr);
+      else
+        assert op == lowercase_id(:not);
+        expr = syn_not(try_to_rewrite_seq_expr_into_log_expr(expr));
+      ;
+    ;
+    return attach_src_code_info(expr, mtc);
+  }
+
+  SynExpr build_expr_3_ast(RuleMatch mtc) {
+    nodes = rep_rule_nodes(mtc);
+    expr = build_expr_2_ast(last(nonempty(nodes)));
+    i = |nodes| - 2;
+    while i >= 0:
+      left_expr = build_expr_2_ast(nodes(i));
+      expr = syn_op_call(:exp, left_expr, expr);
+      i = i - 1;
+    ;
+    return attach_src_code_info(expr, mtc);
+  }
+
+  SynExpr build_expr_2_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 2;
+    expr = build_expr_1_ast(nodes(0));
+    return expr if nodes(1) == null_match;
+    type = build_type_ast(rule_seq_node(nodes(1), 1));
+    return attach_src_code_info(syn_membership(expr, type), mtc);
+  }
+
+  SynExpr build_expr_1_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 2;
+    expr = build_expr_1b_ast(nodes(0));
+    opt_node = nodes(1);
+    if opt_node != null_match:
+      label = get_rule_name(opt_node);
+      content = get_rule_match(opt_node);
+      if label == :dot_test:
+        field = get_lowercase_id(rule_seq_node(content, 1));
+        expr = syn_accessor_test(expr, field);
+      else
+        assert label == :rel_test;
+        args = (build_arg_ast(n) : n <- rep_rule_nodes(block_node(content)));
+        expr = syn_rel_memb_test(expr, nonempty(args));
+      ;
+    ;
+    return attach_src_code_info(expr, mtc);
+
+    Maybe[SynExpr] build_arg_ast(RuleMatch mtc) {
+      label = get_rule_name(mtc);
+      if label == :value:
+        return just(build_expr_ast(get_rule_match(mtc)));
+      else
+        assert label == :any;
+        return nothing;
+      ;
+    }
+  }
+
+  SynExpr build_expr_1b_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 2;
+    expr = build_expr_0_ast(nodes(0));
+    for r <- rep_rule_nodes(nodes(1)):
+      label = get_rule_name(r);
+      actual_match = get_rule_match(r);
+      if label == :dot:
+        field = get_lowercase_id(actual_match, 1);
+        expr = syn_accessor(expr, field);
+      elif label == :sub:
+        idx_expr = build_expr_ast(block_node(actual_match));
+        expr = syn_op_call(:brackets, expr, idx_expr);
+      else
+        assert label == :pcall;
+        args = (build_expr_ast(n) : n <- rep_rule_nodes(block_node(actual_match)));
+        expr = syn_call_lookalike(expr, nonempty(args));
+      ;
+    ;
+    return attach_src_code_info(expr, mtc);
+  }
+
+  SynExpr build_expr_0_ast(RuleMatch mtc) {
+    inner_match = get_rule_match(mtc);
+    expr = match (get_rule_name(mtc))
+      size                = build_size_expr_ast(inner_match),
+      rel_lookup          = build_rel_lookup_ast(inner_match),
+      def_test            = build_def_test_ast(inner_match),
+      tag_obj             = build_tag_obj_expr_ast(inner_match),
+      memb_copy           = prev_var_value(signal_var(get_var_id(inner_match))),
+      integer             = object(get_integer(inner_match)),
+      symbol              = object(get_qualified_symbol(inner_match)),
+      string              = build_string_expr_ast(inner_match),
+      float               = get_float_lit(inner_match),
+      true                = object(true),
+      false               = object(false),
+      set                 = build_set_expr_ast(block_node(inner_match)),
+      map                 = build_map_expr_ast(inner_match),
+      bin_rel             = build_bin_rel_expr_ast(inner_match),
+      tern_rel            = build_tern_rel_expr_ast(inner_match),
+      record              = build_record_expr_ast(inner_match),
+      seq                 = build_seq_expr_ast(inner_match),
+      seq_tail            = build_seq_tail_expr_ast(inner_match),
+      tag_record          = build_tag_record_expr_ast(inner_match),
+      builtin_call        = build_builtin_call_expr_ast(inner_match),
+      par_expr            = build_expr_ast(block_node(inner_match)),
+      ex_qual             = build_ex_qual_expr_ast(inner_match),
+      set_cp              = build_set_cp_expr_ast(block_node(inner_match)),
+      map_cp              = build_map_cp_expr_ast(inner_match),
+      rel_cp              = build_rel_cp_expr_ast(inner_match),
+      seq_cp              = build_seq_cp_expr_ast(inner_match),
+      if_else             = build_if_else_expr_ast(inner_match),
+      match_expr          = build_match_expr_ast(inner_match),
+      proc                = build_proc_expr_ast(inner_match),
+      call_lookalike      = build_call_lookalike_expr_ast(inner_match),
+      impl_args_call      = build_impl_args_call_expr_ast(inner_match),
+      plain_lc_id         = build_plain_lc_id_ast(inner_match),
+      cls_par             = cls_par(get_cls_par_idx(inner_match)),
+      data                = build_data_expr_ast(block_node(rule_seq_node(inner_match, 1)));
+
+    return attach_src_code_info(expr, mtc);
+  }
+
+
+  SynExpr build_plain_lc_id_ast(RuleMatch mtc) {
+    id = get_lowercase_id(mtc);
+    return if id == :undefined then :undefined else const_or_var(id);
+  }
+
+
+  SynSizeExpr build_size_expr_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 3;
+    target = build_expr_ast(nodes(1));
+    return syn_size_expr(target);
+  }
+
+
+  SynCallLookalike build_call_lookalike_expr_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 2;
+    target = get_lowercase_id(nodes(0));
+    args = (build_expr_ast(n) : n <- rep_rule_nodes(block_node(nodes(1))));
+    return syn_call_lookalike(const_or_var(target), nonempty(args));
+  }
+
+
+  SynRelLookup build_rel_lookup_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 2;
+    symbol_chain = (get_lowercase_id(n) : n <- rep_rule_nodes(nodes(0)));
+    arg_sect_nodes = rule_seq_nodes(block_node(nodes(1)));
+    assert |arg_sect_nodes| == 4;
+    pre_args = (build_expr_ast(rule_seq_node(n, 0)) : n <- rep_rule_nodes(arg_sect_nodes(0)));
+    post_args = (build_expr_ast(rule_seq_node(n, 1)) : n <- rep_rule_nodes(arg_sect_nodes(3)));
+    all_args = (just(a) : a <- pre_args) & (nothing) & (just(a) : a <- post_args);
+    return syn_rel_lookup(nonempty(symbol_chain), nonempty(all_args));
+  }
+
+  SynExpr build_def_test_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 5;
+    var = get_lowercase_id(nodes(0));
+    field = get_lowercase_id(nodes(2));
+    return output_is_def(loc_auto_var(var), field);
+  }
+
+  SynTagObjExpr build_tag_obj_expr_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 2;
+    es = (build_expr_ast(e) : e <- rep_rule_nodes(block_node(nodes(1))));
+    obj_expr = if |es| > 1 then syn_seq_expr(es) else only_unsafe(es);
+    return syn_tag_obj_expr(object(get_qualified_symbol(nodes(0))), obj_expr);
+  }
+
+  SynSetExpr build_set_expr_ast(RuleMatch mtc) = syn_set_expr((build_subexpr_ast(n) : n <- rep_rule_nodes(mtc)));
+
+  SynSeqExpr build_seq_expr_ast(RuleMatch mtc) = syn_seq_expr((build_subexpr_ast(n) : n <- rep_rule_nodes(block_node(mtc))));
+
+  SynSeqExpr build_seq_tail_expr_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(block_node(mtc));
+    assert |nodes| == 3;
+    seq_expr = build_expr_ast(nodes(0));
+    tail_exprs = (build_expr_ast(n) : n <- rep_rule_nodes(nodes(2)));
+    return syn_seq_tail_expr(seq_expr, nonempty(tail_exprs));
+  }
+
+  SynMapExpr build_map_expr_ast(RuleMatch mtc) =
+    syn_map_expr(nonempty((build_map_entry_ast(n) : n <- rep_rule_nodes(block_node(mtc)))));
+
+  SynBinRelExpr build_bin_rel_expr_ast(RuleMatch mtc) =
+    syn_bin_rel_expr((build_bin_rel_entry_ast(n) : n <- weird_seq_nodes(block_node(mtc))));
+
+  SynTernRelExpr build_tern_rel_expr_ast(RuleMatch mtc) =
+    syn_tern_rel_expr((build_tern_rel_entry_ast(n) : n <- weird_seq_nodes(block_node(mtc))));
+
+  SynMapExpr build_record_expr_ast(RuleMatch mtc) =
+    syn_map_expr(nonempty((build_record_field_ast(n) : n <- rep_rule_nodes(block_node(mtc)))));
+
+  SynTagObjExpr build_tag_record_expr_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 2;
+    tag = object(get_lowercase_id(nodes(0)));
+    obj = build_record_expr_ast(nodes(1));
+    return syn_tag_obj_expr(tag, obj);
+  }
+
+  SynExpr build_string_expr_ast(RuleMatch mtc) = syn_tag_obj_expr(object(:string), syn_seq_expr((object(ch) : ch <- chars(get_string(mtc)))));
+
+  SynExpr build_builtin_call_expr_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 2;
+    builtin = get_builtin(nodes(0));
+    args = (build_expr_ast(n) : n <- rep_rule_nodes(block_node(nodes(1))));
+    return syn_builtin_call(builtin, nonempty(args));
+  }
+
+  SynExpr build_ex_qual_expr_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(block_node(mtc));
+    assert |nodes| == 4;
+    head_clause = build_clause_ast(nodes(0));
+    extra_clauses = (build_clause_ast(rule_seq_node(n, 1)) : n <- rep_rule_nodes(nodes(1)));
+    expr = build_expr_ast(nodes(3));
+    return syn_ex_qual(nonempty((head_clause) & extra_clauses), expr);
+  }
+
+  SynExpr build_set_cp_expr_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 4;
+    expr = build_expr_ast(nodes(0));
+    head_clause = build_clause_ast(nodes(2));
+    extra_clauses = (build_clause_ast(rule_seq_node(n, 1)) : n <- rep_rule_nodes(nodes(3)));
+    return syn_set_comp(expr, nonempty((head_clause) & extra_clauses));
+  }
+
+  SynExpr build_map_cp_expr_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(block_node(mtc));
+    assert |nodes| == 6;
+    key_expr = build_expr_ast(nodes(0));
+    value_expr = build_expr_ast(nodes(2));
+    head_clause = build_clause_ast(nodes(4));
+    extra_clauses = (build_clause_ast(rule_seq_node(n, 1)) : n <- rep_rule_nodes(nodes(5)));
+    return syn_map_comp(key_expr, value_expr, nonempty((head_clause) & extra_clauses));
+  }
+
+  SynExpr build_rel_cp_expr_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(block_node(mtc));
+    assert |nodes| == 7;
+    exprs = (
+      build_expr_ast(nodes(0)),
+      build_expr_ast(nodes(2)),
+      build_expr_ast(rule_seq_node(nodes(3), 1)) if nodes(3) != null_match
+    );
+    head_clause = build_clause_ast(nodes(5));
+    extra_clauses = (build_clause_ast(rule_seq_node(n, 1)) : n <- rep_rule_nodes(nodes(6)));
+    return syn_rel_comp(exprs, nonempty((head_clause) & extra_clauses));
+  }
+
+  <SynLCExpr, SynRCExpr> build_seq_cp_expr_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(block_node(mtc));
+    assert |nodes| == 5;
+
+    expr     = build_expr_ast(nodes(0));
+
+    src_expr = build_expr_ast(nodes(3));
+
+    if nodes(4) != null_match:
+      ns = rule_seq_nodes(nodes(4));
+      sel_expr = just(build_expr_ast(ns(1)));
+    else
+      sel_expr = nothing;
+    ;
+
+    var_and_type_node = nodes(2);
+    if get_rule_name(var_and_type_node) == :seq:
+      ns = rule_seq_nodes(get_rule_match(var_and_type_node));
+      vars = (var(get_lowercase_id(n)) : n <- rep_rule_nodes(ns(0)));
+      if ns(1) != null_match:
+        sub_ns = rule_seq_nodes(ns(1));
+        idx_var = just(var(get_lowercase_id(sub_ns(1))));
+      else
+        idx_var = nothing;
+      ;
+      return seq_comp(
+        expr:       expr,
+        vars:       nonempty(vars),
+        idx_var:    value(idx_var) if idx_var != nothing,
+        src_expr:   src_expr,
+        sel_expr:   value(sel_expr) if sel_expr != nothing
+      );
+
+    else
+      assert get_rule_name(var_and_type_node) == :range;
+      ns = rule_seq_nodes(get_rule_match(var_and_type_node));
+      var = var(get_lowercase_id(ns(0)));
+      op = get_token(ns(1));
+      assert op == lower or op == lower_eq;
+      inclusive = op == lower_eq;
+      return range_comp(expr: expr, var: var, bound_expr: src_expr, inclusive: inclusive, sel_expr: value(sel_expr) if sel_expr != nothing);
+    ;
+  }
+
+
+  SynExpr build_if_else_expr_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 4;
+    branches = (build_if_then_branch_ast(n) : n <- rep_rule_nodes(nodes(1)));
+    else_expr = build_expr_ast(nodes(3));
+    return syn_if_expr(nonempty(branches), else_expr);
+
+    (cond: SynExpr, expr: SynExpr) build_if_then_branch_ast(RuleMatch mtc) {
+      nodes = rule_seq_nodes(mtc);
+      assert |nodes| == 3;
+      cond = build_expr_ast(nodes(0));
+      expr = build_expr_ast(nodes(2));
+      return (expr: expr, cond: cond);
+    }
+  }
+
+  SynExpr build_match_expr_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 3;
+    exprs = (build_expr_ast(n) : n <- rep_rule_nodes(block_node(nodes(1))));
+    cases = (build_match_case_ast(n) : n <- rep_rule_nodes(nodes(2)));
+    return syn_try_expr(nonempty(exprs), nonempty(cases));
+  }
+
+  SynExpr build_proc_expr_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(block_node(mtc));
+    assert |nodes| == 2;
+    var_decls = (build_var_decl(n) : n <- rep_rule_nodes(nodes(0)));
+    stmts = build_stmts_ast(nodes(1));
+    return syn_do_expr(stmts, var_decls);
+
+    (Atom, SynType) build_var_decl(RuleMatch mtc) {
+      nodes = rule_seq_nodes(mtc);
+      assert |nodes| == 4;
+      name = get_lowercase_id(nodes(0));
+      type = build_type_ast(nodes(2));
+      return attach_src_code_info((name, type), mtc);
+    }
+  }
+
+  SynExpr build_impl_args_call_expr_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 2;
+    fn_name = get_lowercase_id(nodes(0));
+
+    arg_nodes = rule_seq_nodes(block_node(nodes(1)));
+    assert |arg_nodes| == 2;
+
+    pos_args_nodes = rep_rule_nodes(arg_nodes(0));
+    impl_args_nodes = rep_rule_nodes(arg_nodes(1));
+
+    pos_args = (build_expr_ast(rule_seq_node(n, 0)) : n <- pos_args_nodes);
+    impl_args = (build_actual_impl_arg_ast(n) : n <- impl_args_nodes);
+
+    return impl_args_call(fn_name, pos_args, nonempty(impl_args));
+  }
+
+  (ImplArg, SynExpr) build_actual_impl_arg_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 3;
+
+    name = impl_arg(get_lowercase_id(nodes(0)));
+    expr = build_expr_ast(nodes(2));
+
+    return (name, expr);
+  }
+
+  SynExpr build_data_expr_ast(RuleMatch mtc) {
+    rule_mtc = get_rule_match(mtc);
+    return match (get_rule_name(mtc))
+      symbol          = object(get_lowercase_id(rule_mtc)),
+      integer         = build_int_expr_ast(rule_mtc),
+      float           = get_float_lit(rule_mtc),
+      string          = build_string_expr_ast(rule_mtc),
+      set             = syn_set_expr((build_data_expr_ast(n) : n <- rep_rule_nodes(block_node(rule_mtc)))),
+      seq             = syn_seq_expr((build_data_expr_ast(n) : n <- rep_rule_nodes(block_node(rule_mtc)))),
+      map             = build_map_expr_ast(rule_mtc),
+      record          = build_record_expr_ast(rule_mtc),
+      ne_bin_rel      = build_bin_rel_expr_ast(rule_mtc),
+      ne_tern_rel     = build_tern_rel_expr_ast(rule_mtc),
+      tag_obj         = build_tag_obj_expr_ast(rule_mtc),
+      tag_rec         = build_tag_rec_expr_ast(rule_mtc),
+      expr            = build_expr_ast(block_node(rule_seq_node(rule_mtc, 1)));
+
+
+    SynExpr build_int_expr_ast(RuleMatch mtc) {
+      nodes = rule_seq_nodes(mtc);
+      assert |nodes| == 2;
+      value = get_integer(nodes(1));
+      value = -value if nodes(0) != null_match;
+      return object(value);
+    }
+
+
+    SynExpr build_string_expr_ast(RuleMatch mtc) =
+      syn_tag_obj_expr(object(:string), syn_seq_expr((object(ch) : ch <- chars(get_string(mtc)))));
+
+
+    SynExpr build_map_expr_ast(RuleMatch mtc) =
+      syn_map_expr(
+        nonempty(((
+            key:    build_data_expr_ast(rule_seq_node(n, 0)),
+            value:  build_data_expr_ast(rule_seq_node(n, 2))
+          ) : n <- rep_rule_nodes(block_node(mtc))
+        ))
+      );
+
+
+    SynExpr build_record_expr_ast(RuleMatch mtc) =
+      syn_map_expr(
+        nonempty(((
+            key:    object(get_lowercase_id(rule_seq_node(n, 0))),
+            value:  build_data_expr_ast(rule_seq_node(n, 2))
+          ) : n <- rep_rule_nodes(block_node(mtc))
+        ))
+      );
+
+
+    SynExpr build_bin_rel_expr_ast(RuleMatch mtc) =
+      syn_bin_rel_expr(((
+        args: (
+          build_data_expr_ast(rule_seq_node(n, 0)),
+          build_data_expr_ast(rule_seq_node(n, 2))
+        )) : n <- weird_seq_nodes(block_node(mtc))
+      ));
+
+
+    SynExpr build_tern_rel_expr_ast(RuleMatch mtc) =
+      syn_tern_rel_expr(((
+        args: (
+          build_data_expr_ast(rule_seq_node(n, 0)),
+          build_data_expr_ast(rule_seq_node(n, 2)),
+          build_data_expr_ast(rule_seq_node(n, 4))
+        )) : n <- weird_seq_nodes(block_node(mtc))
+      ));
+
+
+    SynExpr build_tag_obj_expr_ast(RuleMatch mtc) {
+      nodes = rule_seq_nodes(mtc);
+      assert |nodes| == 2;
+      tag = object(get_lowercase_id(nodes(0)));
+      objs = (build_data_expr_ast(n) : n <- rep_rule_nodes(block_node(nodes(1))));
+      obj = if |objs| > 1 then syn_seq_expr(objs) else only_unsafe(objs);
+      return syn_tag_obj_expr(tag, obj);
+    }
+
+
+    SynExpr build_tag_rec_expr_ast(RuleMatch mtc) {
+      nodes = rule_seq_nodes(mtc);
+      assert |nodes| == 2;
+      tag = object(get_lowercase_id(nodes(0)));
+      obj = build_record_expr_ast(nodes(1));
+      return syn_tag_obj_expr(tag, obj);
+    }
+  }
+
+  ////////////////////////////////////////////////////////////////////////////////
+
+  SynSubExpr build_subexpr_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 2;
+    expr = build_expr_ast(nodes(0));
+    return expr if nodes(1) == null_match;
+    nodes = rule_seq_nodes(nodes(1));
+    assert |nodes| == 2;
+    assert get_lowercase_id(nodes(0)) == :if;
+    cond = build_expr_ast(nodes(1));
+    return syn_cond_expr(expr, cond);
+  }
+
+  SynMapExprEntry build_map_entry_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 4;
+    key = build_expr_ast(nodes(0));
+    value = build_expr_ast(nodes(2));
+    // return (key: key, value: value, cond: build_expr_ast(rule_seq_nodes(nodes(3))(1)) if nodes(3) != null_match); ## REENABLE
+    return (key: key, value: value) if nodes(3) == null_match;
+    cond_nodes = rule_seq_nodes(nodes(3));
+    cond = build_expr_ast(cond_nodes(1));
+    return (key: key, value: value, cond: cond);
+  }
+
+  SynBinRelEntry build_bin_rel_entry_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 4;
+    args = (build_expr_ast(nodes(0)), build_expr_ast(nodes(2)));
+    return (args: args) if nodes(3) == null_match;
+    cond = build_expr_ast(rule_seq_node(nodes(3), 1));
+    return (args: args, cond: cond);
+  }
+
+  SynTernRelEntry build_tern_rel_entry_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 6;
+    args = (build_expr_ast(nodes(0)), build_expr_ast(nodes(2)), build_expr_ast(nodes(4)));
+    return (args: args) if nodes(5) == null_match;
+    cond = build_expr_ast(rule_seq_node(nodes(5), 1));
+    return (args: args, cond: cond);
+  }
+
+  SynMapExprEntry build_record_field_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 4;
+    label = object(get_lowercase_id(nodes(0)));
+    expr = build_expr_ast(nodes(2));
+    return (key: label, value: expr) if nodes(3) == null_match;
+    nodes = rule_seq_nodes(nodes(3));
+    assert get_lowercase_id(nodes(0)) == :if;
+    cond = build_expr_ast(nodes(1));
+    return (key: label, value: expr, cond: cond);
+  }
+
+  ////////////////////////////////////////////////////////////////////////////////
+
+  SynStmt+ build_stmts_ast(RuleMatch mtc) = (build_stmt_ast(n) : n <- nonempty(rep_rule_nodes(mtc)));
+
+  SynStmt build_stmt_ast(RuleMatch mtc) {
+    inner_match = get_rule_match(mtc);
+    stmt = match (get_rule_name(mtc))
+      asgnm             = build_asgnm_stmt_ast(inner_match),
+      ret_val           = build_ret_val_stmt_ast(inner_match),
+      if_stmt           = build_if_stmt_ast(inner_match),
+      loop_stmt         = build_loop_stmt_ast(inner_match),
+      while_stmt        = build_while_stmt_ast(inner_match),
+      let_stmt          = build_let_stmt_ast(inner_match),
+      break_stmt        = build_break_stmt_ast(inner_match),
+      for_stmt          = build_for_stmt_ast(inner_match),
+      fail_stmt         = build_fail_stmt_ast(inner_match),
+      assert_stmt       = build_assert_stmt_ast(inner_match),
+      print_stmt        = build_print_stmt_ast(inner_match),
+      seq_update        = build_seq_update_stmt(inner_match),
+      no_val_ret        = build_no_val_ret_stmt_ast(inner_match),
+      proc_call         = build_proc_call_stmt_ast(inner_match),
+
+      send_msg          = build_send_msg_stmt_ast(inner_match),
+      try_update        = build_try_update_stmt_ast(inner_match),
+      set_memb_var      = build_set_memb_var_stmt_ast(inner_match),
+      delete            = build_delete_stmt_ast(inner_match),
+      insert            = build_insert_stmt_ast(inner_match),
+
+      ctrl_set_input    = build_set_input_ctrl_stmt_ast(inner_match),
+      ctrl_clear_input  = build_clear_input_ctrl_stmt_ast(inner_match),
+      ctrl_set_elapsed  = build_set_elapsed_time_ctrl_stmt_ast(inner_match),
+      ctrl_apply        = build_apply_ctrl_stmt_ast(inner_match),
+      ctrl_send_msg     = build_send_msg_ctrl_stmt_ast(inner_match),
+      ctrl_read         = build_read_state_ctrl_stmt_ast(inner_match),
+      ctrl_write        = build_write_state_ctrl_stmt_ast(inner_match);
+
+    return attach_src_code_info(stmt, mtc);
+  }
+
+  SynStmt build_asgnm_stmt_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 5;
+    vars = (var(get_lowercase_id(n)) : n <- rep_rule_nodes(nodes(0)));
+    assert vars != ();
+    expr = build_expr_ast(nodes(2));
+    stmt = syn_asgnm_stmt(nonempty(vars), expr);
+    return stmt if nodes(3) == null_match;
+    cond = build_expr_ast(rule_seq_node(nodes(3), 1));
+    return syn_if_stmt(cond, (stmt));
+  }
+
+  SynStmt build_ret_val_stmt_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 4;
+    expr = build_expr_ast(nodes(1));
+    stmt = syn_ret_stmt(expr);
+    return stmt if nodes(2) == null_match;
+    cond = build_expr_ast(rule_seq_node(nodes(2), 1));
+    return syn_if_stmt(cond, (stmt));
+  }
+
+  SynStmt build_if_stmt_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 7;
+    cond = build_expr_ast(nodes(1));
+    stmts = build_stmts_ast(nodes(3));
+    branches = ((cond: cond, body: stmts));
+    for n <- rep_rule_nodes(nodes(4)):
+      cond = build_expr_ast(rule_seq_node(n, 1));
+      stmts = build_stmts_ast(rule_seq_node(n, 3));
+      branches = branches & ((cond: cond, body: stmts));
+    ;
+    else_stmts = if nodes(5) != null_match then build_stmts_ast(rule_seq_node(nodes(5), 1)) else ();
+    return syn_if_stmt(nonempty(branches), else_stmts);
+  }
+
+  SynStmt build_loop_stmt_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 4;
+    stmts = build_stmts_ast(nodes(1));
+    return syn_inf_loop_stmt(stmts) if nodes(2) == null_match;
+    cond = build_expr_ast(rule_seq_node(nodes(2), 1));
+    return syn_loop_stmt(cond, stmts, true);
+  }
+
+  SynStmt build_while_stmt_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 5;
+    cond = build_expr_ast(nodes(1));
+    stmts = build_stmts_ast(nodes(3));
+    return syn_loop_stmt(cond, stmts);
+  }
+
+  SynStmt build_let_stmt_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 5;
+    asgnms = (build_let_asgnm_ast(n) : n <- rep_rule_nodes(nodes(1)));
+    stmts = build_stmts_ast(nodes(3));
+    return syn_let_stmt(nonempty(asgnms), stmts);
+
+    (ImplArg, SynExpr) build_let_asgnm_ast(RuleMatch mtc) {
+      name = impl_arg(get_lowercase_id(mtc, 0));
+      expr = build_expr_ast(rule_seq_node(mtc, 2));
+      return (name, expr);
+    }
+  }
+
+  SynStmt build_break_stmt_ast(RuleMatch mtc) {
+    if_node = rule_seq_node(mtc, 1);
+    return break_stmt if if_node == null_match;
+    cond = build_expr_ast(rule_seq_node(if_node, 1));
+    return syn_if_stmt(cond, (break_stmt));
+  }
+
+  SynStmt build_for_stmt_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 5;
+    iters = (build_iter_ast(n) : n <- rep_rule_nodes(nodes(1)));
+    stmts = build_stmts_ast(nodes(3));
+    return syn_for_stmt(nonempty(iters), stmts);
+
+    SynIter build_iter_ast(RuleMatch mtc) {
+      if get_rule_name(mtc) == :repeat:
+        expr = build_expr_ast(get_rule_match(mtc));
+        return range_iter(start_val: object(0), end_val: expr, end_val_incl: false);
+      ;
+
+      nodes = rule_seq_nodes(get_rule_match(mtc));
+
+      if get_rule_name(mtc) == :foreach:
+        vars = (var(get_lowercase_id(n)) : n <- rep_rule_nodes(nodes(0)));
+        expr = build_expr_ast(nodes(2));
+        return syn_seq_iter(nonempty(vars), expr);
+      ;
+
+      if get_rule_name(mtc) == :foreach_idx:
+        vars = (var(get_lowercase_id(n)) : n <- rep_rule_nodes(nodes(0)));
+        idx_var = var(get_lowercase_id(nodes(2)));
+        expr = build_expr_ast(nodes(4));
+        return syn_seq_iter(nonempty(vars), idx_var, expr);
+      ;
+
+      if get_rule_name(mtc) == :for_upper:
+        var = var(get_lowercase_id(nodes(0)));
+        op = get_token(nodes(1));
+        assert op == lower or op == lower_eq;
+        expr = build_expr_ast(nodes(2));
+        return range_iter(var: var, start_val: object(0), end_val: expr, end_val_incl: op == lower_eq);
+      ;
+
+      assert get_rule_name(mtc) == :for_range;
+      var = var(get_lowercase_id(nodes(0)));
+      start_expr = build_expr_ast(nodes(2));
+      range_type = get_token(nodes(3));
+      assert range_type == double_dot or range_type == triple_dot;
+      end_expr = build_expr_ast(nodes(4));
+      return range_iter(var: var, start_val: start_expr, end_val: end_expr, end_val_incl: range_type == triple_dot);
+    }
+  }
+
+  SynStmt build_fail_stmt_ast(RuleMatch mtc) {
+    if_node = rule_seq_node(mtc, 1);
+    return fail_stmt if if_node == null_match;
+    cond = build_expr_ast(rule_seq_node(if_node, 1));
+    return syn_if_stmt(cond, (fail_stmt));
+  }
+
+  SynStmt build_assert_stmt_ast(RuleMatch mtc) {
+    cond_node = rule_seq_node(mtc, 1);
+    cond = build_expr_ast(cond_node);
+    start_loc, end_loc = value_unsafe(source_file_location(cond_node));
+    start_line, start_col = start_loc;
+    end_line, end_col = end_loc;
+    if start_line == end_line:
+      cond_line = lines(start_line-1);
+      cond_text = just(string(subseq(cond_line, start_col-1, end_col-start_col+1)));
+    else
+      cond_text = nothing;
+    ;
+    return syn_assert_stmt(cond, filename, start_line, cond_text);
+  }
+
+  SynStmt build_print_stmt_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    expr = build_expr_ast(nodes(1));
+    stmt = syn_print_stmt(expr);
+    return stmt if nodes(2) == null_match;
+    cond = build_expr_ast(rule_seq_node(nodes(2), 1));
+    return syn_if_stmt(cond, (stmt));
+  }
+
+  SynStmt build_seq_update_stmt(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 6;
+    var = var(get_lowercase_id(nodes(0)));
+    idx_expr = build_expr_ast(block_node(nodes(1)));
+    value_expr = build_expr_ast(nodes(3));
+    stmt = syn_seq_update_stmt(var, idx_expr, value_expr);
+    return stmt if nodes(4) == null_match;
+    cond = build_expr_ast(rule_seq_node(nodes(4), 1));
+    return syn_if_stmt(cond, (stmt));
+  }
+
+  SynStmt build_no_val_ret_stmt_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 3;
+
+    if nodes(1) == null_match:
+      return return_stmt;
+    else
+      cond = build_expr_ast(rule_seq_node(nodes(1), 1));
+      return syn_if_stmt(cond, (return_stmt));
+    ;
+  }
+
+  SynStmt build_proc_call_stmt_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 4;
+    proc_name = proc_symbol(get_lowercase_id(nodes(1)));
+    args = (build_expr_ast(n) : n <- rep_rule_nodes(block_node(nodes(2))));
+    return syn_proc_call_stmt(proc_name, args) if nodes(0) == null_match;
+    var = var(get_lowercase_id(rule_seq_node(nodes(0), 0)));
+    return syn_proc_call_stmt(var, proc_name, args);
+  }
+
+  SynStmt build_delete_stmt_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 3;
+    entry_nodes = rep_rule_nodes(nodes(1));
+    entries = (build_entry_ast(n) : n <- rep_rule_nodes(nodes(1)));
+    return syn_delete_stmt(nonempty(entries));
+
+    (Atom, Maybe[SynExpr]+) build_entry_ast(RuleMatch mtc) {
+      nodes = rule_seq_nodes(mtc);
+      assert |nodes| == 2;
+      relvar = get_lowercase_id(nodes(0));
+      args = (build_arg_ast(n) : n <- rep_rule_nodes(block_node(nodes(1))));
+      return (relvar, nonempty(args));
+    }
+
+    Maybe[SynExpr] build_arg_ast(RuleMatch mtc) {
+      label = get_rule_name(mtc);
+      content = get_rule_match(mtc);
+      assert label == :value or label == :any;
+      return if label == :value then just(build_expr_ast(content)) else nothing;
+    }
+  }
+
+  SynStmt build_insert_stmt_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 3;
+    force = match (get_lowercase_id(nodes(0)))
+      insert  = false,
+      update  = true;
+    entries = (build_entry_ast(n) : n <- rep_rule_nodes(nodes(1)));
+    return syn_insert_stmt(nonempty(entries), force);
+
+    (Atom, SynExpr+) build_entry_ast(RuleMatch mtc) {
+      nodes = rule_seq_nodes(mtc);
+      assert |nodes| == 2;
+      relvar = get_lowercase_id(nodes(0));
+      args = (build_expr_ast(n) : n <- rep_rule_nodes(block_node(nodes(1))));
+      return (relvar, nonempty(args));
+    }
+  }
+
+  SynStmt build_set_memb_var_stmt_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 6;
+    var = get_lowercase_id(nodes(1));
+    value = build_expr_ast(nodes(3));
+    stmt = syn_set_memb_var_stmt(var, value);
+    cond_node = nodes(4);
+    return stmt if cond_node == null_match;
+    cond = build_expr_ast(rule_seq_node(cond_node, 1));
+    return syn_if_stmt(cond, (stmt));
+  }
+
+  SynStmt build_try_update_stmt_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 4;
+    name = get_lowercase_id(nodes(0));
+    args = (build_expr_ast(n) : n <- rep_rule_nodes(block_node(nodes(1))));
+    stmt = syn_try_update_stmt(name, args);
+    cond_node = nodes(2);
+    return stmt if cond_node == null_match;
+    cond = build_expr_ast(rule_seq_node(cond_node, 1));
+    return syn_if_stmt(cond, (stmt));
+  }
+
+  SynStmt build_send_msg_stmt_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 5;
+    var_id = get_lowercase_id(nodes(0));
+    msg = build_expr_ast(nodes(2));
+    stmt = syn_send_msg_stmt(var_id, msg);
+    cond_node = nodes(3);
+    return stmt if cond_node == null_match;
+    cond = build_expr_ast(rule_seq_node(cond_node, 1));
+    return syn_if_stmt(cond, (stmt));
+  }
+
+  SynCtrlStmt build_set_input_ctrl_stmt_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 6;
+    var = get_lowercase_id(nodes(0));
+    input = get_lowercase_id(nodes(2));
+    value = build_expr_ast(nodes(4));
+    return syn_set_input_ctrl_stmt(var, input, value);
+  }
+
+  SynCtrlStmt build_clear_input_ctrl_stmt_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 5;
+    var = get_lowercase_id(nodes(1));
+    input = get_lowercase_id(nodes(3));
+    return syn_clear_input_ctrl_stmt(var, input);
+  }
+
+  SynCtrlStmt build_set_elapsed_time_ctrl_stmt_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 4;
+    var = get_lowercase_id(nodes(1));
+    millisecs_expr = build_expr_ast(nodes(2));
+    nanosecs_expr = syn_builtin_call(:mult, (object(1000000), millisecs_expr));
+    return syn_set_elapsed_time_ctrl_stmt(var, nanosecs_expr);
+  }
+
+  SynCtrlStmt build_apply_ctrl_stmt_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 5;
+    res_var = get_lowercase_id(nodes(0));
+    auto_var = get_lowercase_id(nodes(3));
+    return syn_apply_ctrl_stmt(auto_var, res_var);
+  }
+
+  SynCtrlStmt build_send_msg_ctrl_stmt_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 6;
+    res_var = get_lowercase_id(nodes(0));
+    auto_var = get_lowercase_id(nodes(2));
+    msg = build_expr_ast(nodes(4));
+    return syn_send_msg_ctrl_stmt(res_var, auto_var, msg);
+  }
+
+  SynCtrlStmt build_read_state_ctrl_stmt_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 5;
+    obj_var = get_lowercase_id(nodes(0));
+    db_var = get_lowercase_id(nodes(3));
+    return syn_read_state_ctrl_stmt(obj_var, db_var);
+  }
+
+  SynCtrlStmt build_write_state_ctrl_stmt_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 7;
+    res_var = get_lowercase_id(nodes(0));
+    db_var = get_lowercase_id(nodes(3));
+    expr = build_expr_ast(nodes(5));
+    return syn_restore_state_ctrl_stmt(res_var, db_var, expr);
+  }
+
+  ////////////////////////////////////////////////////////////////////////////////
+
+  SynClause build_clause_ast(RuleMatch mtc) {
+    inner_mtc = get_rule_match(mtc);
+    clause = match (get_rule_name(mtc))
+      iter      = build_iter_clause_ast(inner_mtc),
+      seq_iter  = build_seq_iter_clause_ast(inner_mtc),
+      asgnm     = build_asgnm_clause_ast(inner_mtc),
+      match     = build_match_clause_ast(inner_mtc),
+      filter    = syn_filter_clause(build_expr_ast(inner_mtc));
+    return attach_src_code_info(clause, mtc);
+  }
+
+  SynClause build_iter_clause_ast(RuleMatch mtc) {
+    atomic_cls = (build_atomic_iter_clause(n) : n <- rep_rule_nodes(mtc));
+    return syn_or_clause(nonempty(atomic_cls));
+
+    SynClause build_atomic_iter_clause(RuleMatch mtc) {
+      nodes = rule_seq_nodes(mtc);
+      assert |nodes| == 3;
+      vars = (var(get_lowercase_id(n)) : n <- rep_rule_nodes(nodes(0)));
+      expr_or_proj = build_iter_clause_src(nodes(2));
+      return syn_iter_clause(nonempty(vars), expr_or_proj);
+    }
+
+    <SynExpr, SynProj> build_iter_clause_src(RuleMatch mtc) {
+      label = get_rule_name(mtc);
+      inner_mtc = get_rule_match(mtc);
+      return match (label)
+        proj  = build_proj_ast(inner_mtc),
+        expr  = build_expr_ast(inner_mtc);
+    }
+
+    SynProj build_proj_ast(RuleMatch mtc) {
+      nodes = rule_seq_nodes(mtc);
+      assert |nodes| == 2;
+      target = (get_lowercase_id(n) : n <- rep_rule_nodes(nodes(0)));
+      args_sects_nodes = rule_seq_nodes(block_node(nodes(1)));
+      assert |args_sects_nodes| == 3;
+      pre_args = (just(build_expr_ast(rule_seq_node(np, 0))) : np <- rep_rule_nodes(args_sects_nodes(0)));
+      post_args = ({
+          arg_node = rule_seq_node(np, 1);
+          arg_label = get_rule_name(arg_node);
+          arg_mtc = get_rule_match(arg_node);
+          assert arg_label == :any or arg_label == :value;
+          return if arg_label == :value then just(build_expr_ast(arg_mtc)) else nothing;
+        } : np <- rep_rule_nodes(args_sects_nodes(2))
+      );
+      return syn_proj(nonempty(target), nonempty(pre_args & (nothing) & post_args));
+    }
+  }
+
+  SynClause build_seq_iter_clause_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 4;
+    vars = (
+      if get_token(n) == underscore then nothing else just(get_lowercase_id(n))
+      : n <- rep_rule_nodes(nodes(0))
+    );
+    idx_var = if nodes(1) != null_match then just(get_lowercase_id(nodes(1), 1)) else nothing;
+    src = build_expr_ast(nodes(3));
+    return syn_seq_clause(nonempty(vars), idx_var, src);
+  }
+
+  SynClause build_asgnm_clause_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 3;
+    var = var(get_lowercase_id(nodes(0)));
+    expr = build_expr_ast(nodes(2));
+    return syn_asgnm_clause(var, expr);
+  }
+
+  SynClause build_match_clause_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 3;
+    ptrn = build_ptrn_ast(nodes(0));
+    expr = build_expr_ast(nodes(2));
+    return syn_match_clause(ptrn, expr);
+  }
+
+  ////////////////////////////////////////////////////////////////////////////////
+
+  SynPtrn build_ptrn_ast(RuleMatch mtc) {
+    nu_ptrns = (build_non_union_ptrn_ast(n) : n <- rep_rule_nodes(mtc));
+    return syn_ptrn_union(nonempty(nu_ptrns));
+  }
+
+  SynPtrn build_non_union_ptrn_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    ptrn_match = nodes(0);
+    var_match = nodes(1);
+    ptrn = build_ptrn_ast(get_rule_name(ptrn_match), get_rule_match(ptrn_match));
+    ptrn = syn_ptrn_var(var(get_lowercase_id(var_match, 0)), ptrn) if var_match != null_match;
+    return attach_src_code_info(ptrn, mtc);
+  }
+
+  SynPtrn build_ptrn_ast(Atom name, RuleMatch mtc) =
+    tag_only      = syn_ptrn_tag_obj(get_lowercase_id(mtc, 0)),             //rule_seq([atomic_rule(lowercase_id), empty_block_rule(parenthesis)])
+    tag_obj       = build_ptrn_tag_obj_ast(mtc),                            //rule_seq([atomic_rule(lowercase_id), par_rule(rule_ref_ptrn)])
+    tag_obj_any   = build_ptrn_tag_obj_any_ast(mtc),                        //rule_seq([atomic_rule(lowercase_id), atomic_rule(at), atomic_rule(lowercase_id)])
+    var           = syn_ptrn_var(var(get_lowercase_id(mtc, 0)), ptrn_any),  //rule_seq([atomic_rule(lowercase_id), atomic_rule(question_mark)])
+    atom          = ptrn_symbol(get_lowercase_id(mtc)),                     //atomic_rule(lowercase_id)
+    integer       = syn_ptrn_integer(get_integer(mtc, 1)),                  //rule_seq([optional_rule(atomic_rule(minus)), atomic_rule(integer)])
+    float         = ptrn_float,                                             //atomic_rule(circumflex)
+    atom_any      = ptrn_symbol,                                            //atomic_rule(plus)
+    integer_any   = syn_ptrn_integer,                                       //atomic_rule(asterisk)
+    any           = ptrn_any,                                               //atomic_rule(underscore)
+    tuple         = build_ptrn_tuple_ast(mtc),
+    seq           = syn_ptrn_seq,                                           //bracket_rule(atomic_rule(triple_dot))
+    set           = syn_ptrn_set,                                           //brace_rule(atomic_rule(triple_dot))
+    map           = syn_ptrn_map,                                           //par_rule(atomic_rule(triple_dot))
+    bin_rel       = syn_ptrn_bin_rel,
+    tern_rel      = syn_ptrn_tern_rel;
+
+  SynPtrn build_ptrn_tag_obj_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 2;
+    tag_ptrn = ptrn_symbol(get_lowercase_id(nodes(0)));
+    subptrns = (build_ptrn_ast(n) : n <- rep_rule_nodes(block_node(nodes(1))));
+    obj_ptrn = if |subptrns| > 1 then syn_ptrn_tuple(nonempty(subptrns)) else only_unsafe(subptrns);
+    return syn_ptrn_tag_obj(tag_ptrn, obj_ptrn);
+  }
+
+  SynPtrn build_ptrn_tag_obj_any_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 3;
+    // tag_ptrn = ptrn_var(var(get_lowercase_id(nodes(0))), ptrn_symbol);
+    tag_ptrn = ptrn_var(var: var(get_lowercase_id(nodes(0))), ptrn: :ptrn_symbol); ## BAD: REENABLE THE ABOVE VERSION ONE SUBSIGNATURES ARE IMPLEMENTED
+    obj_ptrn = build_ptrn_ast(block_node(nodes(2)));
+    return syn_ptrn_tag_obj(tag_ptrn, obj_ptrn);
+  }
+
+  SynPtrn build_ptrn_tuple_ast(RuleMatch mtc) {
+    nodes = nonempty(rep_rule_nodes(block_node(mtc)));
+    subptrns = (build_ptrn_ast(n) : n <- nodes);
+    return syn_ptrn_tuple(subptrns);
+  }
+
+  ////////////////////////////////////////////////////////////////////////////////
+
+  SynCase build_match_case_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 3;
+    ptrns = (build_ptrn_ast(n) : n <- rep_rule_nodes(nodes(0)));
+    expr = build_expr_ast(nodes(2));
+    return syn_case(nonempty(ptrns), expr);
+  }
+
+  ////////////////////////////////////////////////////////////////////////////////
+
+  InputDecl* build_input_decl_asts(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 3;
+    return (attach_src_code_info(:input_decl(build_in_out_item_ast(n)), n) : n <- rep_rule_nodes(nodes(2)));
+  }
+
+  OutputDecl* build_output_decl_asts(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 3;
+    return (attach_src_code_info(:output_decl(build_in_out_item_ast(n)), n) : n <- rep_rule_nodes(nodes(2)));
+  }
+
+  (name: Atom, type: SynType, discrete: Bool) build_in_out_item_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 5;
+    name = get_lowercase_id(nodes(0));
+    discrete = nodes(1) != null_match;
+    type = build_type_ast(nodes(3));
+    return (name: name, type: type, discrete: discrete);
+  }
+
+  (StateVarDecl*, NestedDBDecl*) build_state_decl_asts(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 3;
+    state_vars = ();
+    nested_dbs = ();
+    for n <- rep_rule_nodes(nodes(2)):
+      inner_mtc = get_rule_match(n);
+      name = get_rule_name(n);
+      if name == :var:
+        state_vars = (state_vars | build_state_var_decl_ast(inner_mtc));
+      else
+        assert name == :nested_db;
+        nested_dbs = (nested_dbs | build_nested_db_decl_ast(inner_mtc));
+      ;
+    ;
+    return (state_vars, nested_dbs);
+  }
+
+  ConstDecl* build_const_decls_asts(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 3;
+    return (build_const_decl_ast(n) : n <- rep_rule_nodes(nodes(2)));
+
+    ConstDecl build_const_decl_ast(RuleMatch mtc) {
+      nodes = rule_seq_nodes(mtc);
+      assert |nodes| == 5;
+      name = get_lowercase_id(nodes(0));
+      value = build_expr_ast(nodes(3));
+      type_node = nodes(1);
+      return const_decl(name, value) if type_node == null_match;
+      type = build_type_ast(rule_seq_node(type_node, 1));
+      return attach_src_code_info(const_decl(name, type, value), mtc);
+    }
+  }
+
+  PlainRuleDecl build_plain_rule_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 4;
+    name = get_lowercase_id(nodes(0));
+    asgnm_token = get_token(nodes(1));
+    assert asgnm_token == equals or asgnm_token == assign;
+    is_discrete = asgnm_token == assign;
+    expr = build_expr_ast(nodes(2));
+    return plain_rule_decl(name, expr, is_discrete);
+  }
+
+  WhenRuleDecl build_when_rule_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 6;
+    name = get_lowercase_id(nodes(0));
+    asgnm_token = get_token(nodes(1));
+    assert asgnm_token == equals or asgnm_token == assign;
+    is_discrete = asgnm_token == assign;
+    expr = build_expr_ast(nodes(2));
+    cond = build_expr_ast(nodes(4));
+    return when_rule_decl(name, expr, cond, is_discrete);
+  }
+
+  CondRuleDecl build_cond_rule_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 6;
+    name = get_lowercase_id(nodes(0));
+    asgnm_token = get_token(nodes(1));
+    assert asgnm_token == equals or asgnm_token == assign;
+    is_discrete = asgnm_token == assign;
+    expr = build_expr_ast(nodes(2));
+    cond = build_expr_ast(nodes(4));
+    return cond_rule_decl(name, expr, cond, is_discrete);
+  }
+
+  ForeachRuleDecl build_foreach_rule_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 8;
+    name = get_lowercase_id(nodes(0));
+    asgnm_token = get_token(nodes(1));
+    assert asgnm_token == equals or asgnm_token == assign;
+    is_discrete = asgnm_token == assign;
+    value = build_expr_ast(nodes(2));
+    signals = ((get_lowercase_id(nodes(5)), true));
+    for n <- rep_rule_nodes(nodes(6)):
+      ns = rule_seq_nodes(n);
+      assert |ns| == 3;
+      signals = (signals | (get_lowercase_id(ns(2)), ns(1) == null_match));
+    ;
+    cond_match = nodes(3);
+    return foreach_rule_decl(name, value, signals, is_discrete) if cond_match == null_match;
+    cond_nodes = rule_seq_nodes(cond_match);
+    assert |cond_nodes| == 2;
+    cond = build_expr_ast(cond_nodes(1));
+    return foreach_rule_decl(name, value, signals, cond, is_discrete);
+  }
+
+  ////////////////////////////////////////////////////////////////////////////////
+
+  RuleDecl* build_rule_decls_asts(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 3;
+    return (build_rule_decl_ast(n) : n <- rep_rule_nodes(nodes(2)));
+  }
+
+  RuleDecl build_rule_decl_ast(RuleMatch mtc) {
+    inner_match = get_rule_match(mtc);
+    decl = match (get_rule_name(mtc))
+      plain_rule        = build_plain_rule_ast(inner_match),
+      when_rule         = build_when_rule_ast(inner_match),
+      cond_rule         = build_cond_rule_ast(inner_match),
+      foreach_rule      = build_foreach_rule_ast(inner_match),
+      time_varying_rule = build_time_varying_rule_ast(inner_match),
+      since_rule        = build_time_varying_since_rule_ast(inner_match),
+      nested_auto       = build_nested_auto_ast(inner_match),
+      msg_send          = build_msg_send_ast(inner_match);
+    return attach_src_code_info(decl, mtc);
+  }
+
+  ////////////////////////////////////////////////////////////////////////////////
+
+  StateVarDecl build_state_var_decl_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 6;
+    name = get_lowercase_id(nodes(0));
+    type = build_type_ast(nodes(2));
+    init_value = build_expr_ast(nodes(4));
+    return attach_src_code_info(state_var_decl(name, type, init_value), mtc);
+  }
+
+  NestedDBDecl build_nested_db_decl_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 4;
+    name = get_lowercase_id(nodes(0));
+    type = get_lowercase_id(nodes(2));
+    return attach_src_code_info(nested_db_decl(name, type), mtc);
+  }
+
+  SchemaItemDecl build_db_decl_ast(RuleMatch mtc) {
+    inner_match = get_rule_match(mtc);
+    decl = match (get_rule_name(mtc))
+      var           = build_state_var_decl_ast(inner_match),
+      relvar        = build_relvar_decl_ast(inner_match),
+      relvar_attrs  = build_relvar_attrs_decl_ast(inner_match),
+      nested_db     = build_nested_db_decl_ast(inner_match);
+    return attach_src_code_info(decl, mtc);
+  }
+
+  RelVarsDecl build_relvar_attrs_decl_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 5;
+    name = get_lowercase_id(nodes(0));
+    col_types = (build_type_ast(n) : n <- rep_rule_nodes(block_node(nodes(1))));
+    attrs = (build_attr_relvar_ast(n) : n <- rep_rule_nodes(nodes(3)));
+    return relvars_decl(name, nonempty(col_types), (), attrs);
+
+
+    (Atom, SynType, AttrCard) build_attr_relvar_ast(RuleMatch mtc) {
+      nodes = rule_seq_nodes(mtc);
+      assert |nodes| == 4;
+      name = get_lowercase_id(nodes(0));
+      type = build_type_ast(nodes(3));
+      card_node = nodes(1);
+      if card_node != null_match:
+        card = match (get_token(card_node))
+          question_mark = attr_card(false, false),
+          asterisk      = attr_card(false, true),
+          plus          = attr_card(true, true);
+      else
+        card = attr_card(true, false);
+      ;
+      return (name, type, card);
+    }
+  }
+
+  RelVarsDecl build_relvar_decl_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 4;
+    name = get_lowercase_id(nodes(0));
+    col_types = (build_type_ast(n) : n <- rep_rule_nodes(block_node(nodes(1))));
+    keys = ();
+    if nodes(2) != null_match:
+      for an <- rep_rule_nodes(block_node(nodes(2))):
+        key_decl_nodes = rule_seq_nodes(an);
+        assert |key_decl_nodes| == 3;
+        key_cols = (get_integer(n) : n <- rep_rule_nodes(key_decl_nodes(2)));
+        keys = (keys | nonempty(key_cols));
+      ;
+    ;
+    return relvars_decl(name, nonempty(col_types), keys, ());
+  }
+
+  SchemaDef build_db_def_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 4;
+    name = get_lowercase_id(nodes(1));
+    links = if nodes(2) != null_match
+      then (get_lowercase_id(n) : n <- rep_rule_nodes(rule_seq_node(nodes(2), 1)))
+      else ();
+    decls = (build_db_decl_ast(n) : n <- rep_rule_nodes(block_node(nodes(3))));
+    return schema_def(name, links, decls);
+  }
+
+  ////////////////////////////////////////////////////////////////////////////////
+
+  ReactAutoDef build_auto_def_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 6;
+
+    name = get_lowercase_id(nodes(1));
+    pos_inputs = if nodes(2) != null_match then (get_lowercase_id(n) : n <- rep_rule_nodes(nodes(2))) else ();
+
+    body_nodes = rule_seq_nodes(block_node(nodes(5)));
+    assert |body_nodes| == 5;
+
+    input_node = body_nodes(0);
+    inputs = if input_node != null_match then build_input_decl_asts(input_node) else ();
+
+    output_node = body_nodes(1);
+    outputs = if output_node != null_match then build_output_decl_asts(output_node) else ();
+
+    state_node = body_nodes(2);
+    state_vars, nested_dbs = if state_node != null_match then build_state_decl_asts(state_node) else ((), ());
+
+    consts_node = body_nodes(3);
+    consts = if consts_node != null_match then build_const_decls_asts(consts_node) else ();
+
+    rules_node = body_nodes(4);
+    rules = if rules_node != null_match then build_rule_decls_asts(rules_node) else ();
+
+    return react_auto_def(
+      name:       name,
+      pos_inputs: pos_inputs,
+      def_output: get_lowercase_id(rule_seq_node(nodes(3), 1)) if nodes(3) != null_match,
+      parent:     get_lowercase_id(rule_seq_node(nodes(4), 1)) if nodes(4) != null_match,
+      inputs:     inputs,
+      outputs:    outputs,
+      state_vars: state_vars,
+      nested_dbs: nested_dbs,
+      consts:     consts,
+      rules:      rules
+    );
+  }
+
+  AutoMethodDef build_std_method_def_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 8;
+    ret_type = build_type_ast(nodes(0));
+    target = get_lowercase_id(nodes(1));
+    method = get_lowercase_id(nodes(3));
+    arg_nodes = if nodes(4) != null_match then rep_rule_nodes(block_node(nodes(4))) else ();
+    args = ((build_type_ast(rule_seq_node(n, 0)), var(get_lowercase_id(n, 1))) : n <- arg_nodes);
+    expr = build_expr_ast(nodes(6));
+    return auto_method_def(target, method, args, ret_type, expr);
+  }
+
+  AutoMethodDef build_match_method_def_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 8;
+    ret_type = build_type_ast(nodes(0));
+    target = get_lowercase_id(nodes(1));
+    method = get_lowercase_id(nodes(3));
+    args = ((build_type_ast(rule_seq_node(n, 0)), var(get_lowercase_id(n, 1))) : n <- rep_rule_nodes(block_node(nodes(4))));
+    cases = (build_match_case_ast(n) : n <- rep_rule_nodes(nodes(6)));
+    arity = syn_case_arity(cases(0));
+    expr = syn_try_expr(nonempty((fn_arg(i) : i < arity)), nonempty(cases));
+    return auto_method_def(target, method, args, ret_type, expr);
+  }
+
+  AutoMethodDef build_proc_method_def_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 6;
+    ret_type = build_type_ast(nodes(0));
+    target = get_lowercase_id(nodes(1));
+    method = get_lowercase_id(nodes(3));
+    arg_nodes = if nodes(4) != null_match then rep_rule_nodes(block_node(nodes(4))) else ();
+    args = ((build_type_ast(rule_seq_node(n, 0)), var(get_lowercase_id(n, 1))) : n <- arg_nodes);
+    expr = syn_do_expr(build_stmts_ast(block_node(nodes(5))), ());
+    return auto_method_def(target, method, args, ret_type, expr);
+  }
+
+  HandlerDef build_handler_def_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 4;
+    data_base = get_lowercase_id(nodes(0));
+    type = build_pretype_ast(nodes(2));
+    stmts = (build_stmt_ast(n) : n <- rep_rule_nodes(block_node(nodes(3))));
+    return handler_def(data_base, type, stmts);
+  }
+
+  UpdateDef build_update_def_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 3;
+    name = get_lowercase_id(nodes(0));
+    arg_nodes = rep_rule_nodes(block_node(nodes(1)));
+    args = ((build_type_ast(rule_seq_node(n, 0)), var(get_lowercase_id(rule_seq_node(n, 1)))) : n <- arg_nodes);
+    stmts = (build_stmt_ast(n) : n <- rep_rule_nodes(block_node(nodes(2))));
+    return update_def(name, args, stmts);
+  }
+
+  TimeRuleDecl build_time_varying_rule_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 6;
+    name = get_lowercase_id(nodes(0));
+    cond = build_expr_ast(nodes(2));
+    time_expr = build_time_expr_ast(nodes(4));
+    return match (get_lowercase_id(nodes(3)))
+      after = unchanged_for_rule_decl(name, cond, time_expr),
+      for   = true_for_rule_decl(name, cond, time_expr);
+  }
+
+  TimeRuleDecl build_time_varying_since_rule_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 6;
+    name = get_lowercase_id(nodes(0));
+    time_expr = build_time_expr_ast(nodes(2));
+    starts_at_init = match (get_lowercase_id(nodes(3)))
+      sans  = true,
+      since = false;
+    signals = nonempty((get_lowercase_id(n) : n <- rep_rule_nodes(nodes(4))));
+    return inactive_for_rule_decl(name, signals, time_expr, starts_at_init);
+  }
+
+  TimeExpr build_time_expr_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 2;
+    time_expr = build_basic_time_expr_ast(nodes(0));
+    node_every = nodes(1);
+    if node_every != null_match:
+      nanosecs = match (get_token(rule_seq_node(node_every, 1))) nanoseconds(n?) = n;
+      time_expr = every(time_expr, nanosecs);
+    ;
+    return time_expr;
+  }
+
+  BasicTimeExpr build_basic_time_expr_ast(RuleMatch mtc) {
+    nodes = rep_rule_nodes(mtc);
+    assert mod(|nodes|, 2) == 1;
+    expr = build_time_expr_1_ast(nodes(0));
+    i = 1;
+    while i < |nodes|: ## WOULD BE NICE TO HAVE A C-STYLE LOOP HERE
+      right_expr = build_time_expr_1_ast(nodes(i+1));
+      op = get_lowercase_id(nodes(i));
+      if op == :and:
+        expr = time_and(expr, right_expr);
+      else
+        assert op == :or;
+        expr = time_or(expr, right_expr);
+      ;
+      i = i + 2;
+    ;
+    return expr;
+  }
+
+  BasicTimeExpr build_time_expr_1_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 2;
+    expr = build_time_expr_0_ast(nodes(1));
+    return if nodes(0) != null_match then time_neg(expr) else expr;
+  }
+
+  BasicTimeExpr build_time_expr_0_ast(RuleMatch mtc) {
+    name = get_rule_name(mtc);
+    inner_match = get_rule_match(mtc);
+    if name == :at_least:
+      nanosecs = match (get_token(inner_match)) nanoseconds(n?) = n;
+      return at_least(nanosecs);
+    else
+      assert name == :par;
+      return build_basic_time_expr_ast(block_node(inner_match));
+    ;
+  }
+
+  NestedAutoDecl build_nested_auto_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 5;
+    name = get_lowercase_id(nodes(0));
+    auto_name = get_lowercase_id(nodes(2));
+    args_node = nodes(3);
+    args_label = get_rule_name(args_node);
+    args_match = block_node(get_rule_match(args_node));
+    if args_label == :no_pos_args:
+      args = ({
+        arg_name = get_lowercase_id(rule_seq_node(n, 0));
+        arg_expr = build_expr_ast(rule_seq_node(n, 2));
+        return (arg_name, arg_expr);
+      } : n <- rep_rule_nodes(args_match));
+      return nested_auto_decl(name, auto_name, (), args);
+    else
+      assert args_label == :with_pos_args;
+      pos_args = (build_expr_ast(n) : n <- rep_rule_nodes(rule_seq_node(args_match, 0)));
+      named_args = ({
+        arg_name = get_lowercase_id(rule_seq_node(n, 1));
+        arg_expr = build_expr_ast(rule_seq_node(n, 3));
+        return (arg_name, arg_expr);
+      } : n <- rep_rule_nodes(rule_seq_node(args_match, 1)));
+      return nested_auto_decl(name, auto_name, pos_args, named_args);
+    ;
+  }
+
+  MsgSendDecl build_msg_send_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 6;
+
+    target  = get_lowercase_id(nodes(0));
+    message = build_expr_ast(nodes(2));
+
+    cond_node = nodes(3);
+    if cond_node != null_match:
+      cond = just(build_expr_ast(rule_seq_node(cond_node, 1)));
+    else
+      cond = nothing;
+    ;
+
+    signals_node = nodes(4);
+    if signals_node != null_match:
+      signals = (get_lowercase_id(n) : n <- rep_rule_nodes(rule_seq_node(signals_node, 1)));
+    else
+      signals = ();
+    ;
+
+    return msg_send_decl(
+      target:   target,
+      message:  message,
+      cond:     cond,
+      signals:  signals
+    );
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+BasicTypeSymbol build_basic_type_symbol_ast(RuleMatch mtc) = type_symbol(get_lowercase_id(mtc));
+
+////////////////////////////////////////////////////////////////////////////////
+
+BinaryOperator token_to_binary_operator(PlainToken) =
+  asterisk    = :star,
+  slash       = :slash,
+  plus        = :plus,
+  minus       = :minus,
+  ampersand   = :amp,
+  lower       = :lower,
+  greater     = :greater,
+  lower_eq    = :lower_eq,
+  greater_eq  = :greater_eq;

@@ -1,0 +1,427 @@
+type TypeCheckingError =
+  obj_does_not_belong_to_type(obj: <Atom, Int, (), []>, type: Type),
+
+  unexpected_coll_expr(exp_type: Type, coll_type: <tuple, seq, set, map, rel(<2..3>)>),
+  missing_rec_field(field: SymbObj),
+  unexpected_rec_field(field: SymbObj),
+  rec_field_is_mandatory(field: SymbObj),
+  unexpected_rec_field_type(field: SymbObj, actual_type: Type, exp_type: Type), ## IMPLEMENT IMPLEMENT IMPLEMENT
+  tagged_values_not_in_type(tag: SymbObj, exp_type: Type),
+
+  not_a_record_type(type: Type),
+  exp_type_not_a_tag_type,
+  wrong_tuple_type_length(actual_length: NzNat, expected_lenghts: [+NzNat]),
+  non_symbol_keys_with_record_type(keys: [+Expr]),
+  may_not_have_field(type: Type, field: SymbObj),
+  invalid_var_type(var: Var, actual_type: Type, expected_type: Type),
+  no_disp_fn_found(name: FnFamilyId, arity: NzNat, signatures: [+FnType], par_types: Maybe[Type]*),
+  no_disp_db_method(name: MethodSymbol, args_types: Type*, exp_ret_type: Type, signatures: [FnType]),
+  no_disp_db_update(name: UpdateSymbol, args_types: Type*, signatures: [+NeType*]),
+  no_matching_relvar(name: AnyRelVar, args_types: Maybe[Type]+, signatures: [+NeType+]),
+  invalid_args_types(fn_name: FnFamilyId, target_signature: FnType, invalid_params: [+<(Nat, Expr, Type)>]),
+  invalid_cls_var_type(var: ClsVar, expected_type: ClsType, type_var_insts: [TypeVar -> Type]),
+  invalid_cls_param_types(target_signature: FnType, errors: [TypeCheckingError]),
+  invalid_implicit_par_type(
+    target_signature:   FnType,
+    param_name:         ImplArg,
+    formal_type:        AnyType,
+    inst_formal_type:   <empty_type, AnyType>,
+    actual_type:        AnyType
+  ),
+  invalid_return_type(actual_type: Type, expected_type: Type),
+  unexpected_actual_type(actual_type: Type, expected_type: Type),
+  invalid_cls_param_type(actual_type: ClsType, exp_arg_types: Type+, exp_ret_type: Type),
+  invalid_rel_arg_type(idx: Nat, actual_type: Type, expected_type: Type),
+  loop_did_not_converge(iteractions: NzNat),
+  ptrn_cannot_match_type(pattern: Pattern, type: Type),
+  invalid_main_arg_type(type: Type),
+  invalid_main_ret_type(type: Type),
+  duplicate_map_key(key: Expr, entries: [+(key: Expr, value: Expr, cond: Expr?)]),
+
+  auto_typechecking_cycle(name: AutoSymbol, signals: [+SignalVar]),
+  invalid_output_type(name: Atom, actual_type: Type, expected_type: Type),
+
+  internal_typechecking_error,
+
+  annotated_error(error: TypeCheckingError, anchor: Any),
+
+  missing_impl_argument(fn_id: FnFamilyId, arg: ImplArg),
+  invalid_impl_argument(arg: ImplArg),
+  actual_tag_type_not_a_symb_type(type: Type),
+  accessor_test_not_permitted_error(type: Type, field: SymbObj),
+  not_a_valid_unary_pseudocall_target(type: Type),
+  invalid_set_memb_test_elem_type(exp_type: Type, actual_type: Type),
+  invalid_map_lookup_key_type(exp_type: Type, actual_type: Type),
+  invalid_map_lookup_value_type(exp_type: Type, actual_type: Type),
+  expressions_can_never_be_equal(left_type: Type, right_type: Type),
+  expression_can_never_belong_to_type(actual_type: Type, type: Type),
+
+  invalid_prot_method_return_type(
+    method_name:      FnSymbol,
+    args_types:       Type+,
+    ret_type:         Type,
+    actual_ret_type:  Type
+  ),
+  no_suitable_prot_method_found(
+    method_name:    FnSymbol,
+    args_types:     Type+,
+    ret_type:       Type,
+    instantiations: [TypeVar -> Type],
+    constraints:    [ClsType],
+    signatures:     [FnType]
+  );
+
+////////////////////////////////////////////////////////////////////////////////
+
+TypeCheckingError obj_does_not_belong_to_type(<Atom, Int, (), []> o, Type t) = obj_does_not_belong_to_type(obj: o, type: t);
+
+TypeCheckingError unexpected_coll_expr(Type et, <tuple, seq, set, map, rel(<2..3>)> ct) = unexpected_coll_expr(exp_type: et, coll_type: ct);
+
+TypeCheckingError missing_rec_field(SymbObj f)                            = missing_rec_field(field: f);
+TypeCheckingError unexpected_rec_field(SymbObj f)                         = unexpected_rec_field(field: f);
+TypeCheckingError rec_field_is_mandatory(SymbObj f)                       = rec_field_is_mandatory(field: f);
+TypeCheckingError unexpected_rec_field_type(SymbObj f, Type at, Type et)  = unexpected_rec_field_type(field: f, actual_type: at, exp_type: et);
+TypeCheckingError tagged_values_not_in_type(SymbObj s, Type t)            = tagged_values_not_in_type(tag: s, exp_type: t);
+
+TypeCheckingError not_a_record_type(Type t) = not_a_record_type(type: t);
+TypeCheckingError exp_type_not_a_tag_type = :exp_type_not_a_tag_type;
+
+TypeCheckingError wrong_tuple_type_length(NzNat al, [+NzNat] els) = wrong_tuple_type_length(actual_length: al, expected_lenghts: els);
+
+TypeCheckingError non_symbol_keys_with_record_type([+Expr] ks) = non_symbol_keys_with_record_type(keys: ks);
+
+TypeCheckingError may_not_have_field(Type t, SymbObj f) = may_not_have_field(type: t, field: f);
+TypeCheckingError accessor_test_not_permitted_error(Type t, SymbObj f) = accessor_test_not_permitted_error(type: t, field: f);
+
+TypeCheckingError actual_tag_type_not_a_symb_type(Type t) = actual_tag_type_not_a_symb_type(type: t);
+
+TypeCheckingError invalid_var_type(Var v, Type at, Type et) = invalid_var_type(var: v, actual_type: at, expected_type: et);
+
+TypeCheckingError no_disp_fn_found(FnFamilyId n, NzNat a, [+FnType] ss, Maybe[Type]+ ts) =
+  no_disp_fn_found(name: n, arity: a, signatures: ss, par_types: ts);
+
+TypeCheckingError no_disp_db_method(MethodSymbol n, Type* ats, Type rt, [FnType] ss) =
+  no_disp_db_method(name: n, args_types: ats, exp_ret_type: rt, signatures: ss);
+
+TypeCheckingError no_disp_db_update(UpdateSymbol n, Type* ats, [+NeType*] ss) =
+  no_disp_db_update(name: n, args_types: ats, signatures: ss);
+
+TypeCheckingError no_matching_relvar(AnyRelVar n, Maybe[Type]+ ats, [+NeType+] ss) =
+  no_matching_relvar(name: n, args_types: ats, signatures: ss);
+
+////////////////////////////////////////////////////////////////////////////////
+
+## CAN I OMMIT THE ANGLE BRACKETS FOR THE TYPE OF THE SECOND PARAMETER?
+TypeCheckingError invalid_args_types(FnFamilyId id, FnType s, [+<(Nat, Expr, Type)>] ps) = invalid_args_types(fn_name: id, target_signature: s, invalid_params: ps);
+
+TypeCheckingError invalid_cls_var_type(ClsVar v, ClsType t, [TypeVar -> Type] tvis) = invalid_cls_var_type(var: v, expected_type: t, type_var_insts: tvis);
+
+TypeCheckingError invalid_cls_param_types(FnType s, [TypeCheckingError] es) = invalid_cls_param_types(target_signature: s, errors: es);
+
+TypeCheckingError invalid_implicit_par_type(FnType s, ImplArg p, AnyType ft, <empty_type, AnyType> ift, AnyType at) =
+  invalid_implicit_par_type(
+    target_signature:   s,
+    param_name:         p,
+    formal_type:        ft,
+    inst_formal_type:   ift,
+    actual_type:        at
+  );
+
+TypeCheckingError invalid_return_type(Type at, Type et) = invalid_return_type(actual_type: at, expected_type: et);
+
+TypeCheckingError unexpected_actual_type(Type at, Type et) = unexpected_actual_type(actual_type: at, expected_type: et);
+
+TypeCheckingError invalid_cls_param_type(ClsType at, Type+ eat, Type ert) =
+  invalid_cls_param_type(actual_type: at, exp_arg_types: eat, exp_ret_type: ert);
+
+TypeCheckingError invalid_rel_arg_type(Nat i, Type at, Type et) = invalid_rel_arg_type(idx: i, actual_type: at, expected_type: et);
+
+TypeCheckingError loop_did_not_converge(NzNat nis) = loop_did_not_converge(iteractions: nis);
+
+TypeCheckingError ptrn_cannot_match_type(Pattern p, Type t) = add_anchor_if_needed(ptrn_cannot_match_type(pattern: p, type: t), p);
+
+TypeCheckingError invalid_main_arg_type(Type t) = invalid_main_arg_type(type: t);
+
+TypeCheckingError invalid_main_ret_type(Type t) = invalid_main_ret_type(type: t);
+
+TypeCheckingError duplicate_map_key(Expr k, [+(key: Expr, value: Expr, cond: Expr?)] es) = duplicate_map_key(key: k, entries: es);
+
+TypeCheckingError auto_typechecking_cycle(AutoSymbol n, [+SignalVar] ss) = auto_typechecking_cycle(name: n, signals: ss);
+
+TypeCheckingError invalid_output_type(Atom n, Type at, Type et) = invalid_output_type(name: n, actual_type: at, expected_type: et);
+
+TypeCheckingError internal_typechecking_error = :internal_typechecking_error;
+
+TypeCheckingError annotated_error(TypeCheckingError e, Any a) = annotated_error(error: e, anchor: a);
+
+
+TypeCheckingError missing_impl_argument(FnFamilyId id, ImplArg a) = missing_impl_argument(fn_id: id, arg: a);
+TypeCheckingError invalid_impl_argument(ImplArg a)  = invalid_impl_argument(arg: a);
+
+TypeCheckingError not_a_valid_unary_pseudocall_target(Type t) = not_a_valid_unary_pseudocall_target(type: t);
+
+TypeCheckingError invalid_set_memb_test_elem_type(Type et, Type at) = invalid_set_memb_test_elem_type(exp_type: et, actual_type: at);
+TypeCheckingError invalid_map_lookup_key_type(Type et, Type at)     = invalid_map_lookup_key_type(exp_type: et, actual_type: at);
+TypeCheckingError invalid_map_lookup_value_type(Type et, Type at)   = invalid_map_lookup_value_type(exp_type: et, actual_type: at);
+
+TypeCheckingError expressions_can_never_be_equal(Type lt, Type rt)  = expressions_can_never_be_equal(left_type: lt, right_type: rt);
+
+TypeCheckingError expression_can_never_belong_to_type(Type at, Type t)  = expression_can_never_belong_to_type(actual_type: at, type: t);
+
+TypeCheckingError invalid_prot_method_return_type(FnSymbol n, Type+ ats, Type rt, Type art) =
+  invalid_prot_method_return_type(method_name: n, args_types: ats, ret_type: rt, actual_ret_type: art);
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+implicit typedefs : [TypeName -> NeType] {
+  [TypeCheckingError] invalid_type_if_not_subset(Type at, Type et) = [
+    unexpected_actual_type(at, et) if not is_subset(at, et)
+  ];
+}
+
+
+TypeCheckingError add_anchor_if_needed(TypeCheckingError err, Any anchor) =
+  annotated_error()  = err,
+  _                  = if fetch(anchor) != nothing then annotated_error(err, anchor) else err;
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+String* create_error_msgs(<Function, Database, Method, Update, Handler, Automaton, Procedure> decl, [+TypeCheckingError] errs) {
+  err_msgs = join(intermix((indent_lines(create_error_msg(e)) : e <- rand_sort(errs)), ("")));
+  fname, sl, el = source_code_location(decl);
+  loc_msg = "File " & fname & " line" & if sl == el then " " & printed(sl) else "s " & printed(sl) & "-" & printed(el);
+  return (loc_msg) & err_msgs;
+}
+
+
+String source_file(<Function, Database, Method, Update, Handler, Automaton, Procedure> fn) = source_code_location(fn)(0);
+
+
+## THERE'S AN ALMOST IDENTICAL FUNCTION IN WELL-FORMEDNESS CHECKING
+(String, NzNat, NzNat) source_code_location(<Function, Database, Method, Update, Handler, Automaton, Procedure> decl) {
+  maybe_data = fetch(decl);
+  if maybe_data != nothing:
+    data = value(maybe_data);
+    return data if data :: (String, NzNat, NzNat);
+  ;
+  err_msg = "CANNOT DETERMINE LOCATION OF OFFENDING CODE";
+  err_msg = err_msg & ": " & printed(value(maybe_data)) if maybe_data != nothing;
+  return (err_msg, 1, 1);
+}
+
+
+String* create_error_msg(TypeCheckingError err) =
+  obj_does_not_belong_to_type()       = ("Object " & printed(err.obj) & " does not belong to type " & user_repr(err.type)),
+  unexpected_coll_expr()              = { s1, s2 = match (err.coll_type)
+                                            tuple   = ("tuple/sequence",    "sequences"),
+                                            seq     = ("sequence",          "sequences"),
+                                            set     = ("set",               "sets"),
+                                            map     = ("map",               "maps"),
+                                            rel(2)  = ("binary relation",   "binary relations"),
+                                            rel(3)  = ("ternary relation",  "ternary relations");
+                                          return (
+                                            "Expression evaluates to a " & s1 & ", but the expected type does not include " & s2,
+                                            "  Expected type: " & user_repr(err.exp_type)
+                                          );
+                                        },
+  missing_rec_field()                 = ("Record field is missing: " & user_repr(err.field)),
+  unexpected_rec_field()              = ("Unexpected record field: " & user_repr(err.field)),
+  rec_field_is_mandatory()            = ("Record field is mandatory: " & user_repr(err.field)),
+  unexpected_rec_field_type()         = ( "Unexpected type for record field: " & user_repr(err.field),
+                                          "  Expected type: " & user_repr(err.exp_type),
+                                          "  Actual type: " & user_repr(err.actual_type)
+                                        ),
+  tagged_values_not_in_type()         = ( "Expression evaluates to a tagged value of the form " & user_repr(err.tag) & "(..) but such values do not belong to the expected type",
+                                          "  Expected type: " & user_repr(err.exp_type)
+                                        ),
+
+  not_a_record_type()                 = ( "Dot operator can only be used with records or tagged records",
+                                          "  Actual target type: " & user_repr(err.type)
+                                        ),
+  exp_type_not_a_tag_type             = ("Tag expression used but the expected type does not include tagged objects"),
+  wrong_tuple_type_length()           = ("Wrong tuple size"),
+  non_symbol_keys_with_record_type()  = ("Record expected, but map expression doesn't have only symbols for keys"),
+  may_not_have_field()                = ("Object may not have field: " & user_repr(err.field)),
+  accessor_test_not_permitted_error() = ("Object doesn't have field: " & user_repr(err.field)),
+  missing_impl_argument()             = ("In call to " & user_repr(err.fn_id) & "(..) implicit argument was not specified: " & user_repr(err.arg)),
+  invalid_impl_argument()             = ("Invalid implicit argument: " & user_repr(err.arg)),
+  actual_tag_type_not_a_symb_type()   = ("Tag expression must yield a symbol"),
+  invalid_var_type()                  = ( "Invalid variable type: " & user_repr(err.var),
+                                          "  Expected type: " & user_repr(err.expected_type),
+                                          "  Actual type:   " & user_repr(err.actual_type)
+                                        ),
+  no_disp_fn_found()                  = no_disp_fn_found_err_msg(err.name, err.arity, err.signatures, err.par_types),
+  no_disp_db_method()                 = no_disp_db_method_err_msg(err.name, err.args_types, err.exp_ret_type, err.signatures),
+  no_disp_db_update()                 = no_disp_db_update_err_msg(err.name, err.args_types, err.signatures),
+  no_matching_relvar()                = no_matching_relvar_err_msg(err.name, err.args_types, err.signatures),
+  invalid_args_types()                = invalid_args_types_err_msg(err.fn_name, err.target_signature, err.invalid_params),
+  invalid_cls_var_type()              = ("Invalid closure variable: " & user_repr(err.var) & ". Expected type: " & user_repr(err.expected_type)),
+  invalid_cls_param_types()           = invalid_cls_arg_types_err_msg(err.target_signature, err.errors),
+  invalid_rel_arg_type()              = ( "Invalid " & pos_name(err.idx) & " argument type in relation membership test",
+                                          "  Expected type: " & user_repr(err.expected_type),
+                                          "  Actual type:   " & user_repr(err.actual_type)
+                                        ),
+  invalid_implicit_par_type()         = ( "Invalid implicit argument type: " & user_repr(err.param_name),
+                                          "  Expected type: " & user_repr(err.formal_type),
+                                          "  Actual type:   " & user_repr(err.actual_type)
+                                        ),
+
+  invalid_return_type()               = ( "Invalid return type.",
+                                          "  Expected type: " & user_repr(err.expected_type),
+                                          "  Actual type:   " & user_repr(err.actual_type)
+                                        ),
+  unexpected_actual_type()            = ( "Invalid type: " & user_repr(err.actual_type),
+                                          "  The type must be a subset of " & user_repr(err.expected_type)
+                                        ),
+  invalid_cls_param_type()            = ( "Invalid closure argument type.",
+                                          "  Actual type: " & user_repr(err.actual_type),
+                                          "  Expected type: " & cls_type_user_repr(err.exp_arg_types, err.exp_ret_type)
+                                        ),
+  loop_did_not_converge()             = ("Cannot infer types of variables updated in loop"),
+  ptrn_cannot_match_type()            = ("Pattern cannot match type: " & user_repr(err.pattern)),
+  invalid_main_arg_type()             = ( "The argument of Main() must be of type String*",
+                                          "Actual type: " & user_repr(err.type)
+                                        ),
+  invalid_main_ret_type()             = ( "The return type of Main(), if present, must be Int",
+                                          "Actual type: " & user_repr(err.type)
+                                        ),
+  duplicate_map_key()                 = ("Duplicate map or record key"),
+
+  auto_typechecking_cycle()           = ( "Typechecking loop in reactive automaton " & user_repr(err.name),
+                                          "Involved signals: " & append((_str_(bare_id(d)) : d <- rand_sort(err.signals)), ", ")
+                                        ),
+  invalid_output_type()               = ( "Invalid output type: " & _str_(err.name),
+                                          "  Expected type: " & user_repr(err.expected_type),
+                                          "  Actual type: " & user_repr(err.actual_type)
+                                        ),
+
+  internal_typechecking_error         = ("Internal typechecking error"),
+
+  annotated_error()                   = create_annotated_error_msg(err.error, err.anchor),
+
+  not_a_valid_unary_pseudocall_target() = ("Invalid first argument for operator (_(_)): " & user_repr(err.type)),
+
+  invalid_set_memb_test_elem_type()   = ( "The type of the searched element is not a subset of the type of the set elements",
+                                          "  Expected type: " & user_repr(err.exp_type),
+                                          "  Actual type: " & user_repr(err.actual_type)
+                                        ),
+  invalid_map_lookup_key_type()       = ( "The type of the search key is not a subset of the type of map keys",
+                                          "  Expected type: " & user_repr(err.exp_type),
+                                          "  Actual type: " & user_repr(err.actual_type)
+                                        ),
+  invalid_map_lookup_value_type()     = ( "The type of the searched value is not a subset of the type of map values",
+                                          "  Expected type: " & user_repr(err.exp_type),
+                                          "  Actual type: " & user_repr(err.actual_type)
+                                        ),
+
+  expressions_can_never_be_equal()    = ( "Expressions compared for equality can never be equal",
+                                          "  Left type: " & user_repr(err.left_type),
+                                          "  Right type: " & user_repr(err.right_type)
+                                        ),
+
+  expression_can_never_belong_to_type() = ("Expression can never belong to type. Actual type: " & user_repr(err.actual_type)),
+
+  invalid_prot_method_return_type()   = ( "Invalid return type for protocol method " &
+                                            user_repr(err.method_name, |err.args_types|),
+                                          "  Expected type: " & user_repr(err.ret_type),
+                                          "  Actual type:   " & user_repr(err.actual_ret_type)
+                                        ),
+
+  no_suitable_prot_method_found()     = {
+    method_repr = user_repr(err.method_name, |err.args_types|);
+    if err.constraints == [] and err.signatures == []:
+      return ("No protocol method found: " & method_repr);
+    ;
+    exp_sgn = append((user_repr(t) : t <- err.args_types), ", ") & " -> " & user_repr(err.ret_type);
+
+    msg_header = (
+      "No suitable protocol method found: " & method_repr,
+      "  Expected signature:",
+      "    " & exp_sgn,
+      "  Actual signatures:"
+    );
+
+    reqs_sgns = ("    " & user_repr(rs) : rs <- rand_sort(err.constraints));
+    sgns = ("    " & user_repr(s) : s <- rand_sort(err.signatures));
+
+    return msg_header & reqs_sgns & sgns;
+  };
+
+
+String* invalid_cls_arg_types_err_msg(FnType target_signature, [TypeCheckingError] errors) {
+  msg = join((create_error_msg(e) : e <- rand_sort(errors)));
+  return ("Closure argument does not typecheck") & ("  " & l : l <- msg);
+}
+
+
+String* no_disp_fn_found_err_msg(FnFamilyId name, NzNat arity, [+FnType] signatures, Maybe[Type]* par_types) =
+  ("No suitable function found: " & user_repr(name) & ". Possible function signatures:") &
+  ("  " & user_repr(s) : s <- rand_sort(signatures)) &
+  ("Actual types:") &
+  ("  " & if t != nothing then user_repr(value(t)) else "CLOSURE" : t <- par_types);
+
+
+String* no_disp_db_method_err_msg(MethodSymbol name, Type* args_types, Type exp_ret_type, [FnType] signatures) =
+  ("No suitable function found: " & user_repr(name, |args_types|) & ". Possible method signatures:") &
+  ("  " & user_repr(s) : s <- rand_sort(signatures)) &
+  ("Actual types:") &
+  ("  " & user_repr(t) : t <- args_types);
+
+
+String* no_disp_db_update_err_msg(UpdateSymbol name, Type* args_types, [+NeType*] signatures) =
+  ("No suitable update found: " & user_repr(name, |args_types|) & ". Possible signatures:") &
+  ("  " & append((user_repr(t) : t <- s), ", ") : s <- rand_sort(signatures)) &
+  ("Actual types:") &
+  ("  " & user_repr(t) : t <- args_types);
+
+
+String* no_matching_relvar_err_msg(AnyRelVar name, Maybe[Type]+ args_types, [+NeType+] signatures) =
+  ("No matching relation variable found: " & user_repr(name) & ". Possible signatures:") &
+  ("  " & append((user_repr(t) : t <- s), ", ") : s <- rand_sort(signatures)) &
+  ("Actual argument types:") &
+  ("  " & if t != nothing then user_repr(value(t)) else "?" : t <- args_types);
+
+
+String* invalid_args_types_err_msg(FnFamilyId fn_name, FnType signature, [+(Nat, Expr, Type)] invalid_params) {
+  errs = ();
+  for i, e, t <- rand_sort(invalid_params):
+    errs = (errs | "  Invalid argument " & printed(i) & " type in function call: " & user_repr(fn_name) &
+                   "(...). Expected type: " & user_repr(signature.args(i)));
+  ;
+  return errs;
+}
+
+
+String* create_annotated_error_msg(TypeCheckingError error, Any anchor) {
+  err_msg = create_error_msg(error);
+  return ("Internal compiler error") if err_msg == ();
+  maybe_data = fetch(anchor);
+  if maybe_data != nothing:
+    data = value(maybe_data);
+    if data :: ((NzNat, NzNat), (NzNat, NzNat)):
+      start_pos, end_pos = data;
+      start_line = left(start_pos);
+      end_line = left(end_pos);
+      line_info = "Line" & if start_line == end_line then " " & printed(start_line) else "s " & printed(start_line) & "-" & printed(end_line);
+      return (if i == 0 then line_info & ": " & l else l : l @ i <- err_msg);
+    ;
+  ;
+  extra_line = "CANNOT DETERMINE LOCATION OF OFFENDING CODE";
+  extra_line = extra_line & ": " & printed(value(maybe_data)) if maybe_data != nothing;
+  return (err_msg | extra_line);
+}
+
+
+String pos_name(Nat n) {
+  return if names(n, * )then names[n] else printed(n+1) & "th";
+
+  [Nat -> String] names = [
+    0 -> "first",
+    1 -> "second",
+    2 -> "third",
+    3 -> "forth",
+    4 -> "fifth"
+  ];
+}

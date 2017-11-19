@@ -1,0 +1,201 @@
+## BUG: I ALSO HAVE TO CHECK THAT FOR ALL FUNCTIONS WITH THE SAME
+## NAME AND ARITY ALL IMPLICIT PARAMETERS HAVE THE SAME TYPE, AND
+## THAT ALL CLOSURE PARAMETERS HAVE EXACTLY THE SAME TYPE.
+
+type EnvVar   = StdVar, FnArg, ImplArg, SignalVar;
+type LocVar2  = StdVar, FnArg;
+
+
+[<Function, Database, Method, Update, Handler, Automaton, Procedure> -> [+TypeCheckingError]] typecheck(Program prg) {
+  let program = prg:
+    let typedefs = schema_and_typedefs:
+      fn_errs = [fd -> es : fd <- prg.fndefs, es = typecheck_function(fd), es != []];
+      db_errs = merge([typecheck_database(db) : db <- prg.data_bases]);
+      ra_errs = merge([typecheck_automaton(auto) : auto <- prg.auto_defs]);
+      proc_errs = [proc -> es : proc <- prg.proc_defs, es = typecheck_procedure(proc), es != []];
+    ;
+  ;
+  return fn_errs & db_errs & ra_errs & proc_errs;
+}
+
+
+implicit program : Program, typedefs : [TypeName -> NeType] {
+  [TypeCheckingError] typecheck_function(Function func) {
+    args = func.args;
+    var_aliases = [[fn_arg(i), a.var] : a @ i <~ args, a :: FormalObjArg and a.var?];
+    obj_vars = [a.var -> a.type : a <~ args, formal_obj_arg() ?= a, a.var?] &
+               [fn_arg(i) -> a.type : a @ i <~ args, formal_obj_arg() ?= a] &
+               [v -> t : v, t <- func.impl_args];
+    let context=func, var_aliases=var_aliases, typed_vars = []:
+      errs = typecheck(func.expr, func.res_type, obj_vars);
+    ;
+    return errs;
+  }
+
+
+  [TypeCheckingError] typecheck_procedure(Procedure proc) {
+    if proc.id == proc_symbol(:main):
+      arg_type = only_unsafe(proc.args).type;
+      return [invalid_main_arg_type(arg_type)] if not is_subset(type_seq(type_string), arg_type);
+      if proc.res_type != nothing:
+        ret_type = value(proc.res_type);
+        return [invalid_main_ret_type(ret_type)] if not is_subset(ret_type, integer);
+      ;
+    ;
+    env = [a.var -> a.type : a <~ proc.args];
+    ret_type = if proc.res_type != nothing then value(proc.res_type) else empty_type;
+    return typecheck(proc.body, ret_type, env, context=proc, var_aliases=[], typed_vars=[]);
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+implicit program : Program, typedefs : [TypeName -> NeType], context : Context, var_aliases : [[LocVar2]], typed_vars : [StdVar -> NeType] {
+  [TypeCheckingError] typecheck(CondExpr expr, Type exp_type, [EnvVar -> Type] env) {
+    errs = typecheck(expr.cond, type_bool, env);
+    return errs if errs != [];
+    new_env = left(refine_env(expr.cond, env));
+    return typecheck(expr.expr, exp_type, new_env);
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  [TypeCheckingError] typecheck(ClsVar expr, Type+ arg_types, Type ret_type, [EnvVar -> Type] env) {
+    var_type = closures[expr];
+    is_subtype = is_fn_subtype(var_type.in_types, var_type.out_type, arg_types, ret_type);
+    return [invalid_cls_param_type(var_type, arg_types, ret_type) if not is_subtype];
+  }
+
+
+  [TypeCheckingError] typecheck(FnPtr ptr, Type+ arg_types, Type ret_type, [EnvVar -> Type] env) =
+    typecheck(rewrite_cls_expr(ptr), arg_types, ret_type, env);
+
+
+  [TypeCheckingError] typecheck(ClsExpr expr, Type+ arg_types, Type ret_type, [EnvVar -> Type] env) {
+    delta_env = merge(([fn_arg(i) -> t, value(v) -> t if v != nothing] : v, t @ i <- zip(expr.args, arg_types)));
+    new_env = update(env, delta_env);
+    return typecheck(expr.expr, ret_type, new_env); ## BAD: HERE I SHOULD PROVIDE MORE INFORMATION
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  [TypeCheckingError] typecheck(Clause cls, [EnvVar -> Type] env) {
+    errs = typecheck_without_annotations(cls, env);
+    return [add_anchor_if_needed(e, cls) : e <- errs];
+
+
+    [TypeCheckingError] typecheck_without_annotations(Clause cls, [EnvVar -> Type] env) =
+      set_clause()      = typecheck(cls.src, type_set, env),
+      rel_clause()      = typecheck_rel_clause(cls.vars, cls.src, cls.args, env),
+      relvar_clause()   = typecheck_relvar_clause(cls.vars, cls.rel_var, cls.args, env),
+      seq_clause()      = typecheck_seq_clause(cls.vars, cls.src, env),
+      and_clause()      = typecheck_and_clause(cls.left, cls.right, env),
+      or_clause()       = typecheck(cls.left, env) & typecheck(cls.right, env),
+      match_clause()    = typecheck_match_clause(cls.ptrn, cls.expr, env),
+      asgnm_clause()    = typecheck(cls.expr, type_any, env),
+      filter_clause(e?) = typecheck(e, type_bool, env);
+  }
+
+
+  [TypeCheckingError] typecheck_seq_clause(Maybe[StdVar]+ vars, Expr src, [EnvVar -> Type] env) {
+    nvars = |vars|;
+    exp_src_type = if nvars == 1 then type_seq else type_seq(type_tuple(nvars));
+    return typecheck(src, exp_src_type, env);
+  }
+
+
+  [TypeCheckingError] typecheck_rel_clause(StdVar+ vars, Expr src, Maybe[Expr]+ args, [EnvVar -> Type] env) {
+    assert |vars| == count(args, $ == nothing);
+
+    return match (args)
+      (a1?, a2?)      = typecheck_bin_rel_clause(src, args, env),
+      (a1?, a2?, a3?) = typecheck_tern_rel_clause(src, args, env);
+
+
+    [TypeCheckingError] typecheck_bin_rel_clause(Expr src, (Maybe[Expr], Maybe[Expr]) args, [EnvVar -> Type] env) {
+      errs = typecheck(src, type_bin_rel, env);
+      return errs if errs != [];
+      args_types = bin_rel_args_supertypes(expr_type(src, env));
+      return seq_union((if a != nothing then typecheck(value(a), t, env) else [] : a, t <- zip(args, args_types)));
+    }
+
+
+    [TypeCheckingError] typecheck_tern_rel_clause(Expr src, (Maybe[Expr], Maybe[Expr], Maybe[Expr]) args, [EnvVar -> Type] env) {
+      errs = typecheck(src, type_tern_rel, env);
+      return errs if errs != [];
+      args_types = tern_rel_args_supertypes(expr_type(src, env));
+      return seq_union((if a != nothing then typecheck(value(a), t, env) else [] : a, t <- zip(args, args_types)));
+    }
+  }
+
+
+  [TypeCheckingError] typecheck_relvar_clause(StdVar+ vars, AnyRelVar rel_var, Maybe[Expr]+ args, [EnvVar -> Type] env) {
+    assert |vars| == count(args, $ == nothing);
+
+    errs = seq_union((typecheck(value(a), type_any, env) : a <- args, a != nothing));
+    return errs if errs != [];
+
+    rv_sgns = relvar_signatures(rel_var);
+    assert not (s <- rv_sgns : |s| != |args|); ## THIS SHOULD NOT BE AN ASSERTION, BUT A REGULAR WELL-FORMEDNESS CHECK
+
+    return [];
+  }
+
+
+  [TypeCheckingError] typecheck_and_clause(Clause left, Clause right, [EnvVar -> Type] env) {
+    errs = typecheck(left, env);
+    return errs if errs != [];
+    new_env = generate_env(left, env);
+    return typecheck(right, new_env);
+  }
+
+
+  [TypeCheckingError] typecheck_match_clause(Pattern ptrn, Expr source, [EnvVar -> Type] env) {
+    errs = typecheck(source, type_any, env);
+    return if errs != [] then errs else typecheck_pattern(ptrn, expr_type(source, env));
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+implicit typedefs : [TypeName -> NeType] {
+  [TypeCheckingError] typecheck_pattern(Pattern ptrn, Type type) {
+    return [] if type == empty_type;
+
+    return match (ptrn)
+      ptrn_symbol         |
+      ptrn_float          |
+      ptrn_empty_seq      |
+      ptrn_empty_rel      |
+      ptrn_ne_seq         |
+      ptrn_ne_set         |
+      ptrn_ne_map         |
+      ptrn_ne_bin_rel     |
+      ptrn_ne_tern_rel    |
+      ptrn_symbol()       |
+      ptrn_integer()      = [ptrn_cannot_match_type(ptrn, type) if not may_match(ptrn, type)],
+      ptrn_any            = [],
+      ptrn_var()          = typecheck_pattern(ptrn.ptrn, type),
+      ptrn_tuple()        = typecheck_tuple_pattern(ptrn, type),
+      ptrn_tag_obj()      = typecheck_tag_obj_pattern(ptrn, type),
+      ptrn_union(ps?)     = union([typecheck_pattern(p, type) : p <- ps]);
+
+
+    [TypeCheckingError] typecheck_tuple_pattern(<ptrn_tuple(Pattern+)> ptrn, NeType type) {
+      ptrns = match (ptrn) ptrn_tuple(ts?) = ts;
+      type_tuples = tuple_types_field_types(type, |ptrns|);
+      return [ptrn_cannot_match_type(ptrn, type)] if type_tuples == [];
+      errs = [union([typecheck_pattern(p, t) : p, t <~ zip(ptrns, types)]) : types <- type_tuples];
+      return if errs([]) then [] else an_elem(errs);
+    }
+
+
+    [TypeCheckingError] typecheck_tag_obj_pattern(<ptrn_tag_obj(tag: TagPtrn, obj: Pattern)> ptrn, NeType type) {
+      types = tag_obj_types(type);
+      return [ptrn_cannot_match_type(ptrn, type)] if types == [];
+      errs = [typecheck_pattern(ptrn.tag, t.tag_type) & typecheck_pattern(ptrn.obj, t.obj_type) : t <- types];
+      return if errs([]) then [] else an_elem(errs);
+    }
+  }
+}

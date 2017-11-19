@@ -1,0 +1,278 @@
+T attach(T obj, Any data) = undefined; // Overridden in the generated code
+
+Maybe[Any] fetch(T obj) = undefined;   // Overridden in the generated code
+
+A transfer(A to, B from) =
+  match (fetch(from))
+    just(a?)  = attach(to, a),
+    nothing   = to;
+
+////////////////////////////////////////////////////////////////////////////////
+
+String* indent_lines(String* strs) = (if s != "" then "  " & s else "" : s <- strs);
+
+////////////////////////////////////////////////////////////////////////////////
+
+Nat uppercase(Nat ch) = if ch >= ascii_lower_a and ch <= ascii_lower_z then nat(ch - ascii_lower_a + ascii_upper_a) else ch;
+
+
+String uppercase(Atom a) = string((uppercase(ch) : ch <- chars(_str_(a))));
+
+
+String sentence_case(Atom a) = string((if i == 0 then uppercase(ch) else ch : ch @ i <- chars(_str_(a))));
+
+
+String upper_camel_case(Atom a) = capitalize(_str_(a), false);
+
+
+String capitalize(String s, Bool keep_underscores) {
+  first = true;
+  res = ();
+  for ch @ i <- chars(s):
+    tr_ch = ch;
+    if ch == ascii_underscore:
+      first = true;
+    else
+      tr_ch  = nat(ch - ascii_lower_a + ascii_upper_a) if ch >= ascii_lower_a and ch <= ascii_lower_z and first; ## CREATE PRELUDE FUNCTION is_lower()/is_upper() AND to_lower()/to_upper()
+      first = false;
+    ;
+    res = res & (tr_ch if tr_ch != ascii_underscore or keep_underscores);
+  ;
+  return string(res);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+String user_repr(Type type) = user_repr(type, false, false, false);
+
+String user_repr(Type type, Bool inside_type_union, Bool incl_empty_seq, Bool incl_empty_rel) =
+  empty_type                = "</>",
+  atom_type                 = "<+>",
+  symb_type(object(a?))     = {res = _str_(a); res = "<" & res & ">" if not inside_type_union; return res;},
+  integer                   = "<*..*>",
+  low_ints()                = "<*.." & printed(type.max) & ">",
+  high_ints()               = "<" & printed(type.min) & "..*>",
+  int_range()               = "<" & printed(type.min) & ".." & printed(type.min + type.size - 1) & ">",
+  float_type                = "<!>",
+  empty_seq_type            = "()",
+  empty_rel_type            = "[]",
+  type_var(<+> a?)          = {str = upper_camel_case(a); str = str & "'" if length(str) > 1; return str;},
+  type_var(<*..*> n?)       = "<" & printed(n) & "'>",
+  type_ref(ts?)             = user_repr(ts),
+  ne_seq_type()             = user_repr(type.elem_type) & if incl_empty_seq then "*" else "+",
+  ne_set_type()             = "[" & {if incl_empty_rel then "" else "+"} & user_repr(type.elem_type) & "]",
+  ne_map_type()             = "[" & {if incl_empty_rel then "" else "+"} &
+                              user_repr(type.key_type) & " -> " & user_repr(type.value_type) & "]",
+  ne_bin_rel_type()         = "[" & {if incl_empty_rel then "" else "+"} &
+                              append((append((user_repr(t) : t <- s), ", ") : s <- rand_sort(type.signatures)), "; ") & "]",
+  ne_tern_rel_type()        = "[" & {if incl_empty_rel then "" else "+"} &
+                              append((append((user_repr(t) : t <- s), ", ") : s <- rand_sort(type.signatures)), "; ") & "]",
+  ne_record_type(fs?)       = ne_record_type_user_repr(fs),
+  tuple_type(ts?)           = "(" & append((user_repr(t) : t <- ts), ", ") & ")",
+  tag_obj_type()            = tag_obj_type_user_repr(type.tag_type, type.obj_type),
+  union_type(ts?)           = union_type_user_repr(ts);
+
+
+String ne_record_type_user_repr(RecordTypeFields fields) {
+  field_reprs = [record_field_user_repr(l, f.type, f.optional) : l, f <- fields];
+  return "(" & append(rand_sort(field_reprs), ", ") & ")";
+
+  String record_field_user_repr(SymbObj label, NeType type, Bool optional) =
+    _str_(match (label) object(a?) = a) & ": " & user_repr(type) & if optional then "?" else "";
+}
+
+
+String union_type_user_repr([+NeType] types) {
+  incl_empty_seq = in(empty_seq_type, types);
+  incl_empty_rel = in(empty_rel_type, types);
+
+  types_to_exclude = [
+    empty_seq_type if (t <- types : match (t) ne_seq_type() = true, _ = false),
+    empty_rel_type if (t <- types : repr_includes_empty_rel(t))
+  ];
+
+  types_left_sorted = rand_sort(types - types_to_exclude);
+  is_still_union = |types_left_sorted| > 1;
+  types_reprs = (
+    user_repr(t, is_still_union, incl_empty_seq, incl_empty_rel)
+    : t <- types_left_sorted
+  );
+  repr_str = append(types_reprs, ", ");
+  repr_str = "<" & repr_str & ">" if is_still_union;
+  return repr_str;
+
+
+  Bool repr_includes_empty_rel(NeType type) =
+    ne_set_type()         |
+    ne_map_type()         |
+    ne_bin_rel_type()     |
+    ne_tern_rel_type()    = true,
+    ne_record_type(fs?)   = not (l, f <- fs : not f.optional),
+    _                     = false;
+}
+
+
+String tag_obj_type_user_repr(TagType tag_type, NeType obj_type) {
+  return "String" if tag_type == symb_type(:string) and is_nat_seq_type(obj_type);
+
+  skip_pars = match (obj_type)
+    tuple_type() | ne_record_type()   = true,
+    _                                 = false;
+
+  tag_repr = match (tag_type)
+    atom_type               = "<+>",
+    symb_type(object(tag?)) = _str_(tag);
+
+  obj_repr = user_repr(obj_type);
+  obj_repr = "(" & obj_repr & ")" if not skip_pars;
+
+  return tag_repr & obj_repr;
+
+
+  Bool is_nat_seq_type(NeType type) =
+    empty_seq_type    = true,
+    ne_seq_type()     = is_nat_type(type.elem_type),
+    tuple_type(ts?)   = all((is_nat_type(t) : t <- ts)),
+    union_type(ts?)   = not (t <- ts : not is_nat_seq_type(t)),
+    _                 = false;
+
+
+  Bool is_nat_type(NeType type) =
+    integer           = false,
+    low_ints()        = false,
+    high_ints()       = type.min >= 0,
+    int_range()       = type.min >= 0,
+    union_type(ts?)   = not (t <- ts : not is_nat_type(t)),
+    _                 = false;
+}
+
+
+String user_repr(TypeSymbol type_symb) =
+  type_symbol(a?)           |
+  schema_type_symbol(a?)    |
+  builtin_type_symbol(a?)   = upper_camel_case(a),
+  par_type_symbol()         = user_repr(type_symb.symbol) & "[" & append((user_repr(p) : p <- type_symb.params), ", ") & "]";
+
+
+String user_repr(TypeName type_name) {
+  repr = user_repr(type_name.symbol);
+  repr = repr & "/" & printed(type_name.arity) if type_name.arity != 0;
+  return repr;
+}
+
+
+String user_repr(SymbObj) =
+  object(a?)  = _str_(a);
+
+
+String user_repr(Var var) =
+  var(a?)               = _str_(a),
+  fn_arg(n?)            = "$" & printed(n),
+  impl_arg(a?)          = _str_(a),
+  memb_var(a?)          = _str_(a),
+  signal_var(a?)        = _str_(a),
+  prev_var_value(v?)    = "@" & user_repr(v),
+  qual_memb_var(a?)     = user_repr(var.db_var) & "." & user_repr(var.memb_var),
+  qual_signal_var(a?)   = user_repr(var.auto_var) & "." & user_repr(var.memb_var);
+
+
+String user_repr(AnyAutoVar v) = _str_(bare_id(v));
+
+
+String user_repr(AnyDBVar v) =
+  loc_db_var(a?)    |
+  nested_db_var(a?) = _str_(a),
+  qual_db_var()     = user_repr(v.outer) & "." & user_repr(v.inner);
+
+
+String user_repr(AnyRelVar v) =
+  rel_var(a?)     = _str_(a),
+  qual_rel_var()  = user_repr(v.db_var) & "." & user_repr(v.rel_var);
+
+
+String user_repr(ProcSymbol) =
+  proc_symbol(a?)   = upper_camel_case(a);
+
+
+String user_repr(BuiltIn b) = "_" & _str_(b) & "_";
+
+
+String user_repr(PlainFnFamilyId id)  = user_repr(id.symbol, id.arity);
+String user_repr(UniqueFnId id)       = user_repr(id.family);
+String user_repr(NestedFnId id)       = user_repr(id.outer) & ":" & user_repr(id.inner);
+
+
+String user_repr(FnSymbol fn_symb, Nat arity) =
+  fn_symbol(a?)         = _str_(a) & "/" & printed(arity),
+  op_symbol(op?)        = user_repr(op);
+
+
+String user_repr(ClsVar v) =
+  cls_var(<+> a?)    = _str_(a);
+
+
+String user_repr(ClsType type) = cls_type_user_repr(type.in_types, type.out_type);
+
+String cls_type_user_repr(Type+ arg_types, Type ret_type) =
+  "(" & append((user_repr(t) : t <- arg_types), ", ") & " -> " & user_repr(ret_type) & ")";
+
+String user_repr(FnType type) = append((user_repr(t) : t <- type.args), ", ") & " -> " & user_repr(type.ret_type);
+
+
+## BUG BUG BUG: THIS IS PROBABLY ALL WRONG...
+String user_repr(Pattern ptrn) =
+  ptrn_symbol         = "<+>",
+  ptrn_float          = "<!>",
+  ptrn_empty_seq      = "()",
+  ptrn_ne_seq         = "()",
+  ptrn_empty_rel      = "[]",
+  ptrn_ne_set         = "[]",
+  ptrn_ne_map         = "[->]",
+  ptrn_ne_bin_rel     = "[,]",
+  ptrn_ne_tern_rel    = "[,,]",
+  ptrn_any            = "_",
+  ptrn_symbol(s?)     = _str_(match (s) object(a?) = a),
+  ptrn_integer(t?)    = user_repr(t),
+  ptrn_tuple(ps?)     = "(" & append((user_repr(p) : p <- ps), ", ") & ")",
+  ptrn_tag_obj()      = ptrn_tag_obj_user_repr(ptrn.tag, ptrn.obj),
+  ptrn_var()          = {if ptrn.ptrn != ptrn_any then user_repr(ptrn.ptrn) & " " else ""} & user_repr(ptrn.var) & "?",
+  ptrn_union(ps?)     = append((user_repr(p) : p <- rand_sort(ps)), " | ");
+
+
+String ptrn_tag_obj_user_repr(TagPtrn tag, Pattern obj) =
+  ptrn_symbol               = "_ @ " & user_repr(obj),
+  ptrn_symbol(object(s?))   = _str_(s) & "(" & user_repr(obj) & ")",
+  ptrn_var()                = user_repr(tag.var) & " @ " & user_repr(obj);
+
+
+String user_repr(FnSymbol fn_symb) =
+  fn_symbol(a?)         = _str_(a),
+  op_symbol(op?)        = user_repr(op);
+
+
+String user_repr(<MethodSymbol, UpdateSymbol> symb, Nat arity) = user_repr(symb) & "/" & printed(arity);
+
+
+String user_repr(MethodSymbol symb) = method_symbol(a?)  = _str_(a);
+
+String user_repr(UpdateSymbol symb) = update_symbol(a?)  = _str_(a);
+
+String user_repr(AutoSymbol) = auto_symbol(a?) = upper_camel_case(a);
+
+String user_repr(DBSymbol) = db_symbol(a?) = upper_camel_case(a);
+
+
+String user_repr(Operator) =
+  unary_minus   = "(-_)",
+  plus          = "(_+_)",
+  minus         = "(_-_)",
+  star          = "(_*_)",
+  slash         = "(_/_)",
+  exp           = "(_^_)",
+  amp           = "(_&_)",
+  lower         = "(_<_)",
+  greater       = "(_>_)",
+  lower_eq      = "(_<=_)",
+  greater_eq    = "(_>=_)",
+  brackets      = "(_[_])";

@@ -1,0 +1,23 @@
+type Trie[A, B] = [A -> (Maybe[B], Trie[A, B])];
+
+
+Trie[A, B] trie([A+ -> B] map) {
+  keys = [ks(0) : ks, v <- map];
+  terminals = [k -> if map((k), *) then just(map[(k)]) else nothing : k <- keys];
+  continuations = [[ks(0) -> [nonempty(drop(ks, 1)) -> v]] : ks, v <- map, |ks| > 1];
+  merged_continuations = [k -> merge(submaps) : k, submaps <- merge_values(continuations)];
+  trie = [k -> (t, trie(lookup(merged_continuations, k, []))) : k, t <- terminals];
+  return trie;
+}
+
+
+(Maybe[B], Nat) trie_lookup(Trie[A, B] trie, A+ seq) {
+  head = head(seq);
+  tail = tail(seq);
+  return (nothing, 0) if not trie(head, *);
+  maybe_terminal, subtrie = trie[head];
+  return (maybe_terminal, 1) if tail == ();
+  subres, consumed = trie_lookup(subtrie, tail);
+  return if subres != nothing then (subres, nat(consumed+1)) else (maybe_terminal, 1);
+}
+

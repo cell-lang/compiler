@@ -1,0 +1,66 @@
+BasicPseudoType basic_ptype(IntType)                = :integers;
+BasicPseudoType basic_ptype(FloatType)              = :floats;
+BasicPseudoType basic_ptype(<empty_seq_type>)       = :empty_seq;
+BasicPseudoType basic_ptype(<empty_rel_type>)       = :empty_rel;
+BasicPseudoType basic_ptype(NeSeqType)              = :ne_seqs;
+BasicPseudoType basic_ptype(NeSetType)              = :ne_sets;
+BasicPseudoType basic_ptype(NeMapType)              = :ne_bin_rels;
+BasicPseudoType basic_ptype(NeBinRelType)           = :ne_bin_rels;
+BasicPseudoType basic_ptype(NeTernRelType)          = :ne_tern_rels;
+BasicPseudoType basic_ptype(RecordType)             = :ne_bin_rels;
+BasicPseudoType basic_ptype(TupleType)              = :ne_seqs;
+
+
+implicit typedefs : [TypeName -> NeType] {
+  Type type_ptype_intersection(Type type, PseudoType ptype) =
+    if type != empty_type
+      then union_type([type_basic_ptype_intersection(type, pt) : pt <- basic_pseudotypes(ptype)])
+      else empty_type;
+
+
+  Type type_basic_ptype_intersection(NeType type, BasicPseudoType ptype) =
+    symb_type(object(s?)) = if ptype == :symbols or ptype == :symbol(s) then type else empty_type,
+    atom_type             = atom_type_basic_ptype_intersection(ptype),
+    ## BUG BUG BUG: THIS IS VERY VERY WRONG CONCEPTUALLY.
+    ## A FIX WOULD PROBABLY REQUIRES A REDESIGN OF THE PSEUDOTYPES SYSTEM
+    type_var()            = type, ## BUG BUG BUG
+    type_ref(ts?)         = type_ref_basic_ptype_intersection(ts, ptype),
+    tag_obj_type()        = tag_obj_type_basic_ptype_intersection(type, ptype),
+    union_type(ts?)       = union_type([type_basic_ptype_intersection(t, ptype) : t <- ts]),
+    integer               |
+    low_ints()            |
+    high_ints()           |
+    int_range()           |
+    float_type            |
+    empty_seq_type        |
+    empty_rel_type        |
+    ne_seq_type()         |
+    ne_set_type()         |
+    ne_map_type()         |
+    ne_bin_rel_type()     |
+    ne_tern_rel_type()    |
+    ne_record_type()      |
+    tuple_type()          = if ptype == basic_ptype(type) then type else empty_type;
+
+
+  Type type_ref_basic_ptype_intersection(TypeSymbol type_symb, BasicPseudoType ptype) {
+    exp_type = expand_type_ref(type_symb, typedefs);
+    return if exp_type != empty_type
+      then type_basic_ptype_intersection(exp_type, ptype)
+      else empty_type;
+  }
+
+
+  Type atom_type_basic_ptype_intersection(BasicPseudoType) =
+    symbols     = atom_type,
+    symbol(s?)  = symb_type(s),
+    _           = empty_type;
+
+
+  Type tag_obj_type_basic_ptype_intersection(TagObjType type, BasicPseudoType ptype) =
+    match (ptype, type.tag_type)
+      tag_objs,     _                       = type,
+      tag_obj(s?),  atom_type               = tag_obj_type(symb_type(s), type.obj_type),
+      tag_obj(s1?), symb_type(object(s2?))  = if s1 == s2 then type else empty_type,
+      _,            _                       = empty_type;
+}

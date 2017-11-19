@@ -1,0 +1,393 @@
+type Obj        = object(Any);
+
+type SymbObj    = object(Atom);
+type IntObj     = object(Int);
+type LeafObj    = object(<Atom, Int>);
+
+///////////////////////////////////////////////////////////////////////////////
+
+type BasicTypeSymbol  = type_symbol(Atom), schema_type_symbol(Atom), builtin_type_symbol(any);
+type ParTypeSymbol    = par_type_symbol(symbol: BasicTypeSymbol, params: Type+); ## TOO LOOSE A TYPE, I THINK. MAYBE builtin_type_symbol() SHOULD BE PART OF TypeSymbol, NOT BasicTypeSymbol
+type TypeSymbol       = BasicTypeSymbol, ParTypeSymbol;
+
+type TypeName         = type_name(symbol: BasicTypeSymbol, arity: Nat);
+
+///////////////////////////////////////////////////////////////////////////////
+
+type SymbType           = symb_type(SymbObj);
+type IntType            = integer, low_ints(max: Int), high_ints(min: Int), int_range(min: Int, size: NzNat);
+type FloatType          = float_type;
+type EmptyCollType      = empty_seq_type, empty_rel_type;
+
+type LeafType           = atom_type, SymbType, IntType, FloatType, EmptyCollType;
+
+type TypeVar            = type_var(<Atom, Nat>);
+type TypeRef            = type_ref(TypeSymbol);
+
+type NeSeqType          = ne_seq_type(elem_type: NeType);
+type NeSetType          = ne_set_type(elem_type: NeType);
+type NeMapType          = ne_map_type(key_type: NeType, value_type: NeType);
+type NeBinRelType       = ne_bin_rel_type(signatures: [+(NeType, NeType)]);
+type NeTernRelType      = ne_tern_rel_type(signatures: [+(NeType, NeType, NeType)]);
+
+type RecordTypeFields   = [+SymbObj -> (type: NeType, optional: Bool)];
+type RecordType         = ne_record_type(RecordTypeFields);
+
+type TupleType          = tuple_type(NeType+);
+
+type TagType            = SymbType, atom_type;
+type TagObjType         = tag_obj_type(tag_type: TagType, obj_type: NeType);
+
+type UnionType          = union_type([+NeType]);
+
+type NeType             = LeafType, TypeRef, TypeVar, NeSeqType, NeSetType, NeMapType, NeBinRelType,
+                          NeTernRelType, RecordType, TupleType, TagObjType, UnionType;
+
+type Type               = empty_type, NeType;
+
+///////////////////////////////////////////////////////////////////////////////
+
+type ClsType  = cls_type(in_types: NeType+, out_type: NeType);
+type AnyType  = NeType, ClsType;
+
+type FnType   = fn_type(
+                  args:       AnyType*,
+                  impl_args:  [ImplArg -> NeType],
+                  ret_type:   NeType,
+                  constrs:    [FnSymbol -> [+ClsType]]
+                );
+
+type BuiltInType  = builtin_type(args_types: NeType+, ret_type: NeType);
+
+///////////////////////////////////////////////////////////////////////////////
+
+type UnaryOperator  = unary_minus;
+type BinaryOperator = plus, minus, star, slash, exp, amp, lower, greater, lower_eq, greater_eq, brackets;
+
+type Operator = UnaryOperator, BinaryOperator;
+
+type BuiltIn  = neg, add, sub, mult, div, mod, lt, le, and, or, xor,
+                fneg, fadd, fsub, fmult, fdiv, flt, fle, fexp, fsqrt,
+                floor, ceiling, float, bits, mantissa, dec_exp,
+                str, symb, isort,
+                slice, cat, rev, tag, untag, parse, print,
+                rand_nat, rand_elem, counter, ticks;
+
+type StdFnSymb        = fn_symbol(Atom);
+type OpSymb           = op_symbol(Operator);
+type FnSymbol         = StdFnSymb, OpSymb;
+
+type PlainFnFamilyId  = fn_family_id(symbol: FnSymbol, arity: Nat);
+
+type UniqueFnId       = unique_fn_id(family: PlainFnFamilyId, id: Nat);
+type PlainFnId        = PlainFnFamilyId, UniqueFnId;
+
+type NestedFnFamilyId = nested_fn_id(outer: PlainFnId, inner: PlainFnFamilyId);
+type NestedFnId       = nested_fn_id(outer: PlainFnId, inner: PlainFnId);
+
+type FnFamilyId       = PlainFnFamilyId, NestedFnFamilyId;
+type FnId             = PlainFnId, NestedFnId;
+
+type MethodSymbol   = method_symbol(Atom);
+type UpdateSymbol   = msg_handler, update_symbol(Atom);
+
+type AutoSymbol     = auto_symbol(Atom);
+type DBSymbol       = db_symbol(Atom);
+
+type StdVar         = var(Atom);
+type FnArg          = fn_arg(Nat);
+type ImplArg        = impl_arg(Atom);
+
+type MembVar        = memb_var(Atom);
+
+type SignalVar      = signal_var(Atom);
+
+type QualMembVar    = qual_memb_var(db_var: AnyDBVar, memb_var: MembVar);
+type QualSignalVar  = qual_signal_var(auto_var: AnyAutoVar, memb_var: SignalVar);
+
+type AnyMembVar     = MembVar, QualMembVar;
+type AnySignalVar   = SignalVar, QualSignalVar;
+
+type PrevVarValue   = prev_var_value(AnySignalVar);
+
+type LocAutoVar     = loc_auto_var(Atom);
+type NestedAutoVar  = nested_auto_var(Atom);
+type AnyAutoVar     = LocAutoVar, NestedAutoVar;
+
+type LocDBVar     = loc_db_var(Atom);
+type NestedDBVar  = nested_db_var(Atom);
+type LinkedDBVar  = linked_db_var(Nat);
+type QualDBVar    = qual_db_var(outer: AnyDBVar, inner: <NestedDBVar, LinkedDBVar>);
+type AnyDBVar     = LocDBVar, NestedDBVar, LinkedDBVar, QualDBVar;
+
+type Var        = StdVar, FnArg, ImplArg, AnyMembVar, AnySignalVar, PrevVarValue;
+
+type RelVar     = rel_var(Atom);
+type QualRelVar = qual_rel_var(db_var: AnyDBVar, rel_var: RelVar);
+type AnyRelVar  = RelVar, QualRelVar;
+
+type ClsVar     = cls_var(<Atom, Nat>);
+
+type CondExpr = cond_expr(expr: Expr, cond: Expr);
+
+type SubExpr  = Expr, CondExpr;
+
+type FloatLit = float_lit(mantissa: <0..9>+, negative: Bool, dec_exp: Int);
+
+type Expr     = undefined, LeafObj, FloatLit, Var,
+                SetExpr, SeqExpr, TupleExpr, SeqTailExpr,
+                MapExpr, BinRelExpr, TernRelExpr, TagObjExpr,
+                FnCallExpr, ClsCall, BuiltinCall,
+                SizeExpr,
+                UnaryPseudoCall, RelMembTest, RelLookup,
+                RelVarMembTest, RelVarLookup,
+                AndExpr, OrExpr, NotExpr,
+                EqExpr,
+                MembExpr, CastExpr,
+                AccExpr, AccTestExpr,
+                AutoMethodCall, DBMethodCall,
+                IfExpr, MatchExpr, DoExpr,
+                ExQualExpr, SetCompExpr, MapCompExpr, BinRelCompExpr, TernRelCompExpr,
+                SeqCompExpr, RangeCompExpr,
+                OutputIsDefExpr, OutputIsSetExpr;
+
+type SeqExpr        = seq_expr(SubExpr*);
+type TupleExpr      = tuple_expr(Expr+); ## THIS IS REDUNDANT NOW, IT'S STILL HERE ONLY BECAUSE REMOVING IT WOULD REQUIRE SOME MAINTENANCE OF THE TYPE CHECKING CODE
+type SeqTailExpr    = seq_tail_expr(seq: Expr, tail: Expr+);
+type SetExpr        = set_expr([SubExpr]);
+type MapExpr        = map_expr([+(key: Expr, value: Expr, cond: Expr?)]);
+type BinRelExpr     = bin_rel_expr([+(args: (Expr, Expr), cond: Expr?)]);
+type TernRelExpr    = tern_rel_expr([+(args: (Expr, Expr, Expr), cond: Expr?)]);
+type TagObjExpr     = tag_obj_expr(tag: Expr, obj: Expr);
+
+type FnCallExpr     = fn_call(fn_id: FnFamilyId, args: AnyExpr*, impl_args: [ImplArg -> Expr]);
+type ClsCall        = cls_call(name: ClsVar, args: Expr+);
+type BuiltinCall    = builtin_call(name: BuiltIn, args: Expr+);
+
+type SizeExpr       = size_expr(coll: Expr);
+
+type UnaryPseudoCall  = unary_pseudo_call(target: Expr, arg: Expr);
+
+type RelMembTest    = rel_memb_test(rel: Expr, args: Maybe[Expr]+);
+type RelLookup      = rel_lookup(rel: Expr, set_args: Expr*, unknown_arg_idx: Nat);
+
+type RelVarMembTest = relvar_memb_test(rel_var: AnyRelVar, args: Maybe[Expr]+);
+type RelVarLookup   = relvar_lookup(rel_var: AnyRelVar, set_args: Expr*, unknown_arg_idx: Nat);
+
+type AndExpr        = and_expr(left: Expr, right: Expr); ## NOT SURE HERE
+type OrExpr         = or_expr(left: Expr, right: Expr);  ## NOT SURE HERE
+type NotExpr        = not_expr(Expr);                    ## NOT SURE HERE
+
+type EqExpr         = eq(left: Expr, right: Expr);
+
+type MembExpr       = membership(obj: Expr, type: NeType);
+type CastExpr       = cast_expr(expr: Expr, type: NeType);
+
+type AccExpr        = accessor(expr: Expr, field: SymbObj);      ## SHOULD <field> BE AN OBJECT OR JUST A PLAIN SYMBOL?
+type AccTestExpr    = accessor_test(expr: Expr, field: SymbObj); ## DITTO
+
+type AutoMethodCall = auto_method_call(var: AnyAutoVar?, name: MethodSymbol, args: Expr*);
+type DBMethodCall   = db_method_call(var: AnyDBVar?, name: MethodSymbol, args: Expr*);
+
+type IfExpr         = if_expr(cond: Expr, then: Expr, else: Expr);
+type MatchExpr      = match_expr(exprs: Expr+, cases: (ptrns: Pattern+, expr: Expr)+);
+type DoExpr         = do_expr(body: Statement+, typed_vars: [StdVar -> NeType]);
+
+type ExQualExpr     = ex_qual(source: Clause, cond: Expr);
+
+type SetCompExpr      = set_comp(expr: Expr, source: Clause);
+type MapCompExpr      = map_comp(key_expr: Expr, value_expr: Expr, source: Clause);
+type BinRelCompExpr   = bin_rel_comp(exprs: (Expr, Expr), source: Clause);
+type TernRelCompExpr  = tern_rel_comp(exprs: (Expr, Expr, Expr), source: Clause);
+
+type SeqCompExpr    = seq_comp(expr: Expr, vars: StdVar+, idx_var: StdVar?, src_expr: Expr, sel_expr: Expr?);
+type RangeCompExpr  = range_comp(expr: Expr, var: StdVar, bound_expr: Expr, inclusive: Bool, sel_expr: Expr?);
+
+type OutputIsDefExpr  = output_is_def(var: LocAutoVar, output: Atom);
+type OutputIsSetExpr  = output_is_set(var: LocAutoVar, output: Atom);
+
+///////////////////////////////////////////////////////////////////////////////
+
+type FnPtr    = fn_ptr(FnFamilyId);
+type ClsExpr  = cls_expr(args: Maybe[StdVar]+, expr: Expr);
+
+type AnyClsExpr = ClsVar, FnPtr, ClsExpr;
+
+type AnyExpr    = Expr, AnyClsExpr;
+
+///////////////////////////////////////////////////////////////////////////////
+
+type Pattern  = ptrn_symbol, ## THE CORRESPONDING TYPE IS CALLED atom_type. RENAME ONE OF THE TWO?
+                ptrn_float,
+                ptrn_empty_seq,
+                ptrn_empty_rel,
+                ptrn_ne_seq,
+                ptrn_ne_set,
+                ptrn_ne_map,
+                ptrn_ne_bin_rel,
+                ptrn_ne_tern_rel,
+                ptrn_any,
+                ptrn_symbol(SymbObj),
+                ptrn_integer(IntType),
+                ptrn_tuple(Pattern+),
+                ptrn_tag_obj(tag: TagPtrn, obj: Pattern),
+                ptrn_var(var: StdVar, ptrn: Pattern),
+                ## REMEMBER TO ENFORCE THE RULES BELOW. AT LEAST ONE PIECE OF CODE,
+                ## THE ONE THAT CALCULATES A SUPERSET OF THE INTERSECTION BETWEEN A
+                ## TYPE AND A PATTERN DEPENDS ON THE FIRST ASSUMPTION
+                // Patterns in a union must be pseudotype-compatible.
+                // They must also define the same set of variables
+                ptrn_union([+Pattern]);
+
+
+type TagPtrn  = ptrn_symbol, ptrn_symbol(SymbObj), ptrn_var(var: StdVar, ptrn: ptrn_symbol);
+
+////////////////////////////////////////////////////////////////////////////////
+
+type Clause   = set_clause(var: StdVar, src: Expr),
+                rel_clause(vars: StdVar+, src: Expr, args: Maybe[Expr]+),
+                relvar_clause(vars: StdVar+, rel_var: AnyRelVar, args: Maybe[Expr]+),
+                seq_clause(vars: Maybe[StdVar]+, idx_var: Maybe[StdVar], src: Expr),
+                and_clause(left: Clause, right: Clause),
+                or_clause(left: Clause, right: Clause),
+                match_clause(ptrn: Pattern, expr: Expr),
+                asgnm_clause(var: StdVar, expr: Expr),
+                filter_clause(Expr);
+
+////////////////////////////////////////////////////////////////////////////////
+
+type AtomicFnStmt   = assignment_stmt(vars: StdVar+, value: Expr),
+                      return_stmt(Expr),
+                      break_stmt,
+                      fail_stmt,
+                      assert_stmt(cond: Expr, env: [<StdVar, ImplArg>], file: String, line: NzNat, text: Maybe[String]),
+                      print_stmt(Expr),
+                      seq_update_stmt(seq_var: StdVar, idx: Expr, value: Expr); ## NOT SURE IT BELONGS HERE...
+
+type AtomicUpdateStmt = send_msg_stmt(target: NestedDBVar, msg: Expr),
+                        try_update_stmt(name: UpdateSymbol, args: Expr*),
+                        set_memb_var_stmt(var: MembVar, value: Expr),
+                        delete_stmt(var: RelVar, fields: Maybe[Expr]+),
+                        insert_stmt(var: RelVar, fields: Expr+, force: Bool);
+
+type AtomicProcStmt = return_stmt,
+                      proc_call_stmt(res_var: StdVar?, proc_name: ProcSymbol, args: Expr*);
+
+type CtrlStmt = set_input_ctrl_stmt(var: LocAutoVar, input: Atom, value: Expr),
+                clear_input_ctrl_stmt(var: LocAutoVar, input: Atom),
+                set_elapsed_time_ctrl_stmt(var: LocAutoVar, time: Expr),
+                apply_ctrl_stmt(auto_var: LocAutoVar, res_var: StdVar),
+                send_msg_ctrl_stmt(res_var: StdVar, db_var: LocDBVar, msg: Expr),
+                read_state_ctrl_stmt(res_var: StdVar, auto_var: <LocAutoVar, LocDBVar>),
+                restore_state_ctrl_stmt(res_var: StdVar, auto_var: <LocAutoVar, LocDBVar>, state: Expr);
+
+type CompositeStmt[T] = if_stmt(cond: Expr, body: T+, else: T*),
+                        loop_stmt(T+),
+                        foreach_stmt(vars: StdVar+, idx_var: StdVar?, values: Expr, body: T+),
+                        for_stmt(var: StdVar?, start_val: Expr, end_val: Expr, end_val_incl: Bool, body: T+),
+                        let_stmt(asgnms: [ImplArg -> Expr], body: T+);
+
+type Statement      = AtomicFnStmt, AtomicUpdateStmt, AtomicProcStmt, CtrlStmt, CompositeStmt[Statement];
+
+///////////////////////////////////////////////////////////////////////////////
+
+type FormalObjArg = formal_obj_arg(var: StdVar?, type: NeType);
+type FormalClsArg = formal_cls_arg(var: ClsVar, type: ClsType);
+type FormalArg    = FormalObjArg, FormalClsArg;
+
+type Function   = function(
+                    id:         FnId,
+                    args:       FormalArg*,
+                    impl_args:  [ImplArg -> NeType], // Types here should not contain type variables
+                    res_type:   NeType,
+                    expr:       Expr,
+                    constrs:    [FnSymbol -> [+ClsType]]
+                  );
+
+type ProcSymbol = proc_symbol(Atom);
+
+type Procedure  = procedure(
+                    id:         ProcSymbol,
+                    args:       (var: StdVar, type: NeType)*,
+                    res_type:   Maybe[NeType],
+                    auto_vars:  [LocAutoVar -> AutoSymbol],
+                    db_vars:    [LocDBVar -> (type: DBSymbol, links: LocDBVar*)],
+                    body:       Statement*
+                  );
+
+///////////////////////////////////////////////////////////////////////////////
+
+type Input      = input(type: NeType, discrete: Bool, volatile: Bool);
+type Output     = output(type: NeType, discrete: Bool);
+
+// A signals state entry x -> true means the signal must be set or have changed, for discrete and continuous
+// signals, respectively. x -> false means the opposite. Signals not in the map do not affect the condition
+type ReactCond    = on_becoming_true_cond(cond: Expr),
+                    react_cond(cond: Expr, signals_state: [+AnySignalVar -> Bool]);
+
+type StateVar       = state_var(type: NeType, init_value: Expr, volatile: Bool, updates: [StateVarUpdate]);
+type StateVarUpdate = state_var_update(value: Expr, cond: ReactCond);
+
+type DiscreteRule   = discrete_rule(value: Expr, cond: ReactCond);
+
+type MsgSendRule    = msg_send_rule(message: Expr, cond: ReactCond);
+
+///////////////////////////////////////////////////////////////////////////////
+
+type BasicTimeExpr  = at_least(nanosecs: Nat),
+                      time_neg(BasicTimeExpr),
+                      time_and(left: BasicTimeExpr, right: BasicTimeExpr),
+                      time_or(left: BasicTimeExpr, right: BasicTimeExpr);
+
+type CyclicTimeExpr = every(expr: BasicTimeExpr, nanosecs: NzNat);
+
+type TimeExpr   = BasicTimeExpr, CyclicTimeExpr;
+
+type TimeRule   = boolean_time_rule(expr: Expr, time_expr: TimeExpr),
+                  unchanged_time_rule(expr: Expr, time_expr: TimeExpr),
+                  since_time_rule(signals: [+SignalVar], time_expr: TimeExpr, starts_at_time_0: Bool);
+
+///////////////////////////////////////////////////////////////////////////////
+
+type Automaton  = automaton(
+                    name:           AutoSymbol,
+                    params:         [SignalVar -> (type: NeType?, value: Expr)],
+                    inputs:         [SignalVar -> Input],
+                    outputs:        [SignalVar -> Output],
+                    state:          [SignalVar -> StateVar],
+                    rules:          [SignalVar -> Expr],
+                    time_rules:     [SignalVar -> TimeRule],
+                    discrete_rules: [SignalVar -> [+DiscreteRule]],
+                    nested_autos:   [NestedAutoVar -> (type: AutoSymbol, args: [Atom -> Expr], volatile: Bool)],
+                    nested_dbs:     [NestedDBVar -> (type: DBSymbol, msg_send_rule: MsgSendRule?, volatile: Bool)],
+                    methods:        [Method]
+                  );
+
+///////////////////////////////////////////////////////////////////////////////
+
+type Method   = method(name: MethodSymbol, args: (NeType, Maybe[StdVar])*, ret_type: NeType, expr: Expr);
+type Update   = update(name: UpdateSymbol, args: (NeType, StdVar)*, body: Statement*);
+type Handler  = handler(type: NeType, body: Statement*);
+
+///////////////////////////////////////////////////////////////////////////////
+
+type Database   = data_base(
+                    name:       DBSymbol,
+                    links:      DBSymbol*,
+                    state_vars: [MembVar -> (type: NeType, init_value: Expr)],
+                    rel_vars:   [RelVar -> (signatures: [+NeType+], keys: [[+Nat]])], ## HOW TO ENFORCE THE FACT THAT ALL SIGNATURE MUST HAVE THE SAME ARITY?
+                    nested_dbs: [NestedDBVar -> DBSymbol],
+                    methods:    [Method],
+                    updates:    [Update],
+                    handlers:   [Handler]
+                  );
+
+///////////////////////////////////////////////////////////////////////////////
+
+type Program    = program(
+                    typedefs:     [TypeName -> NeType],
+                    fndefs:       [Function],
+                    proc_defs:    [Procedure],
+                    auto_defs:    [Automaton],
+                    data_bases:   [Database]
+                  );

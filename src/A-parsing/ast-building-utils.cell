@@ -1,0 +1,144 @@
+Bool is_annotated_token(RuleMatch rule, PlainToken token) =
+  atomic_rule_match(at?)  = at.token == token,
+  _                       = false;
+
+AnnotatedToken annotated_token(RuleMatch) =
+  atomic_rule_match(at?)  = at;
+
+PlainToken get_token(RuleMatch mtc) = annotated_token(mtc).token;
+
+
+Nat get_integer(RuleMatch mtc) =
+  match (get_token(mtc))
+    <*..*> n? = nat(n); ## FIX TYPE INFERENCE HERE...
+
+FloatLit get_float_lit(RuleMatch mtc) =
+  match (get_token(mtc))
+    float_lit() f?  = f;
+
+Atom get_lowercase_id(RuleMatch mtc) =
+  match (get_token(mtc))
+    lowercase_id(a?)  = a,
+    mixedcase_id(a?)  = a,
+    uppercase_id(a?)  = a;
+
+Atom get_qualified_symbol(RuleMatch mtc) =
+  match (get_token(mtc))
+    qualified_symbol(a?)  = a;
+
+Atom get_var_id(RuleMatch mtc) =
+  match (get_token(mtc))
+    pref_lowercase_id(a?) = a;
+
+BuiltIn get_builtin(RuleMatch mtc) =
+  match (get_token(mtc))
+    builtin(b?) = b;
+
+String get_string(RuleMatch mtc) =
+  match (get_token(mtc))
+    string() s? = s;
+
+Nat get_cls_par_idx(RuleMatch mtc) =
+  match (get_token(mtc))
+    qual_var(n?)  = n;
+
+RuleMatch subrule_node(RuleMatch, Nat idx) =
+  rule_seq_match(ns?)   = ns(idx),
+  rep_rule_match(ns?)   = ns(idx);
+
+AnnotatedToken annotated_token(RuleMatch mtc, Nat idx) = annotated_token(subrule_node(mtc, idx));
+
+PlainToken get_token(RuleMatch mtc, Nat idx) = annotated_token(mtc, idx).token;
+
+Nat get_integer(RuleMatch mtc, Nat idx)            = get_integer(subrule_node(mtc, idx));
+Atom get_lowercase_id(RuleMatch mtc, Nat idx)      = get_lowercase_id(subrule_node(mtc, idx));
+Atom get_qualified_symbol(RuleMatch mtc, Nat idx)  = get_qualified_symbol(subrule_node(mtc, idx));
+Atom get_builtin(RuleMatch mtc, Nat idx)           = get_builtin(subrule_node(mtc, idx));
+String get_string(RuleMatch mtc, Nat idx)          = get_string(subrule_node(mtc, idx));
+
+RuleMatch+ rule_seq_nodes(RuleMatch) =
+  rule_seq_match(ns?) = ns;
+
+RuleMatch rule_seq_node(RuleMatch, Nat idx) =
+  rule_seq_match(ns?) = ns(idx);
+
+RuleMatch* rep_rule_nodes(RuleMatch) =
+  null_match          = (),
+  rep_rule_match(ns?) = ns;
+
+RuleMatch block_node(RuleMatch mtc) {
+  nodes = rule_seq_nodes(mtc);
+  assert |nodes| == 3;
+  t0 = get_token(nodes(0));
+  t2 = get_token(nodes(2));
+  assert
+    (t0 == left_parenthesis and t2 == right_parenthesis) or
+    (t0 == left_bracket     and t2 == right_bracket)     or
+    (t0 == left_brace       and t2 == right_brace);
+  return nodes(1);
+}
+
+RuleMatch block_node_or_null(RuleMatch mtc) = if mtc != null_match then block_node(mtc) else null_match;
+
+Atom get_rule_name(RuleMatch mtc) =
+  rule_choice_match()   = mtc.name,
+  _                     = undefined;
+
+RuleMatch get_rule_match(RuleMatch mtc) =
+  rule_choice_match()   = mtc.match,
+  _                     = undefined;
+
+////////////////////////////////////////////////////////////////////////////////
+
+RuleMatch+ weird_seq_nodes(RuleMatch mtc) {
+  nodes = rule_seq_nodes(mtc);
+  assert |nodes| == 3;
+  return nonempty((nodes(0)) & rep_rule_nodes(nodes(2)));
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+Maybe[((NzNat, NzNat), (NzNat, NzNat))] source_file_location(RuleMatch mtc) =
+  null_match              = nothing,
+  atomic_rule_match(t?)   = just(((t.line, t.col), (t.line, nz_nat(t.col + t.length - 1)))),
+  rule_seq_match(ms?)     = source_file_location(ms),
+  rep_rule_match(ms?)     = source_file_location(ms),
+  rule_choice_match()     = source_file_location(mtc.match);
+
+
+Maybe[((NzNat, NzNat), (NzNat, NzNat))] source_file_location(RuleMatch* mtcs) {
+  return nothing if mtcs == ();
+  start_loc = nothing;
+  for m <- mtcs:
+    start_loc = source_file_location(m);
+    break if start_loc != nothing;
+  ;
+  return nothing if start_loc == nothing;
+  end_loc = nothing;
+  for i < |mtcs|:
+    end_loc = source_file_location(rev_at(mtcs, i));
+    break if end_loc != nothing;
+  ;
+  fail if end_loc == nothing;
+  return just((left(value(start_loc)), right(value(end_loc))));
+}
+
+
+T attach_src_code_info(T obj, RuleMatch match) =
+  match (source_file_location(match))
+    just(l?)  = attach(obj, l),
+    nothing   = obj;
+
+
+T attach_src_code_info(T decl, String filename, RuleMatch match) {
+  src_code_info = source_file_location(match);
+  if src_code_info == nothing:
+    start_line = 1;
+    end_line = 1;
+  else
+    start_pos, end_pos = value(src_code_info);
+    start_line, unused_var = start_pos;
+    end_line, unused_var = end_pos;
+  ;
+  return attach(decl, (filename, start_line, end_line));
+}

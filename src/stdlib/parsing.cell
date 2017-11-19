@@ -1,0 +1,109 @@
+ParsingRule rule_ref_data = rule_ref(:data);
+
+
+ParsingRule rule_minus    = atomic_rule(minus);
+
+ParsingRule rule_integer  = atomic_rule(integer);
+ParsingRule rule_float    = atomic_rule(float);
+ParsingRule rule_string   = atomic_rule(string);
+
+
+ParsingRule rule_data =
+  rule_choice((
+    (:tag_obj,        rule_seq((rule_lc_id, par_rule(comma_sep_seq(rule_ref_data))))),
+    (:tag_rec,        rule_seq((rule_lc_id, par_rule(comma_sep_seq(rule_seq((rule_lc_id, rule_colon, rule_ref_data))))))),
+
+    (:symbol,         rule_lc_id),
+    (:integer,        rule_seq((optional_rule(rule_minus), rule_integer))),
+    (:float,          rule_float),
+
+    (:string,         rule_string),
+
+    (:set,            bracket_rule(opt_comma_sep_seq(rule_ref_data))),
+
+    (:map,            bracket_rule(comma_sep_seq(rule_seq((rule_ref_data, rule_right_arrow, rule_ref_data))))),
+    (:record,         par_rule(comma_sep_seq(rule_seq((rule_lc_id, rule_colon, rule_ref_data))))),
+    (:ne_bin_rel,     bracket_rule(comma_sep_seq(rule_seq((rule_ref_data, rule_colon, rule_ref_data))))),
+
+    (:ne_tern_rel,    bracket_rule(comma_sep_seq(rule_seq((rule_ref_data, rule_colon, rule_ref_data, rule_colon, rule_ref_data))))),
+
+    (:seq,            par_rule(opt_comma_sep_seq(rule_ref_data)))
+  ));
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+Any build_data_ast(RuleMatch mtc) {
+  inner_mtc = get_rule_match(mtc);
+
+  return match (get_rule_name(mtc))
+    tag_obj             = build_tag_obj_ast(inner_mtc),
+    tag_rec             = get_lowercase_id(inner_mtc, 0)(build_data_record_ast(rule_seq_node(inner_mtc, 1))),
+    symbol              = get_lowercase_id(inner_mtc),
+    integer             = build_int(inner_mtc),
+    float               = undefined, ## IMPLEMENT
+    string              = get_string(inner_mtc),
+    set                 = set(build_data_seq_ast(inner_mtc)),
+    record              = build_data_record_ast(inner_mtc),
+    ne_map | ne_bin_rel = build_bin_rel_ast(inner_mtc),
+    ne_tern_rel         = build_tern_rel_ast(inner_mtc),
+    seq                 = build_data_seq_ast(inner_mtc);
+
+
+  Any build_data_ast(RuleMatch mtc, Nat idx) = build_data_ast(rule_seq_node(mtc, idx));
+
+  Any build_int(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 2;
+    value = get_integer(nodes(1));
+    value = -value if nodes(0) != null_match;
+    return value;
+  }
+
+  Any build_tag_obj_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 2;
+    tag = get_lowercase_id(nodes(0));
+    objs = (build_data_ast(n) : n <- nonempty(rep_rule_nodes(block_node(nodes(1)))));
+    return tag(if |objs| > 1 then objs else only(objs));
+  }
+
+  Any* build_data_seq_ast(RuleMatch mtc) = (build_data_ast(n) : n <- rep_rule_nodes(block_node(mtc)));
+
+  Any build_data_record_ast(RuleMatch mtc) = [
+      get_lowercase_id(n, 0), build_data_ast(n, 2)
+      : n <~ rep_rule_nodes(block_node(mtc))
+    ];
+
+  Any build_bin_rel_ast(RuleMatch mtc) = [
+      build_data_ast(n, 0), build_data_ast(n, 2)
+      : n <~ rep_rule_nodes(block_node(mtc))
+    ];
+
+  Any build_tern_rel_ast(RuleMatch mtc) = [
+      build_data_ast(n, 0), build_data_ast(n, 2), build_data_ast(n, 4) :
+      n <~ rep_rule_nodes(block_node(mtc))
+    ];
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+Result[Any, <LexerError, ParError, ParserError>] parse_data_file(Nat* chars) {
+  lex_res = lex_src_file(chars);
+  return lex_res if is_failure(lex_res);
+  tokens = get_result(lex_res);
+
+  return success(()) if tokens == ();
+
+  rec_rules = (data: rule_data);
+
+  maybe_err = parentheses_error(tokens);
+  return failure(value(maybe_err)) if maybe_err != nothing;
+
+  parser_res = parse_all(rule_data, tokens, rec_rules);
+  return parser_res if is_failure(parser_res);
+  parser_match = get_result(parser_res);
+
+  return success(build_data_ast(parser_match.rule_match));
+}

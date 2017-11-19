@@ -1,0 +1,148 @@
+type SgnDecl = Function, Method, Update, Handler;
+
+type AnyAuto = Database, Automaton;
+
+type AnyReactAutoVar = SignalVar, NestedAutoVar, NestedDBVar;
+
+type CoreWFError  = error_cluster(AnyAuto, [+CoreWFError]),
+                    recursively_defined_auto_or_db(AnyAuto),
+                    overlapping_signatures(SgnDecl, SgnDecl),
+                    dependency_loop(signal: AnyReactAutoVar, deps: [AnyReactAutoVar]),
+                    invalid_auto_var(var: Var, signal: SignalVar, expr: <Expr, TimeRule>),
+                    invalid_nested_auto_input_var(var: Var, auto_id: NestedAutoVar, input_id: Atom, expr: Expr),
+                    invalid_nested_db_msg_var(var: Var, id: NestedDBVar, rule: MsgSendRule),
+                    wrong_output_nature(signal: SignalVar, discrete: Bool),
+                    undefined_output(signal: SignalVar),
+                    invalid_input(var: NestedAutoVar, type: AutoSymbol, input: Atom),
+                    undefined_input(var: NestedAutoVar, type: AutoSymbol, input: Atom),
+                    continous_expr_for_discrete_input(var: NestedAutoVar, input: Atom),
+                    non_nested_self_ref(type: TypeName);
+
+////////////////////////////////////////////////////////////////////////////////
+
+CoreWFError error_cluster(AnyAuto db, [+CoreWFError] es) = :error_cluster(db, es);
+CoreWFError recursively_defined_auto_or_db(AnyAuto db) = :recursively_defined_auto_or_db(db);
+CoreWFError overlapping_signatures(SgnDecl f1, SgnDecl f2) = :overlapping_signatures(f1, f2);
+CoreWFError invalid_auto_var(Var v, SignalVar s, <Expr, TimeRule> e) = invalid_auto_var(var: v, signal: s, expr: e);
+CoreWFError dependency_loop(AnyReactAutoVar s, [+AnyReactAutoVar] ds) = dependency_loop(signal: s, deps: ds);
+CoreWFError invalid_nested_auto_input_var(Var v, NestedAutoVar a, Atom i, Expr e) = invalid_nested_auto_input_var(var: v, auto_id: a, input_id: i, expr: e);
+CoreWFError invalid_nested_db_msg_var(Var v, NestedDBVar id, MsgSendRule r) = invalid_nested_db_msg_var(var: v, id: id, rule: r);
+CoreWFError wrong_output_nature(SignalVar s, Bool d) = wrong_output_nature(signal: s, discrete: d);
+CoreWFError undefined_output(SignalVar s) = undefined_output(signal: s);
+CoreWFError invalid_input(NestedAutoVar v, AutoSymbol t, Atom i) = invalid_input(var: v, type: t, input: i);
+CoreWFError undefined_input(NestedAutoVar v, AutoSymbol t, Atom i) = undefined_input(var: v, type: t, input: i);
+CoreWFError continous_expr_for_discrete_input(NestedAutoVar v, Atom i) = continous_expr_for_discrete_input(var: v, input: i);
+CoreWFError non_nested_self_ref(TypeName t) = non_nested_self_ref(type: t);
+
+////////////////////////////////////////////////////////////////////////////////
+
+String* error_message(CoreWFError err) =
+  error_cluster(db?, es?)             = error_cluster_error_message(db, es),
+  recursively_defined_auto_or_db(db?) = recursively_defined_auto_or_db_error_message(db),
+  overlapping_signatures(f1?, f2?)    = overlapping_signatures_error_message(f1, f2),
+  dependency_loop()                   = dependency_loop_error_message(err.signal, err.deps),
+  invalid_auto_var()                  = invalid_auto_var_error_message(err.var, err.signal, err.expr),
+  invalid_nested_auto_input_var()     = invalid_nested_auto_input_var_error_message(err.var, err.auto_id, err.input_id, err.expr),
+  invalid_nested_db_msg_var()         = invalid_nested_db_msg_var_error_message(err.var, err.id, err.rule),
+  wrong_output_nature()               = wrong_output_nature_error_message(err.signal, err.discrete),
+  undefined_output()                  = undefined_output_error_message(err.signal),
+  invalid_input()                     = invalid_input_error_message(err.var, err.type, err.input),
+  undefined_input()                   = undefined_input_error_message(err.var, err.type, err.input),
+  continous_expr_for_discrete_input() = continous_expr_for_discrete_input_error_message(err.var, err.input),
+  non_nested_self_ref()               = non_nested_self_ref_error_message(err.type);
+
+////////////////////////////////////////////////////////////////////////////////
+
+String* overlapping_signatures_error_message(SgnDecl d1, SgnDecl d2) = (
+  "Overlapping argument types in polymorphic " & artifact_type_name(d1) & ": " & artifact_name(d1),
+  "    " & source_code_location_string(source_code_location(d1)),
+  "    " & source_code_location_string(source_code_location(d2))
+);
+
+
+String* recursively_defined_auto_or_db_error_message(AnyAuto auto_or_db) {
+  auto_type_str = match (auto_or_db)
+    data_base() = "Static",
+    automaton() = "Reactive";
+
+  return (
+    auto_type_str & " automata cannot be defined recursively: " & user_repr(auto_or_db.name),
+    "    " & source_code_location_string(source_code_location(auto_or_db))
+  );
+}
+
+
+String* error_cluster_error_message(AnyAuto decl, [+CoreWFError] errs) =
+  ( "Error" & plural(errs) & " in automaton definition: " & user_repr(decl.name),
+    source_code_location_string(source_code_location(decl))) &
+  ("    " & l : l <- join((error_message(e) : e <- rand_sort(errs))));
+
+
+String* dependency_loop_error_message(AnyReactAutoVar signal, [AnyReactAutoVar]  deps) = (
+  "Dependency cycle detected. Signal involved: " & user_repr(signal)
+);
+
+
+String* invalid_auto_var_error_message(Var var, SignalVar signal, <Expr, TimeRule> expr) = (
+  "Signal " & user_repr(signal) & " is not permitted to depend on signal " & user_repr(var)
+);
+
+
+String* invalid_nested_auto_input_var_error_message(Var var, NestedAutoVar auto_id, Atom input_id, Expr expr) = (
+  "Input " & _str_(input_id) & " of nested automaton " & user_repr(auto_id) & " is not permitted to depend on signal " & user_repr(var)
+);
+
+
+String* invalid_nested_db_msg_var_error_message(Var var, NestedDBVar db_id, MsgSendRule rule) = (
+  "Value of message sent to nested static automaton " & user_repr(db_id) & " is not permitted to depend on signal " & user_repr(var)
+);
+
+
+String* wrong_output_nature_error_message(SignalVar signal, Bool discrete) {
+  decl_type, actual_type = ("continous", "discrete");
+  decl_type, actual_type = (actual_type, decl_type) if discrete;
+  return ("Output " & user_repr(signal) & " is declared as " & decl_type & " but actual signal is " & actual_type);
+}
+
+
+String* undefined_output_error_message(SignalVar signal) = ("Undefined output: " & user_repr(signal));
+
+
+String* invalid_input_error_message(NestedAutoVar var, AutoSymbol type, Atom input) =
+  ("Nested automaton " & user_repr(var) & " of type " & user_repr(type) & " does not have input " & _str_(input));
+
+
+String* undefined_input_error_message(NestedAutoVar var, AutoSymbol type, Atom input) =
+  ("Nested automaton " & user_repr(var) & " of type " & user_repr(type) & " requires input " & _str_(input));
+
+
+String* continous_expr_for_discrete_input_error_message(NestedAutoVar var, Atom input) =
+  ( "Input " & _str_(input) & " of nested automaton " & user_repr(var) &
+    " is discrete, but the provided expression is continuous"
+  );
+
+
+String* non_nested_self_ref_error_message(TypeName type) =
+  ("Types are not allowed to contain themselves: " & user_repr(type));
+
+////////////////////////////////////////////////////////////////////////////////
+
+String source_code_location_string((String, NzNat, NzNat) loc_info) {
+  fn, sl, el = loc_info;
+  return "File " & fn & " line" & if sl == el then " " & printed(sl) else "s " & printed(sl) & "-" & printed(el);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+String artifact_type_name(SgnDecl) =
+  function()  = "function",
+  method()    = "method",
+  update()    = "update",
+  handler()   = "message handler";
+
+
+String artifact_name(SgnDecl decl) =
+  function()  = user_repr(decl.id),
+  method()    |
+  update()    = user_repr(decl.name, |decl.args|),
+  handler()   = "";

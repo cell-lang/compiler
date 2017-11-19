@@ -1,0 +1,68 @@
+implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg], actual_arg_arity : Nat {
+  ExprWFError* impl_args_call_local_wf_errors(SynImplArgsCall expr, [DefVar] def_vars) {
+    arity = |expr.args|;
+    resols = resolve_by_priority_as_fn_name(expr.name, arity, def_vars);
+    if resols == []:
+      ## CHECK HERE IF THERE ARE OTHER FUNCTIONS WITH THE SAME NAME BUT DIFFERENT ARITIES
+      return (unknown_function(expr));
+    else
+      return fn_call_wf_errors(only(resols), expr.args, expr.impl_args, def_vars);
+    ;
+  }
+
+
+  ExprWFError* fn_call_wf_errors(FnFamilyId fn_id, SynExpr* args, (ImplArg, SynExpr)* redef_impl_args, [DefVar] def_vars) {
+    arity = |args|;
+
+    exp_arg_arities = arg_arities(fn_id);
+    exp_impl_args = fn_impl_args(fn_id);
+
+    pos_arg_errs = join((actual_arg_wf_errors(a, exp_arg_arities(i), def_vars) : a @ i <- args));
+    all_impl_arg_errs = [impl_args_wf_errors(fn_id, redef_impl_args, enps, def_vars) : enps <- exp_impl_args];
+
+    impl_arg_errs = if in((), all_impl_arg_errs) then () else join(rand_sort(all_impl_arg_errs));
+
+    return pos_arg_errs & impl_arg_errs;
+
+
+    ExprWFError* actual_arg_wf_errors(SynExpr actual_arg, Nat exp_arity, [DefVar] def_vars) {
+      if exp_arity == 0 or not actual_arg :: ConstOrVar:
+        new_arg_arity = if exp_arity != 0 then exp_arity else actual_arg_arity;
+        return expr_wf_errors(actual_arg, def_vars, actual_arg_arity=new_arg_arity);
+      ;
+
+      //  Here the function expects a closure. The parameter can be:
+      //    1) A normal expression, implicitly defining a constant functions
+      //    2) The name of a an existing closure
+      //    3) The name of a function
+      //    4) A closure expression
+
+      symb = match (actual_arg) const_or_var(a?) = a;
+      resols = resolve_by_priority_as_cls_expr(symb, exp_arity, std_vars(def_vars));
+      return (invalid_expr(actual_arg) if |resols| != 1) if resols != [];
+
+      ## BAD BAD BAD: ENCODING THE MAXIMUM ARITY OF THE CLOSURES.
+      ## SHOULD ALSO CHECK THAT NO FUNCTION HAS BEEN DISCARDED BECAUSE IT HAS IMPLICIT ARGUMENTS
+      arities = [i : i <~ (nz_nat(i+1) : i < 20), resolve_by_priority_as_cls_expr(symb, i, std_vars(def_vars)) != []];
+      if arities == []:
+        return (undef_var_or_const(symb));
+      else
+        return (wrong_cls_arg_arity(actual_arg, exp_arity, arities));
+      ;
+    }
+
+
+    ExprWFError* impl_args_wf_errors(FnFamilyId fn_id, (ImplArg, SynExpr)* redef_impl_args, [ImplArg] exp_impl_args, [DefVar] def_vars) {
+      redef_impl_args_names = [a : a, _ <~ redef_impl_args];
+      errs = ();
+      for a <- rand_sort(exp_impl_args):
+        errs = (errs | missing_impl_arg(fn_id, a)) if not redef_impl_args_names(a) and not impl_args(a);
+      ;
+      for np, e <- redef_impl_args:
+        errs = (errs | invalid_impl_arg(np)) if not exp_impl_args(np);
+        errs = errs & expr_wf_errors(e, def_vars);
+      ;
+      return errs;
+    }
+  }
+}

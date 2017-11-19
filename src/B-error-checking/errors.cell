@@ -1,0 +1,966 @@
+type WFError            = dupl_typedef((AnyTypedef, AnyTypedef)),
+                          typedef_errors(typedef: AnyTypedef, errors: TypeWFError+),
+                          dupl_impl_arg((ImplArgDecl, ImplArgDecl)),
+                          signature_errors(sgn: ImplArgDecl, errors: TypeWFError+),
+                          incomp_pos_args(fndefs: (SynFnDef, SynFnDef), arg_indexes: Nat+),
+                          overlapping_pos_args_types((SynFnDef, SynFnDef)),
+                          incomp_impl_args(fd1: SynFnDef, fd2: SynFnDef, nargs1: [Atom], nargs2: [Atom]),
+                          fndef_errors(fndef: SynFnDef, errors: FnDefWFError+),
+                          proc_def_errors(proc_def: SynProcDef, errors: ProcDefWFError+),
+                          auto_inheritance_cycle(autos: [+Atom]),
+                          auto_def_errors(auto_def: ReactAutoDef, errors: ExprWFError+),
+                          auto_method_def_errors(meth_def: AutoMethodDef, errors: FnDefWFError+),
+                          db_def_errors(schema: SchemaDef, errors: ExprWFError+),
+                          db_method_def_errors(schema: SchemaDef, method: DBMethodDef, errors: FnDefWFError+),
+                          update_def_errs(schema: SchemaDef, update: UpdateDef, errors: UpdateDefWFError+),
+                          handler_def_errs(handler: HandlerDef, errors: UpdateDefWFError+),
+                          same_name_proc_defs(SynProcDef+),
+                          duplicate_schema_defs(defs: SchemaDef+),
+                          recursively_defined_schema(schema: SchemaDef, dependencies: [+Atom]),
+                          protocol_redef(type: Atom, protocols: [+ProtDecl]),
+                          protocol_errors(prot: ProtDecl, errors: ProtWFError+),
+                          dupl_auto_defs(defs: [+ReactAutoDef]),
+                          typevar_decl_errs(decl: TypeVarDecl, errors: TypeVarDeclError+);
+
+type TypeWFError        = invalid_int_range(<syn_int_range(min: Int, max: Int)>),
+                          undef_type_var(TypeVar),
+                          invalid_tag_type(SynType),
+                          undef_type(BasicTypeSymbol),
+                          undef_type_arity(type_symb: BasicTypeSymbol, arity: Nat, actual_arities: [+Nat]),
+                          dupl_record_field((SynRecordField, SynRecordField)),
+                          type_var_in_union(TypeVar),
+                          type_vars_not_allowed(type: SynType, var: TypeVar);
+
+type SchemaSpecWFError  = schema_def_duplicates_type(schema_def: SchemaDef, tdefs: AnyTypedef+),
+                          duplicate_schema_decl(<SchemaItemDecl, AttrRelVar>, <SchemaItemDecl, AttrRelVar>),
+                          invalid_relvar_arity(RelVarsDecl),
+                          invalid_relvar_keys(RelVarsDecl),
+                          incomp_relvar_decls(relvars: [RelVarsDecl], attr_relvars: [(RelVarsDecl, Nat)]);
+
+type AutoSpecWFError    = auto_type_conflict(name: Atom, tdefs: AnyTypedef+),
+                          auto_schema_conflict(name: Atom, schema_def: SchemaDef),
+                          auto_prot_conflict(name: Atom, prot_decl: ProtDecl),
+                          duplicate_pos_input(name: Atom),
+                          undef_pos_input(name: Atom),
+                          undef_def_output(name: Atom),
+                          wrong_num_of_pos_inputs(decl: NestedAutoDecl, exp_num: Nat),
+                          duplicate_actual_inputs(decl: NestedAutoDecl, dupl_args: [+Atom]);
+
+type ProtSpecWFError    = prot_type_conflict(name: Atom, typedef: AnyTypedef),
+                          prot_schema_conflict(name: Atom, schema: SchemaDef),
+                          dupl_prot_methods(methods: (FnSymbol, SynType+, SynType)+);
+
+type TypeVarDeclError   = dupl_type_vars(vars: [+Atom]),
+                          dupl_prot_types(types: [+Atom]),
+                          wrong_number_of_prot_types,
+                          undef_prot_type(type: Atom),
+                          unrelated_prot_types(types: Atom+);
+
+type ExprSpecWFError    = already_def_var(Var),
+                          undef_var_or_const(Atom),
+                          not_an_object(
+                            expr:   SynExpr,
+                            resols: [<SymbChainExpr, ClsVar, AnyAutoVar, AnyDBVar, AnyRelVar, FnFamilyId, PreCall>]
+                          ),
+                          not_a_signal(id: Atom),
+                          ambiguous_expr(expr: SynExpr, resols: [Any]),
+                          invalid_expr(expr: SynExpr),
+                          wrong_builtin_arity(name: BuiltIn, args: SynExpr+),
+                          invalid_impl_arg(ImplArg),
+                          missing_impl_arg(fn_id: FnFamilyId, arg: ImplArg),
+                          undef_impl_cls_arg(ClsPar),
+                          duplicate_impl_args(expr: SynImplArgsCall, bad_args: [+ImplArg]),
+                          wrong_fn_arity(expr: SynImplArgsCall, actual_arities: [+Nat]),
+                          wrong_arity(expr: <call_lookalike(target: IdChain, args: SynExpr+)>, actual_arities: [+Nat]),
+                          wrong_rel_test_arity(expr: SynRelMembTest, actual_arities: [+Nat]),
+                          wrong_rel_lookup_arity(target: Atom+, actual_arities: [+Nat]),
+                          wrong_pseudocall_arity(expr: SynCallLookalike),
+                          unknown_function(expr: SynImplArgsCall),
+                          unknown_function_or_method(expr: <call_lookalike(target: IdChain, args: SynExpr+)>),
+                          undefined_operator(expr: <SynUnaryOpCall, SynBinaryOpCall>),
+                          wrong_cls_arg_arity(expr: ConstOrVar, exp_arity: NzNat, arities: [+Nat]),
+                          wrong_cls_call_arity(expr: SynImplArgsCall, exp_arity: Nat),
+                          impl_args_not_allowed(expr: SynImplArgsCall),
+                          not_a_scalar_var(names: Atom+),
+                          dupl_var_mult_asgnm(StdVar),
+                          diff_var_sets_in_ptrn_union(SynPtrn+),
+                          iter_clause_wrong_arity(vars: StdVar+, valid_arities: [+NzNat]),
+                          invalid_case_arity(actual: Nat, expected: Nat),
+
+                          ro_vars_asgnm(vars: [+Var]),
+                          wrong_return(<SynReturnStmt, return_stmt>),
+                          return_in_let_body(<SynReturnStmt, return_stmt>),
+                          vars_redef(anchor: Any, vars: [+Var]),
+                          undef_update_var(stmt: SynSeqUpdateStmt, var: StdVar),
+                          wrong_proc_arity(stmt: SynProcCallStmt, exp_arity: Nat),
+                          uncaught_ret_val(SynProcCallStmt),
+                          proc_has_no_ret_val(SynProcCallStmt),
+                          undef_proc(SynProcCallStmt),
+                          proc_call_not_allowed(SynProcCallStmt),
+                          break_outside_loop(SynBreakStmt),
+                          break_in_let_body(SynBreakStmt),
+                          missing_ret_stmt(SynStmt+),
+                          unreachable_stmt(SynStmt),
+
+                          unknown_auto(auto_symb: <AutoSymbol, DBSymbol>),
+                          undef_react_auto_var(var: AnyAutoVar, is_other_var_type: Bool),
+                          unknown_input(name: Atom, automaton: ReactAutoDef),
+                          unknown_output(name: Atom, automaton: ReactAutoDef),
+                          unknown_db_field(name: Atom, schema: SchemaDef),
+                          not_a_discrete_signal(name: Atom, automaton: ReactAutoDef),
+                          not_a_memb_copy_var(name: Atom, automaton: Maybe[ReactAutoDef]),
+                          invalid_signal_copy_context(name: Atom),
+                          not_a_copiable_signal(name: Atom),
+                          duplicate_tracked_signal(name: Atom),
+                          unknown_state_var(name: Atom),
+                          no_discrete_signals_in_expr(name: Atom, is_update: Bool),
+                          discrete_signals_in_countinuous_rule(name: Atom, discrete_signals: [+AnySignalVar]),
+
+                          conflicting_auto_decls(AnyAutoDecl, AnyAutoDecl),
+
+                          undef_static_auto_var(var: Atom, is_auto_var: Bool, is_obj_var: Bool),
+                          wrong_auto_var_arity(var: Atom, actual: Nat, expected: Nat),
+                          wrong_auto_arg_type(var: Atom, arg_var: Atom, actual: Atom, expected: Atom),
+
+                          db_has_no_handlers(db_type: Atom),
+                          not_a_nested_db_var(var: Atom, schema_def: SchemaDef),
+                          unknown_nested_db_var(var: Atom, schema_def: SchemaDef),
+                          unknown_update(name: Atom, db_type: Atom),
+                          invalid_update_arity(name: Atom, arity: Nat, arities: [+Nat]),
+                          not_a_memb_var(var: Atom, schema_def: SchemaDef),
+                          unknown_memb_var(var: Atom, schema_def: SchemaDef),
+                          invalid_rel_var_arity(var: Atom, arity: NzNat, relvar_arity: NzNat),
+                          not_a_rel_var(var: Atom, schema_def: SchemaDef),
+                          unknown_rel_var(var: Atom, schema_def: SchemaDef),
+
+                          undef_auto_var(var: Atom, is_data_var: Bool),
+
+                          anchored_errors(errors: ExprWFError+, anchor: Any),
+
+                          annotated_syn_expr_error(error: ExprWFError, expr: SynExpr),
+                          annotated_syn_stmt_error(error: ExprWFError, stmt: SynStmt);
+
+type GenDefSpecWFError  = dupl_par_names(dupl_pos_pars: [Atom], dupl_impl_args: [Atom]),
+                          invalid_ptrn_list_len(actual: Nat, max: Nat);
+
+type FnDefSpecWFError   = invalid_cls_type_vars(par_idx: Nat, var_name: Atom, type_vars: [+TypeVar]),
+                          invalid_res_type_vars(type_vars: [+TypeVar]),
+                          nested_functions_errors(WFError+);
+
+type ProcDefSpecWFError = builtin_proc_redef,
+                          wrong_main_proc_arity,
+                          dup_auto_or_db_var(name: Atom),
+                          undef_auto_or_db(var: Atom, type: Atom);
+
+type ExprWFError        = TypeWFError, SchemaSpecWFError, AutoSpecWFError, ExprSpecWFError;
+type FnDefWFError       = ExprWFError, GenDefSpecWFError, FnDefSpecWFError;
+type ProcDefWFError     = ExprWFError, GenDefSpecWFError, ProcDefSpecWFError;
+
+type ProtWFError        = TypeWFError, ProtSpecWFError;
+
+type UpdateDefWFError   = FnDefWFError;
+
+////////////////////////////////////////////////////////////////////////////////
+
+type AnyAutoDecl = InputDecl, OutputDecl, StateVarDecl, NestedDBDecl, ConstDecl, RuleDecl;
+
+////////////////////////////////////////////////////////////////////////////////
+
+WFError dupl_typedef(AnyTypedef td1, AnyTypedef td2)            = :dupl_typedef((td1, td2));
+WFError typedef_errors(AnyTypedef td, TypeWFError+ errs)        = typedef_errors(typedef: td, errors: errs);
+WFError dupl_impl_arg(ImplArgDecl s1, ImplArgDecl s2)           = :dupl_impl_arg((s1, s2));
+WFError signature_errors(ImplArgDecl s, TypeWFError+ es)        = signature_errors(sgn: s, errors: es);
+WFError incomp_pos_args(SynFnDef fd1, SynFnDef fd2, Nat+ is)    = incomp_pos_args(fndefs: (fd1, fd2), arg_indexes: is);
+WFError overlapping_pos_args_types(SynFnDef fd1, SynFnDef fd2)  = :overlapping_pos_args_types((fd1, fd2));
+WFError incomp_impl_args(SynFnDef fd1, SynFnDef fd2, [Atom] nas1, [Atom] nas2) = incomp_impl_args(fd1: fd1, fd2: fd2, nargs1: nas1, nargs2: nas2);
+WFError fndef_errors(SynFnDef fd, FnDefWFError+ errs)           = fndef_errors(fndef: fd, errors: errs);
+WFError auto_inheritance_cycle([+Atom] as)                      = auto_inheritance_cycle(autos: as);
+WFError auto_def_errors(ReactAutoDef d, ExprWFError+ es)        = auto_def_errors(auto_def: d, errors: es);
+WFError auto_method_def_errors(AutoMethodDef m, FnDefWFError+ es) = auto_method_def_errors(meth_def: m, errors: es);
+WFError db_def_errors(SchemaDef s, ExprWFError+ es)            = db_def_errors(schema: s, errors: es);
+WFError db_method_def_errors(SchemaDef s, DBMethodDef m, FnDefWFError+ es)  = db_method_def_errors(schema: s, method: m, errors: es);
+WFError update_def_errs(SchemaDef s, UpdateDef u, UpdateDefWFError+ es) = update_def_errs(schema: s, update: u, errors: es);
+WFError handler_def_errs(HandlerDef h, UpdateDefWFError+ es)    = handler_def_errs(handler: h, errors: es);
+WFError proc_def_errors(SynProcDef pd, ProcDefWFError+ es)      = proc_def_errors(proc_def: pd, errors: es);
+WFError same_name_proc_defs(SynProcDef+ pds)                    = :same_name_proc_defs(pds);
+WFError duplicate_schema_defs(SchemaDef+ ds)                    = duplicate_schema_defs(defs: ds);
+WFError recursively_defined_schema(SchemaDef s, [+Atom] ds)     = recursively_defined_schema(schema: s, dependencies: ds);
+WFError protocol_redef(Atom t, [+ProtDecl] ps)                  = protocol_redef(type: t, protocols: ps);
+WFError protocol_errors(ProtDecl p, ProtWFError+ es)            = protocol_errors(prot: p, errors: es);
+WFError dupl_auto_defs([+ReactAutoDef] ds)                      = dupl_auto_defs(defs: ds);
+WFError typevar_decl_errs(TypeVarDecl d, TypeVarDeclError+ es)  = typevar_decl_errs(decl: d, errors: es);
+
+////////////////////////////////////////////////////////////////////////////////
+
+TypeWFError invalid_int_range(<syn_int_range(min: Int, max: Int)> t)  = :invalid_int_range(t);
+TypeWFError undef_type_var(TypeVar v)                                 = :undef_type_var(v);
+TypeWFError invalid_tag_type(SynType t)                               = :invalid_tag_type(t);
+TypeWFError undef_type(BasicTypeSymbol ts)                            = :undef_type(ts);
+TypeWFError undef_type_arity(BasicTypeSymbol ts, Nat a, [+Nat] as)    = undef_type_arity(type_symb: ts, arity: a, actual_arities: as);
+TypeWFError dupl_record_field(SynRecordField f1, SynRecordField f2)   = :dupl_record_field((f1, f2));
+TypeWFError type_var_in_union(TypeVar v)                              = :type_var_in_union(v);
+TypeWFError type_vars_not_allowed(SynType t, TypeVar v)               = type_vars_not_allowed(type: t, var: v);
+
+////////////////////////////////////////////////////////////////////////////////
+
+SchemaSpecWFError schema_def_duplicates_type(SchemaDef s, AnyTypedef+ ts) = schema_def_duplicates_type(schema_def: s, tdefs: ts);
+SchemaSpecWFError duplicate_schema_decl(<SchemaItemDecl, AttrRelVar> d1, <SchemaItemDecl, AttrRelVar> d2) = :duplicate_schema_decl(d1, d2);
+SchemaSpecWFError invalid_relvar_arity(RelVarsDecl d) = :invalid_relvar_arity(d);
+SchemaSpecWFError invalid_relvar_keys(RelVarsDecl d) = :invalid_relvar_keys(d);
+SchemaSpecWFError incomp_relvar_decls([RelVarsDecl] rvs, [(RelVarsDecl, Nat)] arvs) = incomp_relvar_decls(relvars: rvs, attr_relvars: arvs);
+
+////////////////////////////////////////////////////////////////////////////////
+
+AutoSpecWFError auto_type_conflict(Atom n, AnyTypedef+ ts)            = auto_type_conflict(name: n, tdefs: ts);
+AutoSpecWFError auto_schema_conflict(Atom n, SchemaDef s)             = auto_schema_conflict(name: n, schema_def: s);
+AutoSpecWFError auto_prot_conflict(Atom n, ProtDecl p)                = auto_prot_conflict(name: n, prot_decl: p);
+AutoSpecWFError duplicate_pos_input(Atom n)                           = duplicate_pos_input(name: n);
+AutoSpecWFError undef_pos_input(Atom n)                               = undef_pos_input(name: n);
+AutoSpecWFError undef_def_output(Atom n)                              = undef_def_output(name: n);
+AutoSpecWFError wrong_num_of_pos_inputs(NestedAutoDecl d, Nat n)      = wrong_num_of_pos_inputs(decl: d, exp_num: n);
+AutoSpecWFError duplicate_actual_inputs(NestedAutoDecl d, [+Atom] as) = duplicate_actual_inputs(decl: d, dupl_args: as);
+
+////////////////////////////////////////////////////////////////////////////////
+
+ProtSpecWFError prot_type_conflict(Atom n, AnyTypedef td) = prot_type_conflict(name: n, typedef: td);
+ProtSpecWFError prot_schema_conflict(Atom n, SchemaDef s) = prot_schema_conflict(name: n, schema: s);
+ProtSpecWFError dupl_prot_methods((FnSymbol, SynType+, SynType)+ ms) = dupl_prot_methods(methods: ms);
+
+////////////////////////////////////////////////////////////////////////////////
+
+TypeVarDeclError dupl_type_vars([+Atom] vs)     = dupl_type_vars(vars: vs);
+TypeVarDeclError dupl_prot_types([+Atom] ts)    = dupl_prot_types(types: ts);
+TypeVarDeclError wrong_number_of_prot_types     = :wrong_number_of_prot_types;
+TypeVarDeclError undef_prot_type(Atom t)        = undef_prot_type(type: t);
+TypeVarDeclError unrelated_prot_types(Atom+ ts) = unrelated_prot_types(types: ts);
+
+////////////////////////////////////////////////////////////////////////////////
+
+GenDefSpecWFError dupl_par_names([Atom] pps, [Atom] nps) = dupl_par_names(dupl_pos_pars: pps, dupl_impl_args: nps);
+GenDefSpecWFError invalid_ptrn_list_len(Nat n, Nat m)    = invalid_ptrn_list_len(actual: n, max: m);
+
+////////////////////////////////////////////////////////////////////////////////
+
+FnDefSpecWFError invalid_cls_type_vars(Nat i, Atom n, [+TypeVar] vs)  = invalid_cls_type_vars(par_idx: i, var_name: n, type_vars: vs);
+FnDefSpecWFError invalid_res_type_vars([+TypeVar] vs)                 = invalid_res_type_vars(type_vars: vs);
+FnDefSpecWFError nested_functions_errors(WFError+ es)             = :nested_functions_errors(es);
+
+////////////////////////////////////////////////////////////////////////////////
+
+ProcDefSpecWFError builtin_proc_redef               = :builtin_proc_redef;
+ProcDefSpecWFError wrong_main_proc_arity            = :wrong_main_proc_arity;
+ProcDefSpecWFError dup_auto_or_db_var(Atom n)       = dup_auto_or_db_var(name: n);
+ProcDefSpecWFError undef_auto_or_db(Atom v, Atom t) = undef_auto_or_db(var: v, type: t);
+
+////////////////////////////////////////////////////////////////////////////////
+
+ExprSpecWFError already_def_var(Var v)                                  = :already_def_var(v);
+ExprSpecWFError undef_var_or_const(Atom v)                              = :undef_var_or_const(v);
+ExprSpecWFError not_an_object(SynExpr e, <SymbChainExpr, ClsVar, AnyAutoVar, AnyDBVar, AnyRelVar, FnFamilyId, PreCall> r) = not_an_object(expr: e, resols: [r]);
+ExprSpecWFError not_an_object(SynExpr e, [<SymbChainExpr, ClsVar, AnyAutoVar, AnyDBVar, AnyRelVar, FnFamilyId, PreCall>] rs) = not_an_object(expr: e, resols: rs);
+ExprSpecWFError not_a_signal(Atom id)                                   = not_a_signal(id: id);
+ExprSpecWFError ambiguous_expr(SynExpr e, [Any] rs)                     = ambiguous_expr(expr: e, resols: rs);
+ExprSpecWFError invalid_expr(SynExpr e)                                 = invalid_expr(expr: e);
+// ExprSpecWFError invalid_expr(SynExpr e)                                 = {print :invalid_expr; fail;};
+ExprSpecWFError wrong_builtin_arity(BuiltIn b, SynExpr+ ps)             = wrong_builtin_arity(name: b, args: ps);
+ExprSpecWFError invalid_impl_arg(ImplArg p)                             = :invalid_impl_arg(p);
+ExprSpecWFError missing_impl_arg(FnFamilyId f, ImplArg a)               = missing_impl_arg(fn_id: f, arg: a);
+ExprSpecWFError undef_impl_cls_arg(ClsPar p)                            = :undef_impl_cls_arg(p);
+ExprSpecWFError duplicate_impl_args(SynImplArgsCall c, [+ImplArg] ps)   = duplicate_impl_args(expr: c, bad_args: ps);
+ExprSpecWFError wrong_fn_arity(SynImplArgsCall c, [+Nat] as)            = wrong_fn_arity(expr: c, actual_arities: as);
+ExprSpecWFError wrong_arity(<call_lookalike(target: IdChain, args: SynExpr+)> c, [+Nat] as) = wrong_arity(expr: c, actual_arities: as);
+ExprSpecWFError wrong_rel_test_arity(SynRelMembTest e, [+Nat] as)       = wrong_rel_test_arity(expr: e, actual_arities: as);
+ExprSpecWFError wrong_rel_lookup_arity(Atom+ t, [+Nat] as)              = wrong_rel_lookup_arity(target: t, actual_arities: as);
+ExprSpecWFError wrong_pseudocall_arity(SynCallLookalike c)              = wrong_pseudocall_arity(expr: c);
+ExprSpecWFError unknown_function(SynImplArgsCall c)                     = unknown_function(expr: c);
+ExprSpecWFError unknown_function_or_method(<call_lookalike(target: IdChain, args: SynExpr+)> c) = unknown_function_or_method(expr: c);
+ExprSpecWFError undefined_operator(<SynUnaryOpCall, SynBinaryOpCall> e) = undefined_operator(expr: e);
+ExprSpecWFError wrong_cls_arg_arity(ConstOrVar e, NzNat ea, [+Nat] as)  = wrong_cls_arg_arity(expr: e, exp_arity: ea, arities: as);
+ExprSpecWFError wrong_cls_call_arity(SynImplArgsCall c, Nat ea)         = wrong_cls_call_arity(expr: c, exp_arity: ea);
+ExprSpecWFError impl_args_not_allowed(SynImplArgsCall c)                = impl_args_not_allowed(expr: c);
+ExprSpecWFError not_a_scalar_var(Atom a)                                = not_a_scalar_var(names: (a));
+ExprSpecWFError not_a_scalar_var(Atom+ as)                              = not_a_scalar_var(names: as);
+ExprSpecWFError dupl_var_mult_asgnm(StdVar v)                           = :dupl_var_mult_asgnm(v);
+ExprSpecWFError diff_var_sets_in_ptrn_union(SynPtrn+ ps)                = :diff_var_sets_in_ptrn_union(ps);
+ExprSpecWFError iter_clause_wrong_arity(StdVar+ vs, [+NzNat] as)        = iter_clause_wrong_arity(vars: vs, valid_arities: as);
+ExprSpecWFError invalid_case_arity(Nat n, Nat m)                        = invalid_case_arity(actual: n, expected: m);
+
+ExprSpecWFError ro_vars_asgnm([+Var] vs)                        = ro_vars_asgnm(vars: vs);
+ExprSpecWFError wrong_return(<SynReturnStmt, return_stmt> s)    = :wrong_return(s);
+ExprSpecWFError return_in_let_body(<SynReturnStmt, return_stmt> s)  = :return_in_let_body(s);
+ExprSpecWFError vars_redef(Any a, [+Var] vs)                    = vars_redef(anchor: a, vars: vs);
+ExprSpecWFError undef_update_var(SynSeqUpdateStmt s, StdVar v)  = undef_update_var(stmt: s, var: v);
+ExprSpecWFError wrong_proc_arity(SynProcCallStmt s, Nat a)      = wrong_proc_arity(stmt: s, exp_arity: a);
+ExprSpecWFError uncaught_ret_val(SynProcCallStmt s)             = :uncaught_ret_val(s);
+ExprSpecWFError proc_has_no_ret_val(SynProcCallStmt s)          = :proc_has_no_ret_val(s);
+ExprSpecWFError undef_proc(SynProcCallStmt s)                   = :undef_proc(s);
+ExprSpecWFError proc_call_not_allowed(SynProcCallStmt s)        = :proc_call_not_allowed(s);
+ExprSpecWFError break_outside_loop(SynBreakStmt s)              = :break_outside_loop(s);
+ExprSpecWFError break_in_let_body(SynBreakStmt s)               = :break_in_let_body(s);
+ExprSpecWFError missing_ret_stmt(SynStmt+ ss)                   = :missing_ret_stmt(ss);
+ExprSpecWFError unreachable_stmt(SynStmt s)                     = :unreachable_stmt(s);
+
+ExprSpecWFError unknown_auto(<AutoSymbol, DBSymbol> s)            = unknown_auto(auto_symb: s);
+ExprSpecWFError undef_react_auto_var(AnyAutoVar v, Bool b)        = undef_react_auto_var(var: v, is_other_var_type: b);
+ExprSpecWFError unknown_input(Atom n, ReactAutoDef a)             = unknown_input(name: n, automaton: a);
+ExprSpecWFError unknown_output(Atom n, ReactAutoDef a)            = unknown_output(name: n, automaton: a);
+ExprSpecWFError unknown_db_field(Atom n, SchemaDef s)             = unknown_db_field(name: n, schema: s);
+ExprSpecWFError not_a_discrete_signal(Atom n, ReactAutoDef a)     = not_a_discrete_signal(name: n, automaton: a);
+ExprSpecWFError not_a_memb_copy_var(Atom n, Maybe[ReactAutoDef] a)  = not_a_memb_copy_var(name: n, automaton: a);
+ExprSpecWFError invalid_signal_copy_context(Atom n)               = invalid_signal_copy_context(name: n);
+ExprSpecWFError not_a_copiable_signal(Atom n)                     = not_a_copiable_signal(name: n);
+ExprSpecWFError duplicate_tracked_signal(Atom n)                  = duplicate_tracked_signal(name: n);
+ExprSpecWFError unknown_state_var(Atom n)                         = unknown_state_var(name: n);
+ExprSpecWFError no_discrete_signals_in_expr(Atom n, Bool b)       = no_discrete_signals_in_expr(name: n, is_update: b);
+ExprSpecWFError discrete_signals_in_countinuous_rule(Atom n, [+AnySignalVar] vs) =
+  discrete_signals_in_countinuous_rule(name: n, discrete_signals: vs);
+
+ExprSpecWFError conflicting_auto_decls(AnyAutoDecl d1, AnyAutoDecl d2) = :conflicting_auto_decls(d1, d2);
+
+ExprSpecWFError undef_static_auto_var(Atom v, Bool a, Bool o)         = undef_static_auto_var(var: v, is_auto_var: a, is_obj_var: o);
+ExprSpecWFError wrong_auto_var_arity(Atom v, Nat a, Nat e)            = wrong_auto_var_arity(var: v, actual: a, expected: e);
+ExprSpecWFError wrong_auto_arg_type(Atom v, Atom av, Atom a, Atom e)  = wrong_auto_arg_type(var: v, arg_var: av, actual: a, expected: e);
+
+ExprSpecWFError db_has_no_handlers(Atom t)                        = db_has_no_handlers(db_type: t);
+ExprSpecWFError not_a_nested_db_var(Atom v, SchemaDef d)          = not_a_nested_db_var(var: v, schema_def: d);
+ExprSpecWFError unknown_nested_db_var(Atom v, SchemaDef d)        = unknown_nested_db_var(var: v, schema_def: d);
+ExprSpecWFError unknown_update(Atom n, Atom t)                    = unknown_update(name: n, db_type: t);
+ExprSpecWFError invalid_update_arity(Atom n, Nat a, [+Nat] as)    = invalid_update_arity(name: n, arity: a, arities: as);
+ExprSpecWFError not_a_memb_var(Atom v, SchemaDef d)               = not_a_memb_var(var: v, schema_def: d);
+ExprSpecWFError unknown_memb_var(Atom v, SchemaDef d)             = unknown_memb_var(var: v, schema_def: d);
+ExprSpecWFError invalid_rel_var_arity(Atom v, NzNat a, NzNat ra)  = invalid_rel_var_arity(var: v, arity: a, relvar_arity: ra);
+ExprSpecWFError not_a_rel_var(Atom v, SchemaDef d)                = not_a_rel_var(var: v, schema_def: d);
+ExprSpecWFError unknown_rel_var(Atom v, SchemaDef d)              = unknown_rel_var(var: v, schema_def: d);
+
+ExprSpecWFError undef_auto_var(Atom v, Bool b)                    = undef_auto_var(var: v, is_data_var: b);
+
+ExprSpecWFError anchored_errors(ExprWFError+ es, Any a)           = anchored_errors(errors: es, anchor: a);
+
+ExprSpecWFError annotated_syn_expr_error(ExprWFError er, SynExpr e) = annotated_syn_expr_error(error: er, expr: e);
+ExprSpecWFError annotated_syn_stmt_error(ExprWFError er, SynStmt s) = annotated_syn_stmt_error(error: er, stmt: s);
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+Any anchor_obj(TypeWFError err)     = :none;
+
+
+Any anchor_obj(SchemaSpecWFError err) =
+  schema_def_duplicates_type()  = :none,
+  duplicate_schema_decl()       = :none,
+  invalid_relvar_arity(d?)      = d,
+  invalid_relvar_keys(d?)       = d,
+  incomp_relvar_decls()         = :none;
+
+
+Any anchor_obj(AutoSpecWFError err) =
+  auto_type_conflict()      = :none,
+  auto_schema_conflict()    = :none,
+  auto_prot_conflict()      = :none,
+  duplicate_pos_input()     = :none,
+  undef_pos_input()         = :none,
+  undef_def_output()        = :none,
+  wrong_num_of_pos_inputs() = err.decl,
+  duplicate_actual_inputs() = err.decl;
+
+
+Any anchor_obj(ExprSpecWFError err) =
+  already_def_var(v?)                     = v,
+  undef_var_or_const(a?)                  = :none,
+  not_an_object()                         = err.expr,
+  not_a_signal()                          = :none,
+  ambiguous_expr()                        = err.expr,
+  invalid_expr()                          = err.expr,
+  wrong_builtin_arity()                   = :none,
+  invalid_impl_arg()                      = :none,
+  missing_impl_arg()                      = :none,
+  undef_impl_cls_arg(p?)                  = :none,
+  duplicate_impl_args()                   = err.expr,
+  wrong_fn_arity()                        = err.expr,
+  wrong_arity()                           = err.expr,
+  wrong_rel_test_arity()                  = err.expr,
+  wrong_rel_lookup_arity()                = err.target,
+  wrong_pseudocall_arity()                = err.expr,
+  unknown_function()                      = err.expr,
+  unknown_function_or_method()            = err.expr,
+  undefined_operator()                    = err.expr,
+  wrong_cls_arg_arity()                   = err.expr,
+  wrong_cls_call_arity()                  = err.expr,
+  impl_args_not_allowed()                 = err.expr,
+  not_a_scalar_var()                      = :none,
+  dupl_var_mult_asgnm()                   = :none,
+  diff_var_sets_in_ptrn_union(ps?)        = head(ps),
+  iter_clause_wrong_arity()               = :none,
+  invalid_case_arity()                    = :none,
+
+  ro_vars_asgnm()                         = :none,
+  wrong_return(s?)                        = s,
+  return_in_let_body(s?)                  = s,
+  vars_redef()                            = err.anchor,
+  undef_update_var()                      = err.stmt,
+  wrong_proc_arity()                      = err.stmt,
+  uncaught_ret_val(s?)                    = s,
+  proc_has_no_ret_val(s?)                 = s,
+  undef_proc(s?)                          = s,
+  proc_call_not_allowed()                 = undefined,
+  break_outside_loop(s?)                  = s,
+  break_in_let_body(s?)                   = s,
+  missing_ret_stmt(ss?)                   = head(ss),
+  unreachable_stmt(s?)                    = s,
+
+  unknown_auto()                          = :none,
+  undef_react_auto_var()                  = :none,
+  unknown_input()                         = :none,
+  unknown_output()                        = :none,
+  unknown_db_field()                      = :none,
+  not_a_discrete_signal()                 = :none,
+  not_a_memb_copy_var()                   = :none,
+  invalid_signal_copy_context()           = :none,
+  not_a_copiable_signal()                 = :none,
+  duplicate_tracked_signal()              = :none,
+  unknown_state_var()                     = :none,
+  no_discrete_signals_in_expr()           = :none,
+  discrete_signals_in_countinuous_rule()  = :none,
+
+  conflicting_auto_decls()                = :none,
+
+  undef_static_auto_var()                 = :none,
+  wrong_auto_var_arity()                  = :none,
+  wrong_auto_arg_type()                   = :none,
+
+  db_has_no_handlers()                    = :none,
+  not_a_nested_db_var()                   = :none,
+  unknown_nested_db_var()                 = :none,
+  unknown_update()                        = :none,
+  invalid_update_arity()                  = :none,
+  not_a_memb_var()                        = :none,
+  unknown_memb_var()                      = :none,
+  invalid_rel_var_arity()                 = :none,
+  not_a_rel_var()                         = :none,
+  unknown_rel_var()                       = :none,
+
+  undef_auto_var()                        = :none,
+
+  anchored_errors()                       = err.anchor,
+
+  annotated_syn_expr_error()              = err.expr,
+  annotated_syn_stmt_error()              = err.stmt;
+
+////////////////////////////////////////////////////////////////////////////////
+
+ExprWFError attach_anchor_obj_if_needed(ExprWFError error, <SynExpr, SynStmt> anchor) {
+  obj = anchor_obj(error);
+  att = fetch(obj);
+  return error if att != nothing;
+  new_att = fetch(anchor);
+  return error if new_att == nothing;
+  return annotated_error(error, anchor);
+
+  ExprWFError annotated_error(ExprWFError error, SynExpr anchor) = annotated_syn_expr_error(error, anchor);
+  ExprWFError annotated_error(ExprWFError error, SynStmt anchor) = annotated_syn_stmt_error(error, anchor);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+(String, NzNat, NzNat) source_code_location(<PrgDecl, DBMethodDef, UpdateDef, ImplArgDecl> decl_or_sgn) {
+  maybe_data = fetch(decl_or_sgn);
+  if maybe_data != nothing:
+    data = value(maybe_data);
+    if data :: (String, NzNat, NzNat):
+      return data;
+    else
+      print data;
+    ;
+  ;
+  return ("Unknown source file", 1, 1);
+}
+
+
+String source_code_loc_str(<PrgDecl, DBMethodDef, UpdateDef, ImplArgDecl> decl_or_sgn) {
+  fn, sl, el = source_code_location(decl_or_sgn);
+  return "file " & fn & " line" & if sl == el then " " & printed(sl) else "s " & printed(sl) & "-" & printed(el);
+}
+
+
+String source_code_loc_str(ImplArgDecl sgn1, ImplArgDecl sgn2) {
+  fn1, sl1, el1 = source_code_location(sgn1);
+  fn2, sl2, el2 = source_code_location(sgn2);
+  ls1_str = if sl1 == el1 then printed(sl1) else printed(sl1) & "-" & printed(el1);
+  ls2_str = if sl2 == el2 then printed(sl2) else printed(sl2) & "-" & printed(el2);
+  return "file " & fn1 & " lines " & ls1_str & " and " & ls2_str;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+String user_name(Typedef td)        = user_repr(td.name);
+String user_name(ParTypedef td)     = user_repr(td.name) & "/" & printed(|td.params|);
+String user_name(ImplArgDecl s)     = _str_(bare_id(s.name));
+String user_name(SynFnDef fd)       = user_repr(fd.name) & "/" & printed(arity(fd));
+String user_name(AutoMethodDef md)  = user_repr(auto_symbol(md.target)) & "." & user_repr(method_symbol(md.name)) & "/" & printed(arity(md));
+String user_name(SynProcDef pd)     = capitalize(_str_(bare_id(pd.name)), false);
+
+String user_name(ReactAutoDef auto) = user_repr(auto_symbol(auto.name));
+String user_name(SchemaDef s)       = user_repr(db_symbol(s.name));
+
+String user_name(SchemaDef s, DBMethodDef meth) = user_repr(db_symbol(s.name)) & "." & user_repr(method_symbol(meth.name));
+String user_name(SchemaDef s, UpdateDef upd)    = user_repr(db_symbol(s.name)) & "." & user_repr(update_symbol(upd.name)) & "/" & printed(arity(upd));
+
+String user_repr(ClsPar) =
+  cls_par(n?) = string((ascii_dollar, nat(ascii_lower_a + n)));
+
+String user_repr(ConstOrVar) =
+  const_or_var(a?)  = _str_(a);
+
+
+String plural(Any+ objs)    = if |objs| > 1 then "s" else "";
+String plural([+Any] objs)  = if |objs| > 1 then "s" else "";
+
+////////////////////////////////////////////////////////////////////////////////
+
+String* create_error_msg(WFError err) =
+  dupl_typedef(tds?)                  = dupl_typedef_error_msg(left(tds), right(tds)),
+  typedef_errors()                    = typedef_error_msg(err.typedef, err.errors),
+  dupl_impl_arg(ss?)                  = dupl_impl_arg_err_msg(left(ss), right(ss)),
+  signature_errors()                  = signature_errors_err_msg(err.sgn, err.errors),
+  incomp_pos_args()                   = incomp_pos_pars_err_msg(left(err.fndefs), right(err.fndefs), err.arg_indexes),
+  overlapping_pos_args_types(fds?)    = overlapping_pos_pars_types_err_msg(left(fds), right(fds)),
+  incomp_impl_args()                  = incomp_impl_args_err_msg(err.fd1, err.fd2, err.nargs1, err.nargs2),
+  fndef_errors()                      = fndef_errs_msg(err.fndef, err.errors),
+  proc_def_errors()                   = proc_def_errs_msg(err.proc_def, err.errors),
+  auto_inheritance_cycle()            = auto_inheritance_cycle_err_msg(err.autos),
+  auto_def_errors()                   = auto_def_err_msg(err.auto_def, err.errors),
+  auto_method_def_errors()            = auto_method_def_err_msg(err.meth_def, err.errors),
+  db_def_errors()                     = db_def_err_msg(err.schema, err.errors),
+  db_method_def_errors()              = db_method_def_err_msg(err.schema, err.method, err.errors),
+  update_def_errs()                   = update_def_err_msg(err.schema, err.update, err.errors),
+  handler_def_errs()                  = handler_def_err_msg(err.handler, err.errors),
+  same_name_proc_defs(pds?)           = same_name_proc_defs_err_msg(pds),
+  duplicate_schema_defs()             = duplicate_schema_defs_err_msg(err.defs),
+  recursively_defined_schema()        = recursively_defined_schema_err_msg(err.schema, err.dependencies),
+  protocol_redef()                    = protocol_redef_err_msg(err.type, err.protocols),
+  protocol_errors()                   = protocol_errs_msg(err.prot, err.errors),
+  dupl_auto_defs()                    = dupl_auto_defs_err_msg(err.defs),
+  typevar_decl_errs()                 = typevar_decl_err_msg(err.decl, err.errors);
+
+
+String* dupl_typedef_error_msg(AnyTypedef td1, AnyTypedef td2) = (
+    "Duplicate type definition: " & user_name(td1),
+    "    " & source_code_loc_str(td1),
+    "    " & source_code_loc_str(td2)
+  );
+
+
+String* typedef_error_msg(AnyTypedef tdef, TypeWFError+ errs) =
+  ("Type definition errors: " & user_name(tdef), source_code_loc_str(tdef)) &
+  ("    " & l : l <- join((create_error_msg(e) : e <- errs)));
+
+
+String* dupl_impl_arg_err_msg(ImplArgDecl sgn1, ImplArgDecl sgn2) =
+  ("Duplicated implicit argument: " & user_name(sgn1), source_code_loc_str(sgn1, sgn2));
+
+
+String* signature_errors_err_msg(ImplArgDecl sgn, TypeWFError+ errs) =
+  (join((create_error_msg(e) : e <- errs)) | "    " & source_code_loc_str(sgn));
+
+
+String* incomp_pos_pars_err_msg(SynFnDef fd1, SynFnDef fd2, Nat+ par_idxs) = (
+    "Incompatible argument types in polymorphic function: " & user_name(fd1) & ", arguments: " & append((printed(i) : i <- par_idxs)),
+    "    " & source_code_loc_str(fd1),
+    "    " & source_code_loc_str(fd2)
+  );
+
+
+String* incomp_impl_args_err_msg(SynFnDef fd1, SynFnDef fd2, [Atom] nargs1, [Atom] nargs2) {
+  diff_args = rand_sort(union(nargs1, nargs2) - intersection(nargs1, nargs2));
+  return (
+    "The following two " & user_repr(fd1.name, arity(fd1)) & " polymorphic functions:",
+    "    " & source_code_loc_str(fd1),
+    "    " & source_code_loc_str(fd2),
+    "have different implicit arguments: " & append((_str_(a) : a <- diff_args), ", ")
+  );
+}
+
+
+String* overlapping_pos_pars_types_err_msg(SynFnDef fd1, SynFnDef fd2) = (
+    "Overlapping argument types in polymorphic functions: " & user_name(fd1),
+    "    " & source_code_loc_str(fd1),
+    "    " & source_code_loc_str(fd2)
+  );
+
+
+String* fndef_errs_msg(SynFnDef fndef, FnDefWFError+ errs) =
+  ("Error" & plural(errs) & " in function definition: " & user_name(fndef), source_code_loc_str(fndef)) &
+  ("    " & l : l <- join((create_error_msg(e) : e <- errs)));
+
+
+String* auto_inheritance_cycle_err_msg([+Atom] autos) =
+  ("Inheritance cycle involving automata " & append((user_repr(auto_symbol(a)) : a <- _isort_(autos)), ", "));
+
+
+String* auto_def_err_msg(ReactAutoDef auto_def, ExprWFError+ errs) =
+  ("Error" & plural(errs) & " in reactive automaton definition: " & user_name(auto_def), source_code_loc_str(auto_def)) &
+  ("    " & l : l <- join((create_error_msg(e) : e <- errs)));
+
+
+String* auto_method_def_err_msg(AutoMethodDef meth_def, FnDefWFError+ errs) =
+  ("Error" & plural(errs) & " in method definition: " & user_name(meth_def), source_code_loc_str(meth_def)) &
+  ("    " & l : l <- join((create_error_msg(e) : e <- errs)));
+
+
+String* db_method_def_err_msg(SchemaDef s, DBMethodDef method, FnDefWFError+ errs) =
+  ("Error" & plural(errs) & " in method definition: " & user_name(s, method), source_code_loc_str(method)) &
+  ("    " & l : l <- join((create_error_msg(e) : e <- errs)));
+
+
+String* db_def_err_msg(SchemaDef s, ExprWFError+ errs) =
+  ("Error" & plural(errs) & " in schema declaration: " & user_name(s), source_code_loc_str(s)) &
+  ("    " & l : l <- join((create_error_msg(e) : e <- errs)));
+
+
+String* update_def_err_msg(SchemaDef s, UpdateDef upd, UpdateDefWFError+ errs) =
+  ("Error" & plural(errs) & " in update definition: " & user_name(s, upd), source_code_loc_str(upd)) &
+  ("    " & l : l <- join((create_error_msg(e) : e <- errs)));
+
+
+String* handler_def_err_msg(HandlerDef handler, UpdateDefWFError+ errs) =
+  ("Error" & plural(errs) & " in message handler definition") &
+  ("    " & l : l <- join((create_error_msg(e) : e <- errs)));
+
+
+String* proc_def_errs_msg(SynProcDef proc_def, ProcDefWFError+ errs) =
+  ("Error" & plural(errs) & " in procedure definition: " & user_name(proc_def), source_code_loc_str(proc_def)) &
+  ("    " & l : l <- join((create_error_msg(e) : e <- errs)));
+
+
+String* same_name_proc_defs_err_msg(SynProcDef+ proc_defs) =
+  ("Multiple definitions of the same procedure: " & user_name(head(proc_defs))) &
+  ("    " & source_code_loc_str(pd) : pd <- proc_defs);
+
+
+String* duplicate_schema_defs_err_msg(SchemaDef+ schema_defs) =
+  ("Multiple definition of schema " & user_name(head(schema_defs))) &
+  ("    " & source_code_loc_str(db) : db <- schema_defs);
+
+
+String* recursively_defined_schema_err_msg(SchemaDef schema, [+Atom] dependencies) = (
+    "Schema " & user_name(schema) & " is defined recursively",
+    "    " & source_code_loc_str(schema)
+  );
+
+
+String* protocol_redef_err_msg(Atom type, [+ProtDecl] protocols) =
+  ("Conflicting protocol declarations: " & upper_camel_case(type)) &
+  ("    " & source_code_loc_str(p) : p <- rand_sort(protocols));
+
+
+String* protocol_errs_msg(ProtDecl prot, ProtWFError+ errors) =
+  ( "Error in protocol definition: " & append((upper_camel_case(t) : t <- prot.types), ", "),
+    source_code_loc_str(prot)
+  ) & ("    " & l : l <- join((basic_err_msg(e) : e <- errors)));
+
+
+String* dupl_auto_defs_err_msg([+ReactAutoDef] defs) =
+  ("Duplicate reactive automata definitions: " & upper_camel_case(an_elem(defs).name)) &
+  ("    " & source_code_loc_str(d) : d <- rand_sort(defs));
+
+
+String* typevar_decl_err_msg(TypeVarDecl decl, TypeVarDeclError+ errors) =
+  ( "Errors in type variable(s) declaration: " & append((user_repr(type_var(id)) : id <- decl.type_vars), ", "),
+    source_code_loc_str(decl)
+  ) & ("    " & l : l <- join((basic_err_msg(e) : e <- errors)));
+
+////////////////////////////////////////////////////////////////////////////////
+
+String* create_error_msg(ExprWFError err) {
+  msg = basic_err_msg(err);
+  loc = artifact_source_code_location(anchor_obj(err));
+  if loc != nothing:
+    start_line = left(left(value(loc)));
+    msg = (l & " (line " & printed(start_line) & ")" : l <- msg);
+  ;
+  return msg;
+}
+
+
+String* basic_err_msg(TypeWFError err) =
+  invalid_int_range(r?)     = ("Invalid integer range: [" & printed(r.min) & ".." & printed(r.max) & "]"),
+  undef_type_var(v?)        = ("Undefined type variable: " & user_repr(v)),
+  invalid_tag_type(t?)      = ("Invalid tag type"),
+  undef_type(ts?)           = ("Undefined type: " & user_repr(ts)),
+  undef_type_arity()        = { suffix = if |err.actual_arities| > 1 then "y" else "ies";
+                                arity_str = append((printed(a) : a <- rand_sort(err.actual_arities)));
+                                type_name = user_repr(err.type_symb);
+                                return ("Wrong parametric type arity: " & type_name & ", actual arit" & suffix & ": " & arity_str);
+                              },
+  dupl_record_field(rs?)    = ("Duplicated record field: " & user_repr(left(rs).label)),
+  type_var_in_union(v?)     = ("Type variables not allowed in union types: " & user_repr(v)),
+  type_vars_not_allowed()   = ("Type variables not allowed here: " & user_repr(err.var));
+
+////////////////////////////////////////////////////////////////////////////////
+
+String* basic_err_msg(SchemaSpecWFError err) =
+  schema_def_duplicates_type()    = ("A type with the same name already exists: " & user_repr(type_symbol(err.schema_def.name))),
+  duplicate_schema_decl(d1?, d2?) = ("Duplicate declaration: " & _str_(d1.name)),
+  invalid_relvar_arity(d?)        = ("Invalid arity: " & _str_(d.name)),
+  invalid_relvar_keys(d?)         = ("Invalid keys: " & _str_(d.name)),
+  incomp_relvar_decls()           = incomp_relvar_decls_basic_err_msg(err.relvars, err.attr_relvars);
+
+
+String* basic_err_msg(AutoSpecWFError err) =
+  auto_type_conflict()      = ("A type with the same name already exists: " & upper_camel_case(err.name)),
+  auto_schema_conflict()    = ("A schema with the same name already exists: " & upper_camel_case(err.name)),
+  auto_prot_conflict()      = ("A protocol with the same name already exists: " & upper_camel_case(err.name)),
+  duplicate_pos_input()     = ("Input '" & _str_(err.name) & "' appears twice in the list of positional inputs"),
+  undef_pos_input()         = ("Positional input '" & _str_(err.name) & "' is not defined"),
+  undef_def_output()        = ("Default output '" & _str_(err.name) & "' is not defined"),
+  wrong_num_of_pos_inputs() = if err.exp_num != 0
+                                then ("Wrong number of positional inputs (expected " & printed(err.exp_num) & ")")
+                                else ("Nested automaton does not accept positional inputs"),
+  duplicate_actual_inputs() = ("Duplicate nested automaton inputs: " & append((_str_(a) : a <- rand_sort(err.dupl_args)), ", "));
+
+
+String* incomp_relvar_decls_basic_err_msg([RelVarsDecl] relvars, [(RelVarsDecl, Nat)] attr_relvars) {
+  if relvars != []:
+    name = an_elem(relvars).name;
+  else
+    parent_relvar, idx = an_elem(nonempty(attr_relvars));
+    name = parent_relvar.attributes(idx).name;
+  ;
+  return ("Overloaded relation variables declarations are incompatible: " & _str_(name));
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+String* basic_err_msg(ProtSpecWFError err) =
+  prot_type_conflict()    = ("A type with the same name already exists: " & upper_camel_case(err.name)),
+  prot_schema_conflict()  = ("A schema with the same name already exists: " & upper_camel_case(err.name)),
+  dupl_prot_methods()     = { id, ats, unused_var = err.methods(0);
+                              return ("Duplicate protocol method: " & user_repr(id, |ats|));
+                            };
+
+////////////////////////////////////////////////////////////////////////////////
+
+String* basic_err_msg(TypeVarDeclError err) =
+  dupl_type_vars()            = ("Duplicate type variable: " & user_repr(type_var(v)) : v <- rand_sort(err.vars)),
+  dupl_prot_types()           = ("Duplicate protocol type: " & upper_camel_case(t) : t <- rand_sort(err.types)),
+  wrong_number_of_prot_types  = ("Number of types does not match the number of type variables"),
+  undef_prot_type()           = ("Undefined protocol type: " & upper_camel_case(err.type)),
+  unrelated_prot_types()      = ("Using together unrelated protocol types: " & append((upper_camel_case(t) : t <- err.types), ", "));
+
+////////////////////////////////////////////////////////////////////////////////
+
+String* basic_err_msg(ExprSpecWFError err) =
+  already_def_var(v?)         = ("Variable redefinition: " & user_repr(v)),
+  undef_var_or_const(a?)      = ("Undefined variable or constant: " & _str_(a)),
+  not_an_object()             = ("Expression resolves to something other than an object"),
+  not_a_signal()              = ("Unknown signal: " & _str_(err.id)),
+  ambiguous_expr()            = ("Ambiguous expression", printed(err.resols)),
+  invalid_expr()              = ("Invalid expression"),
+  wrong_builtin_arity()       = ("Wrong builtin function arity: " & user_repr(err.name)),
+  invalid_impl_arg(p?)        = ("Invalid implicit argument: " & user_repr(p)),
+  missing_impl_arg()          = ("Undefined implicit argument " & user_repr(err.arg) & " in call to function " & user_repr(err.fn_id) & "()"),
+  undef_impl_cls_arg(p?)      = ("Invalid implicit closure argument: " & user_repr(p)),
+  duplicate_impl_args()       = ("Duplicated implicit parameter" & plural(err.bad_args) & ": " & user_repr(np) : np <- rand_sort(err.bad_args)),
+  wrong_fn_arity()            = ( "Wrong number of arguments: " & user_repr(fn_symbol(err.expr.name)) &
+                                  ", actual arity: " & append((printed(a) : a <- rand_sort(err.actual_arities)), ", ")
+                                ),
+  wrong_arity()               = { last_symbol = last(destructure_id_chain(err.expr.target));
+                                  return (
+                                    "Wrong number of arguments: " & user_repr(fn_symbol(last_symbol)) &
+                                    ", actual arity: " & append((printed(a) : a <- rand_sort(err.actual_arities)), ", ")
+                                  );
+                                },
+  wrong_rel_test_arity()      = { msg = "Wrong number of arguments";
+                                  target = err.expr.target;
+                                  if target :: IdChain:
+                                    symbols = destructure_id_chain(target);
+                                    msg = msg & ": " & append((_str_(s) : s <- symbols), ".") & "(..), a";
+                                  else
+                                    msg = msg & ". A";
+                                  ;
+                                  arities = append((printed(a) : a <- rand_sort(err.actual_arities)), ", ");
+                                  return (msg & "ctual arity: " & arities);
+                                },
+  wrong_rel_lookup_arity()    = ("Wrong number of arguments: " & append((_str_(s) : s <- err.target), ".") &
+                                "(..), actual_arity: " & append((printed(a) : a <- rand_sort(err.actual_arities)))),
+  wrong_pseudocall_arity()    = ("Too many arguments for set/map membership test or map lookup"),
+  unknown_function()          = ("Unknown function: " & user_repr(fn_symbol(err.expr.name))),
+  unknown_function_or_method() = { symbs = destructure_id_chain(err.expr.target);
+                                  if |symbs| == 1:
+                                    return ("Unknown function or method: " & user_repr(fn_symbol(only(symbs))));
+                                  else
+                                    return ("Unknown method: " & user_repr(method_symbol(last(symbs))));
+                                  ;
+                                },
+  undefined_operator()        = ("Undefined operator: " & user_repr(err.expr.op)),
+  wrong_cls_arg_arity()       = ( "Closure has wrong arity: " & user_repr(err.expr) &
+                                  ", expected arity: " & printed(err.exp_arity) &
+                                  ", actual arity: " & append((printed(a) : a <- rand_sort(err.arities)), ", ")
+                                ),
+  wrong_cls_call_arity()      = ("Wrong number of arguments: " & user_repr(fn_symbol(err.expr.name)) & ", actual arity: " & printed(err.exp_arity)),
+  impl_args_not_allowed()     = ("Closures cannot have implicit parameters: " & user_repr(fn_symbol(err.expr.name))),
+  not_a_scalar_var()          = ("Invalid use of non-object variable: " & append((_str_(n) : n <- err.names), ".")),
+  dupl_var_mult_asgnm(v?)     = ("Duplicated variable in multiple assignment: " & user_repr(v)),
+  diff_var_sets_in_ptrn_union(ps?)  = ("Individual patterns in a union must define the same set of variables"),
+  iter_clause_wrong_arity()   = { arities_str = append((printed(a) : a <- rand_sort(err.valid_arities)), " ");
+                                  suffix = if |err.valid_arities| == 1 then "y" else "ies";
+                                  return ("Invalid clause arity. Expected arit" & suffix & ": " & arities_str);
+                                },
+  invalid_case_arity()        = ("Wrong pattern list length"),
+
+  ro_vars_asgnm()             = ("Invalid assignment to read-only variable: " & user_repr(v) : v <- rand_sort(err.vars)),
+  wrong_return(s?)            = (if s == return_stmt then "Return value required" else "Cannot return a value"),
+  return_in_let_body()        = ("Return statements are not allowed inside the body of a let statement"),
+  vars_redef()                = ("Variable is already defined: " & user_repr(v) : v <- rand_sort(err.vars)),
+  undef_update_var()          = ("Variable is not defined: " & user_repr(err.var)),
+  wrong_proc_arity()          = ("Wrong number of arguments: " & user_repr(err.stmt.proc_name) & ", expected arity: " & printed(err.exp_arity)),
+  uncaught_ret_val(p?)        = ("Return value cannot be ignored: " & user_repr(p.proc_name)),
+  proc_has_no_ret_val(p?)     = ("Procedure has no return value: " & user_repr(p.proc_name)),
+  undef_proc(p?)              = ("Undefined procedure: " & user_repr(p.proc_name)),
+  proc_call_not_allowed()     = undefined,
+  break_outside_loop()        = ("Break statement outside a loop"),
+  break_in_let_body()         = ("Break statements are not allowed to jump outside the body of an enclosing let block"),
+  missing_ret_stmt()          = ("Missing return statement"),
+  unreachable_stmt()          = ("Unreachable statement"),
+
+  unknown_auto()              = ("Automaton does not exist: " & user_repr(err.auto_symb)),
+  undef_react_auto_var()      = ({if err.is_other_var_type then "Not an automaton" else "Undefined"} & " variable: " & user_repr(err.var)),
+  unknown_input()             = ("Automaton " & user_repr(auto_symbol(err.automaton.name)) & " has no such input: " & _str_(err.name)),
+  unknown_output()            = ("Automaton " & user_repr(auto_symbol(err.automaton.name)) & " has no such output: " & _str_(err.name)),
+  unknown_db_field()          = ("Automaton " & user_repr(db_symbol(err.schema.name)) & " has no such state variable or nested automaton: " & _str_(err.name)),
+  not_a_discrete_signal()     = ("Not a discrete signal: " & user_repr(auto_symbol(err.automaton.name)) & "." & _str_(err.name)),
+  not_a_memb_copy_var()       = ("Unknown signal: @" & _str_(err.name)),
+  invalid_signal_copy_context() = (
+                                  "Invalid expression: @" & _str_(err.name),
+                                  "Use of the @ notation is only permitted in the definition of a reactive automaton"
+                                ),
+  not_a_copiable_signal()     = ( "Invalid expression: @" & _str_(err.name),
+                                  "The @ notation can only be applied to continuous inputs and state variables"
+                                ),
+  duplicate_tracked_signal()  = ("Signal " & _str_(err.name) & " appears multiple times in the list of tracked signals"),
+  unknown_state_var()         = ("Not a state variable: " & _str_(err.name)),
+  no_discrete_signals_in_expr() = { descr = if err.is_update then "State variable update" else "Discrete rule";
+                                    return (descr & " without a guard must reference at least one discrete signal");
+                                  },
+  discrete_signals_in_countinuous_rule()  = ( "Discrete signal(s) used in continuous rule " & _str_(err.name) &
+                                              ": " & append((user_repr(v) : v <- rand_sort(err.discrete_signals)), ", ")),
+
+  conflicting_auto_decls(d1?, d2?) = conflicting_auto_decls_err_msg(d1, d2),
+
+  undef_static_auto_var()     = ( if err.is_auto_var
+                                    then _str_(err.var) & " is a reactive automaton, not a static one"
+                                  elif err.is_obj_var
+                                    then "Not an automaton variable: " & _str_(err.var)
+                                  else
+                                    "Unknown automaton variable: " & _str_(err.var)
+                                ),
+  wrong_auto_var_arity()      = ( if err.expected == 0
+                                      then "Automaton variable " & _str_(err.var) & " does not expect arguments"
+                                    elif err.actual == 0
+                                      then "Automaton variable " & _str_(err.var) & " requires " & printed(err.expected) & " arguments"
+                                    else
+                                      "Automaton variable " & _str_(err.var) & " requires " & printed(err.expected) & " arguments"
+                                ),
+  wrong_auto_arg_type()       = ( "Wrong automaton type, argument " & _str_(err.arg_var) & " of automaton variable " & _str_(err.var),
+                                  "  Expected type: " & upper_camel_case(err.expected),
+                                  "  Actual type:   " & upper_camel_case(err.actual)
+                                ),
+  db_has_no_handlers()        = ("Automaton " & user_repr(db_symbol(err.db_type)) & " has no message handlers"),
+  not_a_nested_db_var()       = ("Not a nested automaton: " & _str_(err.var)),
+  unknown_nested_db_var()     = ("Unknown automaton variable: " & _str_(err.var)),
+  unknown_update()            = ("Unknown update: " & _str_(err.name)),
+  invalid_update_arity()      = ( "Wrong number of arguments: " & printed(err.arity) &
+                                  ", actual arity: " & append((printed(a) : a <- rand_sort(err.arities)), ", ")
+                                ),
+
+  not_a_memb_var()            = ("Not a scalar member variable: " & _str_(err.var)),
+  unknown_memb_var()          = ("Unknown member variable: " & _str_(err.var)),
+  invalid_rel_var_arity()     = ( "Wrong relational variable arity: " & _str_(err.var) &
+                                  ", actual arity: " & printed(err.relvar_arity)
+                                ),
+  not_a_rel_var()             = ("Not a relational variable: " & _str_(err.var)),
+  unknown_rel_var()           = ("Unknown relational variable: " & _str_(err.var)),
+
+  undef_auto_var()            = ( if err.is_data_var
+                                    then _str_(err.var) & " is not an automaton variable"
+                                    else "Unknown variable: " & _str_(err.var)
+                                ),
+
+  anchored_errors()           = join((basic_err_msg(e) : e <- err.errors)),
+
+  annotated_syn_expr_error()  = basic_err_msg(err.error),
+  annotated_syn_stmt_error()  = basic_err_msg(err.error);
+
+
+String* conflicting_auto_decls_err_msg(AnyAutoDecl decl1, AnyAutoDecl decl2) {
+  return (
+    "Conflicting declarations:",
+    "  " & description(decl1),
+    "  " & description(decl2)
+  );
+
+
+  String description(AnyAutoDecl decl) {
+    descr = auto_decl_descr(decl);
+    descr = descr & " " & _str_(decl.name) if decl.name?;
+    maybe_loc = artifact_source_code_location(decl);
+    if maybe_loc != nothing:
+      start_line = left(left(value(maybe_loc)));
+      descr = descr & " (line " & printed(start_line) & ")";
+    ;
+    return descr;
+  }
+}
+
+
+String* create_error_msg(GenDefSpecWFError err) =
+  dupl_par_names()        = create_dupl_par_names_error_msg(err.dupl_pos_pars, err.dupl_impl_args),
+  invalid_ptrn_list_len() = create_invalid_ptrn_list_len(err.actual, err.max);
+
+
+String* create_dupl_par_names_error_msg([Atom] pos_args, [Atom] impl_args) =
+  ("Duplicated parameter name: " & _str_(a) : a <- rand_sort(pos_args)) &
+  ("Implicit and standard arguments cannot have the same name: " & _str_(a) : a <- rand_sort(impl_args));
+
+
+String* create_invalid_ptrn_list_len(Nat actual, Nat max) =
+  ("The number of patterns (" & _print_(actual) &  ") exceeds then number of arguments (" & _print_(max) & ")");
+
+
+String* create_error_msg(FnDefSpecWFError err) =
+  invalid_cls_type_vars()       = ("Invalid type variable: " & user_repr(v)  & " in argument type: " & _str_(err.var_name) : v <- rand_sort(err.type_vars)),
+  invalid_res_type_vars()       = ("Invalid type variable in function result: " & user_repr(v) : v <- rand_sort(err.type_vars)),
+  nested_functions_errors(es?)  = ("Errors in nested functions") & ("    " & l : l <- join((create_error_msg(e) : e <- es)));
+
+
+String* create_error_msg(ProcDefSpecWFError err) =
+  builtin_proc_redef    = ("Redefinition of builtin procedure"),
+  wrong_main_proc_arity = ("Main procedure can only have one parameter"),
+  dup_auto_or_db_var()  = ("Duplicate automaton variable: " & _str_(err.name)),
+  undef_auto_or_db()    = ("Automaton is not defined: " & upper_camel_case(err.type));
+
+////////////////////////////////////////////////////////////////////////////////
+
+Maybe[((NzNat, NzNat), (NzNat, NzNat))] artifact_source_code_location(Any obj) {
+  if obj != nothing:
+    maybe_data = fetch(obj);
+    if maybe_data != nothing:
+      data = value(maybe_data);
+      if data :: ((NzNat, NzNat), (NzNat, NzNat)):
+        return just(data);
+      else
+        print data;
+      ;
+    ;
+  ;
+  return nothing;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+String auto_decl_descr(InputDecl)     = "Input";
+String auto_decl_descr(OutputDecl)    = "Output";
+String auto_decl_descr(StateVarDecl)  = "State variable";
+String auto_decl_descr(NestedDBDecl)  = "Nested automaton";
+String auto_decl_descr(ConstDecl)     = "Constant";
+String auto_decl_descr(RuleDecl)      = "Rule";

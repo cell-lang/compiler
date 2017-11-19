@@ -1,0 +1,139 @@
+[ImplArg -> [+FnId]] cached_semi_consts_by_impl_arg(CompiledPrg prg) {
+  semi_consts = [p : p <- prg.procs, p.cached and p.impl_args != []];
+  impl_args_by_fn = [cast_to_fn_symbol(p.name) -> p.impl_args : p <- semi_consts];
+  return reverse_multi(impl_args_by_fn);
+
+  FnId cast_to_fn_symbol(ObjFnName id) = if id :: FnId then id else undefined;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+SymbObj+ used_symbols(CompiledPrg prg) {
+  fixed_symbs = (object(a) : a <- special_symbols);
+  other_symbs = select(prg, $ :: SymbObj) - set(fixed_symbs);
+  fail if not other_symbs :: [SymbObj];
+  // other_symbs = rand_sort(other_symbs);
+  other_symbs = sort_set(other_symbs, lower_than(bare_obj($a), bare_obj($b)));
+  return nonempty(fixed_symbs & other_symbs);
+
+
+  Atom+ special_symbols = (false, true, :void, :string, :nothing, :just, :success, :failure);
+
+
+  Bool lower_than(Atom a1, Atom a2) {
+    assert not in(a1, special_symbols) and not in(a2, special_symbols);
+
+    chs1 = chars(_str_(a1));
+    chs2 = chars(_str_(a2));
+
+    len1 = |chs1|;
+    len2 = |chs2|;
+
+    return len1 < len2 if len1 != len2;
+
+    for ch1 @ i <- chs1:
+      ch2 = chs2(i);
+      return ch1 < ch2 if ch1 != ch2;
+    ;
+
+    fail;
+  }
+}
+
+
+[ClsDef] cls_defs(CompiledPrg prg) {
+  cls_defs = select_rec(prg, $ :: ClsDef); ## TODO: THIS SHOULD BE TESTED
+  fail if not cls_defs :: [ClsDef];
+  return cls_defs;
+}
+
+
+type AuxVar = curr_time, PrevVarValue;
+
+
+type VarTypesNotToDeclare = FnArg,
+                            ImplArg,
+                            CaptVar,
+                            ElemVar,
+                            AnyMembVar,
+                            PendingStateVar,
+                            AnySignalVar,
+                            PendingInputVar,
+                            AnyAutoVar,
+                            MembBoolVar,
+                            QualBoolVar,
+                            MembIntVar,
+                            update_expr_index,
+                            MembObjVar,
+                            LocAutoIntVar,
+                            ProjdIntVar;
+
+
+## BAD: THIS THING IS INCREDIBLY MESSY. I MUST IMPLEMENT A VERSION OF SELECT WITH A <STOP> GUARD
+[AnyVar] vars_to_declare(Instr* instrs) {
+  vars = select(
+    instrs,
+    $ :: <AnyVar, ClsDef> and not $ :: <VarTypesNotToDeclare, ClsDef>
+  );
+  fail if not vars :: [AnyVar];
+  vars = vars - [never_used_lvar]; ## THIS IS A REALLY, REALLY UGLY THING
+  return vars;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+String parentesize(String code, Bool parentesized) = if parentesized then "(" & code & ")" else code;
+
+
+String uppercase_encoding(Nat n) {
+  m = n;
+  chs = ();
+  while m > 0 or chs == ():
+    chs = (nat(ascii_upper_a + mod(n, 26))) & chs;
+    m = m / 26;
+  ;
+  return string(chs);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+[Any] select(Any obj, (Any -> Bool) cond) =
+  if cond(obj)
+    then [obj]
+    else match (obj)
+      <+>         = [],
+      <*..*>      = [],
+      <!>         = [],
+      ()          = union([select(x, cond) : x <~ obj]),
+      []          = union([select(x, cond) : x <- obj]),
+      [,]         = union([select(l, cond) & select(r, cond) : l, r <- obj]),
+      [,,]        = union([select(l, cond) & select(m, cond) & select(r, cond)  : l, m, r <- obj]),
+      tag?(iobj?) = select(iobj, cond); ## SHOULD I EXTEND THE SEARCH TO THE TAG AS WELL?
+
+
+[Any] select_rec(Any obj, (Any -> Bool) cond) =
+  [obj if cond(obj)] &
+  match (obj)
+      <+>         = [],
+      <*..*>      = [],
+      <!>         = [],
+      ()          = union([select_rec(x, cond) : x <~ obj]),
+      []          = union([select_rec(x, cond) : x <- obj]),
+      [,]         = union([select_rec(l, cond) & select_rec(r, cond) : l, r <- obj]),
+      [,,]        = union([select_rec(l, cond) & select_rec(m, cond) & select_rec(r, cond) : l, m, r <- obj]),
+      tag?(iobj?) = select_rec(iobj, cond); ## SHOULD I EXTEND THE SEARCH TO THE TAG AS WELL?
+
+
+// Any replace(Any obj, (Any -> Bool) cond, (Any -> Any) eval) =
+//   if cond(obj)
+//     then eval(obj)
+//     else match (obj)
+//       +           = obj,
+//       *           = obj, ## BAD
+//       ^           = obj, ## BAD
+//       {...}       = {replace(x, cond, eval) : x <- obj},
+//       [...]       = [replace(x, cond, eval) : x <- obj],
+//       (...)       = (replace(k, cond, eval) => replace(v, cond, eval) : v @ k <- obj),
+//       tag @ iobj  = tag @ replace(iobj, cond, eval); ## SHOULD I EXTEND THE REPLACEMENT TO THE TAG AS WELL?

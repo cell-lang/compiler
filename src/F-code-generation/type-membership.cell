@@ -1,0 +1,315 @@
+BoolProcDef memb_test_pred(NeType type, [NeType -> MembTestPredId] memb_test_preds, [TypeName -> NeType] typedefs) {
+  res_var, var_gen = next_bool_var(blank_var_gen);
+  exp_type = match (type)
+    type_ref(ts?) = expand_type_ref(ts, typedefs),
+    _             = type;
+  let typedefs = typedefs, memb_test_preds = memb_test_preds, next_var_gen = var_gen:
+    code = gen_type_checking_code(exp_type, fn_arg(0), res_var);
+  ;
+  return bool_proc_def(memb_test_preds[type], 1, nonempty(code & (ret_val(res_var))));
+}
+
+
+implicit typedefs : [TypeName -> NeType], memb_test_preds : [NeType -> MembTestPredId], next_var_gen : VarGen {
+  Instr+ gen_type_checking_code(Type type, AtomicExpr obj, BoolVar res_var) {
+    return (set_bvar(res_var, true)) if is_type_any(type);
+
+    return match (type)
+      ne_set_type()       = gen_ne_set_type_checking_code(type.elem_type, obj, res_var),
+      ne_seq_type()       = gen_ne_seq_type_checking_code(type.elem_type, obj, res_var),
+      ne_map_type()       = gen_ne_map_type_checking_code(type.key_type, type.value_type, obj, res_var),
+      ne_bin_rel_type()   = gen_ne_bin_rel_type_checking_code(type.signatures, obj, res_var),
+      ne_tern_rel_type()  = gen_ne_tern_rel_type_checking_code(type.signatures, obj, res_var),
+      ne_record_type(fs?) = gen_ne_record_type_checking_code(fs, obj, res_var),
+      tuple_type(ts?)     = gen_tuple_type_checking_code(ts, obj, res_var),
+      tag_obj_type()      = gen_tag_obj_type_checking_code(type.tag_type, type.obj_type, obj, res_var),
+      union_type(ts?)     = gen_union_type_checking_code(ts, obj, res_var),
+      type_ref()          = (set_bvar(res_var, is_member(memb_test_preds[type], obj))),
+      _                   = (set_bvar(res_var, gen_type_checking_expr(type, obj)));
+  }
+
+
+  Instr+ gen_ne_set_type_checking_code(Type elem_type, AtomicExpr obj, BoolVar res_var) {
+    return (set_bvar(res_var, is_ne_set(obj))) if is_type_any(elem_type);
+
+    elem_var, var_gen = next_obj_var(next_var_gen);
+    it_var, var_gen = next_set_it_var(var_gen);
+
+    elem_code = gen_type_checking_code(elem_type, elem_var, res_var, next_var_gen = var_gen);
+
+    code = (
+      block_failure_if_not(is_ne_set(obj), res_var),
+      get_iter(it_var, obj),
+      repeat(
+        nonempty(
+          ( break_if(is_out_of_range(it_var)),
+            get_curr_obj(elem_var, it_var)
+          ) &
+          elem_code &
+          ( exit_block_if_not(res_var),
+            move_forward(it_var)
+          )
+        )
+      ),
+      set_bvar(res_var, true)
+    );
+
+    return (execute_block(code));
+  }
+
+
+  Instr+ gen_ne_seq_type_checking_code(Type elem_type, AtomicExpr obj, BoolVar res_var) {
+    return (set_bvar(res_var, is_ne_seq(obj))) if is_type_any(elem_type);
+
+    elem_var, var_gen = next_obj_var(next_var_gen);
+    it_var, var_gen = next_seq_it_var(var_gen);
+
+    elem_code = gen_type_checking_code(elem_type, elem_var, res_var, next_var_gen = var_gen);
+
+    code = (
+      block_failure_if_not(is_ne_seq(obj), res_var),
+      get_iter(it_var, obj),
+      repeat(
+        nonempty(
+          ( break_if(is_out_of_range(it_var)),
+            get_curr_obj(elem_var, it_var)
+          ) &
+          elem_code &
+          ( exit_block_if_not(res_var),
+            move_forward(it_var)
+          )
+        )
+      ),
+      set_bvar(res_var, true)
+    );
+
+    return (execute_block(code));
+  }
+
+
+  Instr+ gen_ne_map_type_checking_code(Type key_type, Type value_type, AtomicExpr obj, BoolVar res_var) {
+    return (set_bvar(res_var, is_ne_map(obj))) if is_type_any(key_type) and is_type_any(value_type);
+
+    obj_var, var_gen = next_obj_var(next_var_gen);
+    it_var, var_gen = next_bin_rel_it_var(var_gen);
+
+    let next_var_gen = var_gen:
+      code = (
+        block_failure_if_not(is_ne_map(obj), res_var),
+        get_iter(it_var, obj, (nothing, nothing)),
+        repeat(
+          nonempty(
+            ( break_if(is_out_of_range(it_var)),
+              get_curr_arg(obj_var, it_var, 0)
+            ) &
+            gen_type_checking_code(key_type, obj_var, res_var) &
+            ( exit_block_if_not(res_var),
+              get_curr_arg(obj_var, it_var, 1)
+            ) &
+            gen_type_checking_code(value_type, obj_var, res_var) &
+            ( exit_block_if_not(res_var),
+              move_forward(it_var)
+            )
+          )
+        ),
+        set_bvar(res_var, true)
+      );
+    ;
+
+    return (execute_block(code));
+  }
+
+
+  Instr+ gen_ne_bin_rel_type_checking_code([+(NeType, NeType)] signatures, AtomicExpr obj, BoolVar res_var) {
+    return (set_bvar(res_var, is_ne_bin_rel(obj))) if (s <- signatures : all((is_type_any(t) : t <- s)));
+
+    arg0_var, var_gen = next_obj_var(next_var_gen);
+    arg1_var, var_gen = next_obj_var(var_gen);
+    it_var,   var_gen = next_bin_rel_it_var(var_gen);
+
+    let next_var_gen = var_gen:
+      entry_check_code = ();
+      for t0, t1 @ i <- rand_sort(signatures):
+        check_attempt_code = (
+          gen_type_checking_code(t0, arg0_var, res_var) |
+          do_if(res_var, gen_type_checking_code(t1, arg1_var, res_var))
+        );
+        check_attempt_code = (do_if_not(res_var, check_attempt_code)) if i > 0;
+        entry_check_code = entry_check_code & check_attempt_code;
+      ;
+
+      code = (
+        block_failure_if_not(is_ne_bin_rel(obj), res_var),
+        get_iter(it_var, obj, (nothing, nothing)),
+        repeat(
+          nonempty(
+            ( break_if(is_out_of_range(it_var)),
+              get_curr_arg(arg0_var, it_var, 0),
+              get_curr_arg(arg1_var, it_var, 1)
+            ) & entry_check_code &
+            ( exit_block_if_not(res_var),
+              move_forward(it_var)
+            )
+          )
+        ),
+        set_bvar(res_var, true)
+      );
+    ;
+
+    return (execute_block(code));
+  }
+
+
+  Instr+ gen_ne_tern_rel_type_checking_code([+(Type, Type, Type)] signatures, AtomicExpr obj, BoolVar res_var) {
+    return (set_bvar(res_var, is_ne_tern_rel(obj))) if (s <- signatures : all((is_type_any(t) : t <- s)));
+
+    arg0_var, var_gen = next_obj_var(next_var_gen);
+    arg1_var, var_gen = next_obj_var(var_gen);
+    arg2_var, var_gen = next_obj_var(var_gen);
+    it_var,   var_gen = next_tern_rel_it_var(var_gen);
+
+    let next_var_gen = var_gen:
+      entry_check_code = ();
+      for t0, t1, t2 @ i <- rand_sort(signatures):
+        check_attempt_code = (
+          gen_type_checking_code(t0, arg0_var, res_var) |
+          do_if(res_var, (
+            gen_type_checking_code(t1, arg1_var, res_var) |
+            do_if(res_var, gen_type_checking_code(t2, arg2_var, res_var))
+          ))
+        );
+        check_attempt_code = (do_if_not(res_var, check_attempt_code)) if i > 0;
+        entry_check_code = entry_check_code & check_attempt_code;
+      ;
+
+      code = (
+        block_failure_if_not(is_ne_tern_rel(obj), res_var),
+        get_iter(it_var, obj, (nothing, nothing, nothing)),
+        repeat(
+          nonempty(
+            ( break_if(is_out_of_range(it_var)),
+              get_curr_arg(arg0_var, it_var, 0),
+              get_curr_arg(arg1_var, it_var, 1),
+              get_curr_arg(arg2_var, it_var, 2)
+            ) & entry_check_code &
+            ( exit_block_if_not(res_var),
+              move_forward(it_var)
+            )
+          )
+        ),
+        set_bvar(res_var, true)
+      );
+    ;
+
+    return (execute_block(code));
+  }
+
+
+  Instr+ gen_ne_record_type_checking_code([+SymbObj -> (type: Type, optional: Bool)] fs, AtomicExpr obj, BoolVar res_var) {
+    count_var, var_gen = next_int_var(next_var_gen);
+    it_var,    var_gen = next_bin_rel_it_var(var_gen);
+    key_var,   var_gen = next_obj_var(var_gen);
+    value_var, var_gen = next_obj_var(var_gen);
+    tmp_bvar,  var_gen = next_bool_var(var_gen);
+
+    mandatory_fields_count = |[l : l, f <- fs, not f.optional]|; ## BAD BAD BAD: REALLY UGLY WAY TO DO A COUNT
+
+    let next_var_gen = var_gen:
+      code_cases = [
+        ( [l],
+          ( gen_type_checking_code(f.type, value_var, tmp_bvar) |
+            branch(tmp_bvar, (increment(count_var) if not f.optional), (exit_block))
+          )
+        ) : l, f <- fs
+      ];
+    ;
+
+    return (
+      execute_block((
+        block_failure_if_not(is_ne_bin_rel(obj), res_var),
+        set_ivar(count_var, 0),
+        set_bvar(res_var, false),
+        get_iter(it_var, obj, (nothing, nothing)),
+        repeat((
+          break_if(is_out_of_range(it_var)),
+          get_curr_arg(key_var, it_var, 0),
+          get_curr_arg(value_var, it_var, 1),
+          symb_switch(key_var, code_cases, (exit_block)),
+          move_forward(it_var)
+        )),
+        set_bvar(res_var, is_eq(count_var, mandatory_fields_count))
+      ))
+    );
+  }
+
+
+  Instr+ gen_tuple_type_checking_code(Type+ ts, AtomicExpr obj, BoolVar res_var) {
+    len_var, var_gen = next_int_var(next_var_gen);
+    elem_var, var_gen = next_obj_var(var_gen);
+    it_var, var_gen = next_seq_it_var(var_gen);
+
+    len  = |ts|;
+
+    code = (
+      set_bvar(res_var, false),
+      exit_block_if_not(is_ne_seq(obj)),
+      set_ivar(len_var, get_size(obj)),
+      exit_block_if_not(is_eq(len_var, len)),
+      get_iter(it_var, obj)
+    );
+
+    let next_var_gen = var_gen:
+      for t @ i <- ts:
+        code = code &
+                (get_curr_obj(elem_var, it_var)) &
+                gen_type_checking_code(t, elem_var, res_var) &
+                ( exit_block_if_not(res_var),
+                  maybe_op(move_forward(it_var), i != len - 1)
+                );
+      ;
+    ;
+
+    return (execute_block((code | set_bvar(res_var, true))));
+  }
+
+
+  Instr+ gen_tag_obj_type_checking_code(TagType tag_type, Type obj_type, AtomicExpr obj, BoolVar res_var) {
+    obj_var, var_gen = next_obj_var(next_var_gen);
+
+    let next_var_gen = var_gen:
+      code = ( block_failure_if_not(is_tagged_obj(obj), res_var),
+                set_var(obj_var, get_tag(obj))
+              ) &
+              gen_type_checking_code(tag_type, obj_var, res_var) &
+              ( exit_block_if_not(res_var),
+                set_var(obj_var, get_inner_obj(obj))
+              ) &
+              gen_type_checking_code(obj_type, obj_var, res_var);
+    ;
+
+    return (execute_block(nonempty(code)));
+  }
+
+
+  Instr+ gen_union_type_checking_code([+Type] ts, AtomicExpr obj, BoolVar res_var) {
+    ## PERFORMANCE COULD BE IMPROVED HERE USING A SWITCH/CASE
+    code = ();
+    for t <- rand_sort(ts):
+      code = code & gen_type_checking_code(t, obj, res_var) & (exit_block_if(res_var));
+    ;
+    return (execute_block(nonempty(code)));
+  }
+}
+
+
+BoolExpr gen_type_checking_expr(Type type, AtomicExpr obj) =
+  atom_type           = is_symb(obj),
+  symb_type(s?)       = is_eq(s, obj),
+  integer             = is_int(obj),
+  low_ints()          = and_then(is_int(obj), is_le(get_int_val(obj), type.max)),
+  high_ints()         = and_then(is_int(obj), is_ge(get_int_val(obj), type.min)),
+  int_range()         = and_then(is_int(obj), is_ge(get_int_val(obj), type.min), is_le(get_int_val(obj), max(type))),
+  float_type          = is_float(obj),
+  type_var()          = true, ## BUG BUG BUG THIS IS TEMPORARY...
+  empty_seq_type      = is_eq(obj, empty_seq),
+  empty_rel_type      = is_eq(obj, empty_rel);

@@ -1,0 +1,542 @@
+type Atom           = <+>;
+
+type Seq            = Any*;
+
+type Set            = [Any];
+type BinRel         = [Any, Any];
+type TernRel        = [Any, Any, Any];
+
+type TagObj         = <+>(Any);
+
+type NegInt         = <*..-1>;
+
+type Map            = [Any -> Any];
+
+type NeSet          = [+Any];
+type NeSeq          = Any+;
+type Record         = [Atom -> Any];
+
+type Stack[T]       = empty_stack, stack(top: T, rest: Stack[T]);
+
+////////////////////////////////////////////////////////////////////////////////
+
+<empty_stack> empty_stack = :empty_stack;
+
+Stack[T] push(Stack[T] stack, T item) = stack(top: item, rest: stack);
+
+Stack[T] pop(Stack[T] stack) =
+  stack()   = stack.rest,
+  _         = undefined;
+
+T peek(Stack[T] stack) =
+  stack()   = stack.top,
+  _         = undefined;
+
+Stack[T] replace_top(Stack[T] stack, T new_top) =
+  stack()   = push(stack.rest, new_top),
+  _         = undefined;
+
+////////////////////////////////////////////////////////////////////////////////
+
+// Replace this with === or ~=
+Bool is_eq(T x, Maybe[T] maybe) = maybe == :just(x);
+
+////////////////////////////////////////////////////////////////////////////////
+
+<success(T)> success(T r) = :success(r);
+<failure(T)> failure(T e) = :failure(e);
+
+Bool is_success(Result[R, E]) =
+  success()   = true,
+  failure()   = false;
+
+Bool is_failure(Result[R, E]) =
+  success()   = false,
+  failure()   = true;
+
+R get_result(Result[R, E]) =
+  success(r?) = r,
+  _           = undefined;
+
+E get_error(Result[R, E]) =
+  failure(e?) = e,
+  _           = undefined;
+
+////////////////////////////////////////////////////////////////////////////////
+
+
+NzNat nz_nat(Int n) = if n :: NzNat then n else undefined;
+
+T+        nonempty(T* seq)            = if seq != () then seq else undefined;
+[+T]      nonempty([T] set)           = if set != [] then set else undefined;
+[+K -> V] nonempty_map([K -> V] map)  = if map != [] then map else undefined;
+
+////////////////////////////////////////////////////////////////////////////////
+
+## THINK ABOUT THIS ONE, A VOID TYPE WOULD BE USEFUL HERE...
+// [] min_by([], (</> -> Int) p) = [];
+// [+T] min_by([+T] xs, (T -> Int) p)
+
+[T] min_by([T] xs, (T -> Int) p) {
+  return [] if xs == [];
+  by_priority = group_by(xs, p);
+  min_priority = min(nonempty(keys(by_priority)));
+  return by_priority[min_priority];
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+// Should it be defined for empty sequences (and negative integers)
+// as well? It's always going to fail...
+
+// T (_[_]) ([T^] seq, Nat idx) = seq(idx);
+// T (_[_]) (T* seq, Int idx) = seq(idx);
+
+T item(T* seq, Int idx) = seq(idx);
+
+// T rev_at([T^] seq, Nat idx) = seq(|seq|-idx-1);
+T rev_at(T* seq, Int idx) = seq(|seq|-idx-1);
+
+// <0..0> length(() seq) = 0;
+// NzNat  length(T+ seq) = nz_nat(|seq|);
+// Nat length(Seq seq) = |seq|;
+
+// T at([T^] seq, Nat idx, T default) = if idx < |seq| then seq(idx) else default;
+T at(T* seq, Int idx, T default) = if idx < |seq| then seq(idx) else default;
+
+// A left((A, B) s) = s(0);
+A left((A, B) t) {
+  l, r = t;
+  return l;
+}
+
+// B right((A, B) s) = s(1);
+B right((A, B) t) {
+  l, r = t;
+  return r;
+}
+
+
+T head(T+ s) = s(0);
+T* tail(T+ s) = _slice_(s, 1, |s|-1);
+T last(T+ s) = s(|s|-1);
+
+Bool is_valid_idx(Seq seq, Int idx) = idx >= 0 and idx < |seq|;
+
+Bool in(Any e, Seq s) {
+  for x <- s:
+    return true if x == e;
+  ;
+  return false;
+}
+
+Nat index_first(Any e, Seq s) {
+  for x @ i <- s:
+    return i if x == e;
+  ;
+  fail;
+}
+
+
+T* subseq(T* seq, Int first, Int count) = slice(seq, first, count);
+
+T* subseq(T* s, <blank>, Int m, Int r) = subseq(s, |s|-m-r, m);
+T* subseq(T* s, Int l, <blank>, Int r) = subseq(s, l, |s|-l-r);
+T* subseq(T* s, Int l, Int m, <blank>) = subseq(s, l, m);
+
+
+T** split(T* seq, T sep) {
+  len = |seq|;
+  subseqs = ();
+  start = 0;
+  for x @ i <- seq:
+    if x == sep:
+      subseqs = subseqs & (subseq(seq, start, i-start));
+      start = i + 1;
+    ;
+  ;
+  subseqs = subseqs & (subseq(seq, start, len-start)) if start < len;
+  return subseqs;
+}
+
+
+Maybe[Nat] left_search(Seq seq, Seq subseq) {
+  last_idx = |seq| - |subseq|;
+  for i < max(0, last_idx+1):
+    return just(i) if subseq_matches(seq, subseq, i);
+  ;
+  return nothing;
+
+  Bool subseq_matches(Seq seq, Seq subseq, Nat offset) {
+    for i < |subseq|:
+      return false if seq(offset+i) != subseq(i);
+    ;
+    return true;
+  }
+}
+
+
+Bool* bit_map(Int* idxs, Nat len) = (in(i, idxs) : i < len); ## BAD: HORRIBLY INEFFICIENT
+
+
+## BAD: THE NAME IS TOTALLY MEANINGLESS
+[Nat -> Nat] packed_seq_idxs(Bool* bs) {
+  idxs : <Nat, none>*;
+
+  idxs = ();
+  idx = 0;
+  for b <- bs:
+    if b:
+      idxs = (idxs | idx);
+      idx = nat(idx + 1);
+    else
+      idxs = (idxs | :none);
+    ;
+    // idxs = idxs & (if b then just(|idxs|) else :none);
+  ;
+  return merge(([j -> i] : i @ j <- idxs, i != :none));
+}
+
+Nat count(T* xs, (T -> Bool) p) = nat(sum((bit(p(x)) : x <- xs)));
+
+T+ insert(T* seq, Nat idx, T elt) = (if i == idx then elt elif i < idx then seq(i) else seq(i-1) : i <= |seq|);
+
+/////////////////////////////////////////////////////////////////////////////////////////
+
+Bool in(Any x, Set s) = s(x);
+
+
+[T] intersection([[T]] sets) {
+  return [] if sets == [];
+  ss  = rand_sort(sets);
+  int = ss(0);
+  for i = 1..|ss|:
+    int = intersection(int, ss(i));
+  ;
+  return int;
+}
+
+// Nat size(<Set, BinRel, TernRel> c) = _size_(c);
+
+// Bool is_singleton([Any] s) = |s| == 1;
+
+
+T only_element([T] set, T default) {
+  seq = rand_sort(set);
+  return if |seq| == 1 then seq(0) else default;
+}
+
+T only_element_or_def_if_empty([T] set, T default) {
+  seq = rand_sort(set);
+  len = |seq|;
+
+  fail if len > 1;
+
+  return if |seq| == 1 then seq(0) else default;
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////
+
+[T] seq_union([T]* sets) = union(set(sets));
+
+/////////////////////////////////////////////////////////////////////////////////////////
+
+// B (_[_])([A -> B] map, A key) = only([value : value <- map(key, ?)]);
+// B (_[_])([A -> B] map, A key) = only([v : k, v <- map, k == key]);
+B (_[_])([A -> B] map, A key) = map(key, !!);
+
+B lookup([A -> B] map, A key, B default) = if map(key, *) then map[key] else default;
+
+Maybe[B] maybe_lookup([A -> B] map, A key) = if map(key, *) then just(map[key]) else nothing;
+
+[A -> B] update([A -> B] map, [A -> B] diffs) = [k -> map[k] : k <- keys(map) - keys(diffs)] & diffs;
+
+[A -> B] update([A -> B] map, A key, B new_val) = update(map, [key -> new_val]);
+
+Bool is_key(Any key, [Any -> Any] map) = map(key, *);
+
+[]    keys([]) = [];
+[+A] keys([+A -> B] map) = [k : k, unused_var <- map];
+
+[K -> [+V]] merge_values([[K -> V]] maps) {
+  all_keys = union([keys(m) : m <- maps]);
+  return [k -> nonempty([m[k] : m <- maps, m(k, *)]) : k <- all_keys];
+}
+
+## BUG: ACTUAL SIGNATURE IS (K => V+) merge_value_sets((K => V+)* maps). FIX.
+[K -> [V]] merge_value_sets([[K -> [V]]] maps) = [k -> union(vss) : k, vss <- merge_values(maps)];
+[K -> [+V]] merge_value_sets_nonempty([[K -> [+V]]] maps) = [k -> nonempty(union(vss)) : k, vss <- merge_values(maps)];
+
+[K -> V+] merge_sorted_values([K -> V]* maps) {
+  all_keys = seq_union((keys(m) : m <- maps));
+  return [k -> nonempty((m[k] : m <- maps, m(k, *))) : k <- all_keys];
+}
+
+[A -> B] remove_key([A -> B] m, C kr) = [k -> v : k, v <- m, k != kr];
+
+[A -> B] remove_keys([A -> B] m, [C] ks) = [k -> m[k] : k <- keys(m) - ks];
+
+[A -> B] select_by_key([A -> B] map, [A] keys) = [k -> map[k] : k <- keys];
+
+[K -> (A, B)] zip_by_key([K -> A] map1, [K -> B] map2) {
+  assert keys(map1) == keys(map2);
+  return [k -> (v1, map2[k]) : k, v1 <- map1];
+}
+
+[K -> (A, B, C)] zip_by_key([K -> A] map1, [K -> B] map2, [K -> C] map3) {
+  assert keys(map1) == keys(map2) and keys(map2) == keys(map3);
+  return [k -> (v1, map2[k], map3[k]) : k, v1 <- map1];
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////
+
+[]   set(())     = [];
+[+T] set(T+ seq) = [x : x <~ seq];
+
+## THIS IS DIFFICULT TO IMPLEMENT EFFICIENTLY WITHOUT ACCESS TO THE INTERNAL COMPARISON OPERATOR
+## IMPLEMENT A seq_to_multiset FUNCTION AND SEE IF IT CAN BE USED TO IMPLEMENT dupl_elements efficiently
+[T] duplicates(T* s) {
+  r = [];
+  for e1 @ i1 <- s ; e2 @ i2 <- s:
+    r = r & [e1, e2] if e1 == e2 and i1 != i2;
+  ;
+  return r;
+}
+
+(V, V)* duplicates(V* objs, (V -> Maybe[K]) key_fn) {
+  keys = (key_fn(o) : o <- objs);
+  dupls = ();
+  for k1 @ i1 <- keys:
+    if k1 != nothing:
+      for i2 = i1+1 .. |objs|:
+        k2 = keys(i2);
+        if k2 != nothing and k1 == k2:
+          dupls = (dupls | (objs(i1), objs(i2)));
+          break;
+        ;
+      ;
+    ;
+  ;
+  return dupls;
+}
+
+Bool has_duplicates(Any* s) = duplicates(s) != [];
+
+() rand_sort([])        = ();
+T+ rand_sort([+T] set)  = nonempty(_isort_(set));
+
+(K, V)* rand_sort_pairs([K -> V] map) = rand_sort([(k, v) : k, v <- map]);
+
+T an_elem([+T] s) = {ses = rand_sort(s); return ses(0);};
+
+[T -> NzNat] set_to_mset([T] s) = [e -> 1 : e <- s];
+
+/////////////////////////////////////////////////////////////////////////////////////////
+
+// [T -> NzNat] bag(T* s) = _mset_(s);
+
+[B] values([A -> B] map) = [v : unused_var, v <- map];
+
+/////////////////////////////////////////////////////////////////////////////////////////
+
+Int to_int(String str) = to_int(chars(str));
+
+Int to_int(Nat* digits) {
+  assert |digits| > 0;
+
+  res = 0;
+  neg = false;
+
+  for ch @ i <- digits:
+    if ch == ascii_minus and i == 0:
+      neg = true;
+      assert |digits| > 1;
+    else
+      code = ch - ascii_0;
+      assert code >= 0 and code <= 9;
+      res = 10 * res + code;
+    ;
+  ;
+
+  return if neg then -res else res;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+Nat char(String str, Int idx) = string(chs?) = chs(idx);
+
+String substr(String s, <blank> l, Int m, Int r) = string(subseq(chars(s), l, m, r));
+String substr(String s, Int l, <blank> m, Int r) = string(subseq(chars(s), l, m, r));
+String substr(String s, Int l, Int m, <blank> r) = string(subseq(chars(s), l, m, r));
+
+///////////////////////////////////////////////////////////////////////////////
+
+Bool is_lower_or_digit(Nat ch) = is_lower(ch) or is_digit(ch);
+
+Bool is_ascii_symbol(Nat ch) = (ch >= ascii_exclamation_mark and ch <= ascii_slash)     or
+                               (ch >= ascii_colon            and ch <= ascii_at)        or
+                               (ch >= ascii_left_bracket     and ch <= ascii_backquote) or
+                               (ch >= ascii_left_brace       and ch <= ascii_tilde);
+
+Bool is_ascii_printable(Nat ch) = ch >= ascii_space and ch <= ascii_tilde;
+
+
+String lower(String str) = :string((lower(ch) : ch <- chars(str)));
+String upper(String str) = :string((upper(ch) : ch <- chars(str)));
+
+
+///////////////////////////////////////////////////////////////////////////////
+
+Nat** split_lines(Nat* chs) {
+  return (rem_trail_cr(l) : l <- split(chs, ascii_newline));
+
+  Nat* rem_trail_cr(Nat* line) {
+    has_cr = line != () and rev_at(line, 0) == ascii_carriage_return;
+    return if has_cr then subseq(line, 0, |line|-1) else line;
+  }
+}
+
+
+String* split(String str) {
+  len = length(str);
+  frags = ();
+  start = 0;
+  for ch @ i <- chars(str):
+    if is_space(ch):
+      frags = (frags | substr(str, start, i-start)) if start != i;
+      start = i + 1;
+    ;
+  ;
+  frags = (frags | substr(str, start, len-start)) if start < len;
+  return frags;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+// (B => A+) reverse((A => B) map) = merge_values({(v => k) : v @ k <- map});
+
+[B -> A] reverse([A -> B] map) = merge([[v -> k] : k, v <- map]);
+
+[] reverse_relation([] map) = [];
+[+B -> [+A]] reverse_relation([+A -> B] map) = nonempty_map(merge_values([[v -> k] : k, v <- map]));
+
+[B -> [+A]] reverse_multi([A -> [B]] map) = merge_values([[v -> k : v <- vs] : k, vs <- map]);
+
+
+
+
+// Bool is_prefix([T] prefix, [T] seq)
+// {
+//   return false if |prefix| > |seq|;
+//   for (e @ i : prefix)
+//     return false if e != seq(i);
+//   ;
+//   return true;
+// }
+
+
+T only_unsafe(T* seq) {
+  fail if |seq| > 1;
+  return seq(0);
+}
+
+
+Maybe[T] maybe_only(T* seq) {
+  fail if |seq| > 1;
+  return if seq != () then just(seq(0)) else nothing;
+}
+
+
+T reduce([+T] xs, (T T -> T) f) = reduce(nonempty(rand_sort(xs)), f);
+
+T reduce(T+ xs, (T T -> T) f) {
+  rx = head(xs);
+  for i = 1..|xs|:
+    rx = f(rx, xs(i));
+  ;
+  return rx;
+}
+
+
+(T, T)* unique_seq_pairs(T* seq) {
+  len = |seq|;
+  ps = ();
+  for i1 < len; i2 = i1+1..len:
+    ps = (ps | (seq(i1), seq(i2)));
+  ;
+  return ps;
+}
+
+
+[K -> [+T]]  group_by([T] set, (T -> K) f)                = merge_values([[f(e) -> e] : e <- set]);
+[K -> [+V]] group_by([T] set, (T -> K) kf, (T -> V) vf)   = merge_values([[kf(e) -> vf(e)] : e <- set]);
+
+[K -> [+T]]  group_by(T* seq, (T -> K) f)                 = group_by(set(seq), f);
+[K -> [+V]] group_by(T* seq, (T -> K) kf, (T -> V) vf)    = group_by(set(seq), kf, vf);
+
+// [RT] map_pairs([T*] seq, (T, T -> Maybe[RT]) f)
+// {
+//   len = |seq|;
+//   res = [];
+//   for (x1 @ i1 : seq)
+//     for (i2 = i1+1 .. len)
+//       maybe = f(x1, seq[x2]);
+//       res = [res | value(maybe)] if maybe != nothing;
+//     ;
+//   ;
+//   return res;
+// }
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+T* array_map([Nat -> T] map) = if map == [] then () else (map[i] : i <= max(nonempty(keys(map))));
+
+## WOULD NEED SUBSIGNATURES HERE: [Nat] -> [Nat], [Int] -> [Int], [Float -> Float]
+## AND THE TYPE OF THE ELEMENTS SHOULD BE PARAMETRIC
+Nat* partial_sums(Nat* xs) {
+  sum = 0;
+  sums = ();
+  for x <- xs:
+    sum = nat(sum + x);
+    sums = (sums | sum);
+  ;
+  return sums;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+T fold(T+ seq, (T T -> T) f) = foldl(seq, f);
+
+
+T foldl(T+ seq, (T T -> T) f) {
+  res = seq(0);
+  for i = 1..|seq|:
+    res = f(res, seq(i));
+  ;
+  return res;
+}
+
+
+T foldr(T+ seq, (T T -> T) f) {
+  rev_seq = reverse(seq);
+  res = rev_seq(0);
+  for i = 1..|seq|:
+    res = f(rev_seq(i), res);
+  ;
+  return res;
+}
+
+
+
+
+
+// _bits_()
+
+
+////////////////////////////////////////////////////////////////////////////////
+
+
+

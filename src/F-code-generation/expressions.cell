@@ -1,0 +1,846 @@
+implicit program : Program, context : Context, var_subst_map : [StdVar -> CaptVar],
+  cls_var_subst_map : [ClsVar -> CaptClsVar], next_var_gen : VarGen, options : CompilationOptions {
+
+  Instr+ gen_eval_code(Expr expr, EvalDestVar res_var) {
+    if expr :: StdVar:
+      return (set_var(res_var, lookup(var_subst_map, expr, expr)));
+    elif expr :: QualSignalVar and expr.auto_var :: LocAutoVar:
+      return (do_if(or(is_null(expr), is_blank(expr)), terminate), set_var(res_var, expr));
+    elif expr :: Var:
+      return (set_var(res_var, expr));
+    ;
+
+    return match (expr)
+      undefined           = (terminate),
+
+      object()            |
+      float_lit()         = (set_var(res_var, expr)),
+
+      set_expr(es?)       = gen_eval_code_for_set_expr(es, res_var),
+      seq_expr(es?)       = gen_eval_code_for_seq_expr(es, res_var),
+      seq_tail_expr()     = gen_eval_code_for_seq_tail_expr(expr.seq, expr.tail, res_var),
+      tuple_expr(es?)     = gen_eval_code_for_tuple_expr(es, res_var),
+      map_expr(es?)       = gen_eval_code_for_map_expr(es, res_var),
+      bin_rel_expr(es?)   = gen_eval_code_for_bin_rel_expr(es, res_var),
+      tern_rel_expr(es?)  = gen_eval_code_for_tern_rel_expr(es, res_var),
+      tag_obj_expr()      = gen_eval_code_for_tag_obj_expr(expr.tag, expr.obj, res_var),
+
+      fn_call()           = gen_eval_code_for_fn_call_expr(expr.fn_id, expr.args, expr.impl_args, res_var),
+      cls_call()          = gen_eval_code_for_cls_call(expr.name, expr.args, res_var),
+      builtin_call()      = gen_eval_code_for_builtin_call(expr.name, expr.args, res_var),
+
+      size_expr()         = gen_eval_code_for_size_expr(expr.coll, res_var),
+
+      unary_pseudo_call() = gen_eval_code_for_unary_pseudo_call_expr(expr.target, expr.arg, res_var),
+
+      rel_memb_test()     = gen_eval_code_for_rel_memb_test(expr.rel, expr.args, res_var),
+      rel_lookup()        = gen_eval_code_for_rel_lookup(expr, res_var),
+
+      relvar_memb_test()  = gen_eval_code_for_relvar_memb_test(expr.rel_var, expr.args, res_var),
+      relvar_lookup()     = gen_eval_code_for_relvar_lookup(expr.rel_var, expr.set_args, expr.unknown_arg_idx, res_var),
+
+      and_expr()          = gen_eval_code_for_and_expr(expr.left, expr.right, res_var),
+      or_expr()           = gen_eval_code_for_or_expr(expr.left, expr.right, res_var),
+      not_expr(e?)        = gen_eval_code_for_not_expr(e, res_var),
+
+      eq()                = gen_eval_code_for_eq_expr(expr.left, expr.right, res_var),
+
+      membership()        = gen_eval_code_for_membership_expr(expr.obj, expr.type, res_var),
+
+      accessor()          = gen_eval_code_for_accessor_expr(expr.expr, expr.field, res_var),
+      accessor_test()     = gen_eval_code_for_accessor_test_expr(expr.expr, expr.field, res_var),
+
+      auto_method_call()  = get_eval_code_for_auto_method_call(expr, res_var),
+      db_method_call()    = get_eval_code_for_db_method_call(expr, res_var),
+
+      if_expr()           = gen_eval_code_for_if_expr(expr.cond, expr.then, expr.else, res_var),
+      match_expr()        = gen_eval_code_for_match_expr(expr.exprs, expr.cases, res_var),
+      do_expr()           = (execute_block(gen_code(expr.body, res_var))),
+
+      ex_qual()           = gen_eval_code_for_ex_qual_expr(expr.source, expr.cond, res_var),
+      set_comp()          = gen_eval_code_for_set_comp_expr(expr.expr, expr.source, res_var),
+      map_comp()          = gen_eval_code_for_map_comp_expr(expr.key_expr, expr.value_expr, expr.source, res_var),
+      bin_rel_comp()      = gen_eval_code_for_bin_rel_comp(expr.exprs, expr.source, res_var),
+      tern_rel_comp()     = gen_eval_code_for_tern_rel_comp(expr.exprs, expr.source, res_var),
+
+      seq_comp()          = gen_eval_code_for_seq_comp_expr(expr, res_var),
+      range_comp()        = gen_eval_code_for_range_comp_expr(expr, res_var),
+
+      output_is_def()     = gen_eval_code_for_output_test_expr(expr.var, expr.output, false, res_var),
+      output_is_set(v?)   = gen_eval_code_for_output_test_expr(expr.var, expr.output, true, res_var);
+  }
+
+
+  Instr+ gen_eval_code_for_output_test_expr(LocAutoVar auto_var, Atom output, Bool check_is_set, EvalDestVar res_var) {
+    var = qual_signal_var(auto_var, signal_var(output));
+    bool_expr = if check_is_set then is_not_blank(var) else is_not_null(var);
+    return (
+      do_if(is_null(var), terminate) if check_is_set,
+      set_var(res_var, bool_obj(bool_expr))
+    );
+  }
+
+
+  Instr+ gen_eval_code_for_set_expr([SubExpr] subexprs, EvalDestVar res_var) {
+    return (set_var(res_var, empty_rel)) if subexprs == [];
+    non_cond_exprs = [e : e <- subexprs, e :: Expr];
+    cond_exprs = subexprs - non_cond_exprs;
+    sorted_subexprs = rand_sort(non_cond_exprs) & rand_sort(cond_exprs);
+    info = gen_vector_eval_info(nonempty(sorted_subexprs));
+    return nonempty(info.code & (mk_set(res_var, info.vect_var, info.count_expr)));
+  }
+
+
+  Instr+ gen_eval_code_for_seq_expr(SubExpr* subexprs, EvalDestVar res_var) {
+    return (set_var(res_var, empty_seq)) if subexprs == ();
+    info = gen_vector_eval_info(subexprs);
+    return nonempty(info.code & (mk_seq(res_var, info.vect_var, info.count_expr)));
+  }
+
+
+  Instr+ gen_eval_code_for_seq_tail_expr(Expr seq, Expr+ tail, EvalDestVar res_var) {
+    tmp_var, var_gen = pick_temp_var(res_var);
+    let next_var_gen = var_gen:
+      seq_info = gen_eval_info(seq, tmp_var);
+      code = seq_info.eval_code;
+      for e @ i <- tail:
+        info = gen_eval_info(e);
+        target_var = if i < |tail| - 1 then tmp_var else res_var;
+        seq_var = if i == 0 then seq_info.expr else tmp_var;
+        code = code & info.eval_code & (append_to_seq(target_var, seq_var, info.expr));
+      ;
+    ;
+    return nonempty(code);
+  }
+
+
+  Instr+ gen_eval_code_for_tuple_expr(Expr+ exprs, EvalDestVar res_var) {
+    if exprs :: IntObj+:
+      int_seq = (match (e) object(n?) = n : e <- exprs);
+      seq_id = int_seqs_ids[int_seq];
+      return (build_const_int_seq(res_var, seq_id));
+    ;
+    info = gen_vector_eval_info(exprs);
+    return nonempty(info.code & (mk_seq(res_var, info.vect_var, info.count_expr)));
+  }
+
+
+  // Instr+ gen_eval_code_for_map_expr([(key: Expr, value: Expr, cond: Expr?)] entries, EvalDestVar res_var)
+  // {
+  //   return (set_var(res_var, empty_rel)) if entries == [];
+
+  //   count = nz_nat(|entries|);
+
+  //   keys_var, var_gen = next_vector_var(next_var_gen, count);
+  //   values_var, var_gen = next_vector_var(var_gen, count);
+  //   count_var, var_gen = next_int_var(var_gen);
+  //   cond_var, cond_var_gen = next_obj_var(var_gen);
+
+  //   curr_key_slot_var   = evar(keys_var.id, count_var);
+  //   curr_value_slot_var = evar(values_var.id, count_var);
+
+  //   code = (set_ivar(count_var, 0));
+
+  //   let next_var_gen = var_gen:
+  //     for e <- rand_sort(entries):
+  //       key_code   = gen_eval_code(e.key, curr_key_slot_var);
+  //       value_code = gen_eval_code(e.value, curr_value_slot_var);
+  //       entry_code = key_code & value_code & (increment(count_var));
+
+  //       if e.cond?:
+  //         cond_info = gen_eval_info(e.cond, cond_var, next_var_gen = cond_var_gen);
+  //         entry_code = cond_info.eval_code & (do_if(is_true(cond_info.expr), entry_code));
+  //       ;
+
+  //       code = code & entry_code;
+  //     ;
+  //   ;
+
+  //   return nonempty(code & (mk_map(res_var, keys_var, values_var, count_var)));
+  // }
+
+
+  Instr+ gen_eval_code_for_map_expr([+(key: Expr, value: Expr, cond: Expr?)] entries, EvalDestVar res_var) =
+    gen_eval_code_for_map_or_bin_rel_expr(
+      mk_map,
+      [(args: (e.key, e.value), cond: e.cond if e.cond?) : e <- entries],
+      res_var
+    );
+
+
+  Instr+ gen_eval_code_for_bin_rel_expr([+(args: (Expr, Expr), cond: Expr?)] entries, EvalDestVar res_var) =
+    // gen_eval_code_for_map_or_bin_rel_expr(mk_rel, entries, res_var);
+    gen_eval_code_for_map_or_bin_rel_expr(mk_rel, entries, res_var);
+
+
+  Instr+ gen_eval_code_for_map_or_bin_rel_expr((EvalDestVar VecVar VecVar IntExpr -> Instr) mk_coll, [+(args: (Expr, Expr), cond: Expr?)] entries, EvalDestVar res_var) {
+    non_cond_entries = rand_sort([e : e <- entries, not e.cond?]);
+    cond_entries = rand_sort([e : e <- entries, e.cond?]);
+
+    count = nz_nat(|entries|);
+
+    col1_var, var_gen = next_vector_var(next_var_gen, count);
+    col2_var, var_gen = next_vector_var(var_gen, count);
+
+    code = ();
+
+    let next_var_gen = var_gen:
+      for e @ i <- non_cond_entries:
+        arg1, arg2 = e.args;
+        code = code & gen_eval_code(arg1, evar(col1_var.id, i)) & gen_eval_code(arg2, evar(col2_var.id, i));
+      ;
+    ;
+
+    if cond_entries != ():
+      count_var, var_gen = next_int_var(var_gen);
+      cond_var, cond_var_gen = next_obj_var(var_gen);
+
+      curr_arg1_slot_var = evar(col1_var.id, count_var);
+      curr_arg2_slot_var = evar(col2_var.id, count_var);
+
+      count_expr = count_var;
+      code = (code | set_ivar(count_var, |non_cond_entries|));
+
+      let next_var_gen = var_gen:
+        for e @ i <- cond_entries:
+          arg1, arg2 = e.args;
+          arg1_code = gen_eval_code(arg1, curr_arg1_slot_var);
+          arg2_code = gen_eval_code(arg2, curr_arg2_slot_var);
+          body_code = (arg1_code & arg2_code | increment(count_var));
+          cond_info = gen_eval_info(e.cond, cond_var, next_var_gen=cond_var_gen);
+          code = code & (cond_info.eval_code | do_if(is_true(cond_info.expr), body_code));
+        ;
+      ;
+    else
+      count_expr = count;
+    ;
+
+    return (code | mk_coll(res_var, col1_var, col2_var, count_expr));
+  }
+
+
+  ## BAD BAD BAD: THIS CODE IS ALMOST IDENTICAL TO THE CODE ABOVE
+  ## HOW COULD IT BE WRITTEN JUST ONCE, WHILE MAINTANING TYPE SAFETY?
+  Instr+ gen_eval_code_for_tern_rel_expr([+(args: (Expr, Expr, Expr), cond: Expr?)] entries, EvalDestVar res_var) {
+    non_cond_entries = rand_sort([e : e <- entries, not e.cond?]);
+    cond_entries = rand_sort([e : e <- entries, e.cond?]);
+
+    count = nz_nat(|entries|);
+
+    col1_var, var_gen = next_vector_var(next_var_gen, count);
+    col2_var, var_gen = next_vector_var(var_gen, count);
+    col3_var, var_gen = next_vector_var(var_gen, count);
+
+    code = ();
+
+    let next_var_gen = var_gen:
+      for e @ i <- non_cond_entries:
+        arg1, arg2, arg3 = e.args;
+        arg1_code = gen_eval_code(arg1, evar(col1_var.id, i));
+        arg2_code = gen_eval_code(arg2, evar(col2_var.id, i));
+        arg3_code = gen_eval_code(arg3, evar(col3_var.id, i));
+        code = code & arg1_code & arg2_code & arg3_code;
+      ;
+    ;
+
+    if cond_entries != ():
+      count_var, var_gen = next_int_var(var_gen);
+      cond_var, cond_var_gen = next_obj_var(var_gen);
+
+      curr_arg1_slot_var = evar(col1_var.id, count_var);
+      curr_arg2_slot_var = evar(col2_var.id, count_var);
+      curr_arg3_slot_var = evar(col3_var.id, count_var);
+
+      count_expr = count_var;
+
+      code = (code | set_ivar(count_var, |non_cond_entries|));
+
+      let next_var_gen = var_gen:
+        for e @ i <- cond_entries:
+          arg1, arg2, arg3 = e.args;
+          arg1_code = gen_eval_code(arg1, curr_arg1_slot_var);
+          arg2_code = gen_eval_code(arg2, curr_arg2_slot_var);
+          arg3_code = gen_eval_code(arg3, curr_arg3_slot_var);
+          body_code = (arg1_code & arg2_code & arg3_code | increment(count_var));
+          cond_info = gen_eval_info(e.cond, cond_var, next_var_gen=cond_var_gen);
+          code = code & (cond_info.eval_code | do_if(is_true(cond_info.expr), body_code));
+        ;
+      ;
+    else
+      count_expr = count;
+    ;
+
+    return (code | mk_rel(res_var, col1_var, col2_var, col3_var, count_expr));
+  }
+
+
+  Instr+ gen_eval_code_for_tag_obj_expr(Expr tag_expr, Expr obj_expr, EvalDestVar res_var) {
+    info = gen_eval_info((tag_expr, obj_expr));
+    return nonempty(info.eval_code & (mk_tagged_obj(res_var, info.exprs(0), info.exprs(1))));
+  }
+
+
+  Instr+ gen_eval_code_for_fn_call_expr(FnFamilyId id, AnyExpr* params, [ImplArg -> Expr] impl_args, EvalDestVar res_var) {
+    if impl_args != []:
+      ## BUG BUG BUG. THE ASSIGNMENTS ARE DONE IN RANDOM ORDER. FIX THIS
+      var = an_elem(nonempty(keys(impl_args)));
+      expr = impl_args[var];
+      rem_impl_args = [v -> e : v, e <- impl_args, v != var];
+      backup_var, var_gen = next_obj_var(next_var_gen);
+      info = gen_eval_info(expr, next_var_gen = var_gen);
+      body = gen_eval_code_for_fn_call_expr(id, params, rem_impl_args, res_var, next_var_gen = info.next_var_gen);
+      set_up_code = (set_var(backup_var, var), set_var(var, info.expr));
+      tear_down_code = (set_var(var, backup_var));
+      return nonempty(info.eval_code & set_up_code & body & tear_down_code);
+
+    else
+      pars_are_first_order = (is_expr(p) : p <- params);
+      par_packed_idxs = packed_seq_idxs(pars_are_first_order);
+      pars_info = gen_eval_info((cast_as_expr(p) : p @ i <- params, pars_are_first_order(i)));
+      all_params = (
+        if pars_are_first_order(i)
+          then pars_info.exprs(par_packed_idxs[i])
+          else compiled_closure(cast_as_cls_expr(p))
+      : p @ i <- params);
+      core_call_code = (call_proc(res_var, id, all_params));
+      return nonempty(pars_info.eval_code & core_call_code);
+    ;
+  }
+
+
+  Instr+ gen_eval_code_for_cls_call(ClsVar name, Expr+ args, EvalDestVar res_var) {
+    pars_info = gen_eval_info(args);
+    final_name = lookup(cls_var_subst_map, name, name);
+    call_code = (call_cls(res_var, final_name, nonempty(pars_info.exprs)));
+    return nonempty(pars_info.eval_code & call_code);
+  }
+
+
+  Instr+ gen_eval_code_for_builtin_call(BuiltIn name, Expr* params, EvalDestVar res_var) {
+    pars_info = gen_eval_info(params);
+    call_code = gen_call_code(name, pars_info.exprs, res_var);
+    return nonempty(pars_info.eval_code & call_code);
+
+
+    Instr+ gen_call_code(BuiltIn name, AtomicExpr* params, EvalDestVar res_var) =
+      untag       = (set_var(res_var, get_inner_obj(params(0)))),
+      rand_elem   = (set_var(res_var, rand_elem(params(0)))),
+      _           = (gen_eval_instr(name, params, res_var));
+
+
+    Instr gen_eval_instr(BuiltIn name, AtomicExpr* ps, EvalDestVar res_var) =
+      slice         = get_seq_slice(res_var, ps(0), get_int_val(ps(1)), get_int_val(ps(2))),
+      cat           = join_seqs(res_var, ps(0), ps(1)),
+      rev           = rev_seq(res_var, ps(0)),
+      isort         = internal_sort(res_var, ps(0)),
+      parse         = parse_value(res_var, ps(0)),
+      print         = print_value(res_var, ps(0)),
+      fneg          = neg_float(res_var, ps(0)),
+      fadd          = add_floats(res_var, ps(0), ps(1)),
+      fsub          = sub_floats(res_var, ps(0), ps(1)),
+      fmult         = mult_floats(res_var, ps(0), ps(1)),
+      fdiv          = div_floats(res_var, ps(0), ps(1)),
+      fexp          = exp_floats(res_var, ps(0), ps(1)),
+      fsqrt         = square_root(res_var, ps(0)),
+      floor         = floor_op(res_var, ps(0)),
+      ceiling       = ceiling_op(res_var, ps(0)),
+      float         = int_to_float(res_var, ps(0)),
+      str           = symb_to_str(res_var, ps(0)),
+      _             = set_var(res_var, gen_eval_expr(name, ps));
+
+
+    ObjExpr gen_eval_expr(BuiltIn name, AtomicExpr* ps) =
+      symb        = to_symb(ps(0)),
+      neg         = int_obj(minus(get_int_val(ps(0)))),
+      add         = int_obj(add(get_int_val(ps(0)), get_int_val(ps(1)))),
+      sub         = int_obj(sub(get_int_val(ps(0)), get_int_val(ps(1)))),
+      mult        = int_obj(mult(get_int_val(ps(0)), get_int_val(ps(1)))),
+      div         = int_obj(div(get_int_val(ps(0)), get_int_val(ps(1)))),
+      mod         = int_obj(mod_op(get_int_val(ps(0)), get_int_val(ps(1)))),
+      lt          = bool_obj(is_lt(get_int_val(ps(0)), get_int_val(ps(1)))),
+      le          = bool_obj(is_le(get_int_val(ps(0)), get_int_val(ps(1)))),
+      and         = int_obj(bitwise_and(get_int_val(ps(0)), get_int_val(ps(1)))),
+      or          = int_obj(bitwise_or(get_int_val(ps(0)), get_int_val(ps(1)))),
+      xor         = int_obj(bitwise_xor(get_int_val(ps(0)), get_int_val(ps(1)))),
+      flt         = bool_obj(is_flt(ps(0), ps(1))),
+      fle         = bool_obj(is_fle(ps(0), ps(1))),
+      tag         = get_tag(ps(0)),
+      bits        = int_obj(float_bits(ps(0))),
+      mantissa    = int_obj(mantissa(ps(0))),
+      dec_exp     = int_obj(dec_exp(ps(0))),
+      rand_nat    = int_obj(rand_nat(ps(0))),
+      counter     = int_obj(unique_nat),
+      ticks       = int_obj(ticks);
+  }
+
+
+  Instr+ gen_eval_code_for_size_expr(Expr coll, EvalDestVar res_var) {
+    info = gen_eval_info(coll);
+    return (info.eval_code | set_var(res_var, int_obj(get_size(info.expr))));
+  }
+
+
+  Instr+ gen_eval_code_for_unary_pseudo_call_expr(Expr target, Expr arg, EvalDestVar res_var) {
+    info = gen_eval_info((target, arg));
+    target_expr = info.exprs(0);
+    arg_expr = info.exprs(1);
+
+    seq_instr = set_var(res_var, at(target_expr, get_int_val(arg_expr)));
+    set_instr = set_var(res_var, bool_obj(has_elem(target_expr, arg_expr)));
+    symb_instr = mk_tagged_obj(res_var, target_expr, arg_expr);
+
+    instr = branch(is_seq(target_expr), (seq_instr), is_set_value(target_expr), (set_instr), (symb_instr));
+
+    return (info.eval_code | instr);
+  }
+
+
+  Instr+ gen_eval_code_for_rel_memb_test(Expr rel, Maybe[Expr]+ args, EvalDestVar res_var) {
+    assert |args| == 2 or |args| == 3;
+
+    rel_info = gen_eval_info(rel);
+    args_info = gen_eval_info((value(a) : a <- args, a != nothing), next_var_gen = rel_info.next_var_gen);
+
+    if all((a != nothing : a <- args)):
+      code = (set_var(res_var, bool_obj(contains(rel_info.expr, nonempty(args_info.exprs)))));
+
+    else
+      args_idxs = packed_seq_idxs((a != nothing : a <- args));
+      low_level_args = (if a != nothing then just(args_info.exprs(args_idxs[i])) else nothing : a @ i <- args);
+
+      if low_level_args :: (Maybe[AtomicExpr], Maybe[AtomicExpr]):
+        it_var, unused_var = next_bin_rel_it_var(args_info.next_var_gen);
+        get_iter_instr = get_iter(it_var, rel_info.expr, low_level_args);
+      else
+        fail if not low_level_args :: (Maybe[AtomicExpr], Maybe[AtomicExpr], Maybe[AtomicExpr]);
+        it_var, unused_var = next_tern_rel_it_var(args_info.next_var_gen);
+        get_iter_instr = get_iter(it_var, rel_info.expr, low_level_args);
+      ;
+
+      code = (get_iter_instr, set_var(res_var, bool_obj(neg(is_out_of_range(it_var)))));
+    ;
+
+    return nonempty(rel_info.eval_code & args_info.eval_code & code);
+  }
+
+
+  Instr+ gen_eval_code_for_rel_lookup(RelLookup expr, EvalDestVar res_var) {
+    info = gen_eval_info(expr.rel);
+    code = info.eval_code;
+    known_args = expr.set_args;
+    if known_args == ():
+      code = code & (check(is_eq(get_size(info.expr), 1)), set_var(res_var, rand_elem(info.expr)));
+    elif |known_args| == 1:
+      arg_info = gen_eval_info(only(known_args), next_var_gen=info.next_var_gen);
+      code = code & arg_info.eval_code;
+      if expr.unknown_arg_idx == 1:
+        code = code & (set_var(res_var, lookup(info.expr, arg_info.expr)));
+      else
+        it_var, unused_var = next_bin_rel_it_var(arg_info.next_var_gen);
+        code = code & (
+          get_iter(it_var, info.expr, (nothing, just(arg_info.expr))),
+          check(neg(is_out_of_range(it_var))),
+          set_var(res_var, get_curr_arg(it_var, 0)),
+          move_forward(it_var),
+          check(is_out_of_range(it_var))
+        );
+      ;
+    else
+      assert |known_args| == 2;
+      args_info = gen_eval_info(known_args, next_var_gen=info.next_var_gen);
+      it_var, unused_var = next_tern_rel_it_var(args_info.next_var_gen);
+      unknown_arg_idx = expr.unknown_arg_idx;
+      fail if not unknown_arg_idx :: <0..2>;
+      args_maybe_exprs = (
+          if i < unknown_arg_idx     then just(args_info.exprs(i))
+          elif i == unknown_arg_idx  then nothing
+                                     else just(args_info.exprs(i-1))
+        : i <- (0, 1, 2)
+      );
+      code = code & args_info.eval_code & (
+        get_iter(it_var, info.expr, args_maybe_exprs),
+        check(neg(is_out_of_range(it_var))),
+        set_var(res_var, get_curr_arg(it_var, unknown_arg_idx)),
+        move_forward(it_var),
+        check(is_out_of_range(it_var))
+      );
+    ;
+    return nonempty(code);
+  }
+
+
+  Instr+ gen_eval_code_for_relvar_memb_test(AnyRelVar rel_var, Maybe[Expr]+ relvar_args, EvalDestVar res_var) {
+    args_perm = relvar_cols_perm(rel_var);
+    table_args = (relvar_args(i) : i <- args_perm);
+
+    filtered_idxs = idxs_into_filtered_seq((a != nothing : a <- table_args));
+    unfiltered_idxs = (i : a @ i <- table_args, a != nothing);
+    set_args = (value(a) : a <- table_args, a != nothing);
+    info = gen_eval_info(set_args);
+
+    surr_vars, var_gen = next_int_vars(info.next_var_gen, |set_args|);
+    it_var, var_gen = next_table_it_var(var_gen, |table_args|);
+
+    surr_args = (apply(mi, surr_vars($)) : mi <- filtered_idxs);
+
+    if all((a != nothing : a <- table_args)):
+      code = (set_var(res_var, bool_obj(table_contains(rel_var, nonempty(surr_vars)))));
+    else
+      code = (
+        get_table_iter(it_var, rel_var, nonempty(surr_args)),
+        set_var(res_var, bool_obj(neg(is_out_of_range(it_var))))
+      );
+    ;
+
+    for e @ i <- reverse(info.exprs):
+      store_id = table_col_store_id(rel_var, rev_at(unfiltered_idxs, i));
+      surr_var = rev_at(surr_vars, i);
+      code = (
+        set_ivar(surr_var, lookup_value(store_id, e)),
+        do_if_not(is_eq(surr_var, -1), code)
+      );
+    ;
+
+    return nonempty(info.eval_code & (set_var(res_var, obj_false)) & code);
+  }
+
+
+  Instr+ gen_eval_code_for_relvar_lookup(AnyRelVar rel_var, Expr* set_args, Nat unknown_arg_idx, EvalDestVar res_var) {
+    if set_args == ():
+      fail; ## IMPLEMENT IMPLEMENT IMPLEMENT
+    ;
+
+    args_perm = relvar_cols_perm(rel_var);
+    args_rev_perm = reverse_perm(args_perm);
+
+    unknown_table_arg_idx = args_rev_perm(unknown_arg_idx);
+
+    all_relvar_args = subseq(set_args, 0, unknown_arg_idx, :blank) & (nothing) & subseq(set_args, unknown_arg_idx, :blank, 0);
+    all_table_args = (all_relvar_args(i) : i <- args_perm);
+    set_table_args = (a : a <- all_table_args, a != nothing);
+
+    assert {
+      set_args_perm = ({
+          j = i + bit(i >= unknown_table_arg_idx); // Index of the argument in the full list of permutated arguments
+          k = args_perm(j); // Index of the argument in the full list of arguments, before permutation
+          assert k != unknown_arg_idx;
+          h = k - bit(k > unknown_arg_idx); // Index of the argument in the list of set arguments before permutation
+          return h;
+        } : i < |set_args|
+      );
+      set_table_args_2 = (set_args(i) : i <- set_args_perm);
+      return set_table_args == set_table_args_2;
+    };
+
+    return gen_eval_code_for_relvar_lookup_after_perm(rel_var, nonempty(set_table_args), unknown_table_arg_idx, res_var);
+  }
+
+
+  Instr+ gen_eval_code_for_relvar_lookup_after_perm(AnyRelVar rel_var, Expr+ set_args, Nat unknown_arg_idx, EvalDestVar res_var) {
+    arity = |set_args| + 1;
+
+    info = gen_eval_info(set_args);
+
+    surr_vars, var_gen = next_int_vars(info.next_var_gen, nat(arity-1));
+    it_var, var_gen = next_table_it_var(var_gen, nz_nat(arity));
+
+    all_args = (
+      if i < unknown_arg_idx
+        then just(surr_vars(i))
+      elif i == unknown_arg_idx
+        then nothing
+      else
+        just(surr_vars(i-1))
+      : i < arity
+    );
+
+    args_lookup_code = join(({
+        arg_idx = i + bit(i >= unknown_arg_idx);
+        store_id = table_col_store_id(rel_var, nat(arg_idx));
+        surr_var = surr_vars(i);
+        return (
+          set_ivar(surr_var, lookup_value(store_id, e)),
+          check(neg(is_eq(surr_var, -1)))
+        );
+      } : e @ i <- info.exprs
+    ));
+
+    res_store_id = table_col_store_id(rel_var, unknown_arg_idx);
+
+    lookup_code = (
+      get_table_iter(it_var, rel_var, nonempty(all_args)),
+      check(neg(is_out_of_range(it_var))),
+      lookup_surrogate(res_var, res_store_id, get_tuple_field(it_var, unknown_arg_idx))
+    );
+
+    return nonempty(info.eval_code & args_lookup_code & lookup_code);
+  }
+
+
+  Instr+ gen_eval_code_for_and_expr(Expr left_expr, Expr right_expr, EvalDestVar res_var) {
+    tmp_var, var_gen = pick_temp_var(res_var);
+    let next_var_gen = var_gen:
+      left_info = gen_eval_info(left_expr, tmp_var);
+      if_code = gen_eval_code(right_expr, res_var);
+      else_code = (set_var(res_var, obj_false) if left_info.expr != res_var);
+    ;
+    return (left_info.eval_code | branch(is_true(left_info.expr), if_code, else_code));
+  }
+
+
+  Instr+ gen_eval_code_for_or_expr(Expr left_expr, Expr right_expr, EvalDestVar res_var) {
+    tmp_var, var_gen = pick_temp_var(res_var);
+    let next_var_gen = var_gen:
+      left_info = gen_eval_info(left_expr, tmp_var);
+      if_code = (set_var(res_var, obj_true) if left_info.expr != res_var);
+      else_code = gen_eval_code(right_expr, res_var);
+    ;
+    return (left_info.eval_code | branch(is_true(left_info.expr), if_code, else_code));
+  }
+
+
+  Instr+ gen_eval_code_for_not_expr(Expr expr, EvalDestVar res_var) {
+    tmp_var, var_gen = next_obj_var(next_var_gen);
+    info = gen_eval_info(expr, tmp_var, next_var_gen = var_gen);
+    return (info.eval_code | set_var(res_var, obj_neg(info.expr)));
+  }
+
+
+  Instr+ gen_eval_code_for_eq_expr(Expr left_expr, Expr right_expr, EvalDestVar res_var) {
+    info = gen_eval_info((left_expr, right_expr));
+    return nonempty(info.eval_code & (set_var(res_var, bool_obj(is_eq(info.exprs(0), info.exprs(1))))));
+  }
+
+
+  Instr+ gen_eval_code_for_membership_expr(Expr expr, Type type, EvalDestVar res_var) {
+    info = gen_eval_info(expr);
+    pred = memb_test_preds_map[type];
+    pred_call_instr = set_var(res_var, bool_obj(is_member(pred, info.expr)));
+    return (info.eval_code | pred_call_instr);
+  }
+
+
+  Instr+ gen_eval_code_for_accessor_expr(Expr expr, SymbObj field, EvalDestVar res_var) {
+    info = gen_eval_info(expr);
+    return (info.eval_code | lookup_field(res_var, info.expr, field));
+  }
+
+
+  Instr+ gen_eval_code_for_accessor_test_expr(Expr expr, SymbObj field, EvalDestVar res_var) {
+    info = gen_eval_info(expr);
+    return (info.eval_code | set_var(res_var, bool_obj(has_field(info.expr, field))));
+  }
+
+
+  Instr+ get_eval_code_for_auto_method_call(AutoMethodCall expr, EvalDestVar res_var) {
+    args_eval_info = gen_eval_info(expr.args);
+    invoke_method_instr = invoke_auto_method(
+      res_var:    res_var,
+      auto_var:   expr.var if expr.var?,
+      type:       if expr.var? then var_type(expr.var) else this_auto_symbol,
+      method_id:  method_id(expr.name, |expr.args|),
+      args:       args_eval_info.exprs
+    );
+    return (args_eval_info.eval_code | invoke_method_instr);
+  }
+
+
+  Instr+ get_eval_code_for_db_method_call(DBMethodCall expr, EvalDestVar res_var) {
+    args_eval_info = gen_eval_info(expr.args);
+    invoke_method_instr = invoke_db_method(
+      res_var:    res_var,
+      db_var:     expr.var if expr.var?,
+      type:       if expr.var? then var_type(expr.var) else this_db_symbol,
+      method_id:  method_id(expr.name, |expr.args|),
+      args:       args_eval_info.exprs
+    );
+    return (args_eval_info.eval_code | invoke_method_instr);
+  }
+
+
+  Instr+ gen_eval_code_for_if_expr(Expr cond, Expr then_expr, Expr else_expr, EvalDestVar res_var) {
+    info = gen_eval_info(cond);
+    branch_instr = branch(is_true(info.expr), gen_eval_code(then_expr, res_var), gen_eval_code(else_expr, res_var));
+    return nonempty((info.eval_code | branch_instr));
+  }
+
+
+  Instr+ gen_eval_code_for_match_expr(Expr+ exprs, (ptrns: Pattern+, expr: Expr)+ cases, EvalDestVar res_var) {
+    info = gen_eval_info(exprs);
+    let next_var_gen = info.next_var_gen:
+      semicomp_cases = ((ptrns: c.ptrns, code: (gen_eval_code(c.expr, res_var) | exit_block)) : c <- cases);
+      switch_code = gen_switch_code(nonempty(info.exprs), semicomp_cases);
+    ;
+    return nonempty(info.eval_code & switch_code);
+  }
+
+
+  Instr+ gen_eval_code_for_ex_qual_expr(Clause source, Expr cond, EvalDestVar res_var) {
+    action = match_action(filter_clause(cond), set_found_var_and_leave(res_var));
+    code = gen_clause_code(source, [], action);
+    return (set_var(res_var, obj_false), execute_block(code));
+  }
+
+
+  Instr+ gen_eval_code_for_set_comp_expr(Expr expr, Clause source, EvalDestVar res_var) {
+    strm_var, var_gen = next_stream_var(next_var_gen);
+    action = eval_and_store(((expr, strm_var)));
+    code = gen_clause_code(source, [], action, next_var_gen = var_gen);
+    return nonempty((init_stream(strm_var)) & code & (mk_set(res_var, strm_var)));
+  }
+
+
+  Instr+ gen_eval_code_for_map_comp_expr(Expr key_expr, Expr value_expr, Clause source, EvalDestVar res_var) {
+    key_strm_var, var_gen = next_stream_var(next_var_gen);
+    value_strm_var, var_gen = next_stream_var(var_gen);
+
+    action = eval_and_store(((key_expr, key_strm_var), (value_expr, value_strm_var)));
+    code = gen_clause_code(source, [], action, next_var_gen = var_gen);
+
+    return nonempty(
+      (init_stream(key_strm_var), init_stream(value_strm_var)) & code &
+      (mk_map(res_var, key_strm_var, value_strm_var))
+    );
+  }
+
+
+  Instr+ gen_eval_code_for_bin_rel_comp((Expr, Expr) exprs, Clause source, EvalDestVar res_var) {
+    strm_var_1, var_gen = next_stream_var(next_var_gen);
+    strm_var_2, var_gen = next_stream_var(var_gen);
+
+    expr_1, expr_2 = exprs;
+    action = eval_and_store(((expr_1, strm_var_1), (expr_2, strm_var_2)));
+    code = gen_clause_code(source, [], action, next_var_gen = var_gen);
+
+    return nonempty(
+      (init_stream(strm_var_1), init_stream(strm_var_2)) & code &
+      (mk_rel(res_var, strm_var_1, strm_var_2))
+    );
+  }
+
+
+  Instr+ gen_eval_code_for_tern_rel_comp((Expr, Expr, Expr) exprs, Clause source, EvalDestVar res_var) {
+    strm_var_1, var_gen = next_stream_var(next_var_gen);
+    strm_var_2, var_gen = next_stream_var(var_gen);
+    strm_var_3, var_gen = next_stream_var(var_gen);
+
+    expr_1, expr_2, expr_3 = exprs;
+    action = eval_and_store(((expr_1, strm_var_1), (expr_2, strm_var_2), (expr_3, strm_var_3)));
+    code = gen_clause_code(source, [], action, next_var_gen = var_gen);
+
+    return nonempty(
+      (init_stream(strm_var_1), init_stream(strm_var_2), init_stream(strm_var_3)) & code &
+      (mk_rel(res_var, strm_var_1, strm_var_2, strm_var_3))
+    );
+  }
+
+
+  Instr+ gen_eval_code_for_seq_comp_expr(SeqCompExpr expr, EvalDestVar res_var) {
+    src_var, var_gen = next_obj_var(next_var_gen);
+    item_var, var_gen = next_obj_var(var_gen);
+    sel_var, var_gen = next_obj_var(var_gen);
+    it_var, var_gen = next_seq_it_var(var_gen);
+    strm_var, var_gen = next_stream_var(var_gen);
+    idx_var, var_gen = next_int_var(var_gen); ## BAD: USED EVEN WHEN NOT REQUIRED
+
+    let next_var_gen = var_gen:
+      src_info  = gen_eval_info(expr.src_expr, src_var);
+      item_info = gen_eval_info(expr.expr, item_var);
+      maybe_sel_info  = if expr.sel_expr? then just(gen_eval_info(expr.sel_expr, sel_var)) else nothing; ## BUG BUG BUG
+    ;
+
+    knows_size = not expr.sel_expr?;
+
+    eval_and_assign_code = item_info.eval_code &
+                            if knows_size
+                              then (set_at(res_var, idx_var, item_info.expr))
+                              else (append(strm_var, item_info.expr));
+
+    core_loop_code = eval_and_assign_code;
+    if maybe_sel_info != nothing:
+      sel_info = value(maybe_sel_info);
+      core_loop_code = sel_info.eval_code & (do_if(is_true(sel_info.expr), core_loop_code));
+    ;
+
+    needs_idx_var = not expr.sel_expr? or expr.idx_var?;
+
+    if |expr.vars| == 1:
+      var_set_code = (set_var(expr.vars(0), get_curr_obj(it_var)));
+    else
+      // tmp_var is only needed during a destructuring assignment, it can be safely reused elsewhere
+      tmp_var, unused_var = next_obj_var(var_gen);
+      var_set_code = (set_var(tmp_var, get_curr_obj(it_var)));
+      var_set_code = var_set_code & (set_var(v, at(tmp_var, i)) : v @ i <- expr.vars);
+    ;
+    var_set_code = var_set_code & (set_var(expr.idx_var, int_obj(idx_var))) if expr.idx_var?;
+
+    loop_code = (
+      if knows_size
+        then mk_array(res_var, get_size(src_info.expr))
+        else init_stream(strm_var),
+      get_iter(it_var, src_info.expr),
+      maybe_op(set_ivar(idx_var, 0), needs_idx_var),
+      repeat(
+        nonempty(
+          (break_if(is_out_of_range(it_var))) &
+          var_set_code &
+          core_loop_code &
+          (move_forward(it_var), maybe_op(increment(idx_var), needs_idx_var))
+        )
+      ),
+      maybe_op(mk_seq(res_var, strm_var), not knows_size)
+    );
+
+    return nonempty(src_info.eval_code & loop_code);
+  }
+
+
+  Instr+ gen_eval_code_for_range_comp_expr(RangeCompExpr expr, EvalDestVar res_var) {
+    src_var, var_gen = next_obj_var(next_var_gen);
+    item_var, var_gen = next_obj_var(var_gen);
+    sel_var, var_gen = next_obj_var(var_gen);
+    strm_var, var_gen = next_stream_var(var_gen);
+    idx_var, var_gen = next_int_var(var_gen); ## BAD: USED EVEN WHEN NOT REQUIRED
+    bound_var, var_gen = next_int_var(var_gen);
+
+    let next_var_gen = var_gen:
+      bound_info  = gen_eval_info(expr.bound_expr, src_var);
+      item_info = gen_eval_info(expr.expr, item_var);
+      maybe_sel_info  = if expr.sel_expr? then just(gen_eval_info(expr.sel_expr, sel_var)) else nothing; ## BUG BUG BUG
+    ;
+
+    knows_size = not expr.sel_expr?;
+
+    eval_and_assign_code = item_info.eval_code &
+                            if knows_size
+                              then (set_at(res_var, idx_var, item_info.expr))
+                              else (append(strm_var, item_info.expr));
+
+    core_loop_code = eval_and_assign_code;
+    if maybe_sel_info != nothing:
+      sel_info = value(maybe_sel_info);
+      core_loop_code = sel_info.eval_code & (do_if(is_true(sel_info.expr), core_loop_code));
+    ;
+
+    bound_included = expr.inclusive;
+    iter_count = get_int_val(bound_info.expr);
+    iter_count = add(iter_count, 1) if bound_included;
+    loop_code = (
+      if knows_size then mk_array(res_var, iter_count) else init_stream(strm_var),
+      set_ivar(bound_var, get_int_val(bound_info.expr)),
+      set_ivar(idx_var, 0),
+      repeat(
+        nonempty(
+          ( break_if(if bound_included then is_gt(idx_var, bound_var) else is_ge(idx_var, bound_var)),
+            set_var(expr.var, int_obj(idx_var))
+          ) &
+          core_loop_code &
+          (increment(idx_var))
+        )
+      ),
+      maybe_op(mk_seq(res_var, strm_var), not knows_size)
+    );
+
+    return nonempty(bound_info.eval_code & loop_code);
+  }
+}

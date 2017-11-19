@@ -1,0 +1,166 @@
+implicit syn_prg : SynPrg {
+  [WFError] schemas_wf_errors([SchemaDef] schemas, [BasicTypeSymbol -> [+Nat]] type_arity_map) {
+    errs = [duplicate_schema_defs(rand_sort(dbs)) : id, dbs <- group_by(schemas, $.name), |dbs| > 1];
+    return errs if errs != [];
+
+    shallow_deps = [s.name -> set(s.links) & nested_schemas(s) : s <- schemas];
+    deep_deps = transitive_closure(shallow_deps);
+    errs = [
+      recursively_defined_schema(only([s : s <- schemas, s.name == n]), nonempty(deps))
+      : n, deps <- deep_deps, deps(n)
+    ];
+    return errs if errs != [];
+
+    let type_arity_map = type_arity_map:
+      errs = [db_def_errors(d, es) : d <- schemas, es = schema_wf_errors(d), es != ()];
+    ;
+    return errs;
+
+
+    [Atom] nested_schemas(SchemaDef schema) = [d.type : d <~ schema.decls, nested_db_decl() ?= d];
+  }
+}
+
+
+implicit syn_prg : SynPrg, type_arity_map : [BasicTypeSymbol -> [+Nat]] {
+  ExprWFError* schema_wf_errors(SchemaDef db_def) {
+    confl_type_name = type_symbol(db_def.name);
+    if type_arity_map(confl_type_name, *):
+      confl_tdefs = rand_sort([td : td <- syn_tdefs | td <- syn_par_tdefs, td.name == confl_type_name]);
+      return (schema_def_duplicates_type(db_def, nonempty(confl_tdefs)));
+    ;
+
+    state_vars = (d : d <- db_def.decls, d :: StateVarDecl);
+    rel_vars   = (d : d <- db_def.decls, d :: RelVarsDecl);
+    nested_dbs = (d : d <- db_def.decls, d :: NestedDBDecl);
+
+    // Starting with state variables and nested automata, whose names cannot be overloaded
+    non_overloadable_decls = sort(state_vars & nested_dbs, _str_($a.name) < _str_($b.name));
+    errs = join((schema_decl_wf_errors(d) : d <- non_overloadable_decls));
+    for i < |non_overloadable_decls| - 1:
+      d1 = non_overloadable_decls(i);
+      d2 = non_overloadable_decls(i+1);
+      errs = (errs | duplicate_schema_decl(d1, d2)) if d1.name == d2.name;
+    ;
+    return errs if errs != ();
+
+    // Checking individual relation declarations
+    non_overloadable_decls_by_name = [d.name -> d : d <~ non_overloadable_decls];
+    errs = join((schema_decl_wf_errors(rv, non_overloadable_decls_by_name) : rv <- rel_vars));
+    return errs if errs != ();
+
+    // Now looking for conflicts among overloaded relation declarations
+    std_relvars_by_name = merge_values([[rv.name -> rv] : rv <~ rel_vars]);
+    attr_relvar_by_name = merge_values([[arv.name -> (rv, i)] : rv <~ rel_vars, arv @ i <~ rv.attributes]);
+    all_relvar_names = rand_sort(keys(std_relvars_by_name) & keys(attr_relvar_by_name));
+    return join(({
+        std_relvars = lookup(std_relvars_by_name, n, []);
+        attr_relvars = lookup(attr_relvar_by_name, n, []);
+        return relvars_overloading_errors(std_relvars, attr_relvars);
+      } : n <- all_relvar_names
+    ));
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  ExprWFError* schema_decl_wf_errors(StateVarDecl decl) {
+    type_errs = plain_type_wf_errors(decl.type, type_arity_map);
+    let artifact = :null_artifact, impl_args = [], actual_arg_arity = 0:
+      expr_errs = expr_wf_errors(decl.init_value, []);
+    ;
+    return type_errs & expr_errs;
+  }
+
+
+  ExprWFError* schema_decl_wf_errors(NestedDBDecl decl) {
+    db_type = db_symbol(decl.type);
+    return (unknown_auto(db_type) if not db_defs_by_id(db_type, *));
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  ExprWFError* schema_decl_wf_errors(RelVarsDecl decl, [Atom -> SchemaItemDecl] non_overloadable_decls_by_name) {
+    arity = |decl.col_types|;
+    return (invalid_relvar_arity(decl)) if arity > 3 or (decl.attributes != () and arity > 2);
+
+    type_errs = join(
+      (plain_type_wf_errors(t, type_arity_map) : t <- decl.col_types) &
+      (plain_type_wf_errors(a.type, type_arity_map) : a <- decl.attributes)
+    );
+    return type_errs if type_errs != ();
+
+    keys = [set(k) : k <~ decl.keys];
+    valid_keys = valid_key_sets_by_arity[arity];
+    return (invalid_relvar_keys(decl)) if keys != [] and not valid_keys(keys);
+
+    errs = (duplicate_schema_decl(decl, non_overloadable_decls_by_name[decl.name])
+              if non_overloadable_decls_by_name(decl.name, *));
+
+    attributes = sort(decl.attributes, _str_($a.name) < _str_($b.name));
+    for arv @ i <- attributes:
+      if arv.name == decl.name:
+        errs = (errs | duplicate_schema_decl(decl, arv));
+      ;
+      if non_overloadable_decls_by_name(arv.name, *):
+        errs = (errs | duplicate_schema_decl(arv, non_overloadable_decls_by_name[arv.name]));
+      ;
+      if i > 0 and attributes(i-1).name == arv.name:
+        errs = (errs | duplicate_schema_decl(arv, attributes(i-1)));
+      ;
+    ;
+
+    return errs;
+  }
+
+
+  [Nat -> [[[Nat]]]] valid_key_sets_by_arity = [
+    1 -> [],
+    2 -> [[[0]], [[1]], [[0], [1]]],
+    3 -> {
+      bin_keys = combinations(2, 3);
+      bin_key_sets = [k : k <- power_set(bin_keys), k != []];
+      mixed_key_sets = [[nonempty(k), nonempty([0, 1, 2] - k)] : ks <- bin_key_sets, |ks| == 1, k = only(ks)];
+      return bin_key_sets & mixed_key_sets;
+    }
+  ];
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  ExprWFError* relvars_overloading_errors([RelVarsDecl] std_relvars, [(RelVarsDecl, Nat)] attr_relvars) {
+    std_relvars_keys  : [[[Nat]]];
+    attr_relvars_keys : [[[Nat]]];
+
+    // Checking that the arity is the same
+    std_relvars_arities = [|rv.col_types| : rv <- std_relvars];
+    attr_relvars_arities = [|rv.col_types| + 1 : arv_info <- attr_relvars, (rv?, _) ?= arv_info];
+    all_arities = std_relvars_arities & attr_relvars_arities;
+    return (incomp_relvar_decls(std_relvars, attr_relvars)) if |all_arities| != 1;
+
+    // Checking that the set of keys is the same
+    std_relvars_keys = [[set(k) : k <~ rv.keys] : rv <- std_relvars];
+    attr_relvars_keys = [
+      [set((i : i < |rv.col_types|)) if not rv.attributes(idx).cardinality.multiple]
+      : arv_info <- attr_relvars, (rv?, idx?) ?= arv_info
+    ];
+    all_key_sets = std_relvars_keys & attr_relvars_keys;
+    return (incomp_relvar_decls(std_relvars, attr_relvars)) if |all_key_sets| != 1;
+
+    // ord_std_relvars = rand_sort(std_relvars);
+    // ord_attr_relvars = rand_sort(attr_relvars);
+
+    // // Now checking that their signatures are disjoint
+    // std_relvars_col_ptypes = ((pseudotype(desugar_plain_type(t)) : t <- rv(0).col_types) : rv <- ord_attr_relvars);
+    // attr_relvars_col_ptypes = ({
+    //     rv, i = arv_info;
+    //     arv = rv.attributes(i);
+    //     col_types = (rv.col_types | arv.type);
+    //     return (pseudotype(desugar_plain_type(t)) : t <- col_types);
+    //   } : arv_info <- ord_attr_relvars
+    // );
+
+    ## WHAT IS IT THAT I SHOULD DO HERE? DOES THIS CHECK MAKE ANY SENSE AT ALL?
+    ## AND IF IT DOES MAKE SENSE, SHOULD IT BE DONE HERE OR IN LEVEL 2?
+
+    return ();
+  }
+}

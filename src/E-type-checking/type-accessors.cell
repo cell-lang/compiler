@@ -1,0 +1,276 @@
+type TagUnionType = empty_type, atom_type, SymbType, union_type([+SymbType]);
+
+
+TagUnionType tag_type_union([+TagUnionType] types) {
+  return atom_type if in(atom_type, types);
+  symb_types = union([
+    match (t)
+      empty_type      = [],
+      symb_type()     = [t],
+      union_type(ts?) = ts
+    : t <- types
+  ]);
+  size = |symb_types|;
+  return if   size == 0 then empty_type
+         elif size == 1 then only(symb_types)
+                        else :union_type(nonempty(symb_types));
+}
+
+
+implicit typedefs : [TypeName -> NeType] {
+  Bool always_has_field(NeType type, SymbObj field) {
+    return always_has_field(type, field, true);
+
+    Bool always_has_field(Type type, SymbObj field, Bool bypass_tag) =
+      ne_record_type(fs?) = fs(field, *) and not fs[field].optional,
+      tag_obj_type()      = bypass_tag and always_has_field(type.obj_type, field, false),
+      union_type(ts?)     = not (t <- ts : not always_has_field(t, field, bypass_tag)),
+      type_ref(ts?)       = always_has_field(expand_type_ref(ts, typedefs), field, bypass_tag),
+      _                   = false;
+  }
+
+
+  // Only defined for types that pass the above test
+  NeType mandatory_field_type(NeType type, SymbObj field) {
+    ## MAYBE HERE I SHOULD ADD THE ASSERTION, IF IT DOESN'T IMPAIR SPEED TOO MUCH
+    // assert always_has_field(type, field);
+    return field_type(type, field, true);
+
+    NeType field_type(Type type, SymbObj field, Bool bypass_tag) =
+      ne_record_type(fs?) = fs[field].type,
+      tag_obj_type()      = {fail if not bypass_tag; return field_type(type.obj_type, field, false);},
+      union_type(ts?)     = ne_union_superset([field_type(t, field, bypass_tag) : t <- ts]),
+      type_ref(ts?)       = field_type(expand_type_ref(ts, typedefs), field, bypass_tag);
+  }
+
+
+  // Only defined for types that pass the above test
+  NeType update_mandatory_field_type(NeType type, SymbObj label, NeType new_field_type) {
+    ## MAYBE HERE I SHOULD ADD THE ASSERTION, IF IT DOESN'T IMPAIR SPEED TOO MUCH
+    // assert always_has_field(type, label);
+    return update_field_type(type, label, new_field_type, true);
+
+
+    // BAD BAD BAD: THIS IS NECESSARY ONLY BECAUSE expand_type_res() RETURNS A Type, NOT AN NeType
+    NeType update_field_type(<empty_type>, SymbObj label, NeType new_field_type, Bool bypass_tag) = undefined;
+
+    NeType update_field_type(NeType type, SymbObj label, NeType new_field_type, Bool bypass_tag) =
+      ne_record_type(fs?) = ne_record_type([l -> update_record_field(f, l, label, new_field_type) : l, f <- fs]),
+      tag_obj_type()      = update_tagged_record_field_type(type, label, new_field_type, bypass_tag),
+      union_type(ts?)     = ne_union_superset([update_field_type(t, label, new_field_type, bypass_tag) : t <- ts]),
+      type_ref(ts?)       = update_field_type(expand_type_ref(ts, typedefs), label, new_field_type, bypass_tag);
+
+
+    (type: NeType, optional: Bool) update_record_field((type: NeType, optional: Bool) field, SymbObj label, SymbObj target_label, NeType new_field_type) {
+      return field if label != target_label;
+      assert not field.optional;
+      return (type: new_field_type, optional: false);
+    }
+
+
+    NeType update_tagged_record_field_type(TagObjType type, SymbObj label, NeType new_field_type, Bool bypass_tag) {
+      assert bypass_tag;
+      updated_obj_type = update_field_type(type.obj_type, label, new_field_type, false);
+      return tag_obj_type(type.tag_type, updated_obj_type);
+    }
+  }
+
+
+  [<SymbType, atom_type>] disassemble_tag_type(Type type) =
+    empty_type                = [],
+    atom_type | symb_type()   = [type],
+    type_ref(ts?)             = disassemble_tag_type(expand_type_ref(ts, typedefs)),
+    union_type(ts?)           = union([disassemble_tag_type(t) : t <- ts]);
+
+
+  Type seq_elem_supertype(Type type) =
+    ne_seq_type()     = type.elem_type,
+    tuple_type(ts?)   = union_superset(set(ts)),
+    union_type(ts?)   = union_superset([seq_elem_supertype(t) : t <- ts]),
+    type_var()        = type_any,
+    type_ref(ts?)     = seq_elem_supertype(expand_type_ref(ts, typedefs)),
+    _                 = empty_type;
+
+
+  Type restricted_seq_elem_supertype(Type type, Type idx_type) =
+    ne_seq_type()     = type.elem_type,
+    tuple_type(ts?)   = union_superset([t : t @ i <~ ts, type_contains_obj(idx_type, i)]),
+    union_type(ts?)   = union_superset([restricted_seq_elem_supertype(t, idx_type) : t <- ts]),
+    type_var()        = type_any,
+    type_ref(ts?)     = restricted_seq_elem_supertype(expand_type_ref(ts, typedefs), idx_type),
+    _                 = empty_type;
+
+
+  Type set_elem_supertype(Type type) =
+    ne_set_type()     = type.elem_type,
+    union_type(ts?)   = union_superset([set_elem_supertype(t) : t <- ts]),
+    type_var()        = type_any,
+    type_ref(ts?)     = set_elem_supertype(expand_type_ref(ts, typedefs)),
+    _                 = empty_type;
+
+
+  Type bin_rel_arg_supertype(Type type, <0..1> arg) =
+    ne_map_type()       = if arg == 0 then type.key_type else type.value_type,
+    ne_bin_rel_type()   = union_superset([s(arg) : s <- type.signatures]),
+    ne_record_type(fs?) = if arg == 0
+                            then union_type([symb_type(s) : s, unused_var <- fs])
+                            else union_superset([f.type : unused_var, f <- fs]),
+    union_type(ts?)     = union_superset([bin_rel_arg_supertype(t, arg) : t <- ts]),
+    type_var()          = type_any,
+    type_ref(ts?)       = bin_rel_arg_supertype(expand_type_ref(ts, typedefs), arg),
+    _                   = empty_type;
+
+
+  (Type, Type) bin_rel_args_supertypes(Type type) = (
+    bin_rel_arg_supertype(type, 0), bin_rel_arg_supertype(type, 1)
+  );
+
+
+  ## BUG BUG BUG: ALL THESE FUNCTIONS, FOR BOTH BINARY AND TERNARY RELATIONS,
+  ## CANNOT COPE WITH POLYMORPHIC RELATIONS. REVISE ALL USE CASES, AND TRY TO
+  ## GET RID OF THEM
+  Type tern_rel_arg_supertype(Type type, <0..2> arg) =
+    ne_tern_rel_type()  = union_superset([s(arg) : s <- type.signatures]),
+    union_type(ts?)     = union_superset([tern_rel_arg_supertype(t, arg) : t <- ts]),
+    type_var()          = type_any,
+    type_ref(ts?)       = tern_rel_arg_supertype(expand_type_ref(ts, typedefs), arg),
+    _                   = empty_type;
+
+
+  (Type, Type, Type) tern_rel_args_supertypes(Type type) = (
+      tern_rel_arg_supertype(type, 0), tern_rel_arg_supertype(type, 1), tern_rel_arg_supertype(type, 2)
+    );
+
+
+  Type restricted_bin_rel_arg1_supertype(Type type, Type arg0_type) =
+    ne_map_type()       = if are_ptype_disjoint(type.key_type, arg0_type)
+                            then empty_type
+                            else type.value_type,
+    ## BUG BUG BUG: THIS IS WRONG WHEN THE TYPE OF THE FIRST ARGUMENT OVERLAPS WITH
+    ## MORE THAN ONE FORM OF A POLYMORPHIC RELATION. CHECK ALL THE USE CASES.
+    ne_bin_rel_type()   = union_superset([
+                            if are_ptype_disjoint(s(0), arg0_type) then empty_type else s(1)
+                            : s <- type.signatures
+                          ]),
+    ne_record_type(fs?) = union_superset([f.type : s, f <- fs, type_contains_obj(arg0_type, bare_obj(s))]),
+    union_type(ts?)     = union_superset([restricted_bin_rel_arg1_supertype(t, arg0_type) : t <- ts]),
+    type_var()          = if arg0_type != empty_type then type_any else empty_type,
+    type_ref(ts?)       = restricted_bin_rel_arg1_supertype(expand_type_ref(ts, typedefs), arg0_type),
+    _                   = empty_type;
+
+
+  Type+ tuple_field_supertypes(Type type, NzNat tuple_length) =
+    ne_seq_type()     = (type.elem_type : i < tuple_length),
+    tuple_type(ts?)   = if |ts| == tuple_length then ts else (empty_type : unused_var < tuple_length),
+    union_type(ts?)   = { ftss = [tuple_field_supertypes(t, tuple_length) : t <- ts];
+                          return (union_superset([fts(i) : fts <- ftss]) : i < tuple_length);
+                        },
+    type_var()        = (type_any : unused_var < tuple_length),
+    type_ref(ts?)     = tuple_field_supertypes(expand_type_ref(ts, typedefs), tuple_length),
+    _                 = (empty_type : unused_var < tuple_length);
+
+
+  Maybe[[+NeType*]] maybe_tuple_types_union(NeType type) =
+    empty_seq_type    = just([()]),
+    tuple_type(ts?)   = just([ts]),
+    union_type(ts?)   = { maybe_type_sets = [maybe_tuple_types_union(t) : t <- ts];
+                          return if not maybe_type_sets(nothing)
+                            then just(nonempty(union([value_unsafe(s) : s <- maybe_type_sets])))
+                            else nothing;
+                        },
+    type_ref(ts?)     = maybe_tuple_types_union(cast_ne_type(expand_type_ref(ts, typedefs))),
+    _                 = nothing;
+
+
+  [NeType+] tuple_types_field_types(NeType type, NzNat len) =
+    tuple_type(ts?)   = [ts if |ts| == len],
+    ne_seq_type()     = [(type.elem_type : i < len)],
+    union_type(ts?)   = union([tuple_types_field_types(t, len) : t <- ts]),
+    type_ref(ts?)     = tuple_types_field_types(cast_ne_type(expand_type_ref(ts, typedefs)), len),
+    _                 = [];
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  Bool is_symb_singl_type(Type type) =
+    symb_type()   = true,
+    type_ref(ts?) = is_symb_singl_type(expand_type_ref(ts, typedefs)),
+    _             = false;
+
+
+  SymbObj only_symb(Type type) =
+    symb_type(s?) = s,
+    type_ref(ts?) = only_symb(expand_type_ref(ts, typedefs));
+
+
+  [SymbObj] finite_symb_set_enum(Type type) =
+    empty_type      = [],
+    symb_type(s?)   = [s],
+    union_type(ts?) = union([finite_symb_set_enum(t) : t <- ts]),
+    type_ref(ts?)   = finite_symb_set_enum(expand_type_ref(ts, typedefs));
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  [TagObjType] tag_obj_types(Type type) =
+    tag_obj_type()    = [type],
+    union_type(ts?)   = union([tag_obj_types(t) : t <- ts]),
+    type_ref(ts?)     = tag_obj_types(expand_type_ref(ts, typedefs)),
+    _                 = [];
+
+
+  Type untagged_objs_supertype(Type type) =
+    tag_obj_type()    = type.obj_type,
+    union_type(ts?)   = union_superset([untagged_objs_supertype(t) : t <- ts]),
+    type_var()        = type_any,
+    type_ref(ts?)     = untagged_objs_supertype(expand_type_ref(ts, typedefs)),
+    _                 = empty_type;
+
+
+  Type restricted_untagged_objs_supertype(Type type, Atom tag) =
+    tag_obj_type()    = if type_contains_obj(type.tag_type, tag) then type.obj_type else empty_type,
+    union_type(ts?)   = union_superset([restricted_untagged_objs_supertype(t, tag) : t <- ts]),
+    type_var()        = type_any,
+    type_ref(ts?)     = restricted_untagged_objs_supertype(expand_type_ref(ts, typedefs), tag),
+    _                 = empty_type;
+
+
+  TagUnionType tag_supertype(Type type) =
+    tag_obj_type()    = type.tag_type,
+    union_type(ts?)   = tag_type_union([tag_supertype(t) : t <- ts]),
+    type_var()        = atom_type,
+    type_ref(ts?)     = tag_supertype(expand_type_ref(ts, typedefs)),
+    _                 = empty_type;
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  Bool is_singleton(NeType type) =
+    symb_type()         = true,
+    int_range()         = type.size == 1,
+    empty_seq_type      |
+    empty_rel_type      = true,
+    // type_ref(ts?)       = is_singleton(expand_type_ref(ts, typedefs)),
+    ## BAD BAD BAD: CHANGE WHATEVER NEEDS TO BE CHANGED IN ORDER TO MAKE expand_type_ref()
+    ## RETURN A NeType AS OPPOSED TO A Type
+    type_ref(ts?)       = { exp_type = expand_type_ref(ts, typedefs);
+                            fail if exp_type == empty_type;
+                            return is_singleton(exp_type);
+                          },
+    ## TODO: FINISH IMPLEMENTATION
+    _                   = false;
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  Maybe[RecordTypeFields] maybe_record_type_fields(NeType type) =
+    ne_record_type(fs?) = just(fs),
+    type_ref(ts?)       = maybe_record_type_fields(nonempty_type(expand_type_ref(ts, typedefs))),
+    _                   = nothing;
+
+
+  Maybe[NeType+] maybe_tuple_type_fields(NeType type) =
+    tuple_type(ts?) = just(ts),
+    type_ref(ts?)   = maybe_tuple_type_fields(nonempty_type(expand_type_ref(ts, typedefs))),
+    _               = nothing;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+NeType nonempty_type(Type type) = if type != empty_type then type else undefined;

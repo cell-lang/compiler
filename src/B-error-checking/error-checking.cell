@@ -1,0 +1,465 @@
+implicit syn_prg : SynPrg {
+  WFError* prg_wf_errors {
+    tdefs       = [d : unused_var, ds <- syn_prg.parsed_src_files, d <~ ds, typedef() ?= d];
+    par_tdefs   = [d : unused_var, ds <- syn_prg.parsed_src_files, d <~ ds, par_typedef() ?= d];
+    schemas     = [d : unused_var, ds <- syn_prg.parsed_src_files, d <~ ds, schema_def() ?= d];
+    prot_decls  = [d : unused_var, ds <- syn_prg.parsed_src_files, d <~ ds, prot_decl() ?= d];
+    tvar_decls  = [d : unused_var, ds <- syn_prg.parsed_src_files, d <~ ds, typevar_decl() ?= d];
+
+    errs = typedefs_preliminary_wf_errors(tdefs, par_tdefs);
+    return rand_sort(errs) if errs != [];
+
+    type_arity_map = merge_values([[td.name -> arity(td)] : td <- tdefs | td <- par_tdefs]);
+
+    errs = typedefs_wf_errors(tdefs, par_tdefs, type_arity_map);
+    return rand_sort(errs) if errs != [];
+
+    errs = schemas_wf_errors(schemas, type_arity_map);
+    return rand_sort(errs) if errs != [];
+
+    let type_arity_map = type_arity_map, schemas = [s.name -> s : s <- schemas], tdefs = tdefs, par_tdefs = par_tdefs:
+      errs = protocols_wf_errors(prot_decls);
+    ;
+    return errs if errs != ();
+
+    errs = typevar_decls_wf_errors(tvar_decls, prot_decls);
+    return rand_sort(errs) if errs != [];
+
+    args_errs = join(rand_sort([block_args_wf_errors(b.args) : b <- impl_blocks]));
+    return args_errs if args_errs != ();
+
+    impl_block_full_fndefs = [(fd, b.args) : b <- impl_blocks, fd <~ b.fn_defs];
+    full_fndefs = rand_sort([(fd, ()) : fd <- syn_fn_defs] & impl_block_full_fndefs);
+
+    sgn_errs = function_group_signature_wf_errors(full_fndefs);
+    return sgn_errs if sgn_errs != ();
+
+    errs = reactive_autos_wf_errors(type_arity_map);
+    return errs if errs != ();
+
+    proc_sgn_errs = procedures_signature_wf_errors(syn_proc_defs);
+    return proc_sgn_errs if proc_sgn_errs != ();
+
+    proc_def_errs = [proc_def_errors(pd, es) : pd <- syn_proc_defs, es = proc_def_wf_errors(pd), es != ()];
+
+    standalone_fndef_errs = [fndef_errors(fd, es) : fd <- syn_fn_defs, es = fndef_wf_errors(fd, []), es != ()];
+
+    impl_block_fndef_errs = ();
+    for b <- rand_sort(impl_blocks):
+      impl_args = set(b.args);
+      for fd <- b.fn_defs:
+        errs = fndef_wf_errors(fd, impl_args);
+        impl_block_fndef_errs = (impl_block_fndef_errs | fndef_errors(fd, errs)) if errs != ();
+      ;
+    ;
+
+    auto_meth_errs = join(rand_sort([auto_method_def_wf_errors(m) : m <- auto_methods]));
+    db_meth_errs = join(rand_sort([db_method_def_wf_errors(db, m) : db, ms <- methods_by_db, m <- ms]));
+    update_errs = join(rand_sort([update_def_wf_errors(db, u) : db, us <- updates_by_db, u <- us]));
+    handler_errs = join(rand_sort([handler_def_wf_errors(h) : h <- handler_defs]));
+
+    return rand_sort(standalone_fndef_errs) & impl_block_fndef_errs & rand_sort(proc_def_errs) &
+           auto_meth_errs & db_meth_errs & update_errs & handler_errs;
+  }
+
+
+  WFError* db_method_def_wf_errors(Atom db_name, DBMethodDef method) {
+    ## WE ARE NOT ALLOWING TYPE VARIABLES (NOR SCHEMAS THEMSELVES) IN A METHOD SIGNATURE FOR NOW
+    errs = join((plain_type_wf_errors(t) : t, unused_var <- method.args));
+    errs = errs & plain_type_wf_errors(method.ret_type);
+
+    arg_names = (n : unused_var, n <- method.args);
+    dupl_args = duplicates(arg_names);
+    errs = (errs | dupl_par_names([a : a <- dupl_args], [])) if dupl_args != [];
+
+    artifact = using_block_method_def(db_name, method);
+    let artifact = artifact, impl_args = [], actual_arg_arity = 0:
+      errs = errs & expr_wf_errors(method.expr, seq_union(([fn_arg(i), var(n)] : n @ i <- arg_names)));
+    ;
+
+    return (db_method_def_errors(db_defs_by_id[db_symbol(db_name)], method, errs) if errs != ());
+  }
+
+
+  WFError* handler_def_wf_errors(HandlerDef handler_def) {
+    errs = plain_type_wf_errors(handler_def.type);
+
+    db_symb = db_symbol(handler_def.target);
+    if db_defs_by_id(db_symb, *):
+      body = handler_def.body;
+      let artifact = handler_def, impl_args = [], actual_arg_arity = 0:
+        errs = errs & root_stmt_block_wf_errors(body, (), [var(:self)], false, false) if body != ();
+      ;
+    else
+      errs = (errs | unknown_auto(db_symb)) if not db_defs_by_id(db_symb, *);
+    ;
+
+    return (handler_def_errs(handler_def, errs) if errs != ());
+  }
+
+
+  WFError* update_def_wf_errors(Atom db_name, UpdateDef update_def) {
+    errs = join((plain_type_wf_errors(t) : t, unused_var <- update_def.args));
+
+    args = (v : unused_var, v <- update_def.args);
+    dupl_args = duplicates(args);
+    errs = (errs | dupl_par_names([bare_id(a) : a <- dupl_args], [])) if dupl_args != [];
+
+    body = update_def.body;
+    if body != ():
+      artifact = using_block_update_def(db_name, update_def);
+      let artifact = artifact, impl_args = [], actual_arg_arity = 0:
+        errs = errs & root_stmt_block_wf_errors(body, (), set(args), false, false);
+      ;
+    ;
+
+    return (update_def_errs(db_defs_by_id[db_symbol(db_name)], update_def, errs) if errs != ());
+  }
+
+
+  WFError* auto_method_def_wf_errors(AutoMethodDef method) {
+    ## WE ARE NOT ALLOWING TYPE VARIABLES (NOR SCHEMAS) IN A METHOD SIGNATURE FOR NOW
+    errs = join((plain_type_wf_errors(t) : t, unused_var <- method.args));
+    errs = errs & plain_type_wf_errors(method.ret_type);
+
+    arg_names = (v : unused_var, v <- method.args);
+    dupl_args = duplicates(arg_names);
+    errs = (errs | dupl_par_names([bare_id(a) : a <- dupl_args], [])) if dupl_args != [];
+
+    auto_symb = auto_symbol(method.target);
+    if not auto_defs_by_id(auto_symb, *):
+      return (auto_method_def_errors(method, (errs | unknown_auto(auto_symb))));
+    ;
+    auto_def = auto_defs_by_id[auto_symb];
+
+    let artifact = method, impl_args = [], actual_arg_arity = 0:
+      errs = errs & expr_wf_errors(method.expr, seq_union(([fn_arg(i), s] : s @ i <- arg_names)));
+    ;
+
+    return (auto_method_def_errors(method, errs) if errs != ());
+  }
+
+
+  WFError* reactive_autos_wf_errors([BasicTypeSymbol -> [+Nat]] type_arity_map) {
+    errs = [dupl_auto_defs(ds) : unused_var, ds <- group_by(react_auto_defs, $.name), |ds| > 1];
+    return rand_sort(errs) if errs != [];
+
+    all_autos = [a.name : a <- react_auto_defs];
+    errs = [
+      auto_def_errors(a, (unknown_auto(auto_symbol(a.parent))))
+      : a <- react_auto_defs, a.parent?, not all_autos(a.parent)
+    ];
+    return _isort_(errs) if errs != [];
+
+    shallow_deps = [a.name -> [a.parent if a.parent?] : a <- react_auto_defs];
+    deep_deps = transitive_closure(shallow_deps);
+    ## BAD: THE ps(a) CHECK SHOULD BE ENOUGH TO INFER THAT ps IS NOT EMPTY
+    errs = [auto_inheritance_cycle(nonempty(ps)) : a, ps <- deep_deps, ps(a)];
+    return _isort_(errs) if errs != [];
+
+    sorted_auto_ids = topological_sort(shallow_deps);
+
+    resolved_autos_by_id = [];
+    for ids <- sorted_auto_ids:
+      errs = union([{
+          auto = auto_defs_by_id[auto_symbol(id)];
+          res_auto = resolve_inheritance(auto, resolved_autos_by_id);
+          es = reactive_auto_wf_errors(res_auto, type_arity_map);
+          return [auto_def_errors(auto, es) if es != ()];
+        } : id <- ids
+      ]);
+      return _isort_(errs) if errs != [];
+
+      layer_autos_by_id = [
+        typed_id -> resolve_inheritance(auto_defs_by_id[typed_id], resolved_autos_by_id)
+        : id <- ids, typed_id = auto_symbol(id)
+      ];
+      resolved_autos_by_id = resolved_autos_by_id & layer_autos_by_id;
+    ;
+
+    return ();
+  }
+
+
+  WFError* block_args_wf_errors(ImplArgDecl* signatures) {
+    errs = ();
+    for s1 @ i1 <- signatures ; s2 <- drop(signatures, i1+1):
+      errs = (errs | dupl_impl_arg(s1, s2)) if s1.name == s2.name;
+    ;
+    for s <- signatures:
+      type_errs = plain_type_wf_errors(s.type);
+      errs = (errs | signature_errors(s, type_errs)) if type_errs != ();
+    ;
+    return errs;
+  }
+
+
+  WFError* function_group_signature_wf_errors((SynFnDef, ImplArgDecl*)* full_fndefs) {
+    sgn_errs = values((fndef_signature_wf_errors(fd, nps) : fd, nps <- full_fndefs));
+    return sgn_errs if sgn_errs != ();
+    fndefs_by_name_and_arity = merge_values([[(fd.name, arity(fd)) -> fd] : fd, unused_var <~ full_fndefs]);
+    return join(rand_sort([polymorphic_functions_errors(nonempty(rand_sort(fds))) : unused_var, fds <- fndefs_by_name_and_arity]));
+  }
+
+
+  Maybe[WFError] fndef_signature_wf_errors(SynFnDef fndef, ImplArgDecl* impl_args) {
+    errs = join((arbitrary_type_wf_errors(p.type) : p <- fndef.args));
+    errs = errs & arbitrary_type_wf_errors(fndef.res_type);
+
+    pos_args = (a.name : a <- fndef.args, a.name?);
+    impl_args_ids = (bare_id(p.name) : p <- impl_args);
+
+    dupl_pos_pars = duplicates(pos_args);
+    dupl_impl_args = duplicates(pos_args & impl_args_ids) - dupl_pos_pars;
+    errs = (errs | dupl_par_names(dupl_pos_pars, dupl_impl_args)) if dupl_pos_pars != [] or dupl_impl_args != [];
+
+    direct_type_vars = seq_union((syn_type_vars(a.type) : a <- fndef.args, a.type :: SynType));
+
+    indirect_type_vars = [];
+    for a @ i <- fndef.args:
+      if a :: SynClsArg:
+        in_type_vars = seq_union((syn_type_vars(t) : t <- a.type.in_types));
+        undef_type_vars = in_type_vars - direct_type_vars;
+        errs = (errs | invalid_cls_type_vars(i, a.name, undef_type_vars)) if undef_type_vars != [];
+        indirect_type_vars = indirect_type_vars & syn_type_vars(a.type.out_type);
+      ;
+    ;
+
+    res_type_vars = syn_type_vars(fndef.res_type);
+    undef_res_type_vars = res_type_vars - {direct_type_vars & indirect_type_vars};
+    errs = (errs | invalid_res_type_vars(undef_res_type_vars)) if undef_res_type_vars != [];
+
+    return if errs != () then just(fndef_errors(fndef, errs)) else nothing;
+  }
+
+
+  WFError* polymorphic_functions_errors(SynFnDef+ full_fndefs) {
+    for fd1 @ i1 <- full_fndefs ; fd2 <- drop(full_fndefs, i1+1):
+      assert fd1.name == fd2.name and arity(fd1) == arity(fd2);
+      arity_match = (syn_type_arity(a1.type) == syn_type_arity(a2.type) : a1, a2 <- zip(fd1.args, fd2.args));
+      return (incomp_pos_args(fd1, fd2, nonempty((i : b @ i <- arity_match, not b)))) if not all(arity_match);
+    ;
+    return ();
+  }
+
+
+  WFError* procedures_signature_wf_errors([SynProcDef] proc_defs) {
+    def_errs = join((proc_signature_wf_errors(pd) : pd <- rand_sort(proc_defs)));
+    procs_by_name = group_by(proc_defs, $.name);
+    global_errs = rand_sort([same_name_proc_defs(rand_sort(pds)) : pds <- values(procs_by_name), |pds| != 1]);
+    return def_errs & global_errs;
+  }
+
+
+  WFError* proc_signature_wf_errors(SynProcDef proc_def) {
+    name = proc_def.name;
+    bare_name = match (name) proc_symbol(n?) = n;
+    arity = arity(proc_def);
+    res_type = proc_def.res_type;
+
+    dup_pars = duplicates((match (p.var) var(n?) = n : p <- proc_def.args));
+
+    errs = (
+      builtin_proc_redef            if builtin_procs_map(name, *),
+      wrong_main_proc_arity         if bare_name == :main and arity != 1,
+      dupl_par_names(dup_pars, [])  if dup_pars != []
+    );
+
+    errs = errs & join((schema_aware_type_wf_errors(p.type) : p <- proc_def.args));
+    errs = errs & schema_aware_type_wf_errors(value(res_type)) if res_type != nothing;
+
+    return (proc_def_errors(proc_def, errs) if errs != ());
+  }
+
+
+  FnDefWFError* fndef_wf_errors(SynFnDef fndef, [ImplArgDecl] impl_args) {
+    loc_fns_errs = function_group_signature_wf_errors(((fd, rand_sort(impl_args)) : fd <- fndef.local_fns));
+    return (nested_functions_errors(loc_fns_errs)) if loc_fns_errs != ();
+
+    unique_name = fn_family_id(fndef.name, |fndef.args|); ## THIS IS WRONG, THAT'S SUPPOSED TO BE THE UNIQUE VERSION OF THE NAME
+
+    main_fn_errs = wf_errors(top_level_fn_def(fndef, unique_name, impl_args));
+    nested_fns_errs = join((wf_errors(nested_fn_def(fd, fndef, unique_name, impl_args)) : fd <- fndef.local_fns));
+
+    return main_fn_errs & nested_fns_errs;
+
+
+    FnDefWFError* wf_errors(<TopLevelFnDef, NestedFnDef> artifact) {
+      fndef = artifact.fndef;
+      impl_args = [s.name : s <- artifact.impl_args];
+      args = seq_union(([fn_arg(i), var(a.name) if a.name?] : a @ i <- fndef.args, a :: SynObjArg));
+      expr = fndef.expr;
+      errs = match (expr)
+        match_expr()  = ( invalid_ptrn_list_len(|expr.exprs|, arity(fndef))
+                          if expr.exprs :: FnArg+ and |expr.exprs| > arity(fndef)
+                        ),
+        _             = ();
+      return errs if errs != ();
+      let artifact = artifact, impl_args = impl_args, actual_arg_arity = 0:
+        errs = expr_wf_errors(fndef.expr, args);
+      ;
+      return errs;
+    }
+  }
+
+
+  ProcDefWFError* proc_def_wf_errors(SynProcDef proc_def) {
+    auto_or_db_vars = proc_def.auto_or_db_vars;
+
+    dups = duplicates((v.var : v <- auto_or_db_vars));
+    return (dup_auto_or_db_var(v) : v <- rand_sort(dups)) if dups != [];
+
+    errs = (
+      undef_auto_or_db(v.var, v.type)
+      : v <- auto_or_db_vars,
+        not db_defs_by_id(db_symbol(v.type), *) and not auto_defs_by_id(auto_symbol(v.type), *)
+    );
+    return errs if errs != ();
+
+    all_vars = [v.var : v <~ auto_or_db_vars];
+    db_vars_types = [
+      v.var -> db_defs_by_id(t, !!)
+      : v <~ auto_or_db_vars, t = db_symbol(v.type), db_defs_by_id(t, *)
+    ];
+    errs = join(({
+      is_static = db_vars_types(v.var, *);
+      if is_static:
+        var_type = db_vars_types(v.var, !!);
+        links = var_type.links;
+        return (wrong_auto_var_arity(v.var, |v.args|, |links|)) if |links| != |v.args|;
+        return join(({
+          return (undef_static_auto_var(a, all_vars(a), false)) if not db_vars_types(a, *);
+          arg_type = db_vars_types(a, !!);
+          exp_type = links(i);
+          return (wrong_auto_arg_type(v.var, a, arg_type.name, exp_type) if arg_type.name != exp_type);
+        } : a @ i <- v.args));
+      else
+        return (wrong_auto_var_arity(v.var, |v.args|, 0) if |v.args| != 0);
+      ;
+    } : v <- auto_or_db_vars));
+    return errs if errs != ();
+
+    body = proc_def.body;
+    return () if body == ();
+    vars = [p.var : p <~ proc_def.args];
+    has_ret_val = proc_def.res_type != nothing;
+    let artifact = proc_def, impl_args = [], actual_arg_arity = 0:
+      errs = root_stmt_block_wf_errors(body, (), vars, has_ret_val, true);
+    ;
+    return errs;
+  }
+
+  ////////////////////////////////////////////////////////////////////////////////
+  ////////////////////////////////////////////////////////////////////////////////
+
+  // [FnSymbol -> [Nat -> (Nat*, [+[ImplArg]])]] create_global_functions_map((SynFnDef, ImplArgDecl*)* full_fndefs) {
+  //   fndefs_by_name = group_by(full_fndefs, left($).name);
+  //   return [n -> create_polymorphic_function_map(fds) : n, fds <- fndefs_by_name];
+
+
+  //   [Nat -> (Nat*, [+[ImplArg]])] create_polymorphic_function_map([+(SynFnDef, ImplArgDecl*)] full_fndefs) {
+  //     fndefs_by_arity = group_by(full_fndefs, arity(left($)));
+  //     // return (a => {fndef_sgn_info(left(fd), right(fd)) : fd <- fds} : fds @ a <- fndefs_by_arity);
+  //     return [a -> fndefs_sgn_info(fds) : a, fds <- fndefs_by_arity];
+  //   }
+
+
+  //   (Nat*, [+[ImplArg]]) fndefs_sgn_info([+(SynFnDef, ImplArgDecl*)] full_fndefs) {
+  //     sgn_infos = [fndef_sgn_info(left(fd), right(fd)) : fd <- full_fndefs];
+  //     pos_pars_info = [left(si) : si <- sgn_infos];
+  //     impl_args_info = [right(si) : si <- sgn_infos];
+  //     return (only(pos_pars_info), impl_args_info);
+  //   }
+
+
+  //   (Nat*, [ImplArg]) fndef_sgn_info(SynFnDef fndef, ImplArgDecl* impl_args) {
+  //     pos_pars_info = (arity(p) : p <- fndef.args);
+  //     impl_args_info = [a.name : a <~ impl_args];
+  //     return (pos_pars_info, impl_args_info);
+  //   }
+  // }
+
+
+  [ProcSymbol -> (Nat, Bool)] builtin_procs_map = [
+    proc_symbol(:file_read)    -> (1, true),
+    proc_symbol(:file_write)   -> (2, true),
+    proc_symbol(:print)        -> (1, false),
+    proc_symbol(:get_char)     -> (0, true)
+  ];
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+implicit type_arity_map : [BasicTypeSymbol -> [+Nat]], schemas : [Atom -> SchemaDef], tdefs : [Typedef], par_tdefs : [ParTypedef] {
+  WFError* protocols_wf_errors([ProtDecl] prot_decls) {
+    // The same protocol type cannot appear in more than one protocol declaration
+    prots_by_type = merge_values([[t -> p] : p <- prot_decls, t <~ p.types]);
+    errs = [protocol_redef(t, ps) : t, ps <- prots_by_type, |ps| > 1];
+    return rand_sort(errs) if errs != [];
+
+    return rand_sort([protocol_errors(p, es) : p <- prot_decls, es = protocol_wf_errors(p), es != ()]);
+
+
+    ProtWFError* protocol_wf_errors(ProtDecl prot_decl) {
+      ## TODO: CHECK THAT THERE ARE NO DUPLICATES IN THE LIST OF PROTOCOL TYPES
+
+      // Protocol type names must not conflict with type or schema names
+      errs = join(({
+          confl_type_name = type_symbol(t);
+          confl_tdefs = if type_arity_map(confl_type_name, *)
+            then [td : td <- tdefs | td <- par_tdefs, td.name == confl_type_name]
+            else [];
+          return (prot_type_conflict(t, td) : td <- rand_sort(confl_tdefs)) if confl_tdefs != [];
+          return (prot_schema_conflict(t, schemas[t]) if schemas(t, *));
+        } : t <- prot_decl.types
+      ));
+      return errs if errs != ();
+
+      // No polymorphic methods (methods with same name but different arities are OK)
+      errs = [dupl_prot_methods(rand_sort(ms)) : unused_var, ms <- group_by(prot_decl.methods, ($(0), |$(1)|)), |ms| > 1];
+      return rand_sort(errs) if errs != [];
+
+      prot_types = [t : t <~ prot_decl.types];
+      return join((prot_method_errors(id, ats, rt, prot_types) : id, ats, rt <- prot_decl.methods));
+    }
+
+
+    ProtWFError* prot_method_errors(FnSymbol method_id, SynType+ arg_types, SynType ret_type, [+Atom] prot_types) {
+      errs = join((prot_sgn_type_wf_errors(t, type_arity_map, prot_types) : t <- (arg_types | ret_type)));
+      return errs if errs != ();
+
+      ## CHECK THAT PROTOCOL TYPES THAT APPEAR IN THE RESULT ALSO APPEAR IN THE ARGUMENTS???
+      return ();
+    }
+  }
+}
+
+
+[WFError] typevar_decls_wf_errors([TypeVarDecl] tvar_decls, [ProtDecl] prot_decls) {
+  prot_types_map = [t -> set(pd.types) : pd <- prot_decls, t <~ pd.types];
+  return [typevar_decl_errs(d, es) : d <- tvar_decls, es = typevar_decl_wf_errors(d, prot_types_map), es != ()];
+
+
+  TypeVarDeclError* typevar_decl_wf_errors(TypeVarDecl decl, [Atom -> [+Atom]] prot_types_map) {
+    dupl_vars = duplicates(decl.type_vars);
+    return (dupl_type_vars(dupl_vars)) if dupl_vars != [];
+
+    nvars = |decl.type_vars|;
+    for pts <- decl.prot_types:
+      // No duplicates among types
+      dupl_types = duplicates(pts);
+      return (dupl_prot_types(dupl_types)) if dupl_types != [];
+      // Number of types must be the same as the number of variables
+      return (wrong_number_of_prot_types) if |pts| != nvars;
+      // All protocol types must be defined
+      errs = (undef_prot_type(t) : t <- pts, not prot_types_map(t, *));
+      return errs if errs != ();
+      // All protocol types must belong to the same protocol
+      prot_types = prot_types_map[pts(0)];
+      return (unrelated_prot_types(pts)) if not subset(set(pts), prot_types);
+    ;
+
+    return ();
+  }
+}
