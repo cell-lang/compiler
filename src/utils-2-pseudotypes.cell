@@ -14,7 +14,7 @@ PseudoType pseudotype([]) = :pseudotype([]);
 NePseudoType pseudotype([+BasicPseudoType] pts) {
   red_symb_pts    = if in(:symbols, pts)  then [pt : pt <- pts, symbol() ?= pt] else [];
   red_tag_obj_pts = if in(:tag_objs, pts) then [pt : pt <- pts, tag_obj() ?= pt] else [];
-  return :pseudotype(nonempty(pts - {red_symb_pts & red_tag_obj_pts}));
+  return :pseudotype(nonempty(pts - #(red_symb_pts & red_tag_obj_pts)));
 }
 
 
@@ -139,11 +139,11 @@ Bool matches(Pattern ptrn, PseudoType ptype) = not are_disjoint(pseudotype(ptrn)
 Maybe[Pattern] restrict(Pattern ptrn, NePseudoType ptype) =
   ptrn_symbol       = restrict_ptrn_symbol(ptype),
   ptrn_any          = just(pseudotype_pattern(ptype)),
-  ptrn_tag_obj()    = { match (ptrn.tag)
-                          ptrn_symbol             = restrict_ptrn_any_tag_obj(ptrn.obj, ptype),
-                          ptrn_symbol(object(s?)) = if is_subset(pseudotype_tag_obj(s), ptype) then just(ptrn) else nothing,
-                          ptrn_var()              = if not are_disjoint(ptype, pseudotype_tag_objs) then just(ptrn) else nothing
-                      },
+  ptrn_tag_obj()    = #( match (ptrn.tag)
+                           ptrn_symbol             = restrict_ptrn_any_tag_obj(ptrn.obj, ptype),
+                           ptrn_symbol(object(s?)) = if is_subset(pseudotype_tag_obj(s), ptype) then just(ptrn) else nothing,
+                           ptrn_var()              = if not are_disjoint(ptype, pseudotype_tag_objs) then just(ptrn) else nothing
+                      ),
   ptrn_var()        = restrict_ptrn_var(ptrn.var, ptrn.ptrn, ptype),
   ptrn_union(ps?)   = restrict_ptrn_union(ps, ptype),
   _                 = if matches(ptrn, ptype) then just(ptrn) else nothing;
@@ -197,8 +197,8 @@ PseudoType pseudotype(Type type, [TypeName -> Type] typedefs) =
   ne_tern_rel_type()    = pseudotype_ne_tern_rels,
   ne_record_type()      = pseudotype_ne_bin_rels,
   tuple_type()          = pseudotype_ne_seqs,
-  tag_obj_type()        = { match (type.tag_type)
-                              atom_type             = pseudotype_tag_objs,
-                              symb_type(object(a?)) = pseudotype_tag_obj(a)
-                          },
+  tag_obj_type()        = #( match (type.tag_type)
+                               atom_type             = pseudotype_tag_objs,
+                               symb_type(object(a?)) = pseudotype_tag_obj(a)
+                          ),
   union_type(ts?)       = pseudotype_union([pt : t <- ts, pt = pseudotype(t, typedefs), pt :: NePseudoType]);

@@ -434,7 +434,7 @@ Bool is_pattern_any(Pattern ptrn) =
   rel_clause()        = extern_vars(cls.src) & seq_union((extern_vars(value(a)) : a <- cls.args, a != nothing)),
   relvar_clause()     = seq_union((extern_vars(value(a)) : a <- cls.args, a != nothing)),
   seq_clause()        = extern_vars(cls.src),
-  and_clause()        = clause_extern_vars(cls.left) & {clause_extern_vars(cls.right) - new_vars(cls.left)},
+  and_clause()        = clause_extern_vars(cls.left) & #(clause_extern_vars(cls.right) - new_vars(cls.left)),
   or_clause()         = clause_extern_vars(cls.left) & clause_extern_vars(cls.right),
   match_clause()      = extern_vars(cls.expr),
   asgnm_clause()      = extern_vars(cls.expr),
@@ -445,7 +445,7 @@ Bool is_pattern_any(Pattern ptrn) =
   def_vs = [];
   ext_vs = [];
   for s <- stmts:
-    ext_vs = ext_vs & {stmt_extern_vars(s) - def_vs};
+    ext_vs = ext_vs & #(stmt_extern_vars(s) - def_vs);
     def_vs = def_vs & new_vars(s);
   ;
   return ext_vs;
@@ -458,8 +458,8 @@ Bool is_pattern_any(Pattern ptrn) =
   return_stmt(e?)   = extern_vars(e),
   if_stmt()         = extern_vars(s.cond) & stmts_extern_vars(s.body) & stmts_extern_vars(s.else),
   loop_stmt(ss?)    = stmts_extern_vars(ss),
-  foreach_stmt()    = extern_vars(s.values) & {stmts_extern_vars(s.body) - {set(s.vars) & [s.idx_var if s.idx_var?]}},
-  for_stmt()        = extern_vars(s.start_val) & extern_vars(s.end_val) & {stmts_extern_vars(s.body) - [s.var if s.var?]},
+  foreach_stmt()    = extern_vars(s.values) & #(stmts_extern_vars(s.body) - #(set(s.vars) & [s.idx_var if s.idx_var?])),
+  for_stmt()        = extern_vars(s.start_val) & extern_vars(s.end_val) & #(stmts_extern_vars(s.body) - [s.var if s.var?]),
   break_stmt        = [],
   fail_stmt         = [],
   assert_stmt()     = extern_vars(s.cond),
@@ -504,7 +504,7 @@ type StmtOutcome = fails, returns, breaks, falls_through;
 [+StmtOutcome] outcomes(Statement* stmts) {
   os = [:falls_through];
   for s <- stmts:
-    os = {os - [:falls_through]} & outcomes(s);
+    os = #(os - [:falls_through]) & outcomes(s);
     break if not in(:falls_through, os);
   ;
   return nonempty(os);
@@ -545,9 +545,9 @@ type StmtOutcome = fails, returns, breaks, falls_through;
   // Failures and returns in the body are transferred to the loop.
   // Fall throughs in the body are neutralized by the loop, but they
   // create the possibility of an infinite loop, which counts as failure.
-  os = {os - [:falls_through]} & [:fails] if in(:falls_through, os);
+  os = #(os - [:falls_through]) & [:fails] if in(:falls_through, os);
   // A break in the body becomes a fall through for the loop itself
-  os = {os - [:breaks]} & [:falls_through] if in(:breaks, os);
+  os = #(os - [:breaks]) & [:falls_through] if in(:breaks, os);
   return nonempty(os); // Shutting up the type checker
 }
 

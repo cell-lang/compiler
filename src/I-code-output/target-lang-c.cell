@@ -227,7 +227,7 @@ Int pow(Int b, Nat e) {
     max_len = nat(max((length(printed(n)) : n <- (min_elem, max_elem))));
     last_idx = |int_seq| - 1;
     strs = (align_text(s, max_len, ascii_space) & if i != last_idx then ", " else "" : s @ i <- strs);
-    cont_lines = ("  " & append(ss) : ss <- split_into_groups(strs, nz_nat(100 / {max_len + 2})));
+    cont_lines = ("  " & append(ss) : ss <- split_into_groups(strs, nz_nat(100 / #(max_len + 2))));
     def = (sgn & " = {") & cont_lines & ("};");
   ;
 
@@ -247,7 +247,8 @@ Int pow(Int b, Nat e) {
 
   String align_text(String str, Nat len, Nat filler) {
     str_len = length(str);
-    return {if len >= str_len then string(nat(len-str_len) * (filler)) else ""} & str;
+    filling = if len >= str_len then string(nat(len-str_len) * (filler)) else "";
+    return filling & str;
   }
 }
 
@@ -1010,7 +1011,7 @@ implicit {
 
   String to_c_arg(FnCallParam arg) {
     by_ref = arg :: <TableItVar, AnyRelVar>;
-    return {if by_ref then "&" else ""} & to_c_expr(arg);
+    return #(if by_ref then "&" else "") & to_c_expr(arg);
   }
 
   String mk_gen_call(String fn_name, String* leading_params, FnCallParam* params, String* trailing_params) =

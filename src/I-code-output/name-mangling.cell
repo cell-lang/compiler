@@ -155,23 +155,23 @@ String to_c_var_name(IntVar v, Bool add_prefix) {
 
 String to_c_var_name(AnyAutoVar v, Bool add_prefix) =
   loc_auto_var(a?)    = _str_(a) & "_R",
-  nested_auto_var(a?) = {if add_prefix then "self->" else ""} & _str_(a) & "_R";
+  nested_auto_var(a?) = #(if add_prefix then "self->" else "") & _str_(a) & "_R";
 
 
 String to_c_var_name(AnyDBVar v, Bool add_prefix) =
   loc_db_var(a?)    = _str_(a) & "_T",
-  nested_db_var(a?) = {if add_prefix then "self->" else ""} & _str_(a) & "_T",
-  linked_db_var(n?) = "(*" & {if add_prefix then "self->" else ""} & "linked_auto_" & printed(n) & ")",
+  nested_db_var(a?) = #(if add_prefix then "self->" else "") & _str_(a) & "_T",
+  linked_db_var(n?) = "(*" & #(if add_prefix then "self->" else "") & "linked_auto_" & printed(n) & ")",
   qual_db_var()     = to_c_var_name(v.outer, add_prefix) & "." & to_c_var_name(v.inner, false);
 
 
 String to_c_var_name(AnyRelVar v, Bool add_prefix) =
-  rel_var(a?)     = {if add_prefix then "self->" else ""} & _str_(a) & "_B",
+  rel_var(a?)     = #(if add_prefix then "self->" else "") & _str_(a) & "_B",
   qual_rel_var()  = to_c_var_name(v.db_var, add_prefix) & "." & to_c_var_name(v.rel_var, false);
 
 
 String to_c_var_name(AnyValueStoreId v, Bool add_prefix) =
-  value_store_id(n?)      = {if add_prefix then "&self->" else ""} & "value_store_" & printed(n),
+  value_store_id(n?)      = #(if add_prefix then "&self->" else "") & "value_store_" & printed(n),
   nested_value_store_id() = { assert add_prefix;
                               db_var_str = to_c_var_name(v.db_var, true);
                               return "&" & db_var_str & "." & to_c_var_name(v.store_id, false);

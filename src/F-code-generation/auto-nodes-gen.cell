@@ -278,7 +278,7 @@ implicit program : Program, automaton : Automaton {
     expr = nested_auto_inputs[node_id];
     auto_type = automaton.nested_autos[nested_auto_var(node_id.auto)].type;
     discrete_signals = [v : v <- auto_expr_extern_vars(expr), v :: AnySignalVar, is_discrete(v)];
-    assert input_is_discrete(auto_type, signal_var(node_id.input)) == {discrete_signals != []};
+    assert input_is_discrete(auto_type, signal_var(node_id.input)) == #(discrete_signals != []);
     return nested_auto_input_node(node_id, expr, discrete_signals, level);
   }
 }
@@ -330,10 +330,10 @@ implicit program : Program, automaton : Automaton {
 
   [AutoNodeDependency] nested_deps(Clause cls) {
     rel_var_deps = match (cls)
-      relvar_clause() = { match (cls.rel_var)
-                            rel_var()       = [],
-                            qual_rel_var()  = [cls.rel_var]
-                        },
+      relvar_clause() = #( match (cls.rel_var)
+                             rel_var()       = [],
+                             qual_rel_var()  = [cls.rel_var]
+                        ),
       _               = [];
 
     return rel_var_deps & retrieve_from_nested_exprs(cls, nested_deps);

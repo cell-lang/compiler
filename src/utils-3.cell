@@ -31,14 +31,14 @@ type CodeOutcome = fails, returns, breaks_loop, exits_block, falls_through;
 [+CodeOutcome] loop_outcomes(Instr+ body) {
   body_outcomes = code_outcomes(body);
   may_break = in(breaks_loop, body_outcomes);
-  return nonempty({body_outcomes - [breaks_loop, falls_through]} & [if may_break then falls_through else fails]);
+  return nonempty(#(body_outcomes - [breaks_loop, falls_through]) & [if may_break then falls_through else fails]);
 }
 
 
 [+CodeOutcome] block_outcomes(Instr+ body) {
   body_outcomes = code_outcomes(body);
   may_exit = in(exits_block, body_outcomes);
-  return nonempty({body_outcomes - [exits_block]} & [falls_through if may_exit]);
+  return nonempty(#(body_outcomes - [exits_block]) & [falls_through if may_exit]);
 }
 
 
@@ -46,7 +46,7 @@ type CodeOutcome = fails, returns, breaks_loop, exits_block, falls_through;
   outcomes = [falls_through];
   for instr <- instrs:
     assert in(falls_through, outcomes);
-    outcomes = {outcomes - [falls_through]} & code_outcomes(instr);
+    outcomes = #(outcomes - [falls_through]) & code_outcomes(instr);
     break if not in(falls_through, outcomes);
   ;
   return nonempty(outcomes);
