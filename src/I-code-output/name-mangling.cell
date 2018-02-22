@@ -53,8 +53,16 @@ String to_c_var_name(SeqItVar v)        = "seq_it_" & printed(bare_id_2(v));
 String to_c_var_name(SetItVar v)        = "set_it_" & printed(bare_id_2(v));
 String to_c_var_name(BinRelItVar v)     = "bin_rel_it_" & printed(bare_id_2(v));
 String to_c_var_name(TernRelItVar v)    = "tern_rel_it" & printed(bare_id_2(v));
-String to_c_var_name(TableItVar v)      = "table_it_" & printed(v.id);
 String to_c_var_name(StreamVar v)       = "stream_" & printed(bare_id_2(v));
+
+String to_c_var_name(TableItVar v) {
+  prefix = match (v.arity)
+    1   = "unary",
+    2   = "bin",
+    3   = "tern";
+
+  return prefix & "_table_it_" & printed(v.id);
+}
 
 String to_c_var_name(AnyClsVar v) =
   cls_var(<+> a?)     = _str_(a) & "_C",
