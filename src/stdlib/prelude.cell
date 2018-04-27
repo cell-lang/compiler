@@ -22,7 +22,7 @@ type Opt[T]         = (), (T);
 
 type Nothing        = nothing;
 type Just[T]        = just(T);
-type Maybe[T]       = nothing, just(T);
+type Maybe[T]       = Nothing, Just[T]; //nothing, just(T);
 
 type Success[T]     = success(T);
 type Failure[T]     = failure(T);
@@ -218,7 +218,7 @@ T* join(T** seqs) {
 
 T* reverse(T* seq) = _rev_(seq);
 
-T* take(T* seq, Int count) = _slice_(seq, 0, count);
+T* take(T* seq, Int count) = if |seq| > count then _slice_(seq, 0, count) else seq;
 T* drop(T* seq, Int count) = if |seq| > count then _slice_(seq, count, |seq| - count) else ();
 
 T* slice(T* seq, Int first, Int count) = _slice_(seq, first, count);
