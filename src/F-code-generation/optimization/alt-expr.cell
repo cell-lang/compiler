@@ -1,4 +1,10 @@
+Expr* exprs_cluster(Expr expr) = exprs_cluster(expr, 0);
+
+////////////////////////////////////////////////////////////////////////////////
+
 Expr* exprs_cluster(<undefined, LeafObj, FloatLit, Var, OutputIsDefExpr, OutputIsSetExpr> expr, Nat offset) = (expr);
+
+Expr* exprs_cluster(ExprRef, Nat) = undefined;
 
 // type SetExpr        = set_expr([SubExpr]);
 Expr* exprs_cluster(SetExpr expr, Nat offset) = subexprs_cluster(isort(untag(expr)), offset, set_expr(set($)));
@@ -224,25 +230,38 @@ Expr* exprs_cluster(TernRelCompExpr expr, Nat offset) {
 ////////////////////////////////////////////////////////////////////////////////
 
 Expr* expr_cluster(Expr expr, Nat offset, (Expr -> Expr) parent_expr) {
-  fail;
+  cluster = exprs_cluster(expr, nat(offset+1));
+  return (parent_expr(expr_ref(offset))) & cluster;
 }
 
 
-Expr* exprs_cluster(Expr* subexprs, Nat offset, (Expr* -> Expr) parent_expr) {
-  fail;
-  // cluster = ();
-  // offsets = ();
-  // for se <- subexprs:
-  //   suboffset = nat(offset + |cluster| + 1);
-  //   offsets = (offsets | suboffset);
-  //   cluster = cluster & exprs_cluster(se, suboffset);
-  // ;
-  // return (cluster | cluster, offsets);
+Expr* exprs_cluster(Expr* exprs, Nat base_offset, (Expr* -> Expr) parent_expr) {
+  cluster = ();
+  expr_refs = ();
+  for e <- exprs:
+    offset = nat(base_offset + |cluster| + 1);
+    expr_refs = (expr_refs | expr_ref(offset));
+    cluster = cluster & exprs_cluster(e, offset);
+  ;
+  return (parent_expr(expr_refs)) & cluster;
 }
 
 
-Expr* maybe_exprs_cluster(Maybe[Expr]* exprs, Nat offset, (Maybe[Expr]* -> Expr) parent_expr) {
-  fail;
+Expr* maybe_exprs_cluster(Maybe[Expr]* exprs, Nat base_offset, (Maybe[Expr]* -> Expr) parent_expr) {
+  expr_refs : Maybe[ExprRef]*;
+
+  cluster = ();
+  expr_refs = ();
+  for e <- exprs:
+    if e != nothing:
+      offset = nat(base_offset + |cluster| + 1);
+      expr_refs = (expr_refs | just(expr_ref(offset)));
+      cluster = cluster & exprs_cluster(value(e), offset);
+    else
+      expr_refs = (expr_refs | nothing);
+    ;
+  ;
+  return (parent_expr(expr_refs)) & cluster;
 }
 
 
