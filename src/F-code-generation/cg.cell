@@ -99,11 +99,14 @@ implicit program : Program, options : CompilationOptions {
     val = if procedure.res_type != nothing then fn_res_var else object(:void); ## BAD: HERE I'M CHEATING...
     body = debug_code & body & (pop_call_info, ret_val(val));
 
+    proc_ret_type = if procedure.res_type != nothing then value(procedure.res_type) else symb_type(:void);
+
     return obj_proc_def(
       name:           procedure.id,
       args:           (a.var : a <- procedure.args),
       cls_args:       (),
       impl_args:      [],
+      type:           fn_type((a.type : a <- procedure.args), proc_ret_type),
       loc_auto_vars:  procedure.auto_vars,
       loc_db_vars:    [v -> info.type : v, info <- procedure.db_vars],
       body:           nonempty(body),
@@ -132,6 +135,7 @@ implicit program : Program, options : CompilationOptions {
 
     return obj_proc_def(
       name:           func.id,
+      type:           signature(func),
       args:           args,
       cls_args:       cls_args,
       impl_args:      keys(func.impl_args),
@@ -213,8 +217,22 @@ implicit program : Program, options : CompilationOptions {
     args = (fn_arg(i) : i < |rand_args|);
     cls_args = (cls(cls_var(i), arity(t)) : unused_var, t @ i <- rand_cls_args);
 
+    args_types = ({
+        types = [fn.args(i).type : fn <- fns];
+        return ne_union_superset(types) if types :: [+NeType];
+        fail;
+        ## IMPLEMENT IMPLEMENT IMPLEMENT
+      } : i < |args|
+    );
+    ret_type = ne_union_superset([fn.res_type : fn <- fns]);
+
+    ## IMPLICIT ARGUMENTS AND CONSTRAINTS ARE MISSING
+    ## IT PROBABLY DOESN'T MATTER
+    proc_type = fn_type(args_types, ret_type);
+
     return obj_proc_def(
       name:           family_id(id),
+      type:           proc_type,
       args:           args,
       cls_args:       cls_args,
       impl_args:      [], ## THIS IS WRONG, BUT IT SHOULDN'T MATTER FOR NOW
