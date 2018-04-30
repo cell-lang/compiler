@@ -2,72 +2,47 @@ Expr* exprs_cluster(Expr expr) = exprs_cluster(expr, 0);
 
 ////////////////////////////////////////////////////////////////////////////////
 
-Expr* exprs_cluster(<undefined, LeafObj, FloatLit, Var, OutputIsDefExpr, OutputIsSetExpr> expr, Nat offset) = (expr);
+type NonRecExpr     = undefined, LeafObj, FloatLit, Var, OutputIsDefExpr, OutputIsSetExpr;
 
-Expr* exprs_cluster(ExprRef, Nat) = undefined;
+Expr* exprs_cluster(NonRecExpr expr, Nat offset) = (expr);
 
-// type SetExpr        = set_expr([SubExpr]);
-Expr* exprs_cluster(SetExpr expr, Nat offset) = subexprs_cluster(isort(untag(expr)), offset, set_expr(set($)));
 
-// type SeqExpr        = seq_expr(SubExpr*);
-Expr* exprs_cluster(SeqExpr expr, Nat offset) = subexprs_cluster(untag(expr), offset, seq_expr($));
+Expr* exprs_cluster(<ExprRef, CastExpr>, Nat) = undefined;
 
-// type TupleExpr      = tuple_expr(Expr+);
-Expr* exprs_cluster(TupleExpr expr, Nat offset) = exprs_cluster(untag(expr), offset, tuple_expr(nonempty($)));
+////////////////////////////////////////////////////////////////////////////////
+///////////////////// Order of subexpression doesn't matter ////////////////////
 
-// type TagObjExpr     = tag_obj_expr(tag: Expr, obj: Expr);
-Expr* exprs_cluster(TagObjExpr expr, Nat offset) = exprs_cluster((expr.tag, expr.obj), offset, tag_obj_expr($(0), $(1)));
+type RecExprGroup1  = SeqExpr, SetExpr, TupleExpr, TagObjExpr, ClsCall,
+                      BuiltinCall, SizeExpr, UnaryPseudoCall, NotExpr, EqExpr,
+                      MembExpr, AccExpr, AccTestExpr, RelVarMembTest;
 
-// type ClsCall        = cls_call(name: ClsVar, args: Expr+);
-Expr* exprs_cluster(ClsCall expr, Nat offset) = exprs_cluster(expr.args, offset, cls_call(expr.name, nonempty($)));
 
-// type BuiltinCall    = builtin_call(name: BuiltIn, args: Expr+);
-Expr* exprs_cluster(BuiltinCall expr, Nat offset) = exprs_cluster(expr.args, offset, builtin_call(expr.name, nonempty($)));
+Expr* exprs_cluster(RecExprGroup1 expr, Nat offset) =
+  set_expr(ses?)      = subexprs_cluster(isort(ses), offset, set_expr(set($))),
+  seq_expr(ses?)      = subexprs_cluster(ses, offset, seq_expr($)),
+  tuple_expr(es?)     = exprs_cluster(es, offset, tuple_expr(nonempty($))),
+  tag_obj_expr()      = exprs_cluster((expr.tag, expr.obj), offset, tag_obj_expr($(0), $(1))),
+  cls_call()          = exprs_cluster(expr.args, offset, cls_call(expr.name, nonempty($))),
+  builtin_call()      = exprs_cluster(expr.args, offset, builtin_call(expr.name, nonempty($))),
+  size_expr()         = expr_cluster(expr.coll, offset, size_expr($)),
+  unary_pseudo_call() = exprs_cluster((expr.target, expr.arg), offset, unary_pseudo_call($(0), $(1))),
+  not_expr(e?)        = expr_cluster(e, offset, not_expr($)),
+  eq()                = exprs_cluster((expr.left, expr.right), offset, eq($(0), $(1))),
+  membership()        = expr_cluster(expr.obj, offset, membership($, expr.type)),
+  accessor()          = expr_cluster(expr.expr, offset, accessor($, expr.field)),
+  accessor_test()     = expr_cluster(expr.expr, offset, accessor_test($, expr.field)),
+  relvar_memb_test()  = maybe_exprs_cluster(expr.args, offset, relvar_memb_test(expr.rel_var, nonempty($)));
 
-// type SizeExpr       = size_expr(coll: Expr);
-Expr* exprs_cluster(SizeExpr expr, Nat offset) = expr_cluster(expr.coll, offset, size_expr($));
 
-// type UnaryPseudoCall  = unary_pseudo_call(target: Expr, arg: Expr);
-Expr* exprs_cluster(UnaryPseudoCall expr, Nat offset) =
-  exprs_cluster(
-    (expr.target, expr.arg),
-    offset,
-    unary_pseudo_call($(0), $(1))
-  );
-
-// type RelVarMembTest = relvar_memb_test(rel_var: AnyRelVar, args: Maybe[Expr]+);
-Expr* exprs_cluster(RelVarMembTest expr, Nat offset) =
+// rel_memb_test(rel: Expr, args: Maybe[Expr]+);
+Expr* exprs_cluster(RelMembTest expr, Nat offset) =
   maybe_exprs_cluster(
-    expr.args,
+    (just(expr.rel)) & expr.args,
     offset,
-    relvar_memb_test(expr.rel_var, nonempty($))
+    rel_memb_test(value_unsafe($(0)), nonempty(tail(nonempty($))))
   );
 
-// type AndExpr        = and_expr(left: Expr, right: Expr);
-Expr* exprs_cluster(AndExpr expr, Nat offset) = exprs_cluster((expr.left, expr.right), offset, and_expr($(0), $(1)));
-
-// type OrExpr         = or_expr(left: Expr, right: Expr);
-Expr* exprs_cluster(OrExpr expr, Nat offset) = exprs_cluster((expr.left, expr.right), offset, or_expr($(0), $(1)));
-
-// type NotExpr        = not_expr(Expr);
-Expr* exprs_cluster(NotExpr expr, Nat offset) = expr_cluster(untag(expr), offset, not_expr($));
-
-// type EqExpr         = eq(left: Expr, right: Expr);
-Expr* exprs_cluster(EqExpr expr, Nat offset) = exprs_cluster((expr.left, expr.right), offset, eq($(0), $(1)));
-
-// type MembExpr       = membership(obj: Expr, type: NeType);
-Expr* exprs_cluster(MembExpr expr, Nat offset) = expr_cluster(expr.obj, offset, membership($, expr.type));
-
-// type CastExpr       = cast_expr(expr: Expr, type: NeType);
-Expr* exprs_cluster(CastExpr expr, Nat offset) = undefined;
-
-// type AccExpr        = accessor(expr: Expr, field: SymbObj);
-Expr* exprs_cluster(AccExpr expr, Nat offset) = expr_cluster(expr.expr, offset, accessor($, expr.field));
-
-// type AccTestExpr    = accessor_test(expr: Expr, field: SymbObj);
-Expr* exprs_cluster(AccTestExpr expr, Nat offset) = expr_cluster(expr.expr, offset, accessor_test($, expr.field));
-
-// type SeqTailExpr    = seq_tail_expr(seq: Expr, tail: Expr+);
+// seq_tail_expr(seq: Expr, tail: Expr+);
 Expr* exprs_cluster(SeqTailExpr expr, Nat offset) =
   exprs_cluster(
     (expr.seq) & expr.tail,
@@ -75,7 +50,7 @@ Expr* exprs_cluster(SeqTailExpr expr, Nat offset) =
     seq_tail_expr($(0), nonempty(tail(nonempty($))))
   );
 
-// type RelLookup      = rel_lookup(rel: Expr, set_args: Expr*, unknown_arg_idx: Nat);
+// rel_lookup(rel: Expr, set_args: Expr*, unknown_arg_idx: Nat);
 Expr* exprs_cluster(RelLookup expr, Nat offset) =
   exprs_cluster(
     (expr.rel) & expr.set_args,
@@ -83,7 +58,7 @@ Expr* exprs_cluster(RelLookup expr, Nat offset) =
     rel_lookup($(0), tail(nonempty($)), expr.unknown_arg_idx)
   );
 
-// type RelVarLookup   = relvar_lookup(rel_var: AnyRelVar, set_args: Expr*, unknown_arg_idx: Nat);
+// relvar_lookup(rel_var: AnyRelVar, set_args: Expr*, unknown_arg_idx: Nat);
 Expr* exprs_cluster(RelVarLookup expr, Nat offset) =
   exprs_cluster(
     expr.set_args,
@@ -91,7 +66,7 @@ Expr* exprs_cluster(RelVarLookup expr, Nat offset) =
     relvar_lookup(expr.rel_var, $, expr.unknown_arg_idx)
   );
 
-// type AutoMethodCall = auto_method_call(var: AnyAutoVar?, name: MethodSymbol, args: Expr*);
+// auto_method_call(var: AnyAutoVar?, name: MethodSymbol, args: Expr*);
 Expr* exprs_cluster(AutoMethodCall expr, Nat offset) =
   exprs_cluster(
     expr.args,
@@ -99,7 +74,7 @@ Expr* exprs_cluster(AutoMethodCall expr, Nat offset) =
     auto_method_call(var: expr.var if expr.var?, name: expr.name, args: $)
   );
 
-// type DBMethodCall   = db_method_call(var: AnyDBVar?, name: MethodSymbol, args: Expr*);
+// db_method_call(var: AnyDBVar?, name: MethodSymbol, args: Expr*);
 Expr* exprs_cluster(DBMethodCall expr, Nat offset) =
   exprs_cluster(
     expr.args,
@@ -107,126 +82,143 @@ Expr* exprs_cluster(DBMethodCall expr, Nat offset) =
     db_method_call(var: expr.var if expr.var?, name: expr.name, args: $)
   );
 
-// type IfExpr         = if_expr(cond: Expr, then: Expr, else: Expr);
-Expr* exprs_cluster(IfExpr expr, Nat offset) =
+////////////////////////////////////////////////////////////////////////////////
+//////////////// Subexpression must be arranged in proper order ////////////////
+
+type RecExprGroup2  = AndExpr, OrExpr, IfExpr;
+
+Expr* exprs_cluster(RecExprGroup2 expr, Nat offset) =
+  and_expr()  = exprs_cluster((expr.right, expr.left), offset, and_expr($(1), $(0))),
+  or_expr()   = exprs_cluster((expr.right, expr.left), offset, or_expr($(1), $(0))),
+  if_expr()   = exprs_cluster((expr.then, expr.else, expr.cond), offset, if_expr($(2), $(0), $(1)));
+
+// map_expr([+(key: Expr, value: Expr, cond: Expr?)]);
+Expr* exprs_cluster(MapExpr expr, Nat offset) =
   exprs_cluster(
-    (expr.cond, expr.then, expr.else),
+    [(e.key, e.value, e.cond if e.cond?) : e <- untag(expr)],
     offset,
-    if_expr($(0), $(1), $(2))
+    map_expr(nonempty([(key: e(0), value: e(1), cond: e(2) if |e| == 3) : e <- $]))
   );
 
-// type SeqCompExpr    = seq_comp(expr: Expr, vars: StdVar+, idx_var: StdVar?, src_expr: Expr, sel_expr: Expr?);
+
+// bin_rel_expr([+(args: (Expr, Expr), cond: Expr?)]);
+Expr* exprs_cluster(BinRelExpr expr, Nat offset) =
+  exprs_cluster(
+    [e.args & (e.cond if e.cond?) : e <- untag(expr)],
+    offset,
+    bin_rel_expr(nonempty([(args: (e(0), e(1)), cond: e(2) if |e| == 3) : e <- $]))
+  );
+
+
+// tern_rel_expr([+(args: (Expr, Expr, Expr), cond: Expr?)]);
+Expr* exprs_cluster(TernRelExpr expr, Nat offset) =
+  exprs_cluster(
+    [e.args & (e.cond if e.cond?) : e <- untag(expr)],
+    offset,
+    tern_rel_expr(nonempty([(args: (e(0), e(1), e(2)), cond: e(3) if |e| == 4) : e <- $]))
+  );
+
+// seq_comp(expr: Expr, vars: StdVar+, idx_var: StdVar?, src_expr: Expr, sel_expr: Expr?);
 Expr* exprs_cluster(SeqCompExpr expr, Nat offset) =
   exprs_cluster(
-    (expr.src_expr, expr.sel_expr if expr.sel_expr?, expr.expr),
+    (expr.expr, expr.sel_expr if expr.sel_expr?, expr.src_expr),
     offset,
     seq_comp(
-      expr:     rev_at($, 0),
+      expr:     $(0),
       vars:     expr.vars,
       idx_var:  expr.idx_var if expr.idx_var?,
-      src_expr: $(0),
+      src_expr: rev_at($, 0),
       sel_expr: $(1) if expr.sel_expr?
     )
   );
 
-// type RangeCompExpr  = range_comp(expr: Expr, var: StdVar, bound_expr: Expr, inclusive: Bool, sel_expr: Expr?);
+// range_comp(expr: Expr, var: StdVar, bound_expr: Expr, inclusive: Bool, sel_expr: Expr?);
 Expr* exprs_cluster(RangeCompExpr expr, Nat offset) =
   exprs_cluster(
-    (expr.bound_expr, expr.sel_expr if expr.sel_expr?, expr.expr),
+    (expr.expr, expr.sel_expr if expr.sel_expr?, expr.bound_expr),
     offset,
     range_comp(
-      expr:       rev_at($, 0),
+      expr:       $(0),
       var:        expr.var,
       bound_expr: rev_at($, 0),
       inclusive:  expr.inclusive,
-      sel_expr:   $(1)
+      sel_expr:   $(1) if expr.sel_expr?
     )
   );
 
 ////////////////////////////////////////////////////////////////////////////////
+/////////////////////////// Expressions with clauses ///////////////////////////
+
+// ex_qual(source: Clause, cond: Expr);
+Expr* exprs_cluster(ExQualExpr expr, Nat offset) =
+  exprs_cluster(
+    expr.source,
+    (expr.cond),
+    offset,
+    ex_qual($a, only_unsafe($b))
+  );
+
+// set_comp(expr: Expr, source: Clause);
+Expr* exprs_cluster(SetCompExpr expr, Nat offset) =
+  exprs_cluster(
+    expr.source,
+    (expr.expr),
+    offset,
+    set_comp(only_unsafe($b), $a)
+  );
+
+
+// map_comp(key_expr: Expr, value_expr: Expr, source: Clause);
+Expr* exprs_cluster(MapCompExpr expr, Nat offset) =
+  exprs_cluster(
+    expr.source,
+    (expr.key_expr, expr.value_expr),
+    offset,
+    map_comp($b(0), $b(1), $a)
+  );
+
+
+// bin_rel_comp(exprs: (Expr, Expr), source: Clause);
+Expr* exprs_cluster(BinRelCompExpr expr, Nat offset) =
+  exprs_cluster(
+    expr.source,
+    expr.exprs,
+    offset,
+    bin_rel_comp(($b(0), $b(1)), $a)
+  );
+
+
+// tern_rel_comp(exprs: (Expr, Expr, Expr), source: Clause);
+Expr* exprs_cluster(TernRelCompExpr expr, Nat offset) =
+  exprs_cluster(
+    expr.source,
+    expr.exprs,
+    offset,
+    tern_rel_comp(($b(0), $b(1), $b(2)), $a)
+  );
+
 ////////////////////////////////////////////////////////////////////////////////
+/////////////////////////// More complex expressions ///////////////////////////
 
-// type MapExpr        = map_expr([+(key: Expr, value: Expr, cond: Expr?)]);
-Expr* exprs_cluster(MapExpr expr, Nat offset) = undefined;
-  // exprs_cluster(
-  //   [(e.cond if e.cond?, e.key, e.value) : e <- untag(expr)],
-  //   (key: rev_at($, 1), value: rev_at($, 2), cond: $(0) if |$| == 3),
-  //   map_expr($);
-  // );
-
-// type BinRelExpr     = bin_rel_expr([+(args: (Expr, Expr), cond: Expr?)]);
-Expr* exprs_cluster(BinRelExpr expr, Nat offset) = undefined;
-  // exprs_cluster(
-  //   [(e.cond if e.cond?) & e.args : e <- untag(expr)],
-  //   (args: (rev_at($, 1), rev_at($, 0)), cond: $(0) if |$| == 3),
-  //   bin_rel_expr($)
-  // );
-
-
-// type TernRelExpr    = tern_rel_expr([+(args: (Expr, Expr, Expr), cond: Expr?)]);
-Expr* exprs_cluster(TernRelExpr expr, Nat offset) = undefined;
-  // exprs_cluster(
-  //   [(e.cond if e.cond?) & e.args : e <- untag(expr)],
-  //   (args: (rev_at($, 2), rev_at($, 1), rev_at($, 0)), cond: $(0) if |$| == 4),
-  //   tern_rel_expr($)
-  // );
-
-
-
-// type FnCallExpr     = fn_call(fn_id: FnFamilyId, args: AnyExpr*, impl_args: [ImplArg -> Expr]);
+// fn_call(fn_id: FnFamilyId, args: AnyExpr*, impl_args: [ImplArg -> Expr]);
 Expr* exprs_cluster(FnCallExpr expr, Nat offset) {
   fail;
 }
 
 
-// type RelMembTest    = rel_memb_test(rel: Expr, args: Maybe[Expr]+);
-Expr* exprs_cluster(RelMembTest expr, Nat offset) {
-  fail;
-}
-
-
-
-// type MatchExpr      = match_expr(exprs: Expr+, cases: (ptrns: Pattern+, expr: Expr)+);
+// match_expr(exprs: Expr+, cases: (ptrns: Pattern+, expr: Expr)+);
 Expr* exprs_cluster(MatchExpr expr, Nat offset) {
   fail;
 }
 
 
-// type DoExpr         = do_expr(body: Statement+, typed_vars: [StdVar -> NeType]);
+// do_expr(body: Statement+, typed_vars: [StdVar -> NeType]);
 Expr* exprs_cluster(DoExpr expr, Nat offset) {
   fail;
 }
 
 
-// type ExQualExpr     = ex_qual(source: Clause, cond: Expr);
-Expr* exprs_cluster(ExQualExpr expr, Nat offset) {
-  fail;
-}
-
-
-// type SetCompExpr      = set_comp(expr: Expr, source: Clause);
-Expr* exprs_cluster(SetCompExpr expr, Nat offset) {
-  fail;
-}
-
-
-// type MapCompExpr      = map_comp(key_expr: Expr, value_expr: Expr, source: Clause);
-Expr* exprs_cluster(MapCompExpr expr, Nat offset) {
-  fail;
-}
-
-
-// type BinRelCompExpr   = bin_rel_comp(exprs: (Expr, Expr), source: Clause);
-Expr* exprs_cluster(BinRelCompExpr expr, Nat offset) {
-  fail;
-}
-
-
-// type TernRelCompExpr  = tern_rel_comp(exprs: (Expr, Expr, Expr), source: Clause);
-Expr* exprs_cluster(TernRelCompExpr expr, Nat offset) {
-  fail;
-}
-
+////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
 Expr* expr_cluster(Expr expr, Nat offset, (Expr -> Expr) parent_expr) {
@@ -269,4 +261,14 @@ Expr* subexprs_cluster(SubExpr* subexprs, Nat offset, (SubExpr* -> Expr) parent_
   fail;
   // fail if not subexprs :: Expr*; ## TEMPORARY
   // return exprs_cluster(subexprs);
+}
+
+
+Expr* exprs_cluster([Expr*] exprs, Nat offset, ([Expr*] -> Expr) parent_expr) {
+  fail;
+}
+
+
+Expr* exprs_cluster(Clause cls, Expr+ exprs, Nat offset, (Clause Expr+ -> Expr) parent_expr) {
+  fail;
 }
