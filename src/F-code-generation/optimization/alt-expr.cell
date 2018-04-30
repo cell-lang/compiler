@@ -1,4 +1,4 @@
-Expr* exprs_cluster(Expr expr) = exprs_cluster(expr, 0);
+Expr+ exprs_cluster(Expr expr) = nonempty(exprs_cluster(expr, 0));
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -245,54 +245,98 @@ Expr* exprs_cluster(DoExpr expr, Nat offset) {
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-Expr* expr_cluster(Expr expr, Nat offset, (Expr -> Expr) parent_expr) {
-  cluster = exprs_cluster(expr, nat(offset+1));
-  return (parent_expr(expr_ref(offset))) & cluster;
+// // set_comp(expr: Expr, source: Clause);
+// Expr* exprs_cluster(SetCompExpr expr, Nat offset) =
+//   exprs_cluster(
+//     expr.source,
+//     (expr.expr),
+//     offset,
+//     set_comp(only_unsafe($b), $a)
+//   );
+
+Expr* exprs_cluster(Clause cls, Expr+ exprs, Nat offset, (Clause Expr+ -> Expr) parent_expr) {
+  return cluster_expr_seqs((exprs), offset, clause_cluster(cls, offset, $a, $b, parent_expr));
+
+  Expr* clause_cluster(Clause cls, Nat base_offset, Expr** repl_exprs, Expr* cluster, (Clause Expr+ -> Expr) parent_expr) {
+    offset = nat(base_offset + 1 + |cluster|);
+    repl_clause, clause_cluster = cluster_clause(cls, offset);
+    return (parent_expr(repl_clause, nonempty(only_unsafe(repl_exprs)))) & cluster & clause_cluster;
+  }
 }
 
 
-Expr* exprs_cluster(Expr* exprs, Nat base_offset, (Expr* -> Expr) parent_expr) {
-  cluster = ();
-  expr_refs = ();
-  for e <- exprs:
-    offset = nat(base_offset + |cluster| + 1);
-    expr_refs = (expr_refs | expr_ref(offset));
-    cluster = cluster & exprs_cluster(e, offset);
-  ;
-  return (parent_expr(expr_refs)) & cluster;
-}
+(Clause, Expr*) cluster_clause(Clause cls, Nat offset) = undefined;
 
 
-Expr* maybe_exprs_cluster(Maybe[Expr]* exprs, Nat base_offset, (Maybe[Expr]* -> Expr) parent_expr) {
-  expr_refs : Maybe[ExprRef]*;
 
-  cluster = ();
-  expr_refs = ();
-  for e <- exprs:
-    if e != nothing:
-      offset = nat(base_offset + |cluster| + 1);
-      expr_refs = (expr_refs | just(expr_ref(offset)));
-      cluster = cluster & exprs_cluster(value(e), offset);
-    else
-      expr_refs = (expr_refs | nothing);
-    ;
-  ;
-  return (parent_expr(expr_refs)) & cluster;
-}
+// type Clause   = set_clause(var: StdVar, src: Expr),
+//                 rel_clause(vars: StdVar+, src: Expr, args: Maybe[Expr]+),
+//                 relvar_clause(vars: StdVar+, rel_var: AnyRelVar, args: Maybe[Expr]+),
+//                 seq_clause(vars: Maybe[StdVar]+, idx_var: Maybe[StdVar], src: Expr),
+//                 and_clause(left: Clause, right: Clause),
+//                 or_clause(left: Clause, right: Clause),
+//                 match_clause(ptrn: Pattern, expr: Expr),
+//                 asgnm_clause(var: StdVar, expr: Expr),
+//                 filter_clause(Expr);
+
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+Expr* expr_cluster(Expr expr, Nat offset, (Expr -> Expr) parent_expr) =
+  exprs_cluster((expr), offset, parent_expr(only_unsafe($)));
+
+
+Expr* exprs_cluster(Expr* exprs, Nat offset, (Expr* -> Expr) parent_expr) =
+  cluster_expr_seqs((exprs), offset, (parent_expr(only_unsafe($a))) & $b);
+
+
+Expr* exprs_cluster([Expr*] exprs, Nat offset, ([Expr*] -> Expr) parent_expr) =
+  cluster_expr_seqs(isort(exprs), offset, (parent_expr(set($a))) & $b);
+
+
+Expr* maybe_exprs_cluster(Maybe[Expr]* exprs, Nat offset, (Maybe[Expr]* -> Expr) parent_expr) =
+  cluster_expr_seqs((opt(e) : e <- exprs), offset, (parent_expr((maybe_unsafe(e) : e <- $a))) & $b);
 
 
 Expr* subexprs_cluster(SubExpr* subexprs, Nat offset, (SubExpr* -> Expr) parent_expr) {
-  fail;
-  // fail if not subexprs :: Expr*; ## TEMPORARY
-  // return exprs_cluster(subexprs);
+  packed_exprs = (pack(e) : e <- subexprs);
+  return cluster_expr_seqs(packed_exprs, offset, (parent_expr((unpack(es) : es <- $a))) & $b);
+
+  (Expr)       pack(Expr expr)     = (expr);
+  (Expr, Expr) pack(CondExpr expr) = (expr.expr, expr.cond);
+
+  SubExpr unpack(Expr* expr) =
+    (e?)      = e,
+    (e?, c?)  = cond_expr(e, c);
 }
 
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
 
-Expr* exprs_cluster([Expr*] exprs, Nat offset, ([Expr*] -> Expr) parent_expr) {
-  fail;
+Expr* cluster_expr_seqs(Expr** exprs, Nat base_offset, (Expr** Expr* -> Expr*) parent_expr) {
+  cluster = ();
+  expr_refs = ();
+  for es <- exprs:
+    expr_refs_group = ();
+    for e <- es:
+      offset = nat(base_offset + |cluster| + 1);
+      expr_refs_group = (expr_refs_group | expr_ref(offset));
+      cluster = cluster & exprs_cluster(e, offset);
+    ;
+    expr_refs = (expr_refs | expr_refs_group);
+  ;
+  return parent_expr(expr_refs, cluster);
 }
 
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
 
-Expr* exprs_cluster(Clause cls, Expr+ exprs, Nat offset, (Clause Expr+ -> Expr) parent_expr) {
-  fail;
-}
+Opt[T] opt(Maybe[T]) =
+  just(x?)  = (x),
+  nothing   = ();
+
+Maybe[T] maybe_unsafe(T* opt) =
+  if opt == ()    then nothing
+  elif |opt| == 1 then just(only(opt))
+                  else undefined;
