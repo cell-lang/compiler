@@ -246,13 +246,9 @@ Expr* exprs_cluster(DoExpr expr, Nat offset) {
 ////////////////////////////////////////////////////////////////////////////////
 
 Expr* exprs_cluster(Clause cls, Expr+ exprs, Nat offset, (Clause Expr+ -> Expr) parent_expr) {
-  return cluster_expr_seqs((exprs), offset, clause_cluster(cls, offset, $a, $b, parent_expr));
-
-  Expr* clause_cluster(Clause cls, Nat base_offset, Expr** repl_exprs, Expr* cluster, (Clause Expr+ -> Expr) parent_expr) {
-    offset = nat(base_offset + 1 + |cluster|);
-    repl_clause, clause_cluster = cluster_clause(cls, offset);
-    return (parent_expr(repl_clause, nonempty(only_unsafe(repl_exprs)))) & cluster & clause_cluster;
-  }
+  repl_exprs, cluster = cluster_expr_seqs((exprs), nat(offset+1));
+  repl_clause, clause_cluster = cluster_clause(cls, nat(offset + 1 + |cluster|));
+  return (parent_expr(repl_clause, nonempty(only_unsafe(repl_exprs)))) & cluster & clause_cluster;
 }
 
 
@@ -323,21 +319,28 @@ Expr* expr_cluster(Expr expr, Nat offset, (Expr -> Expr) parent_expr) =
   exprs_cluster((expr), offset, parent_expr(only_unsafe($)));
 
 
-Expr* exprs_cluster(Expr* exprs, Nat offset, (Expr* -> Expr) parent_expr) =
-  cluster_expr_seqs((exprs), offset, (parent_expr(only_unsafe($a))) & $b);
+Expr* exprs_cluster(Expr* exprs, Nat offset, (Expr* -> Expr) parent_expr) {
+  repl_exprs, cluster = cluster_expr_seqs((exprs), nat(offset+1));
+  return (parent_expr(only_unsafe(repl_exprs))) & cluster;
+}
 
 
-Expr* exprs_cluster([Expr*] exprs, Nat offset, ([Expr*] -> Expr) parent_expr) =
-  cluster_expr_seqs(isort(exprs), offset, (parent_expr(set($a))) & $b);
+Expr* exprs_cluster([Expr*] exprs, Nat offset, ([Expr*] -> Expr) parent_expr) {
+  repl_exprs, cluster = cluster_expr_seqs(isort(exprs), nat(offset+1));
+  return (parent_expr(set(repl_exprs))) & cluster;
+}
 
 
-Expr* maybe_exprs_cluster(Maybe[Expr]* exprs, Nat offset, (Maybe[Expr]* -> Expr) parent_expr) =
-  cluster_expr_seqs((opt(e) : e <- exprs), offset, (parent_expr((maybe_unsafe(e) : e <- $a))) & $b);
+Expr* maybe_exprs_cluster(Maybe[Expr]* exprs, Nat offset, (Maybe[Expr]* -> Expr) parent_expr) {
+  repl_exprs, cluster = cluster_expr_seqs((opt(e) : e <- exprs), nat(offset+1));
+  return (parent_expr((maybe_unsafe(e) : e <- repl_exprs))) & cluster;
+}
 
 
 Expr* subexprs_cluster(SubExpr* subexprs, Nat offset, (SubExpr* -> Expr) parent_expr) {
   packed_exprs = (pack(e) : e <- subexprs);
-  return cluster_expr_seqs(packed_exprs, offset, (parent_expr((unpack(es) : es <- $a))) & $b);
+  repl_exprs, cluster = cluster_expr_seqs(packed_exprs, nat(offset+1));
+  return (parent_expr((unpack(es) : es <- repl_exprs))) & cluster;
 
   (Expr)       pack(Expr expr)     = (expr);
   (Expr, Expr) pack(CondExpr expr) = (expr.expr, expr.cond);
@@ -350,19 +353,13 @@ Expr* subexprs_cluster(SubExpr* subexprs, Nat offset, (SubExpr* -> Expr) parent_
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-Expr* cluster_expr_seqs(Expr** exprs, Nat offset, (Expr** Expr* -> Expr*) parent_expr) {
-  repl_exprs, cluster = cluster_expr_seqs(exprs, offset);
-  return parent_expr(repl_exprs, cluster);
-}
-
-
 (Expr**, Expr*) cluster_expr_seqs(Expr** exprs, Nat base_offset) {
   cluster = ();
   expr_refs = ();
   for es <- exprs:
     expr_refs_group = ();
     for e <- es:
-      offset = nat(base_offset + |cluster| + 1);
+      offset = nat(base_offset + |cluster|);
       expr_refs_group = (expr_refs_group | expr_ref(offset));
       cluster = cluster & exprs_cluster(e, offset);
     ;
@@ -414,13 +411,13 @@ Expr replace_nested(ExprRef expr, (Expr -> Expr) replace) = undefined;
 
 
 Expr replace_nested(RecExpr expr, (Expr -> Expr) replace) =
-  seq_expr(ses?)      = seq_expr((replace_nested(se, replace) : se <- ses)),
-  tuple_expr(es?)     = tuple_expr((replace_nested(e, replace) : e <- es)),
+  seq_expr(ses?)      = seq_expr((replace_nested_2(se, replace) : se <- ses)),
+  tuple_expr(es?)     = tuple_expr((replace(e) : e <- es)),
   seq_tail_expr()     = seq_tail_expr(
-                          replace_nested(expr.seq, replace),
-                          (replace_nested(e, replace) : e <- expr.tail)
+                          replace(expr.seq),
+                          (replace(e) : e <- expr.tail)
                         ),
-  set_expr(ses?)      = set_expr([replace_nested(se, replace) : se <- ses]),
+  set_expr(ses?)      = set_expr([replace_nested_2(se, replace) : se <- ses]),
   map_expr(es?)       = map_expr([
                           (key: replace(e.key), value: replace(e.value), cond: replace(e.cond) if e.cond?)
                           : e <- es
@@ -434,7 +431,7 @@ Expr replace_nested(RecExpr expr, (Expr -> Expr) replace) =
   tag_obj_expr()      = tag_obj_expr(replace(expr.tag), replace(expr.obj)),
   fn_call()           = fn_call(
                           expr.fn_id,
-                          (replace_nested(a, replace) : a <- expr.args),
+                          (replace_nested_2(a, replace) : a <- expr.args),
                           [n -> replace(e) : n, e <- expr.impl_args]
                         ),
   cls_call()          = cls_call(expr.name, (replace(a) : a <- expr.args)),
@@ -494,13 +491,14 @@ Expr replace_nested(RecExpr expr, (Expr -> Expr) replace) =
                         );
 
 
-CondExpr replace_nested(CondExpr expr, (Expr -> Expr) replace) =
+CondExpr replace_nested_2(CondExpr expr, (Expr -> Expr) replace) =
   cond_expr(replace(expr.expr), replace(expr.cond));
 
 
-ClsVar  replace_nested(ClsVar var,   (Expr -> Expr) replace) = var;
-FnPtr   replace_nested(FnPtr ptr,    (Expr -> Expr) replace) = ptr;
-ClsExpr replace_nested(ClsExpr expr, (Expr -> Expr) replace) = cls_expr(expr.args, replace(expr.expr));
+Expr    replace_nested_2(Expr expr,    (Expr -> Expr) replace) = replace(expr);
+ClsVar  replace_nested_2(ClsVar var,   (Expr -> Expr) replace) = var;
+FnPtr   replace_nested_2(FnPtr ptr,    (Expr -> Expr) replace) = ptr;
+ClsExpr replace_nested_2(ClsExpr expr, (Expr -> Expr) replace) = cls_expr(expr.args, replace(expr.expr));
 
 
 Clause replace_nested(Clause cls, (Expr -> Expr) replace) =
