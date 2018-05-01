@@ -393,20 +393,21 @@ ClsExpr impl_args_cls_expr(StdVar+ as, Expr e)  = cls_expr(args: (just(a) : a <-
 
 ////////////////////////////////////////////////////////////////////////////////
 
-Clause set_clause(StdVar v, Expr e)         = set_clause(var: v, src: e);
-Clause seq_clause(Maybe[StdVar]+ vs, Maybe[StdVar] iv, Expr e) = seq_clause(vars: vs, idx_var: iv, src: e);
-Clause and_clause(Clause l, Clause r)       = and_clause(left: l, right: r);
-Clause or_clause(Clause l, Clause r)        = or_clause(left: l, right: r);
-Clause match_clause(Pattern p, Expr e)      = match_clause(ptrn: p, expr: e);
-Clause asgnm_clause(StdVar v, Expr e)       = asgnm_clause(var: v, expr: e);
-Clause filter_clause(Expr e)                = :filter_clause(e);
+SetClause    set_clause(StdVar v, Expr e)     = set_clause(var: v, src: e);
+AndClause    and_clause(Clause l, Clause r)   = and_clause(left: l, right: r);
+OrClause     or_clause(Clause l, Clause r)    = or_clause(left: l, right: r);
+MatchClause  match_clause(Pattern p, Expr e)  = match_clause(ptrn: p, expr: e);
+AsgnmClause  asgnm_clause(StdVar v, Expr e)   = asgnm_clause(var: v, expr: e);
+FilterClause filter_clause(Expr e)            = :filter_clause(e);
 
-Clause rel_clause(StdVar+ vs, Expr e, Maybe[Expr]+ as) {
+SeqClause seq_clause(Maybe[StdVar]+ vs, Maybe[StdVar] iv, Expr e) = seq_clause(vars: vs, idx_var: iv, src: e);
+
+RelClause rel_clause(StdVar+ vs, Expr e, Maybe[Expr]+ as) {
   assert |vs| == count(as, $ == nothing) and (|as| == 2 or |as| == 3);
   return rel_clause(vars: vs, src: e, args: as);
 }
 
-Clause relvar_clause(StdVar+ vs, AnyRelVar rv, Maybe[Expr]+ as) {
+RelvarClause relvar_clause(StdVar+ vs, AnyRelVar rv, Maybe[Expr]+ as) {
   assert |vs| == count(as, $ == nothing) and |as| >= 1 and |as| <= 3;
   return relvar_clause(vars: vs, rel_var: rv, args: as);
 }

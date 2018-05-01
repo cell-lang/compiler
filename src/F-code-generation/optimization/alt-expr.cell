@@ -245,15 +245,6 @@ Expr* exprs_cluster(DoExpr expr, Nat offset) {
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-// // set_comp(expr: Expr, source: Clause);
-// Expr* exprs_cluster(SetCompExpr expr, Nat offset) =
-//   exprs_cluster(
-//     expr.source,
-//     (expr.expr),
-//     offset,
-//     set_comp(only_unsafe($b), $a)
-//   );
-
 Expr* exprs_cluster(Clause cls, Expr+ exprs, Nat offset, (Clause Expr+ -> Expr) parent_expr) {
   return cluster_expr_seqs((exprs), offset, clause_cluster(cls, offset, $a, $b, parent_expr));
 
@@ -265,20 +256,54 @@ Expr* exprs_cluster(Clause cls, Expr+ exprs, Nat offset, (Clause Expr+ -> Expr) 
 }
 
 
-(Clause, Expr*) cluster_clause(Clause cls, Nat offset) = undefined;
+// set_clause(var: StdVar, src: Expr),
+(SetClause, Expr*) cluster_clause(SetClause cls, Nat offset) {
+  cluster = exprs_cluster(cls.src, offset);
+  return (set_clause(cls.var, expr_ref(offset)), cluster);
+}
+
+// rel_clause(vars: StdVar+, src: Expr, args: Maybe[Expr]+),
+(RelClause, Expr*) cluster_clause(RelClause cls, Nat offset) {
+  // packed_exprs = (cls.src) & (opt(a) : a <- cls.args);
+  fail;
 
 
+}
 
-// type Clause   = set_clause(var: StdVar, src: Expr),
-//                 rel_clause(vars: StdVar+, src: Expr, args: Maybe[Expr]+),
-//                 relvar_clause(vars: StdVar+, rel_var: AnyRelVar, args: Maybe[Expr]+),
-//                 seq_clause(vars: Maybe[StdVar]+, idx_var: Maybe[StdVar], src: Expr),
-//                 and_clause(left: Clause, right: Clause),
-//                 or_clause(left: Clause, right: Clause),
-//                 match_clause(ptrn: Pattern, expr: Expr),
-//                 asgnm_clause(var: StdVar, expr: Expr),
-//                 filter_clause(Expr);
+// relvar_clause(vars: StdVar+, rel_var: AnyRelVar, args: Maybe[Expr]+),
+(RelvarClause, Expr*) cluster_clause(RelvarClause cls, Nat offset) {
+  fail;
+}
 
+// seq_clause(vars: Maybe[StdVar]+, idx_var: Maybe[StdVar], src: Expr),
+(SeqClause, Expr*) cluster_clause(SeqClause cls, Nat offset) {
+  fail;
+}
+
+// and_clause(left: Clause, right: Clause),
+(AndClause, Expr*) cluster_clause(AndClause cls, Nat offset) {
+  fail;
+}
+
+// or_clause(left: Clause, right: Clause),
+(OrClause, Expr*) cluster_clause(OrClause cls, Nat offset) {
+  fail;
+}
+
+// match_clause(ptrn: Pattern, expr: Expr),
+(MatchClause, Expr*) cluster_clause(MatchClause cls, Nat offset) {
+  fail;
+}
+
+// asgnm_clause(var: StdVar, expr: Expr),
+(AsgnmClause, Expr*) cluster_clause(AsgnmClause cls, Nat offset) {
+  fail;
+}
+
+// filter_clause(Expr);
+(FilterClause, Expr*) cluster_clause(FilterClause cls, Nat offset) {
+  fail;
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
