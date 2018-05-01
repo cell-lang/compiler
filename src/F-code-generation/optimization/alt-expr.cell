@@ -256,54 +256,65 @@ Expr* exprs_cluster(Clause cls, Expr+ exprs, Nat offset, (Clause Expr+ -> Expr) 
 }
 
 
-// set_clause(var: StdVar, src: Expr),
-(SetClause, Expr*) cluster_clause(SetClause cls, Nat offset) {
-  cluster = exprs_cluster(cls.src, offset);
-  return (set_clause(cls.var, expr_ref(offset)), cluster);
-}
-
 // rel_clause(vars: StdVar+, src: Expr, args: Maybe[Expr]+),
 (RelClause, Expr*) cluster_clause(RelClause cls, Nat offset) {
-  // packed_exprs = (cls.src) & (opt(a) : a <- cls.args);
-  fail;
-
-
+  packed_exprs = ((cls.src)) & (opt(a) : a <- cls.args);
+  repl_exprs, cluster = cluster_expr_seqs(packed_exprs, offset);
+  src = only_unsafe(repl_exprs(0));
+  args = (maybe_unsafe(e) : e <- tail(nonempty(repl_exprs)));
+  return (rel_clause(cls.vars, src, nonempty(args)), cluster);
 }
 
 // relvar_clause(vars: StdVar+, rel_var: AnyRelVar, args: Maybe[Expr]+),
 (RelvarClause, Expr*) cluster_clause(RelvarClause cls, Nat offset) {
-  fail;
-}
-
-// seq_clause(vars: Maybe[StdVar]+, idx_var: Maybe[StdVar], src: Expr),
-(SeqClause, Expr*) cluster_clause(SeqClause cls, Nat offset) {
-  fail;
+  repl_exprs, cluster = cluster_expr_seqs((opt(a) : a <- cls.args), offset);
+  repl_cls = relvar_clause(cls.vars, cls.rel_var, (maybe_unsafe(e) : e <- nonempty(repl_exprs)));
+  return (repl_cls, cluster);
 }
 
 // and_clause(left: Clause, right: Clause),
 (AndClause, Expr*) cluster_clause(AndClause cls, Nat offset) {
-  fail;
+  right_cls_repl, right_cluster = cluster_clause(cls.right, offset);
+  left_cls_repl, left_cluster = cluster_clause(cls.left, nat(offset + |right_cluster|));
+  return (and_clause(left_cls_repl, right_cls_repl), right_cluster & left_cluster);
 }
 
 // or_clause(left: Clause, right: Clause),
 (OrClause, Expr*) cluster_clause(OrClause cls, Nat offset) {
-  fail;
+  right_cls_repl, right_cluster = cluster_clause(cls.right, offset);
+  left_cls_repl, left_cluster = cluster_clause(cls.left, nat(offset + |right_cluster|));
+  return (or_clause(left_cls_repl, right_cls_repl), right_cluster & left_cluster);
 }
+
+// set_clause(var: StdVar, src: Expr),
+(SetClause, Expr*) cluster_clause(SetClause cls, Nat offset) = (
+  set_clause(cls.var, expr_ref(offset)),
+  exprs_cluster(cls.src, offset)
+);
+
+// seq_clause(vars: Maybe[StdVar]+, idx_var: Maybe[StdVar], src: Expr),
+(SeqClause, Expr*) cluster_clause(SeqClause cls, Nat offset) = (
+  seq_clause(cls.vars, cls.idx_var, expr_ref(offset)),
+  exprs_cluster(cls.src, offset)
+);
 
 // match_clause(ptrn: Pattern, expr: Expr),
-(MatchClause, Expr*) cluster_clause(MatchClause cls, Nat offset) {
-  fail;
-}
+(MatchClause, Expr*) cluster_clause(MatchClause cls, Nat offset) = (
+  match_clause(cls.ptrn, expr_ref(offset)),
+  exprs_cluster(cls.expr, offset)
+);
 
 // asgnm_clause(var: StdVar, expr: Expr),
-(AsgnmClause, Expr*) cluster_clause(AsgnmClause cls, Nat offset) {
-  fail;
-}
+(AsgnmClause, Expr*) cluster_clause(AsgnmClause cls, Nat offset) = (
+  asgnm_clause(cls.var, expr_ref(offset)),
+  exprs_cluster(cls.expr, offset)
+);
 
 // filter_clause(Expr);
-(FilterClause, Expr*) cluster_clause(FilterClause cls, Nat offset) {
-  fail;
-}
+(FilterClause, Expr*) cluster_clause(FilterClause cls, Nat offset) = (
+  filter_clause(expr_ref(offset)),
+  exprs_cluster(untag(cls), offset)
+);
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -339,7 +350,13 @@ Expr* subexprs_cluster(SubExpr* subexprs, Nat offset, (SubExpr* -> Expr) parent_
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-Expr* cluster_expr_seqs(Expr** exprs, Nat base_offset, (Expr** Expr* -> Expr*) parent_expr) {
+Expr* cluster_expr_seqs(Expr** exprs, Nat offset, (Expr** Expr* -> Expr*) parent_expr) {
+  repl_exprs, cluster = cluster_expr_seqs(exprs, offset);
+  return parent_expr(repl_exprs, cluster);
+}
+
+
+(Expr**, Expr*) cluster_expr_seqs(Expr** exprs, Nat base_offset) {
   cluster = ();
   expr_refs = ();
   for es <- exprs:
@@ -351,7 +368,7 @@ Expr* cluster_expr_seqs(Expr** exprs, Nat base_offset, (Expr** Expr* -> Expr*) p
     ;
     expr_refs = (expr_refs | expr_refs_group);
   ;
-  return parent_expr(expr_refs, cluster);
+  return (expr_refs, cluster);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
