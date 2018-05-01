@@ -374,11 +374,145 @@ Expr* cluster_expr_seqs(Expr** exprs, Nat offset, (Expr** Expr* -> Expr*) parent
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-Opt[T] opt(Maybe[T]) =
-  just(x?)  = (x),
-  nothing   = ();
+Expr reconstruct(Expr+ cluster, Nat offset) {
+  len = |cluster|;
+  rec_exprs = ();
+  for i < len - offset:
+    rec_exprs = (rec_exprs | replace(cluster(len-i-1), rec_exprs, len));
+  ;
+  return rec_exprs(len - offset - 1);
 
-Maybe[T] maybe_unsafe(T* opt) =
-  if opt == ()    then nothing
-  elif |opt| == 1 then just(only(opt))
-                  else undefined;
+
+  Expr replace(Expr expr, Expr* exprs, Nat len) =
+    expr_ref(i?)  = exprs(len-i-1),
+    do_expr()     = expr,
+    _             = replace_nested(expr, replace($, exprs, len));
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+type RecExpr  = SetExpr, SeqExpr, TupleExpr, SeqTailExpr,
+                MapExpr, BinRelExpr, TernRelExpr, TagObjExpr,
+                FnCallExpr, ClsCall, BuiltinCall,
+                SizeExpr,
+                UnaryPseudoCall, RelMembTest, RelLookup,
+                RelVarMembTest, RelVarLookup,
+                AndExpr, OrExpr, NotExpr,
+                EqExpr,
+                MembExpr, CastExpr,
+                AccExpr, AccTestExpr,
+                AutoMethodCall, DBMethodCall,
+                IfExpr, MatchExpr, DoExpr,
+                ExQualExpr, SetCompExpr, MapCompExpr, BinRelCompExpr, TernRelCompExpr,
+                SeqCompExpr, RangeCompExpr;
+
+
+Expr replace_nested(NonRecExpr expr, (Expr -> Expr) replace) = expr;
+
+
+Expr replace_nested(ExprRef expr, (Expr -> Expr) replace) = undefined;
+
+
+Expr replace_nested(RecExpr expr, (Expr -> Expr) replace) =
+  seq_expr(ses?)      = seq_expr((replace_nested(se, replace) : se <- ses)),
+  tuple_expr(es?)     = tuple_expr((replace_nested(e, replace) : e <- es)),
+  seq_tail_expr()     = seq_tail_expr(
+                          replace_nested(expr.seq, replace),
+                          (replace_nested(e, replace) : e <- expr.tail)
+                        ),
+  set_expr(ses?)      = set_expr([replace_nested(se, replace) : se <- ses]),
+  map_expr(es?)       = map_expr([
+                          (key: replace(e.key), value: replace(e.value), cond: replace(e.cond) if e.cond?)
+                          : e <- es
+                        ]),
+  bin_rel_expr(es?)   = bin_rel_expr([
+                          (args: (replace(a) : a <- e.args), cond: replace(e.cond) if e.cond?) : e <- es
+                        ]),
+  tern_rel_expr(es?)  = tern_rel_expr([
+                          (args: (replace(a) : a <- e.args), cond: replace(e.cond) if e.cond?) : e <- es
+                        ]),
+  tag_obj_expr()      = tag_obj_expr(replace(expr.tag), replace(expr.obj)),
+  fn_call()           = fn_call(
+                          expr.fn_id,
+                          (replace_nested(a, replace) : a <- expr.args),
+                          [n -> replace(e) : n, e <- expr.impl_args]
+                        ),
+  cls_call()          = cls_call(expr.name, (replace(a) : a <- expr.args)),
+  builtin_call()      = builtin_call(expr.name, (replace(a) : a <- expr.args)),
+  size_expr()         = size_expr(replace(expr.coll)),
+  unary_pseudo_call() = unary_pseudo_call(replace(expr.target), replace(expr.arg)),
+  rel_memb_test()     = rel_memb_test(replace(expr.rel), (apply(a, replace) : a <- expr.args)),
+  rel_lookup()        = rel_lookup(replace(expr.rel), (replace(a) : a <- expr.set_args), expr.unknown_arg_idx),
+  relvar_memb_test()  = relvar_memb_test(expr.rel_var, (apply(a, replace) : a <- expr.args)),
+  relvar_lookup()     = relvar_lookup(expr.rel_var, (replace(a) : a <- expr.set_args), expr.unknown_arg_idx),
+  and_expr()          = and_expr(replace(expr.left), replace(expr.right)),
+  or_expr()           = or_expr(replace(expr.left), replace(expr.right)),
+  not_expr(e?)        = not_expr(replace(e)),
+  eq()                = eq(replace(expr.left), replace(expr.right)),
+  membership()        = membership(replace(expr.obj), expr.type),
+  cast_expr()         = cast_expr(replace(expr.expr), expr.type),
+  accessor()          = accessor(replace(expr.expr), expr.field),
+  accessor_test()     = accessor_test(replace(expr.expr), expr.field),
+  auto_method_call()  = auto_method_call(
+                          var:  expr.var if expr.var?,
+                          name: expr.name,
+                          args: (replace(a) : a <- expr.args)
+                        ),
+  db_method_call()    = db_method_call(
+                          var:  expr.var if expr.var?,
+                          name: expr.name,
+                          args: (replace(a) : a <- expr.args)
+                        ),
+  if_expr()           = if_expr(replace(expr.cond), replace(expr.then), replace(expr.else)),
+  match_expr()        = match_expr(
+                          (replace(e) : e <- expr.exprs),
+                          ((ptrns: c.ptrns, expr: replace(c.expr)) : c <- expr.cases)
+                        ),
+  do_expr()           = do_expr(replace_nested(expr.body, replace), expr.typed_vars),
+  ex_qual()           = ex_qual(replace_nested(expr.source, replace), replace(expr.cond)),
+  set_comp()          = set_comp(replace(expr.expr), replace_nested(expr.source, replace)),
+  map_comp()          = map_comp(
+                          replace(expr.key_expr),
+                          replace(expr.value_expr),
+                          replace_nested(expr.source, replace)
+                        ),
+  bin_rel_comp()      = bin_rel_comp((replace(e) : e <- expr.exprs), replace_nested(expr.source, replace)),
+  tern_rel_comp()     = tern_rel_comp((replace(e) : e <- expr.exprs), replace_nested(expr.source, replace)),
+  seq_comp()          = seq_comp(
+                          expr:     replace(expr.expr),
+                          vars:     expr.vars,
+                          idx_var:  expr.idx_var if expr.idx_var?,
+                          src_expr: replace(expr.src_expr),
+                          sel_expr: replace(expr.sel_expr) if expr.sel_expr?
+                        ),
+  range_comp()        = range_comp(
+                          expr:       replace(expr.expr),
+                          var:        expr.var,
+                          bound_expr: replace(expr.bound_expr),
+                          inclusive:  expr.inclusive,
+                          sel_expr:   replace(expr.sel_expr) if expr.sel_expr?
+                        );
+
+
+CondExpr replace_nested(CondExpr expr, (Expr -> Expr) replace) =
+  cond_expr(replace(expr.expr), replace(expr.cond));
+
+
+ClsVar  replace_nested(ClsVar var,   (Expr -> Expr) replace) = var;
+FnPtr   replace_nested(FnPtr ptr,    (Expr -> Expr) replace) = ptr;
+ClsExpr replace_nested(ClsExpr expr, (Expr -> Expr) replace) = cls_expr(expr.args, replace(expr.expr));
+
+
+Clause replace_nested(Clause cls, (Expr -> Expr) replace) =
+  set_clause()      = set_clause(cls.var, replace(cls.src)),
+  rel_clause()      = rel_clause(cls.vars, replace(cls.src), (apply(a, replace) : a <- cls.args)),
+  relvar_clause()   = relvar_clause(cls.vars, cls.rel_var, (apply(a, replace) : a <- cls.args)),
+  seq_clause()      = seq_clause(cls.vars, cls.idx_var, replace(cls.src)),
+  and_clause()      = and_clause(replace_nested(cls.left, replace), replace_nested(cls.right, replace)),
+  or_clause()       = or_clause(replace_nested(cls.left, replace), replace_nested(cls.right, replace)),
+  match_clause()    = match_clause(cls.ptrn, replace(cls.expr)),
+  asgnm_clause()    = asgnm_clause(cls.var, replace(cls.expr)),
+  filter_clause(e?) = filter_clause(replace(e));
+
+
+Statement+ replace_nested(Statement+ stmts, (Expr -> Expr) replace) = undefined;

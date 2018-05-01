@@ -171,6 +171,17 @@ Maybe[B] apply(Maybe[A] m, (A -> B) f) =
   just(x?)  = just(f(x)),
   nothing   = nothing;
 
+Opt[T] opt(Maybe[T]) =
+  just(x?)  = (x),
+  nothing   = ();
+
+Maybe[T] maybe(Opt[T] opt) = if opt != () then just(only(opt)) else nothing;
+
+Maybe[T] maybe_unsafe(T* opt) =
+  if opt == ()    then nothing
+  elif |opt| == 1 then just(only(opt))
+                  else undefined;
+
 ////////////////////////////////////////////////////////////////////////////////
 
 True  succeeded(Success[T]) = true;
