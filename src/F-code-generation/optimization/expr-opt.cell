@@ -12,57 +12,61 @@ implicit program           : Program,
 
     cltr_size = |exprs_cluster|;
     envs = (if i == 0 then env else [] : i < cltr_size);
-    for e @ i <- exprs_cluster:
-      for j, vs <- subenvs(e, envs(i), rec_exprs):
-        assert envs(j) == [];
-        envs(j) := vs;
-      ;
-    ;
 
     let typedefs = program.typedefs, typed_vars = []:
+      let rec_exprs = rec_exprs:
+        for e @ i <- exprs_cluster:
+          for j, vs <- subenvs(e, envs(i)):
+            assert envs(j) == [];
+            envs(j) := vs;
+          ;
+        ;
+      ;
+
       types = (expr_type(e, envs(i)) : e @ i <- rec_exprs);
     ;
 
     return (no_op);
   }
+}
+
+implicit program     : Program,
+         typedefs    : [TypeName -> NeType],
+         context     : Context,
+         var_aliases : [[LocVar2]],
+         typed_vars  : [StdVar -> NeType],
+         rec_exprs   : Expr+
+{
+  () subenvs(NonRecExpr, [EnvVar -> Type]) = ();
+  () subenvs(ExprRef,    [EnvVar -> Type]) = undefined;
 
 
-  () subenvs(NonRecExpr, [EnvVar -> Type], Expr+) = ();
-  () subenvs(ExprRef,    [EnvVar -> Type], Expr+) = undefined;
-
-
-  (Nat, [EnvVar -> Type])* subenvs(RecExpr expr, [EnvVar -> Type] env, Expr+ rec_exprs) =
-    seq_expr(ses?)      = join((subenvs(se, env, rec_exprs) : se <- ses)),
-    set_expr(ses?)      = join((subenvs(se, env, rec_exprs) : se <- isort(ses))),
-    // map_expr(es?)       = join((subenvs((e.key, e.value), (e.cond if e.cond?), env, rec_exprs) : e <- isort(es))),
+  (Nat, [EnvVar -> Type])* subenvs(RecExpr expr, [EnvVar -> Type] env) =
+    seq_expr(ses?)      = join((subenvs(se, env) : se <- ses)),
+    set_expr(ses?)      = join((subenvs(se, env) : se <- isort(ses))),
+    // map_expr(es?)       = join((subenvs((e.key, e.value), (e.cond if e.cond?), env) : e <- isort(es))),
     ## SHOULD BE USING THE ABOVE EXPRESSION, NOT THE ONE BELOW
     map_expr(es?)       = join((
-                            subenvs((e.key, e.value), if e.cond? then (e.cond) else (), env, rec_exprs)
-                            : e <- isort(es)
+                            subenvs((e.key, e.value), if e.cond? then (e.cond) else (), env) : e <- isort(es)
                           )),
     bin_rel_expr(es?)   |
-    // tern_rel_expr(es?)  = join((subenvs(e.args, (e.cond if e.cond?), env, rec_exprs) : e <- isort(es))),
+    // tern_rel_expr(es?)  = join((subenvs(e.args, (e.cond if e.cond?), env) : e <- isort(es))),
     ## DITTO
-    tern_rel_expr(es?)  = join((
-                            subenvs(e.args, if e.cond? then (e.cond) else (), env, rec_exprs)
-                            : e <- isort(es)
-                          )),
-    and_expr()          = subenvs(expr.left, env, rec_exprs) &
-                          subenvs((expr.right), (expr.left), env, rec_exprs),
-    or_expr()           = subenvs(expr.left, env, rec_exprs) &
-                          subenvs((expr.right), (not_expr(expr.left)), env, rec_exprs),
-    if_expr()           = subenvs(expr.cond, env, rec_exprs) &
-                          subenvs((expr.then), (expr.cond), env, rec_exprs) &
-                          subenvs((expr.else), (not_expr(expr.cond)), env, rec_exprs),
-    match_expr()        = match_expr_subenvs(expr, env, rec_exprs),
+    tern_rel_expr(es?)  = join((subenvs(e.args, if e.cond? then (e.cond) else (), env) : e <- isort(es))),
+    and_expr()          = subenvs(expr.left, env) & subenvs((expr.right), (expr.left), env),
+    or_expr()           = subenvs(expr.left, env) & subenvs((expr.right), (not_expr(expr.left)), env),
+    if_expr()           = subenvs(expr.cond, env) &
+                          subenvs((expr.then), (expr.cond), env) &
+                          subenvs((expr.else), (not_expr(expr.cond)), env),
+    match_expr()        = match_expr_subenvs(expr, env),
     do_expr()           = (),
-    ex_qual()           = subenvs((expr.cond), expr.source, env, rec_exprs),
-    set_comp()          = subenvs((expr.expr), expr.source, env, rec_exprs),
-    map_comp()          = subenvs((expr.key_expr, expr.value_expr), expr.source, env, rec_exprs),
+    ex_qual()           = subenvs((expr.cond), expr.source, env),
+    set_comp()          = subenvs((expr.expr), expr.source, env),
+    map_comp()          = subenvs((expr.key_expr, expr.value_expr), expr.source, env),
     bin_rel_comp()      |
-    tern_rel_comp()     = subenvs(expr.exprs, expr.source, env, rec_exprs),
-    seq_comp()          = seq_comp_subenvs(expr, env, rec_exprs),
-    range_comp()        = range_comp_subenvs(expr, env, rec_exprs),
+    tern_rel_comp()     = subenvs(expr.exprs, expr.source, env),
+    seq_comp()          = seq_comp_subenvs(expr, env),
+    range_comp()        = range_comp_subenvs(expr, env),
     tuple_expr()        |
     seq_tail_expr()     |
     tag_obj_expr()      |
@@ -82,40 +86,90 @@ implicit program           : Program,
     accessor()          |
     accessor_test()     |
     auto_method_call()  |
-    db_method_call()    = simple_subenvs(expr, env, rec_exprs);
+    db_method_call()    = simple_subenvs(expr, env);
 
 
-  (Nat, [EnvVar -> Type])* subenvs(CondExpr expr, [EnvVar -> Type] env, Expr+ rec_exprs) {
+  (Nat, [EnvVar -> Type])* subenvs(CondExpr expr, [EnvVar -> Type] env) {
+    cond_id = expr_ref_id_unsafe(expr.cond);
+    env_when_true, env_when_false = refine_env(rec_exprs(cond_id), env);
+    expr_id = expr_ref_id_unsafe(expr.expr);
+    return ((cond_id, env), (expr_id, env_when_true));
+  }
+
+
+  (Nat, [EnvVar -> Type])* subenvs(Expr+ exprs, Opt[Expr] guard, [EnvVar -> Type] env) {
+    if guard != ():
+      exprs_env, unused_var = refine_env(rec_exprs(expr_ref_id_unsafe(only(guard))), env);
+      envs = ((expr_ref_id_unsafe(only(guard)), env));
+    else
+      exprs_env = env;
+      envs = ();
+    ;
+    return ((expr_ref_id_unsafe(e), exprs_env) : e <- exprs) & envs;
+  }
+
+
+  (Nat, [EnvVar -> Type])* subenvs(Expr+ exprs, Clause cls, [EnvVar -> Type] env) {
     fail;
   }
 
 
-  (Nat, [EnvVar -> Type])* subenvs(Expr+ exprs, Opt[Expr] guard, [EnvVar -> Type] env, Expr+ rec_exprs) {
-    fail;
+  (Nat, [EnvVar -> Type])* match_expr_subenvs(MatchExpr expr, [EnvVar -> Type] env) {
+    envs = ((expr_ref_id_unsafe(e), env) : e <- expr.exprs);
+    exprs = (rec_exprs(expr_ref_id_unsafe(e)) : e <- expr.exprs);
+    for c <- expr.cases:
+      case_expr_env = update_env(exprs, c.ptrns, env);
+      envs = (envs | (expr_ref_id_unsafe(c.expr), case_expr_env));
+    ;
+    return envs;
   }
 
 
-  (Nat, [EnvVar -> Type])* subenvs(Expr+ exprs, Clause cls, [EnvVar -> Type] env, Expr+ rec_exprs) {
-    fail;
+  // seq_comp(expr: Expr, vars: StdVar+, idx_var: StdVar?, src_expr: Expr, sel_expr: Expr?);
+  (Nat, [EnvVar -> Type])* seq_comp_subenvs(SeqCompExpr expr, [EnvVar -> Type] env) {
+    ## I'M NOT SURE THIS IS SYNCRONIZED WITH seq_comp_expr_type()...
+    src_expr = rec_exprs(expr_ref_id_unsafe(expr.src_expr));
+    src_elt_type = seq_elem_supertype(expr_type(src_expr, env));
+    sel_env = env & asgnm_env_updates(expr.vars, src_elt_type) & [expr.idx_var -> type_nat if expr.idx_var?];
+    if expr.sel_expr?:
+      sel_expr = rec_exprs(expr_ref_id_unsafe(expr.sel_expr));
+      elt_env, unused_var = refine_env(sel_expr, sel_env);
+    else
+      elt_env = sel_env;
+    ;
+    return (
+      (expr_ref_id_unsafe(expr.src_expr), env),
+      (expr_ref_id_unsafe(expr.sel_expr), sel_env) if expr.sel_expr?,
+      (expr_ref_id_unsafe(expr.expr),     elt_env)
+    );
   }
 
 
-  (Nat, [EnvVar -> Type])* match_expr_subenvs(MatchExpr expr, [EnvVar -> Type] env, Expr+ rec_exprs) {
-    fail;
+  // range_comp(expr: Expr, var: StdVar, bound_expr: Expr, inclusive: Bool, sel_expr: Expr?);
+  (Nat, [EnvVar -> Type])* range_comp_subenvs(RangeCompExpr expr, [EnvVar -> Type] env) {
+    ## BAD: HERE WE COULD TAKE ADVANTAGE OF THE KNOWLEDGE ON THE TYPE OF THE UPPER BOUND
+    sel_env = update(env, [expr.var -> type_nat]);
+    if expr.sel_expr?:
+      sel_expr = rec_exprs(expr_ref_id_unsafe(expr.sel_expr));
+      elt_env, unused_var = refine_env(sel_expr, sel_env);
+    else
+      elt_env = sel_env;
+    ;
+    return (
+      (expr_ref_id_unsafe(expr.bound_expr), env),
+      (expr_ref_id_unsafe(expr.sel_expr),   sel_env) if expr.sel_expr?,
+      (expr_ref_id_unsafe(expr.expr),       elt_env)
+    );
   }
 
 
-  (Nat, [EnvVar -> Type])* seq_comp_subenvs(SeqCompExpr expr, [EnvVar -> Type] env, Expr+ rec_exprs) {
-    fail;
-  }
-
-
-  (Nat, [EnvVar -> Type])* range_comp_subenvs(RangeCompExpr expr, [EnvVar -> Type] env, Expr+ rec_exprs) {
-    fail;
-  }
-
-
-  (Nat, [EnvVar -> Type])* simple_subenvs(Expr expr, [EnvVar -> Type] env, Expr+ rec_exprs) {
-    fail;
+  (Nat, [EnvVar -> Type])* simple_subenvs(Expr expr, [EnvVar -> Type] env) {
+    subexpr_ids = retrieve_from_nested_exprs(expr, [expr_ref_id_unsafe($)]);
+    return ((id, env) : id <- isort(subexpr_ids));
   }
 }
+
+
+Nat expr_ref_id_unsafe(Expr expr) =
+  expr_ref(id?) = id,
+  _             = undefined;
