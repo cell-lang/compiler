@@ -371,6 +371,22 @@ Expr* subexprs_cluster(SubExpr* subexprs, Nat offset, (SubExpr* -> Expr) parent_
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
+Expr+ reconstruct_all(Expr+ cluster) {
+  len = |cluster|;
+  rec_exprs = ();
+  for i < len:
+    rec_exprs = (rec_exprs | replace(cluster(len-i-1), rec_exprs, len));
+  ;
+  return nonempty(reverse(rec_exprs));
+
+
+  Expr replace(Expr expr, Expr* exprs, Nat len) =
+    expr_ref(i?)  = exprs(len-i-1),
+    do_expr()     = expr,
+    _             = replace_nested(expr, replace($, exprs, len));
+}
+
+## THIS IS ALMOST IDENTICAL TO reconstruct_all(..)
 Expr reconstruct(Expr+ cluster, Nat offset) {
   len = |cluster|;
   rec_exprs = ();
