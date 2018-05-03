@@ -60,11 +60,11 @@ implicit program     : Program,
                           subenvs((expr.else), (not_expr(expr.cond)), env),
     match_expr()        = match_expr_subenvs(expr, env),
     do_expr()           = (),
-    ex_qual()           = subenvs((expr.cond), expr.source, env),
-    set_comp()          = subenvs((expr.expr), expr.source, env),
-    map_comp()          = subenvs((expr.key_expr, expr.value_expr), expr.source, env),
+    ex_qual()           = subenvs(expr.source, (expr.cond), env),
+    set_comp()          = subenvs(expr.source, (expr.expr), env),
+    map_comp()          = subenvs(expr.source, (expr.key_expr, expr.value_expr), env),
     bin_rel_comp()      |
-    tern_rel_comp()     = subenvs(expr.exprs, expr.source, env),
+    tern_rel_comp()     = subenvs(expr.source, expr.exprs, env),
     seq_comp()          = seq_comp_subenvs(expr, env),
     range_comp()        = range_comp_subenvs(expr, env),
     tuple_expr()        |
@@ -106,11 +106,6 @@ implicit program     : Program,
       envs = ();
     ;
     return ((expr_ref_id_unsafe(e), exprs_env) : e <- exprs) & envs;
-  }
-
-
-  (Nat, [EnvVar -> Type])* subenvs(Expr+ exprs, Clause cls, [EnvVar -> Type] env) {
-    fail;
   }
 
 
@@ -166,6 +161,112 @@ implicit program     : Program,
   (Nat, [EnvVar -> Type])* simple_subenvs(Expr expr, [EnvVar -> Type] env) {
     subexpr_ids = retrieve_from_nested_exprs(expr, [expr_ref_id_unsafe($)]);
     return ((id, env) : id <- isort(subexpr_ids));
+  }
+
+
+  // set_clause(var: StdVar, src: Expr);
+  (Nat, [EnvVar -> Type])* subenvs(SetClause cls, Expr* exprs, [EnvVar -> Type] env) {
+    src_expr = rec_exprs(expr_ref_id_unsafe(cls.src));
+    src_type = expr_type(src_expr, env);
+    src_elt_type = set_elem_supertype(src_type);
+    exprs_env = env & [cls.var -> src_elt_type];
+    return (((expr_ref_id_unsafe(e), exprs_env) : e <- exprs) | (expr_ref_id_unsafe(cls.src), env));
+  }
+
+
+  // rel_clause(vars: StdVar+, src: Expr, args: Maybe[Expr]+);
+  (Nat, [EnvVar -> Type])* subenvs(RelClause cls, Expr* exprs, [EnvVar -> Type] env) {
+    src_expr = rec_exprs(expr_ref_id_unsafe(cls.src));
+    src_type = expr_type(src_expr, env);
+    assert |cls.args| == 2 or |cls.args| == 3;
+    src_args_types = if |cls.args| == 2
+      then bin_rel_args_supertypes(src_type)
+      else tern_rel_args_supertypes(src_type);
+    free_args = (i : a @ i <- cls.args, a == nothing);
+    exprs_env = env & [v -> src_args_types(free_args(i)) : v @ i <~ cls.vars];
+    return ((expr_ref_id_unsafe(e), exprs_env) : e <- exprs) &
+           ((expr_ref_id_unsafe(value(a)), env) : a <- cls.args, a != nothing) &
+           ((expr_ref_id_unsafe(cls.src), env));
+  }
+
+
+  // relvar_clause(vars: StdVar+, rel_var: AnyRelVar, args: Maybe[Expr]+);
+  (Nat, [EnvVar -> Type])* subenvs(RelvarClause cls, Expr* exprs, [EnvVar -> Type] env) {
+    ## IMPLEMENT IMPLEMENT IMPLEMENT
+    fail;
+  }
+
+
+  // seq_clause(vars: Maybe[StdVar]+, idx_var: Maybe[StdVar], src: Expr);
+  (Nat, [EnvVar -> Type])* subenvs(SeqClause cls, Expr* exprs, [EnvVar -> Type] env) {
+    src_expr = rec_exprs(expr_ref_id_unsafe(cls.src));
+    src_type = expr_type(src_expr, env);
+    src_elt_type = seq_elem_supertype(src_type);
+    exprs_env = env & [value(cls.idx_var) -> type_nat if cls.idx_var? and cls.idx_var != nothing];
+    if |cls.vars| == 1:
+      var = only(cls.vars);
+      exprs_env = exprs_env & [value(var) -> src_elt_type if var != nothing];
+    else
+       exprs_env = exprs_env & [
+        value(v) -> restricted_seq_elem_supertype(src_elt_type, singleton_type(i))
+        : v @ i <~ cls.vars, v != nothing
+      ];
+    ;
+    return (((expr_ref_id_unsafe(e), exprs_env) : e <- exprs) | (expr_ref_id_unsafe(cls.src), env));
+  }
+
+
+  // and_clause(left: Clause, right: Clause);
+  (Nat, [EnvVar -> Type])* subenvs(AndClause cls, Expr* exprs, [EnvVar -> Type] env) {
+    right_env = generate_env(cls.left, env);
+    return subenvs(cls.left, (), env) & subenvs(cls.right, exprs, right_env);
+  }
+
+
+  // or_clause(left: Clause, right: Clause);
+  (Nat, [EnvVar -> Type])* subenvs(OrClause cls, Expr* exprs, [EnvVar -> Type] env) {
+    ## BAD BAD BAD: HORRIFYING HACK
+    fake_expr_id = 1000000000;
+    fake_exprs = (expr_ref(fake_expr_id));
+    left_envs  = [n -> e : n, e <~ subenvs(cls.left, fake_exprs, env)];
+    right_envs = [n -> e : n, e <~ subenvs(cls.right, fake_exprs, env)];
+    final_left_env = left_envs(fake_expr_id, !!);
+    final_right_env = right_envs(fake_expr_id, !!);
+    final_env = merge_envs(final_left_env, final_right_env);
+    final_envs = ((expr_ref_id_unsafe(e), final_env) : e <- exprs);
+    left_envs = isort(remove_key(left_envs, fake_expr_id));
+    right_envs = isort(remove_key(right_envs, fake_expr_id));
+    return left_envs & right_envs & final_envs;
+  }
+
+
+  // match_clause(ptrn: Pattern, expr: Expr);
+  (Nat, [EnvVar -> Type])* subenvs(MatchClause cls, Expr* exprs, [EnvVar -> Type] env) {
+    expr_id = expr_ref_id_unsafe(cls.expr);
+    expr = rec_exprs(expr_id);
+    new_env = update_env((expr), (cls.ptrn), env);
+    exprs_envs = ((expr_ref_id_unsafe(e), new_env) : e <- exprs);
+    return (exprs_envs | (expr_id, env));
+  }
+
+
+  // asgnm_clause(var: StdVar, expr: Expr);
+  (Nat, [EnvVar -> Type])* subenvs(AsgnmClause cls, Expr* exprs, [EnvVar -> Type] env) {
+    expr_id = expr_ref_id_unsafe(cls.expr);
+    expr = rec_exprs(expr_id);
+    new_env = env & [cls.var -> expr_type(expr, env)];
+    exprs_envs = ((expr_ref_id_unsafe(e), new_env) : e <- exprs);
+    return (exprs_envs | (expr_id, env));
+  }
+
+
+  // filter_clause(Expr);
+  (Nat, [EnvVar -> Type])* subenvs(FilterClause cls, Expr* exprs, [EnvVar -> Type] env) {
+    expr_id = expr_ref_id_unsafe(untag(cls));
+    expr = rec_exprs(expr_id);
+    ref_env, unused_var = refine_env(expr, env);
+    exprs_envs = ((expr_ref_id_unsafe(e), ref_env) : e <- exprs);
+    return (exprs_envs | (expr_id, env));
   }
 }
 
