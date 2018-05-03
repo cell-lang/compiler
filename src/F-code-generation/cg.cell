@@ -137,13 +137,38 @@ alt_expr = exprs_cluster(func.expr);
 rec_expr = reconstruct(alt_expr, 0);
 rec_exprs = reconstruct_all(alt_expr);
 
-if func.expr != rec_expr or rec_expr != rec_exprs(0):
-  print "------------------------------------------------------";
-  print func.id;
-  print func.expr;
-  print alt_expr;
-  print rec_expr;
-  print rec_exprs;
+
+// if func.expr != rec_expr or rec_expr != rec_exprs(0):
+  // print "------------------------------------------------------";
+  // print "func.id";
+  // print func.id;
+  // print "func.expr";
+  // print func.expr;
+  // print "alt_expr";
+  // print alt_expr;
+  // print "rec_expr";
+  // print rec_expr;
+  // print "rec_exprs";
+  // print rec_exprs;
+  // fail;
+// ;
+
+    env = [a.var -> a.type : a <~ func.args, formal_obj_arg() ?= a, a.var?] &
+          [fn_arg(i) -> a.type : a @ i <~ func.args, formal_obj_arg() ?= a] &
+          [v -> t : v, t <- func.impl_args];
+
+    var_aliases = [[fn_arg(i), a.var] : a @ i <~ func.args, a :: FormalObjArg and a.var?];
+
+
+let context=func, var_subst_map = [], cls_var_subst_map = [], var_aliases = var_aliases: //, next_var_gen=var_gen:
+  opt_code = opt_eval_code(func.expr, env, fn_res_var);
+;
+
+// print "opt_code";
+// print opt_code;
+
+if opt_code != (no_op):
+  print "ERROR ERROR ERROR!";
   fail;
 ;
 

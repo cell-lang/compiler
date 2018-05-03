@@ -3,7 +3,7 @@ implicit program           : Program,
          var_aliases       : [[LocVar2]],
          var_subst_map     : [StdVar -> CaptVar],
          cls_var_subst_map : [ClsVar -> CaptClsVar],
-         next_var_gen      : VarGen,
+         // next_var_gen      : VarGen,
          options           : CompilationOptions
 {
   Instr+ opt_eval_code(Expr expr, [<StdVar, FnArg, ImplArg> -> NeType] env, EvalDestVar res_var) {
@@ -23,6 +23,15 @@ implicit program           : Program,
         ;
       ;
 
+      assert {
+        if env != []:
+          for e <- envs:
+            return false if e == [];
+          ;
+        ;
+        return true;
+      };
+
       types = (expr_type(e, envs(i)) : e @ i <- rec_exprs);
     ;
 
@@ -38,7 +47,10 @@ implicit program     : Program,
          rec_exprs   : Expr+
 {
   () subenvs(NonRecExpr, [EnvVar -> Type]) = ();
-  () subenvs(ExprRef,    [EnvVar -> Type]) = undefined;
+
+
+  (Nat, [EnvVar -> Type])* subenvs(ExprRef, [EnvVar -> Type] env) =
+    expr_ref(i?)  = ((i, env));
 
 
   (Nat, [EnvVar -> Type])* subenvs(RecExpr expr, [EnvVar -> Type] env) =
@@ -218,7 +230,8 @@ implicit program     : Program,
 
   // and_clause(left: Clause, right: Clause);
   (Nat, [EnvVar -> Type])* subenvs(AndClause cls, Expr* exprs, [EnvVar -> Type] env) {
-    right_env = generate_env(cls.left, env);
+    left = replace_nested(cls.left, rec_exprs(expr_ref_id_unsafe($)));
+    right_env = generate_env(left, env);
     return subenvs(cls.left, (), env) & subenvs(cls.right, exprs, right_env);
   }
 
