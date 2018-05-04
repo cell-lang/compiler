@@ -1,0 +1,94 @@
+type LowLevelRepr = bool, int, symbol, float, object;
+
+type LowLevelSign = low_level_sign(args: Maybe[LowLevelRepr]*, ret_value: LowLevelRepr);
+
+////////////////////////////////////////////////////////////////////////////////
+
+LowLevelRepr+ atomic_low_level_reprs = (:bool, :int, :symbol, :float);
+
+NeType low_level_repr_type(LowLevelRepr) =
+  bool    = type_bool,
+  int     = integer,
+  symbol  = atom_type,
+  float   = float_type,
+  object  = type_any;
+
+////////////////////////////////////////////////////////////////////////////////
+
+LowLevelRepr aggr_repr(LowLevelRepr repr1, LowLevelRepr repr2) =
+  bool,   symbol  = :symbol,
+  symbol, bool    = :symbol,
+  _,      _       = if repr1 == repr2 then repr1 else :object;
+
+LowLevelRepr aggr_repr([+LowLevelRepr] reprs) = reduce(reprs, aggr_repr);
+
+
+LowLevelSign aggr_sign([+LowLevelSign] signs) {
+  assert |[|s.args| : s <- signs]| == 1;
+
+  a_sign = an_elem(signs);
+  args = (
+    if a != nothing then just(aggr_repr([value_unsafe(s.args(i)) : s <- signs])) else nothing
+    : a @ i <- a_sign.args
+  );
+  ret_value = aggr_repr([s.ret_value : s <- signs]);
+  return low_level_sign(args: args, ret_value: ret_value);
+}
+
+
+implicit typedefs : [TypeName -> NeType] {
+  LowLevelRepr low_level_repr(NeType type) {
+    for r <- atomic_low_level_reprs:
+      return r if is_subset(type, low_level_repr_type(r));
+    ;
+    return :object;
+  }
+
+
+  LowLevelSign low_level_sign(Function fn) {
+    return low_level_sign(
+      args:       (arg_repr(a) : a <- fn.args),
+      ret_value:  low_level_repr(fn.res_type)
+    );
+
+    Maybe[LowLevelRepr] arg_repr(FormalArg arg) =
+      formal_obj_arg()  = just(low_level_repr(arg.type)),
+      formal_cls_arg()  = nothing;
+  }
+
+
+  Bool matches(LowLevelSign sign, Maybe[Type]* args_types) =
+    all((
+      match (mr, mt)
+        nothing,  nothing   = true,
+        just(r?), just(t?)  = is_subset(t, low_level_repr_type(r))
+      : mr, mt @ i <- zip(sign.args, args_types)
+    ));
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+implicit program : Program, typedefs : [TypeName -> NeType] {
+  LowLevelSign low_level_sign(FnFamilyId fn_id, Maybe[Type]* args_types) {
+    for s <- signatures_by_family_id(fn_id, !!):
+      return s if matches(s, args_types);
+    ;
+    return aggr_sign_by_fn_family_id(fn_id, !!);
+
+
+    [FnFamilyId -> LowLevelSign] aggr_sign_by_fn_family_id =
+      [id -> aggr_sign(set(signs)) : id, signs <- signatures_by_family_id];
+
+
+    [FnFamilyId -> LowLevelSign+] signatures_by_family_id {
+      family_ids = [id : id, unused_var <- low_level_signatures];
+      return [id -> nonempty(isort([s : s <- low_level_signatures(id, ?)])) : id <- family_ids];
+    }
+
+
+    [FnFamilyId, LowLevelSign] low_level_signatures =
+      [family_id(fn.id), low_level_sign(fn) : fn <- program.fndefs];
+  }
+}
+
+

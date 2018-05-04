@@ -33,11 +33,21 @@ implicit program           : Program,
       };
 
       types = (expr_type(e, envs(i)) : e @ i <- rec_exprs);
+
+      eval_code_frags = (() : i < cltr_size);
+      ref_exprs = (never_used_lvar : i < cltr_size);
+      for i < cltr_size:
+        ri = cltr_size - i - 1;
+        eval_code, ref_expr = opt_eval_info(rec_exprs(ri), envs(ri));
+        eval_code_frags(ri) := eval_code;
+        ref_exprs(ri) := ref_expr;
+      ;
     ;
 
     return (no_op);
   }
 }
+
 
 implicit program     : Program,
          typedefs    : [TypeName -> NeType],

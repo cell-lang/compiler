@@ -1,0 +1,100 @@
+type EnvExpr = EnvVar, ExprRef;
+
+
+implicit program : Program, typedefs : [TypeName -> NeType], context : Context {
+  (Instr*, ObjExpr) opt_eval_info(<undefined>, [EnvVar -> Type] env) {
+    return ((terminate), never_used_lvar);
+  }
+
+
+  (Instr*, ObjExpr) opt_eval_info(LeafObj expr, [EnvVar -> Type] env) {
+    return ((), expr);
+  }
+
+
+  (Instr*, ObjExpr) opt_eval_info(FloatLit expr, [EnvVar -> Type] env) {
+    fail;
+  }
+
+
+  (Instr*, ObjExpr) opt_eval_info(Var expr, [EnvVar -> Type] env) {
+    return ((), expr);
+  }
+
+
+  (Instr*, ObjExpr) opt_eval_info(OutputIsDefExpr expr, [EnvVar -> Type] env) {
+    fail;
+  }
+
+
+  (Instr*, ObjExpr) opt_eval_info(OutputIsSetExpr expr, [EnvVar -> Type] env) {
+    fail;
+  }
+
+
+  (Instr*, ObjExpr) opt_eval_info(ExprRef expr, [EnvVar -> Type] env) {
+    fail;
+  }
+
+
+  (Instr*, ObjExpr) opt_eval_info(RecExpr expr, [EnvVar -> Type] env) =
+    seq_expr(ses?)      = undefined,
+    tuple_expr(es?)     = undefined,
+    seq_tail_expr()     = undefined,
+    set_expr(ses?)      = undefined,
+    map_expr(es?)       = undefined,
+    bin_rel_expr(es?)   = undefined,
+    tern_rel_expr(es?)  = undefined,
+    tag_obj_expr()      = undefined,
+    fn_call()           = undefined,
+    cls_call()          = undefined,
+    builtin_call()      = undefined,
+    size_expr()         = undefined,
+    unary_pseudo_call() = undefined,
+    rel_memb_test()     = undefined,
+    rel_lookup()        = undefined,
+    relvar_memb_test()  = undefined,
+    relvar_lookup()     = undefined,
+    and_expr()          = undefined,
+    or_expr()           = undefined,
+    not_expr(e?)        = undefined,
+    eq()                = undefined,
+    membership()        = undefined,
+    cast_expr()         = undefined,
+    accessor()          = undefined,
+    accessor_test()     = undefined,
+    auto_method_call()  = undefined,
+    db_method_call()    = undefined,
+    if_expr()           = undefined,
+    match_expr()        = undefined,
+    do_expr()           = undefined,
+    ex_qual()           = undefined,
+    set_comp()          = undefined,
+    map_comp()          = undefined,
+    bin_rel_comp()      = undefined,
+    tern_rel_comp()     = undefined,
+    seq_comp()          = undefined,
+    range_comp()        = undefined;
+
+
+  (Instr*, ObjExpr) fn_call_opt_eval_info(FnCallExpr expr, (EnvExpr -> Type) expr_type, (EnvExpr -> ObjExpr) expr_handle) {
+    fail;
+  }
+}
+
+
+
+// type RecExpr  = SetExpr, SeqExpr, TupleExpr, SeqTailExpr,
+//                 MapExpr, BinRelExpr, TernRelExpr, TagObjExpr,
+//                 FnCallExpr, ClsCall, BuiltinCall,
+//                 SizeExpr,
+//                 UnaryPseudoCall, RelMembTest, RelLookup,
+//                 RelVarMembTest, RelVarLookup,
+//                 AndExpr, OrExpr, NotExpr,
+//                 EqExpr,
+//                 MembExpr, CastExpr,
+//                 AccExpr, AccTestExpr,
+//                 AutoMethodCall, DBMethodCall,
+//                 IfExpr, MatchExpr, DoExpr,
+//                 ExQualExpr, SetCompExpr, MapCompExpr, BinRelCompExpr, TernRelCompExpr,
+//                 SeqCompExpr, RangeCompExpr;
