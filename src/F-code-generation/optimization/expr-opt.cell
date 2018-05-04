@@ -65,11 +65,10 @@ implicit program     : Program,
     // tern_rel_expr(es?)  = join((subenvs(e.args, (e.cond if e.cond?), env) : e <- isort(es))),
     ## DITTO
     tern_rel_expr(es?)  = join((subenvs(e.args, if e.cond? then (e.cond) else (), env) : e <- isort(es))),
-    and_expr()          = subenvs(expr.left, env) & subenvs((expr.right), (expr.left), env),
-    or_expr()           = subenvs(expr.left, env) & subenvs((expr.right), (not_expr(expr.left)), env),
-    if_expr()           = subenvs(expr.cond, env) &
-                          subenvs((expr.then), (expr.cond), env) &
-                          subenvs((expr.else), (not_expr(expr.cond)), env),
+    fn_call()           = fn_call_subenvs(expr, env),
+    and_expr()          = subenvs((expr.right), (expr.left), env),
+    or_expr()           = subenvs((), (expr.right), (expr.left), env),
+    if_expr()           = subenvs((expr.then), (expr.else), (expr.cond), env),
     match_expr()        = match_expr_subenvs(expr, env),
     do_expr()           = (),
     ex_qual()           = subenvs(expr.source, (expr.cond), env),
@@ -82,7 +81,6 @@ implicit program     : Program,
     tuple_expr()        |
     seq_tail_expr()     |
     tag_obj_expr()      |
-    fn_call()           |
     cls_call()          |
     builtin_call()      |
     size_expr()         |
@@ -101,6 +99,13 @@ implicit program     : Program,
     db_method_call()    = simple_subenvs(expr, env);
 
 
+  // fn_call(fn_id: FnFamilyId, args: AnyExpr*, impl_args: [ImplArg -> Expr]);
+  (Nat, [EnvVar -> Type])* fn_call_subenvs(FnCallExpr expr, [EnvVar -> Type] env) {
+    expr_refs = (a : a <- expr.args, a :: Expr) & isort(values(expr.impl_args));
+    return ((expr_ref_id_unsafe(e), env) : e <- expr_refs);
+  }
+
+
   (Nat, [EnvVar -> Type])* subenvs(CondExpr expr, [EnvVar -> Type] env) {
     cond_id = expr_ref_id_unsafe(expr.cond);
     env_when_true, env_when_false = refine_env(rec_exprs(cond_id), env);
@@ -109,15 +114,22 @@ implicit program     : Program,
   }
 
 
-  (Nat, [EnvVar -> Type])* subenvs(Expr+ exprs, Opt[Expr] guard, [EnvVar -> Type] env) {
+  (Nat, [EnvVar -> Type])* subenvs(Expr+ exprs, Opt[Expr] guard, [EnvVar -> Type] env) =
+    subenvs(exprs, (), guard, env);
+
+
+  (Nat, [EnvVar -> Type])* subenvs(Expr* then_exprs, Expr* else_exprs, Opt[Expr] guard, [EnvVar -> Type] env) {
     if guard != ():
-      exprs_env, unused_var = refine_env(rec_exprs(expr_ref_id_unsafe(only(guard))), env);
-      envs = ((expr_ref_id_unsafe(only(guard)), env));
+      then_env, else_env = refine_env(rec_exprs(expr_ref_id_unsafe(only(guard))), env);
+      guard_envs = ((expr_ref_id_unsafe(only(guard)), env));
     else
-      exprs_env = env;
-      envs = ();
+      then_env = env;
+      else_env = env;
+      guard_envs = ();
     ;
-    return ((expr_ref_id_unsafe(e), exprs_env) : e <- exprs) & envs;
+    then_subenvs = ((expr_ref_id_unsafe(e), then_env) : e <- then_exprs);
+    else_subenvs = ((expr_ref_id_unsafe(e), else_env) : e <- else_exprs);
+    return then_subenvs & else_subenvs & guard_envs;
   }
 
 
@@ -230,7 +242,8 @@ implicit program     : Program,
 
   // and_clause(left: Clause, right: Clause);
   (Nat, [EnvVar -> Type])* subenvs(AndClause cls, Expr* exprs, [EnvVar -> Type] env) {
-    left = replace_nested(cls.left, rec_exprs(expr_ref_id_unsafe($)));
+    rec_exprs_copy = rec_exprs; ## BAD BAD: WORKAROUND FOR A BUG IN THE COMPILER
+    left = replace_nested(cls.left, rec_exprs_copy(expr_ref_id_unsafe($)));
     right_env = generate_env(left, env);
     return subenvs(cls.left, (), env) & subenvs(cls.right, exprs, right_env);
   }
