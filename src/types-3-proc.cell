@@ -93,8 +93,6 @@ type MembTestPredId = memb_test(<Atom, Nat, (Atom, <Atom, Nat>)>);
 
 type InlineObj      = LeafObj, empty_seq, empty_rel;
 
-type AtomicExpr     = InlineObj, StdObjVar;
-
 type AtomicBoolExpr = Bool, BoolVar;
 
 type NatBoolOp      = is_symb(ObjExpr),
@@ -114,8 +112,8 @@ type NatBoolOp      = is_symb(ObjExpr),
                       is_lt(expr1: IntExpr, expr2: IntExpr),
                       is_le(expr1: IntExpr, expr2: IntExpr),
                       inline_is_eq(expr: ObjExpr, value: InlineObj),
-                      is_flt(ObjExpr, ObjExpr),
-                      is_fle(ObjExpr, ObjExpr),
+                      is_flt(FloatExpr, FloatExpr),
+                      is_fle(FloatExpr, FloatExpr),
                       is_out_of_range(ItVar),
                       is_blank(<AnySignalVar, LocVar, PendingStateVar>),
                       is_null(AnyNullableVar),
@@ -135,9 +133,9 @@ type NatIntOp       = get_int_val(ObjExpr),
                       bitwise_and(IntExpr, IntExpr),
                       bitwise_or(IntExpr, IntExpr),
                       bitwise_xor(IntExpr, IntExpr),
-                      float_bits(ObjExpr),
-                      mantissa(ObjExpr),
-                      dec_exp(ObjExpr),
+                      float_bits(FloatExpr),
+                      mantissa(FloatExpr),
+                      dec_exp(FloatExpr),
                       lookup_value(store: AnyValueStoreId, value: AtomicExpr),
                       lookup_value_ex(store: ValueStoreId, value: AtomicExpr),
                       get_tuple_field(iter: TableItVar, field: Nat),
@@ -187,7 +185,9 @@ type IntExpr        = Int, IntConst, IntVar, NatIntOp;
 
 type FloatExpr      = FloatLit, FloatVar, FloatNatOp;
 
-type ObjExpr        = AtomicExpr, NatObjOp;
+type ObjExpr        = InlineObj, StdObjVar, NatObjOp;
+
+type AtomicExpr     = ObjExpr;
 
 type AnyTypeExpr    = BoolExpr, IntExpr, FloatExpr, ObjExpr;
 
@@ -259,7 +259,7 @@ type BasicInstr     = init_stream(StreamVar),
 
                       no_op,
 
-                      call_proc(var: AnyWriteVar?, name: ObjFnName, args: AnyAtomicExpr*, cls_args: BoundCls*),
+                      call_proc(var: AnyWriteVar?, name: ObjFnName, args: AnyTypeExpr*, cls_args: BoundCls*),
                       call_cls(var: WriteObjVar, cls_var: AnyClsVar, args: AtomicExpr+),
 
                       push_call_info(fn_name: ObjFnName, params: Maybe[<StdVar, FnArg>]*),
