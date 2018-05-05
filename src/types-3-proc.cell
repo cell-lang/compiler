@@ -53,13 +53,16 @@ type MembIntVectVar = nodes_to_update_vect_var(level: Nat, size: NzNat), ## BAD:
                       changed_outputs(size: NzNat);
 
 type QualBoolVar    = qual_bool_var(auto_var: LocAutoVar, memb_var: MembBoolVar);
-type BoolVar        = bvar(Nat), MembBoolVar, QualBoolVar;
+type LocBoolVar     = bvar(Nat);
+type BoolVar        = LocBoolVar, MembBoolVar, QualBoolVar;
 
 type LocAutoIntVar  = elapsed_time(LocAutoVar); ## BETTER NAME/CLASSIFICATION
 
 type ProjdIntVar    = changed_output(index: <Nat, IntVar>);
 
-type IntVar         = ivar(Nat),
+type LocIntVar      = ivar(Nat);
+
+type IntVar         = LocIntVar,
                       update_time,
                       curr_time,
                       update_expr_index,
@@ -68,6 +71,8 @@ type IntVar         = ivar(Nat),
                       LocAutoIntVar;
 
 type FloatVar       = fvar(Nat);
+
+type AnyWriteVar    = LocBoolVar, LocIntVar, FloatVar, WriteObjVar;
 
 type StreamVar      = svar(Nat); ## DOES THIS NEED CLEANUP?
 
@@ -240,6 +245,7 @@ type BasicInstr     = init_stream(StreamVar),
                       set_var(var: <WriteObjVar, ImplArg>, value: ObjExpr),
                       set_bvar(var: BoolVar, value: BoolExpr),
                       set_ivar(var: IntVar, value: IntExpr),
+                      set_fvar(var: FloatVar, value: FloatExpr),
 
                       set_rc_var(var: WriteObjVar, value: RefObjExpr),
 
@@ -254,7 +260,7 @@ type BasicInstr     = init_stream(StreamVar),
 
                       no_op,
 
-                      call_proc(var: WriteObjVar?, name: ObjFnName, args: AnyAtomicExpr*, cls_args: BoundCls*),
+                      call_proc(var: AnyWriteVar?, name: ObjFnName, args: AnyAtomicExpr*, cls_args: BoundCls*),
                       call_cls(var: WriteObjVar, cls_var: AnyClsVar, args: AtomicExpr+),
 
                       push_call_info(fn_name: ObjFnName, params: Maybe[<StdVar, FnArg>]*),

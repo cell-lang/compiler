@@ -1,43 +1,45 @@
-type EnvExpr = EnvVar, ExprRef;
+// type EnvExpr = EnvVar, ExprRef;
+
+type SubExprInfo = (type: Type, surr_expr: ObjExpr, eval_code: Instr*);
 
 
 implicit program : Program, typedefs : [TypeName -> NeType], context : Context {
-  (Instr*, ObjExpr) opt_eval_info(<undefined>, [EnvVar -> Type] env) {
-    return ((terminate), never_used_lvar);
+  (Instr*, ObjExpr, VarGen) opt_eval_info(<undefined>, VarGen var_gen, (ExprRef -> SubExprInfo) subexpr_info) {
+    return ((terminate), never_used_lvar, var_gen);
   }
 
 
-  (Instr*, ObjExpr) opt_eval_info(LeafObj expr, [EnvVar -> Type] env) {
-    return ((), expr);
+  (Instr*, ObjExpr, VarGen) opt_eval_info(LeafObj expr, VarGen var_gen, (ExprRef -> SubExprInfo) subexpr_info) {
+    return ((), expr, var_gen);
   }
 
 
-  (Instr*, ObjExpr) opt_eval_info(FloatLit expr, [EnvVar -> Type] env) {
+  (Instr*, ObjExpr, VarGen) opt_eval_info(FloatLit expr, VarGen var_gen, (ExprRef -> SubExprInfo) subexpr_info) {
     fail;
   }
 
 
-  (Instr*, ObjExpr) opt_eval_info(Var expr, [EnvVar -> Type] env) {
-    return ((), expr);
+  (Instr*, ObjExpr, VarGen) opt_eval_info(Var expr, VarGen var_gen, (ExprRef -> SubExprInfo) subexpr_info) {
+    return ((), expr, var_gen);
   }
 
 
-  (Instr*, ObjExpr) opt_eval_info(OutputIsDefExpr expr, [EnvVar -> Type] env) {
+  (Instr*, ObjExpr, VarGen) opt_eval_info(OutputIsDefExpr expr, VarGen var_gen, (ExprRef -> SubExprInfo) subexpr_info) {
     fail;
   }
 
 
-  (Instr*, ObjExpr) opt_eval_info(OutputIsSetExpr expr, [EnvVar -> Type] env) {
+  (Instr*, ObjExpr, VarGen) opt_eval_info(OutputIsSetExpr expr, VarGen var_gen, (ExprRef -> SubExprInfo) subexpr_info) {
     fail;
   }
 
 
-  (Instr*, ObjExpr) opt_eval_info(ExprRef expr, [EnvVar -> Type] env) {
+  (Instr*, ObjExpr, VarGen) opt_eval_info(ExprRef expr, VarGen var_gen, (ExprRef -> SubExprInfo) subexpr_info) {
     fail;
   }
 
 
-  (Instr*, ObjExpr) opt_eval_info(RecExpr expr, [EnvVar -> Type] env) =
+  (Instr*, ObjExpr, VarGen) opt_eval_info(RecExpr expr, VarGen var_gen, (ExprRef -> SubExprInfo) subexpr_info) =
     seq_expr(ses?)      = undefined,
     tuple_expr(es?)     = undefined,
     seq_tail_expr()     = undefined,
@@ -46,7 +48,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context {
     bin_rel_expr(es?)   = undefined,
     tern_rel_expr(es?)  = undefined,
     tag_obj_expr()      = undefined,
-    fn_call()           = undefined,
+    fn_call()           = fn_call_opt_eval_info(expr, var_gen, subexpr_info),
     cls_call()          = undefined,
     builtin_call()      = undefined,
     size_expr()         = undefined,
@@ -77,11 +79,68 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context {
     range_comp()        = undefined;
 
 
-  (Instr*, ObjExpr) fn_call_opt_eval_info(FnCallExpr expr, (EnvExpr -> Type) expr_type, (EnvExpr -> ObjExpr) expr_handle) {
-    fail;
+  // fn_call(fn_id: FnFamilyId, args: AnyExpr*, impl_args: [ImplArg -> Expr])
+  (Instr*, ObjExpr, VarGen) fn_call_opt_eval_info(FnCallExpr expr, VarGen var_gen, (ExprRef -> SubExprInfo) subexpr_info) {
+    assert expr.impl_args == [];
+    fail if not expr.args :: ExprRef* or not expr.impl_args :: [ImplArg -> ExprRef];
+
+    // Actual arguments information
+    args_info = (subexpr_info(a) : a <- expr.args);
+
+    // Signature of the target function
+    fn_id, low_level_sign = low_level_sign(expr.fn_id, (just(a.type) : a <- args_info));
+
+    // Low-level actual arguments
+    low_level_args = (low_level_expr(value_unsafe(low_level_sign.args(i)), a.surr_expr) : a @ i <- args_info);
+
+    // Result variable, surrogate expression and next variable generator
+    res_var, surr_expr, next_var_gen = match (low_level_sign.ret_value)
+      bool            = {v, g = next_bool_var(var_gen);  return (v, bool_obj(v),  g);},
+      int             = {v, g = next_int_var(var_gen);   return (v, int_obj(v),   g);},
+      float           = {v, g = next_float_var(var_gen); return (v, float_obj(v), g);},
+      symbol | object = {v, g = next_obj_var(var_gen);   return (v, v,            g);};
+
+    // Entire expression evaluation code
+    eval_code = (join((a.eval_code : a <- args_info)) | call_proc(res_var, fn_id, low_level_args));
+
+    return (eval_code, surr_expr, next_var_gen);
+
+
+    AnyAtomicExpr low_level_expr(LowLevelRepr repr, ObjExpr expr) =
+      bool      = inline_is_eq(expr, obj_true),
+      int       = get_int_val(expr),
+      symbol    = undefined, //expr, ## TEMPORARY TEMPORARY TEMPORARY
+      float     = float_value(expr),
+      object    = undefined; //expr;
   }
 }
 
+  // Instr+ gen_eval_code_for_fn_call_expr(FnFamilyId id, AnyExpr* params, [ImplArg -> Expr] impl_args, EvalDestVar res_var) {
+  //   if impl_args != []:
+  //     ## BUG BUG BUG. THE ASSIGNMENTS ARE DONE IN RANDOM ORDER. FIX THIS
+  //     var = an_elem(nonempty(keys(impl_args)));
+  //     expr = impl_args[var];
+  //     rem_impl_args = [v -> e : v, e <- impl_args, v != var];
+  //     backup_var, var_gen = next_obj_var(next_var_gen);
+  //     info = gen_eval_info(expr, next_var_gen = var_gen);
+  //     body = gen_eval_code_for_fn_call_expr(id, params, rem_impl_args, res_var, next_var_gen = info.next_var_gen);
+  //     set_up_code = (set_var(backup_var, var), set_var(var, info.expr));
+  //     tear_down_code = (set_var(var, backup_var));
+  //     return nonempty(info.eval_code & set_up_code & body & tear_down_code);
+
+  //   else
+  //     pars_are_first_order = (is_expr(p) : p <- params);
+  //     par_packed_idxs = packed_seq_idxs(pars_are_first_order);
+  //     pars_info = gen_eval_info((cast_as_expr(p) : p @ i <- params, pars_are_first_order(i)));
+  //     all_params = (
+  //       if pars_are_first_order(i)
+  //         then pars_info.exprs(par_packed_idxs[i])
+  //         else compiled_closure(cast_as_cls_expr(p))
+  //     : p @ i <- params);
+  //     core_call_code = (call_proc(res_var, id, all_params));
+  //     return nonempty(pars_info.eval_code & core_call_code);
+  //   ;
+  // }
 
 
 // type RecExpr  = SetExpr, SeqExpr, TupleExpr, SeqTailExpr,

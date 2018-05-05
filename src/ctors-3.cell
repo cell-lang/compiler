@@ -11,7 +11,7 @@ PendingStateVar pending_state_var(Atom id)  = :pending_state_var(id);
 
 VecVar vvar(Nat n, NzNat s) = vvar(id: n, size: s);
 
-BoolVar bvar(Nat n)                 = :bvar(n);
+LocBoolVar bvar(Nat n) = :bvar(n);
 
 QualBoolVar qual_bool_var(LocAutoVar av, MembBoolVar mv) = qual_bool_var(auto_var: av, memb_var: mv);
 
@@ -35,7 +35,7 @@ IntVar elapsed_time(LocAutoVar v) = :elapsed_time(v);
 
 ProjdIntVar changed_output(<Nat, IntVar> i)  = changed_output(index: i);
 
-IntVar ivar(Nat n)    = :ivar(n);
+LocIntVar ivar(Nat n) = :ivar(n);
 
 MembIntVar update_source_var(Atom n)                            = :update_source_var(n);
 MembIntVar null_locks_count_var(Atom id)                        = :null_locks_count_var(id);
@@ -241,6 +241,7 @@ Instr move_forward(ItVar v) = :move_forward(v);
 Instr set_var(<WriteObjVar, ImplArg> v, ObjExpr e)    = set_var(var: v, value: e);
 Instr set_bvar(BoolVar v, BoolExpr e)                 = set_bvar(var: v, value: e);
 Instr set_ivar(IntVar v, IntExpr e)                   = set_ivar(var: v, value: e);
+Instr set_fvar(FloatVar v, FloatExpr e)               = set_fvar(var: v, value: e);
 
 Instr set_var(WriteObjVar v, RefObjExpr e)  = set_rc_var(var: v, value: e);
 
@@ -286,8 +287,8 @@ Instr symb_switch(ObjExpr e, [+([+SymbObj], Instr+)] cs, Instr* eis) = symb_swit
 
 Instr* opt_symb_switch(ObjExpr e, [([+SymbObj], Instr+)] cs, Instr* eis) = if cs != [] then (symb_switch(e, cs, eis)) else eis;
 
-Instr call_proc(WriteObjVar v, ObjFnName n, AtomicExpr* as, BoundCls* cas) = call_proc(var: v, name: n, args: as, cls_args: cas);
-Instr call_proc(ObjFnName n, AtomicExpr* as, BoundCls* cas) = call_proc(name: n, args: as, cls_args: cas);
+Instr call_proc(AnyWriteVar v, ObjFnName n, AnyAtomicExpr* as, BoundCls* cas) = call_proc(var: v, name: n, args: as, cls_args: cas);
+Instr call_proc(ObjFnName n, AnyAtomicExpr* as, BoundCls* cas) = call_proc(name: n, args: as, cls_args: cas);
 
 Instr call_cls(WriteObjVar v, AnyClsVar cv, AtomicExpr+ as) = call_cls(var: v, cls_var: cv, args: as);
 
