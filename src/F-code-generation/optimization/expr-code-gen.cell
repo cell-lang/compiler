@@ -1,45 +1,45 @@
 // type EnvExpr = EnvVar, ExprRef;
 
-type SubExprInfo = (type: Type, surr_expr: AtomicExpr, eval_code: Instr*);
+type SubExprInfo = (type: Type, surr_expr: ObjExpr, eval_code: Instr*);
 
 
 implicit program : Program, typedefs : [TypeName -> NeType], context : Context {
-  (Instr*, AtomicExpr, VarGen) opt_eval_info(<undefined>, VarGen var_gen, (ExprRef -> SubExprInfo) subexpr_info) {
+  (Instr*, ObjExpr, VarGen) opt_eval_info(<undefined>, VarGen var_gen, (ExprRef -> SubExprInfo) subexpr_info) {
     return ((terminate), never_used_lvar, var_gen);
   }
 
 
-  (Instr*, AtomicExpr, VarGen) opt_eval_info(LeafObj expr, VarGen var_gen, (ExprRef -> SubExprInfo) subexpr_info) {
+  (Instr*, ObjExpr, VarGen) opt_eval_info(LeafObj expr, VarGen var_gen, (ExprRef -> SubExprInfo) subexpr_info) {
     return ((), expr, var_gen);
   }
 
 
-  (Instr*, AtomicExpr, VarGen) opt_eval_info(FloatLit expr, VarGen var_gen, (ExprRef -> SubExprInfo) subexpr_info) {
+  (Instr*, ObjExpr, VarGen) opt_eval_info(FloatLit expr, VarGen var_gen, (ExprRef -> SubExprInfo) subexpr_info) {
     fail;
   }
 
 
-  (Instr*, AtomicExpr, VarGen) opt_eval_info(Var expr, VarGen var_gen, (ExprRef -> SubExprInfo) subexpr_info) {
+  (Instr*, ObjExpr, VarGen) opt_eval_info(Var expr, VarGen var_gen, (ExprRef -> SubExprInfo) subexpr_info) {
     return ((), expr, var_gen);
   }
 
 
-  (Instr*, AtomicExpr, VarGen) opt_eval_info(OutputIsDefExpr expr, VarGen var_gen, (ExprRef -> SubExprInfo) subexpr_info) {
+  (Instr*, ObjExpr, VarGen) opt_eval_info(OutputIsDefExpr expr, VarGen var_gen, (ExprRef -> SubExprInfo) subexpr_info) {
     fail;
   }
 
 
-  (Instr*, AtomicExpr, VarGen) opt_eval_info(OutputIsSetExpr expr, VarGen var_gen, (ExprRef -> SubExprInfo) subexpr_info) {
+  (Instr*, ObjExpr, VarGen) opt_eval_info(OutputIsSetExpr expr, VarGen var_gen, (ExprRef -> SubExprInfo) subexpr_info) {
     fail;
   }
 
 
-  (Instr*, AtomicExpr, VarGen) opt_eval_info(ExprRef expr, VarGen var_gen, (ExprRef -> SubExprInfo) subexpr_info) {
+  (Instr*, ObjExpr, VarGen) opt_eval_info(ExprRef expr, VarGen var_gen, (ExprRef -> SubExprInfo) subexpr_info) {
     fail;
   }
 
 
-  (Instr*, AtomicExpr, VarGen) opt_eval_info(RecExpr expr, VarGen var_gen, (ExprRef -> SubExprInfo) subexpr_info) =
+  (Instr*, ObjExpr, VarGen) opt_eval_info(RecExpr expr, VarGen var_gen, (ExprRef -> SubExprInfo) subexpr_info) =
     seq_expr(ses?)      = undefined,
     tuple_expr(es?)     = undefined,
     seq_tail_expr()     = undefined,
@@ -80,7 +80,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context {
 
 
   // fn_call(fn_id: FnFamilyId, args: AnyExpr*, impl_args: [ImplArg -> Expr])
-  (Instr*, AtomicExpr, VarGen) fn_call_opt_eval_info(FnCallExpr expr, VarGen var_gen, (ExprRef -> SubExprInfo) subexpr_info) {
+  (Instr*, ObjExpr, VarGen) fn_call_opt_eval_info(FnCallExpr expr, VarGen var_gen, (ExprRef -> SubExprInfo) subexpr_info) {
     assert expr.impl_args == [];
     fail if not expr.args :: ExprRef* or not expr.impl_args :: [ImplArg -> ExprRef];
 
@@ -106,7 +106,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context {
     return (eval_code, surr_expr, next_var_gen);
 
 
-    AnyAtomicExpr low_level_expr(LowLevelRepr repr, AtomicExpr expr) =
+    AnyTypeExpr low_level_expr(LowLevelRepr repr, ObjExpr expr) =
       bool      = inline_is_eq(expr, obj_true),
       int       = get_int_val(expr),
       symbol    = expr, ## TEMPORARY TEMPORARY TEMPORARY
