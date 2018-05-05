@@ -67,6 +67,8 @@ type IntVar         = ivar(Nat),
                       MembIntVar,
                       LocAutoIntVar;
 
+type FloatVar       = fvar(Nat);
+
 type StreamVar      = svar(Nat); ## DOES THIS NEED CLEANUP?
 
 type SetItVar       = set_it_var(Nat);      ## MUST WORK WITHOUT THE NEED FOR EXPLICIT CLEANUP
@@ -138,6 +140,18 @@ type NatIntOp       = get_int_val(ObjExpr),
                       unique_nat,         // Non-deterministic
                       ticks;              // Impure
 
+type FloatNatOp     = float_value(ObjExpr),
+                      neg_float(FloatExpr),
+                      add_floats(FloatExpr, FloatExpr),
+                      sub_floats(FloatExpr, FloatExpr),
+                      mult_floats(FloatExpr, FloatExpr),
+                      div_floats(FloatExpr, FloatExpr),
+                      exp_floats(FloatExpr, FloatExpr),
+                      square_root(FloatExpr),
+                      // floor_op(FloatExpr),
+                      // ceiling_op(FloatExpr),
+                      int_to_float(IntExpr);
+
 type NatObjOp       = at(seq: ObjExpr, idx: IntExpr),
                       lookup(rel: ObjExpr, key: ObjExpr),
                       lookup_field(record: ObjExpr, field: SymbObj),
@@ -145,6 +159,7 @@ type NatObjOp       = at(seq: ObjExpr, idx: IntExpr),
                       get_inner_obj(ObjExpr), ## RENAME?
                       bool_obj(BoolExpr),
                       int_obj(IntExpr),
+                      float_obj(FloatExpr),
                       obj_neg(ObjExpr),
                       to_symb(ObjExpr),
                       get_curr_obj(<SetItVar, SeqItVar>),
@@ -166,22 +181,13 @@ type BoolExpr       = AtomicBoolExpr,
 
 type IntExpr        = Int, IntConst, IntVar, NatIntOp;
 
-type ObjExpr        = AtomicExpr, NatObjOp, FloatExpr;
+type FloatExpr      = FloatLit, FloatVar, FloatNatOp;
 
-type AnyTypeExpr    = BoolExpr, IntExpr, ObjExpr;
+type ObjExpr        = AtomicExpr, NatObjOp;
 
-type FloatExpr      = FloatLit,
-                      mk_float(mantissa: Int, dec_exp: Int),
-                      neg_float(AtomicExpr),
-                      add_floats(AtomicExpr, AtomicExpr),
-                      sub_floats(AtomicExpr, AtomicExpr),
-                      mult_floats(AtomicExpr, AtomicExpr),
-                      div_floats(AtomicExpr, AtomicExpr),
-                      exp_floats(AtomicExpr, AtomicExpr),
-                      square_root(AtomicExpr),
-                      floor_op(AtomicExpr),
-                      ceiling_op(AtomicExpr),
-                      int_to_float(AtomicExpr);
+type AnyTypeExpr    = BoolExpr, IntExpr, FloatExpr, ObjExpr;
+
+type AnyAtomicExpr  = BoolExpr, IntExpr, FloatExpr, AtomicExpr;
 
 type RefObjExpr     = mk_set_from_stream(stream: StreamVar),
                       mk_set(elems: VecVar, size: IntExpr),
@@ -248,7 +254,7 @@ type BasicInstr     = init_stream(StreamVar),
 
                       no_op,
 
-                      call_proc(var: WriteObjVar?, name: ObjFnName, args: AtomicExpr*, cls_args: BoundCls*),
+                      call_proc(var: WriteObjVar?, name: ObjFnName, args: AnyAtomicExpr*, cls_args: BoundCls*),
                       call_cls(var: WriteObjVar, cls_var: AnyClsVar, args: AtomicExpr+),
 
                       push_call_info(fn_name: ObjFnName, params: Maybe[<StdVar, FnArg>]*),

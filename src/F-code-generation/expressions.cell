@@ -13,8 +13,8 @@ implicit program : Program, context : Context, var_subst_map : [StdVar -> CaptVa
     return match (expr)
       undefined           = (terminate),
 
-      object()            |
-      float_lit()         = (set_var(res_var, expr)),
+      object()            = (set_var(res_var, expr)),
+      float_lit()         = (set_var(res_var, float_obj(expr))),
 
       set_expr(es?)       = gen_eval_code_for_set_expr(es, res_var),
       seq_expr(es?)       = gen_eval_code_for_seq_expr(es, res_var),
@@ -339,16 +339,6 @@ implicit program : Program, context : Context, var_subst_map : [StdVar -> CaptVa
       isort         = internal_sort(res_var, ps(0)),
       parse         = parse_value(res_var, ps(0)),
       print         = print_value(res_var, ps(0)),
-      fneg          = neg_float(res_var, ps(0)),
-      fadd          = add_floats(res_var, ps(0), ps(1)),
-      fsub          = sub_floats(res_var, ps(0), ps(1)),
-      fmult         = mult_floats(res_var, ps(0), ps(1)),
-      fdiv          = div_floats(res_var, ps(0), ps(1)),
-      fexp          = exp_floats(res_var, ps(0), ps(1)),
-      fsqrt         = square_root(res_var, ps(0)),
-      floor         = floor_op(res_var, ps(0)),
-      ceiling       = ceiling_op(res_var, ps(0)),
-      float         = int_to_float(res_var, ps(0)),
       str           = symb_to_str(res_var, ps(0)),
       _             = set_var(res_var, gen_eval_expr(name, ps));
 
@@ -374,7 +364,15 @@ implicit program : Program, context : Context, var_subst_map : [StdVar -> CaptVa
       dec_exp     = int_obj(dec_exp(ps(0))),
       rand_nat    = int_obj(rand_nat(ps(0))),
       counter     = int_obj(unique_nat),
-      ticks       = int_obj(ticks);
+      ticks       = int_obj(ticks),
+      fneg        = float_obj(neg_float(float_value(ps(0)))),
+      fadd        = float_obj(add_floats(float_value(ps(0)), float_value(ps(1)))),
+      fsub        = float_obj(sub_floats(float_value(ps(0)), float_value(ps(1)))),
+      fmult       = float_obj(mult_floats(float_value(ps(0)), float_value(ps(1)))),
+      fdiv        = float_obj(div_floats(float_value(ps(0)), float_value(ps(1)))),
+      fexp        = float_obj(exp_floats(float_value(ps(0)), float_value(ps(1)))),
+      fsqrt       = float_obj(square_root(float_value(ps(0)))),
+      float       = float_obj(int_to_float(get_int_val(ps(0))));
   }
 
 
