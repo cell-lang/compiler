@@ -96,7 +96,6 @@ NatBoolOp is_lt(IntExpr e1, IntExpr e2)                   = is_lt(expr1: e1, exp
 NatBoolOp is_le(IntExpr e1, IntExpr e2)                   = is_le(expr1: e1, expr2: e2);
 NatBoolOp is_gt(IntExpr e1, IntExpr e2)                   = is_lt(expr1: e2, expr2: e1);
 NatBoolOp is_ge(IntExpr e1, IntExpr e2)                   = is_le(expr1: e2, expr2: e1);
-NatBoolOp inline_is_eq(ObjExpr e, InlineObj v)            = inline_is_eq(expr: e, value: v);
 NatBoolOp is_flt(FloatExpr e1, FloatExpr e2)              = :is_flt(e1, e2);
 NatBoolOp is_fle(FloatExpr e1, FloatExpr e2)              = :is_fle(e1, e2);
 NatBoolOp is_out_of_range(ItVar v)                        = :is_out_of_range(v);
@@ -107,13 +106,22 @@ NatBoolOp has_field(ObjExpr r, SymbObj f)                 = has_field(record: r,
 NatBoolOp contains(ObjExpr r, ObjExpr+ t)                 = contains(coll: r, entry: t);
 NatBoolOp table_contains(AnyRelVar rv, IntVar+ vs)        = table_contains(table: rv, tuple: vs);
 
+BoolExpr inline_is_eq(ObjExpr expr, InlineObj value) =
+  bool_obj(e?),   object(true)      = e,
+  bool_obj(e?),   object(false)     = neg(e),
+  int_obj(e?),    object(<*..*> n?) = is_eq(e, n),
+  _,              _                 = inline_is_eq(expr: expr, value: value);
+
 BoolExpr is_eq(ObjExpr e1, ObjExpr e2) =
   if e1 :: InlineObj
     then if e2 :: InlineObj then e1 == e2 else inline_is_eq(e2, e1)
   else
     if e2 :: InlineObj then inline_is_eq(e1, e2) else is_eq(expr1: e1, expr2: e2);
 
-NatIntOp get_int_val(ObjExpr e)                         = :get_int_val(e);
+IntExpr get_int_val(ObjExpr expr) =
+  int_obj(e?) = e,
+  _           = :get_int_val(expr);
+
 NatIntOp get_size(ObjExpr e)                            = :get_size(e);
 NatIntOp minus(IntExpr e)                               = :minus(e);
 NatIntOp add(IntExpr e1, IntExpr e2)                    = add(val1: e1, val2: e2);
@@ -135,14 +143,28 @@ NatIntOp rand_nat(ObjExpr e)                            = :rand_nat(get_int_val(
 NatIntOp ticks                                          = :ticks;
 
 
+ObjExpr bool_obj(BoolExpr expr) =
+  inline_is_eq()  = if expr.value == obj_true then expr.expr else :bool_obj(expr),
+  _               = :bool_obj(expr);
+
+
+ObjExpr int_obj(IntExpr expr) =
+  get_int_val(e?) = e,
+  _               = :int_obj(expr);
+
+
+ObjExpr float_obj(FloatExpr expr) =
+  float_value(e?) = e,
+  _               = :float_obj(expr);
+
+
+
+
 NatObjOp at(ObjExpr s, IntExpr i)                 = at(seq: s, idx: i);
 NatObjOp lookup(ObjExpr r, ObjExpr k)             = lookup(rel: r, key: k);
 NatObjOp lookup_field(ObjExpr r, SymbObj f)       = lookup_field(record: r, field: f);
 NatObjOp get_tag(ObjExpr e)                       = :get_tag(e);
 NatObjOp get_inner_obj(ObjExpr e)                 = :get_inner_obj(e);
-NatObjOp bool_obj(BoolExpr e)                     = :bool_obj(e);
-NatObjOp int_obj(IntExpr e)                       = :int_obj(e);
-NatObjOp float_obj(FloatExpr e)                   = :float_obj(e);
 NatObjOp to_symb(ObjExpr e)                       = :to_symb(e);
 NatObjOp get_curr_obj(<SetItVar, SeqItVar> it)    = :get_curr_obj(it);
 NatObjOp get_curr_arg(BinRelItVar v, <0..1> a)    = get_curr_arg(var: v, arg: a);
@@ -190,7 +212,10 @@ Instr mk_rel(WriteObjVar v, VecVar c1, VecVar c2, VecVar c3, IntExpr s) = set_va
 
 Instr mk_tagged_obj(WriteObjVar v, AtomicExpr t, AtomicExpr o) = set_var(v, mk_tagged_obj(tag: t, obj: o));
 
-FloatNatOp float_value(ObjExpr e)                   = :float_value(e);
+FloatExpr float_value(ObjExpr expr) =
+  float_obj(e?) = e,
+  _             = :float_value(expr);
+
 FloatNatOp neg_float(FloatExpr val)                 = :neg_float(val);
 FloatNatOp add_floats(FloatExpr lv, FloatExpr rv)   = :add_floats(lv, rv);
 FloatNatOp sub_floats(FloatExpr lv, FloatExpr rv)   = :sub_floats(lv, rv);
