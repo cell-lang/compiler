@@ -51,7 +51,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     tag_obj_expr()      = undefined,
     fn_call()           = fn_call_opt_eval_info(expr, var_gen, subexpr_info),
     cls_call()          = undefined,
-    builtin_call()      = undefined,
+    builtin_call()      = builtin_call_opt_eval_info(expr, var_gen, subexpr_info),
     size_expr()         = undefined,
     unary_pseudo_call() = undefined,
     rel_memb_test()     = undefined,
@@ -106,7 +106,108 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
     return (eval_code, surr_expr, next_var_gen);
   }
+
+
+  // builtin_call(name: BuiltIn, args: Expr+);
+  (Instr*, ObjExpr, VarGen) builtin_call_opt_eval_info(BuiltinCall expr, VarGen var_gen, (ExprRef -> SubExprInfo) subexpr_info) {
+    fail if not expr.args :: ExprRef+;
+
+    surr_args = (subexpr_info(a).surr_expr : a <- expr.args);
+    return eval_info(expr.name, surr_args, var_gen);
+
+
+    (Instr*, ObjExpr, VarGen) eval_info(BuiltIn name, ObjExpr+ args, VarGen var_gen) =
+      slice   |
+      cat     |
+      rev     |
+      isort   |
+      parse   |
+      print   |
+      str     = { res_var, next_var_gen = next_obj_var(var_gen);
+                  instr = eval_instr(name, args, res_var);
+                  return ((instr), res_var, next_var_gen);
+                },
+      _       = ((), eval_info(name, args), var_gen);
+
+
+    Instr eval_instr(BuiltIn name, ObjExpr+ args, LocVar res_var) =
+      slice         = get_seq_slice(res_var, args(0), get_int_val(args(1)), get_int_val(args(2))),
+      cat           = join_seqs(res_var, args(0), args(1)),
+      rev           = rev_seq(res_var, args(0)),
+      isort         = internal_sort(res_var, args(0)),
+      parse         = parse_value(res_var, args(0)),
+      print         = print_value(res_var, args(0)),
+      str           = symb_to_str(res_var, args(0));
+
+
+
+    ObjExpr eval_info(BuiltIn name, ObjExpr+ args) =
+      neg       |
+      add       |
+      sub       |
+      mult      |
+      div       |
+      mod       |
+      and       |
+      or        |
+      xor       = int_obj(int_op_eval_info(name, (get_int_val(a) : a <- args))),
+      lt        |
+      le        = bool_obj(bool_op_eval_info(name, (get_int_val(a) : a <- args))),
+      flt       |
+      fle       = bool_obj(floats_to_bool_op_eval_info(name, (float_value(a) : a <- args))),
+      bits      |
+      mantissa  |
+      dec_exp   = int_obj(int_op_eval_info(name, float_value(args(0)))),
+      fneg      |
+      fadd      |
+      fsub      |
+      fmult     |
+      fdiv      |
+      fexp      |
+      fsqrt     = float_obj(float_op_eval_info(name, (float_value(a) : a <- args))),
+      float     = float_obj(int_to_float(get_int_val(args(0)))),
+      symb      = to_symb(args(0)),
+      tag       = get_tag(args(0)),
+      untag     = get_inner_obj(args(0));
+
+
+
+    BoolExpr bool_op_eval_info(BuiltIn, IntExpr+ args) =
+      lt  = is_lt(args(0), args(1)),
+      le  = is_le(args(0), args(1));
+
+    BoolExpr floats_to_bool_op_eval_info(BuiltIn, FloatExpr+ args) =
+      flt   = is_flt(args(0), args(1)),
+      fle   = is_fle(args(0), args(1));
+
+    IntExpr int_op_eval_info(BuiltIn, IntExpr+ args) =
+      neg   = minus(args(0)),
+      add   = add(args(0), args(1)),
+      sub   = sub(args(0), args(1)),
+      mult  = mult(args(0), args(1)),
+      div   = div(args(0), args(1)),
+      mod   = mod_op(args(0), args(1)),
+      and   = bitwise_and(args(0), args(1)),
+      or    = bitwise_or(args(0), args(1)),
+      xor   = bitwise_xor(args(0), args(1));
+
+    IntExpr int_op_eval_info(BuiltIn, FloatExpr arg) =
+      bits      = float_bits(arg),
+      mantissa  = mantissa(arg),
+      dec_exp   = dec_exp(arg);
+
+    FloatExpr float_op_eval_info(BuiltIn, FloatExpr+ args) =
+      fneg  = neg_float(args(0)),
+      fadd  = add_floats(args(0), args(1)),
+      fsub  = sub_floats(args(0), args(1)),
+      fmult = mult_floats(args(0), args(1)),
+      fdiv  = div_floats(args(0), args(1)),
+      fexp  = exp_floats(args(0), args(1)),
+      fsqrt = square_root(args(0));
+
+  }
 }
+
 
   // Instr+ gen_eval_code_for_fn_call_expr(FnFamilyId id, AnyExpr* params, [ImplArg -> Expr] impl_args, EvalDestVar res_var) {
   //   if impl_args != []:
