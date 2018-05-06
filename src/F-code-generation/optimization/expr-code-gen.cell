@@ -1,9 +1,9 @@
 // type EnvExpr = EnvVar, ExprRef;
 
-type SubExprInfo = (type: Type, surr_expr: ObjExpr, eval_code: Instr*);
+type SubExprInfo = (type: Type, surr_expr: ObjExpr);
 
 
-implicit program : Program, typedefs : [TypeName -> NeType], context : Context {
+implicit program : Program, typedefs : [TypeName -> NeType], context : Context, var_surrs : [EnvVar -> ObjExpr] {
   (Instr*, ObjExpr, VarGen) opt_eval_info(<undefined>, VarGen var_gen, (ExprRef -> SubExprInfo) subexpr_info) {
     return ((terminate), never_used_lvar, var_gen);
   }
@@ -19,8 +19,9 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context {
   }
 
 
-  (Instr*, ObjExpr, VarGen) opt_eval_info(Var expr, VarGen var_gen, (ExprRef -> SubExprInfo) subexpr_info) {
-    return ((), expr, var_gen);
+  (Instr*, ObjExpr, VarGen) opt_eval_info(Var var, VarGen var_gen, (ExprRef -> SubExprInfo) subexpr_info) {
+    surr = if var :: EnvVar then var_surrs(var, !!) else var;
+    return ((), surr, var_gen);
   }
 
 
@@ -100,18 +101,10 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context {
       float           = {v, g = next_float_var(var_gen); return (v, float_obj(v), g);},
       symbol | object = {v, g = next_obj_var(var_gen);   return (v, v,            g);};
 
-    // Entire expression evaluation code
-    eval_code = (join((a.eval_code : a <- args_info)) | call_proc(res_var, fn_id, low_level_args));
+    // Evaluation code for the call only
+    eval_code = (call_proc(res_var, fn_id, low_level_args));
 
     return (eval_code, surr_expr, next_var_gen);
-
-
-    AnyTypeExpr low_level_expr(LowLevelRepr repr, ObjExpr expr) =
-      bool      = inline_is_eq(expr, obj_true),
-      int       = get_int_val(expr),
-      symbol    = expr, ## TEMPORARY TEMPORARY TEMPORARY
-      float     = float_value(expr),
-      object    = expr;
   }
 }
 

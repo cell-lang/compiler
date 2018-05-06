@@ -54,15 +54,18 @@ type MembIntVectVar = nodes_to_update_vect_var(level: Nat, size: NzNat), ## BAD:
 
 type QualBoolVar    = qual_bool_var(auto_var: LocAutoVar, memb_var: MembBoolVar);
 type LocBoolVar     = bvar(Nat);
-type BoolVar        = LocBoolVar, MembBoolVar, QualBoolVar;
+type BoolFnArg      = bool_arg(<Symbol, Nat>);
+type BoolVar        = LocBoolVar, BoolFnArg, MembBoolVar, QualBoolVar;
 
 type LocAutoIntVar  = elapsed_time(LocAutoVar); ## BETTER NAME/CLASSIFICATION
 
 type ProjdIntVar    = changed_output(index: <Nat, IntVar>);
 
 type LocIntVar      = ivar(Nat);
+type IntFnArg       = int_arg(<Symbol, Nat>);
 
 type IntVar         = LocIntVar,
+                      IntFnArg,
                       update_time,
                       curr_time,
                       update_expr_index,
@@ -70,7 +73,9 @@ type IntVar         = LocIntVar,
                       MembIntVar,
                       LocAutoIntVar;
 
-type FloatVar       = fvar(Nat);
+type LocFloatVar    = fvar(Nat);
+type FloatFnArg     = float_arg(<Symbol, Nat>);
+type FloatVar       = LocFloatVar, FloatFnArg;
 
 type AnyWriteVar    = LocBoolVar, LocIntVar, FloatVar, WriteObjVar;
 
@@ -322,7 +327,7 @@ type JumpInstr      = break_loop,
                       exit_block,
                       ## MAYBE IT WOULD BE A GOOD IDEA TO SEPARATE THE BOOLEAN FROM THE OBJECT VERSION
                       ## ALSO, THE BOOLEAN VERSION DOESN'T NEED TO USE AN ATOMIC EXPRESSION, IT CAN USE THE FULL ONE, CAN'T IT?
-                      ret_val(<AtomicExpr, AtomicBoolExpr>),
+                      ret_val(AnyTypeExpr),
                       terminate;
 
 type CompInstr      = branch(cond: BoolExpr, when_true: Instr+, when_false: Instr*),
@@ -346,14 +351,16 @@ type BoundCls       = AnyClsVar,
                         capt_cls_vars: AnyClsVar*
                       );
 
-type ObjProcArg     = StdVar, FnArg;
+type ObjProcArg     = StdVar, FnArg, BoolFnArg, IntFnArg, FloatFnArg;
 type ClsProcArg     = cls(var: ClsVar, arity: NzNat);
 
 type ObjProcDef     = obj_proc_def(
                         name:           ObjFnName,
+                        type:           FnType,
                         args:           ObjProcArg*,
                         cls_args:       ClsProcArg*,
                         impl_args:      [ImplArg],
+                        ret_val_repr:   LowLevelRepr,
                         type:           FnType,
                         loc_auto_vars:  [LocAutoVar -> AutoSymbol],
                         loc_db_vars:    [LocDBVar -> DBSymbol],

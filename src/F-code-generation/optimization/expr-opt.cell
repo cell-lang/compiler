@@ -3,10 +3,10 @@ implicit program           : Program,
          var_aliases       : [[LocVar2]],
          var_subst_map     : [StdVar -> CaptVar],
          cls_var_subst_map : [ClsVar -> CaptClsVar],
-         // next_var_gen      : VarGen,
+         next_var_gen      : VarGen,
          options           : CompilationOptions
 {
-  Instr+ opt_eval_code(Expr expr, [<StdVar, FnArg, ImplArg> -> NeType] env, EvalDestVar res_var) {
+  (Instr*, ObjExpr) opt_eval_code(Expr expr, [EnvVar -> NeType] env, [EnvVar -> ObjExpr] var_surrs) {
     exprs_cluster = exprs_cluster(expr);
     rec_exprs = reconstruct_all(exprs_cluster);
 
@@ -34,17 +34,38 @@ implicit program           : Program,
 
       types = (expr_type(e, envs(i)) : e @ i <- rec_exprs);
 
-      // eval_code_frags = (() : i < cltr_size);
-      // ref_exprs = (never_used_lvar : i < cltr_size);
-      // for i < cltr_size:
-      //   ri = cltr_size - i - 1;
-      //   eval_code, ref_expr = opt_eval_info(rec_exprs(ri), envs(ri));
-      //   eval_code_frags(ri) := eval_code;
-      //   ref_exprs(ri) := ref_expr;
-      // ;
+      let var_surrs = var_surrs:
+        var_gen = next_var_gen;
+        exprs_eval_code = ();
+        surr_exprs = ();
+        for i < cltr_size:
+          ri = cltr_size - i - 1;
+          eval_code, surr_expr, var_gen = opt_eval_info(
+            exprs_cluster(ri),
+            var_gen,
+            (type: types(untag($)), surr_expr: surr_exprs(cltr_size - untag($) - 1))
+          );
+          exprs_eval_code = (exprs_eval_code | eval_code);
+          surr_exprs = (surr_exprs | surr_expr);
+        ;
+        exprs_eval_code = reverse(exprs_eval_code);
+        surr_exprs = reverse(surr_exprs);
+      ;
     ;
 
-    return (no_op);
+print "exprs_cluster";
+print exprs_cluster;
+print "envs";
+print envs;
+print "types";
+print types;
+print "exprs_eval_code";
+print exprs_eval_code;
+print "surr_exprs";
+print surr_exprs;
+
+    ## BUG BUG BUG: TEMPORARY
+    return (join(reverse(exprs_eval_code)), surr_exprs(0));
   }
 }
 
