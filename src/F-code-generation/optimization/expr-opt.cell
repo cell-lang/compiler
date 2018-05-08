@@ -43,7 +43,10 @@ implicit program           : Program,
           eval_code, surr_expr, var_gen = opt_eval_info(
             exprs_cluster(ri),
             var_gen,
-            (type: types(untag($)), surr_expr: surr_exprs(cltr_size - untag($) - 1))
+            ( type:      types(untag($)),
+              surr_expr: surr_exprs(cltr_size - untag($) - 1),
+              eval_code: exprs_eval_code(cltr_size - untag($) - 1)
+            )
           );
           exprs_eval_code = (exprs_eval_code | eval_code);
           surr_exprs = (surr_exprs | surr_expr);
@@ -65,7 +68,7 @@ print "surr_exprs";
 print surr_exprs;
 
     ## BUG BUG BUG: TEMPORARY
-    return (join(reverse(exprs_eval_code)), surr_exprs(0));
+    return (exprs_eval_code(0), surr_exprs(0));
   }
 }
 

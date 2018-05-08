@@ -1,4 +1,9 @@
-type LowLevelRepr = bool, int, symbol, float, object;
+type SmallIntRepr     = int8, int16, int32; // nat8, nat16, nat32;
+
+type LowLevelEltRepr  = LowLevelRepr, SmallIntRepr;
+
+type LowLevelRepr = bool, int, symbol, float, object,
+                    array(type: LowLevelEltRepr, size_var: LocIntVar);
 
 type LowLevelSign = low_level_sign(args: Maybe[LowLevelRepr]*, ret_value: LowLevelRepr);
 
@@ -6,12 +11,24 @@ type LowLevelSign = low_level_sign(args: Maybe[LowLevelRepr]*, ret_value: LowLev
 
 LowLevelRepr+ atomic_low_level_reprs = (:bool, :int, :symbol, :float);
 
+LowLevelEltRepr* atomic_low_level_elt_reprs = (:bool, :int8, :int16, :int32, :int, :symbol, :float);
+
+
 NeType low_level_repr_type(LowLevelRepr) =
   bool    = type_bool,
   int     = integer,
   symbol  = atom_type,
   float   = float_type,
   object  = type_any;
+
+
+NeType low_level_repr_type(SmallIntRepr) =
+  int8    = type_int8,
+  int16   = type_int16,
+  int32   = type_int32;
+  // nat8    = type_byte,
+  // nat16   = type_nat16,
+  // nat32   = type_nat32,
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -44,6 +61,12 @@ AnyTypeExpr low_level_expr(LowLevelRepr repr, ObjExpr expr) =
   object    = expr;
 
 
+AnyTypeExpr low_level_expr(SmallIntRepr repr, ObjExpr expr) = undefined;
+  // int8    =
+  // int16   =
+  // int32   =
+
+
 implicit typedefs : [TypeName -> NeType] {
   LowLevelRepr low_level_repr(NeType type) {
     for r <- atomic_low_level_reprs:
@@ -52,6 +75,12 @@ implicit typedefs : [TypeName -> NeType] {
     return :object;
   }
 
+  LowLevelEltRepr low_level_elt_repr(NeType type) {
+    for r <- atomic_low_level_elt_reprs:
+      return r if is_subset(type, low_level_repr_type(r));
+    ;
+    return :object;
+  }
 
   LowLevelSign low_level_sign(Function fn) {
     return low_level_sign(

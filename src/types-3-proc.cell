@@ -77,6 +77,8 @@ type LocFloatVar    = fvar(Nat);
 type FloatFnArg     = float_arg(<Symbol, Nat>);
 type FloatVar       = LocFloatVar, FloatFnArg;
 
+type ArrayVar       = avar(id: Nat, repr: LowLevelEltRepr);
+
 type AnyWriteVar    = LocBoolVar, LocIntVar, FloatVar, WriteObjVar;
 
 type StreamVar      = svar(Nat); ## DOES THIS NEED CLEANUP?
@@ -90,7 +92,7 @@ type TableItVar     = table_it_var(id: Nat, arity: NzNat); ## DITTO
 
 type ItVar          = SeqItVar, SetItVar, BinRelItVar, TernRelItVar, TableItVar;
 
-type AnyVar         = ObjVar, VecVar, BoolVar, IntVar, ItVar, StreamVar;
+type AnyVar         = ObjVar, VecVar, ArrayVar, BoolVar, IntVar, ItVar, StreamVar;
 
 type ObjFnName      = FnId, ProcSymbol;
 
@@ -200,6 +202,7 @@ type RefObjExpr     = mk_set_from_stream(stream: StreamVar),
                       mk_set(elems: VecVar, size: IntExpr),
                       mk_seq_from_stream(stream: StreamVar),
                       mk_seq(elems: VecVar, size: IntExpr),
+                      mk_seq_from_array(array: ArrayVar),
                       build_const_int_seq(seq_id: Nat),
                       mk_map_from_streams(key_stream: StreamVar, value_stream: StreamVar),
                       mk_map(keys: VecVar, values: VecVar, size: IntExpr),
@@ -236,6 +239,9 @@ type BasicInstr     = init_stream(StreamVar),
                       ## BUG BUG BUG: IF ObjExpr CONTAINS A NON-COUNTED REFERENCE TO THE ARRAY,
                       ## I COULD END UP WITH A CYCLE IN THE OBJECT GRAPH AND MAYBE OTHER PROBLEMS
                       set_at(var: WriteObjVar, idx: IntExpr, value: AtomicExpr),  // Ownership transfer: <value>
+
+                      alloc_array(var: ArrayVar, size: IntExpr),
+                      write_array(var: ArrayVar, idx: IntExpr, value: AnyTypeExpr),
 
                       get_set_iter(var: SetItVar, src: AtomicExpr),
                       get_seq_iter(var: SeqItVar, src: AtomicExpr),

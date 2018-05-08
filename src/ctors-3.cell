@@ -56,6 +56,8 @@ MembIntVar nested_auto_int_var(NestedAutoVar av, MembIntVar mv) = nested_auto_in
 LocFloatVar fvar(Nat n) = :fvar(n);
 FloatFnArg  float_arg(<Symbol, Nat> id) = :float_arg(id);
 
+ArrayVar avar(Nat id, LowLevelEltRepr r) = avar(id: id, repr: r);
+
 MembObjVar watched_signal_value_var(Atom id)                  = :watched_signal_value_var(id);
 
 IntConst time_slot_length(AutoSymbol a, Atom id, IntExpr i) = time_slot_length(automaton: a, expr_id: id, time_slot: i);
@@ -198,6 +200,7 @@ Instr mk_set(WriteObjVar v, VecVar es, IntExpr s)   = set_var(v, mk_set(elems: e
 
 Instr mk_seq(WriteObjVar v, StreamVar s)            = set_var(v, mk_seq_from_stream(stream: s));
 Instr mk_seq(WriteObjVar v, VecVar es, IntExpr s)   = set_var(v, mk_seq(elems: es, size: s));
+Instr mk_seq(WriteObjVar s, ArrayVar a)             = set_var(s, mk_seq_from_array(array: a));
 
 Instr build_const_int_seq(WriteObjVar v, Nat id)    = set_var(v, build_const_int_seq(seq_id: id));
 
@@ -254,6 +257,11 @@ Instr copy_persistent_state(WriteObjVar rv, AnyAutoVar av, AutoSymbol t) = set_v
 Instr lookup_surrogate(WriteObjVar v, AnyValueStoreId s, IntExpr e) = set_var(v, lookup_surrogate(s, e));
 
 Instr read_pending_var(WriteObjVar tv, <PendingStateVar, PendingInputVar> sv) = set_var(tv, :read_pending_var(sv));
+
+Instr alloc_array(ArrayVar v, IntExpr n)                = alloc_array(var: v, size: n);
+
+Instr write_array(ArrayVar v, IntExpr i, ObjExpr e) =
+  write_array(var: v, idx: i, value: low_level_expr(v.repr, e));
 
 Instr get_iter(SeqItVar v, AtomicExpr s) = get_seq_iter(var: v, src: s);
 Instr get_iter(SetItVar v, AtomicExpr s) = get_set_iter(var: v, src: s);
