@@ -96,7 +96,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions 
     // Base case, the condition stays defined. b1 holds the value of the condition, b0 whether it has changed
     // If the condition has changed, we queue the updates for the appropriate branch
     cond_stays_def_branch = (
-      set_bvar(b1, inline_is_eq(l0, obj_true)),
+      set_bvar(b1, bool_value(l0)),
       set_bvar(b0, neg(is_eq(id_var, b1))),
       set_bvar(id_var, b1),
       do_if(
@@ -117,7 +117,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions 
       branch(
         cond_is_def_var,
         cond_stays_def_branch,
-        ( set_bvar(id_var, inline_is_eq(l0, obj_true)),
+        ( set_bvar(id_var, bool_value(l0)),
           set_bvar(cond_is_def_var, true)
         )
       )
@@ -200,7 +200,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions 
 
         // The condition is defined, we run the normal actions
         ( branch_or_no_op(
-            inline_is_eq(l0, obj_true),
+            bool_value(l0),
             join(rand_sort([gen_update_code(a) : a <- node.actions])),
             ()
           )

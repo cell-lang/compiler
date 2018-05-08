@@ -92,21 +92,50 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     elt_repr = low_level_elt_repr(elts_type);
     array_var, var_gen = next_array_var(init_var_gen, elt_repr);
 
-    conds = ((i, e.cond) : e @ i <- elts, e :: CondExpr);
+    conds = ((e.cond, i) : e @ i <- elts, is_cond_expr(e));
 
     if conds == ():
       code = (alloc_array(array_var, |elts|));
       for e @ i <- elts:
-        fail if not e :: ExprRef;
-        info = subexpr_info(e);
+        info = subexpr_info(cast_expr_ref(e));
         code = code & (info.eval_code | write_array(array_var, i, info.surr_expr));
       ;
-      seq_var, var_gen = next_obj_var(var_gen);
-      code = (code | mk_seq(seq_var, array_var));
-      return (code, seq_var, var_gen);
+
     else
-      fail;
+      conds_info = (subexpr_info(cast_expr_ref(c)) : c, i <- conds);
+      code = join((info.eval_code : info <- conds_info));
+      surr_conds = (bool_to_bit(bool_value(info.surr_expr)) : info <- conds_info);
+      min_size = |elts| - |conds|;
+      fail if not min_size :: Int32;
+      len_expr = foldl(nonempty((min_size if min_size != 0) & surr_conds), add32);
+
+      // int32_var is local, can be reused by the parent expression
+      int32_var, unused_var = next_int32_var(var_gen);
+      code = (code |
+        set_ivar32(int32_var, len_expr),
+        alloc_array(array_var, int32_var),
+        set_ivar32(int32_var, 0)
+      );
+
+      cond_idx = 0;
+      for e @ i <- elts:
+        if is_cond_expr(e):
+          cond = bool_value(conds_info(cond_idx).surr_expr);
+          info = subexpr_info(cast_expr_ref(e.expr));
+          elt_code = (info.eval_code | write_array(array_var, int32_var, info.surr_expr), increment(int32_var));
+          code = (code | do_if(cond, elt_code));
+          cond_idx = cond_idx + 1;
+        else
+          info = subexpr_info(cast_expr_ref(e));
+          elt_code = (info.eval_code | write_array(array_var, int32_var, info.surr_expr), increment(int32_var));
+          code = code & elt_code;
+        ;
+      ;
     ;
+
+    seq_var, var_gen = next_obj_var(var_gen);
+    code = (code | mk_seq(seq_var, array_var));
+    return (code, seq_var, var_gen);
 
 
     Type elt_type(SubExpr expr, (ExprRef -> SubExprInfo) subexpr_info) =
@@ -243,9 +272,12 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
       fdiv  = div_floats(args(0), args(1)),
       fexp  = exp_floats(args(0), args(1)),
       fsqrt = square_root(args(0));
-
   }
 }
+
+
+ExprRef cast_expr_ref(SubExpr e) =
+  expr_ref() = e;
 
 
   // Instr+ gen_eval_code_for_fn_call_expr(FnFamilyId id, AnyExpr* params, [ImplArg -> Expr] impl_args, EvalDestVar res_var) {

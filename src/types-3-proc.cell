@@ -73,6 +73,8 @@ type IntVar         = LocIntVar,
                       MembIntVar,
                       LocAutoIntVar;
 
+type Int32Var       = ivar32(Nat);
+
 type LocFloatVar    = fvar(Nat);
 type FloatFnArg     = float_arg(<Symbol, Nat>);
 type FloatVar       = LocFloatVar, FloatFnArg;
@@ -92,7 +94,7 @@ type TableItVar     = table_it_var(id: Nat, arity: NzNat); ## DITTO
 
 type ItVar          = SeqItVar, SetItVar, BinRelItVar, TernRelItVar, TableItVar;
 
-type AnyVar         = ObjVar, VecVar, ArrayVar, BoolVar, IntVar, ItVar, StreamVar;
+type AnyVar         = ObjVar, VecVar, ArrayVar, BoolVar, IntVar, Int32Var, FloatVar, ItVar, StreamVar;
 
 type ObjFnName      = FnId, ProcSymbol;
 
@@ -150,6 +152,8 @@ type NatIntOp       = get_int_val(ObjExpr),
                       unique_nat,         // Non-deterministic
                       ticks;              // Impure
 
+type Int32NatOp     = bool_to_bit(BoolExpr), cast_int32(IntExpr), add32(Int32Expr, Int32Expr);
+
 type FloatNatOp     = float_value(ObjExpr),
                       neg_float(FloatExpr),
                       add_floats(FloatExpr, FloatExpr),
@@ -188,7 +192,9 @@ type BoolExpr       = AtomicBoolExpr,
                       and_then(BoolExpr+),
                       or_else(BoolExpr+);
 
-type IntExpr        = Int, IntConst, IntVar, NatIntOp;
+type IntExpr        = Int, IntConst, IntVar, NatIntOp, Int32Expr;
+
+type Int32Expr      = Int32, Int32Var, Int32NatOp;
 
 type FloatExpr      = FloatLit, FloatVar, FloatNatOp;
 
@@ -253,6 +259,7 @@ type BasicInstr     = init_stream(StreamVar),
                       set_var(var: <WriteObjVar, ImplArg>, value: ObjExpr),
                       set_bvar(var: BoolVar, value: BoolExpr),
                       set_ivar(var: IntVar, value: IntExpr),
+                      set_ivar32(var: Int32Var, value: Int32Expr),
                       set_fvar(var: FloatVar, value: FloatExpr),
 
                       set_rc_var(var: WriteObjVar, value: RefObjExpr),

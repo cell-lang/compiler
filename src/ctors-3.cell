@@ -39,6 +39,8 @@ ProjdIntVar changed_output(<Nat, IntVar> i)  = changed_output(index: i);
 LocIntVar ivar(Nat n) = :ivar(n);
 IntFnArg  int_arg(<Symbol, Nat> id) = :int_arg(id);
 
+Int32Var ivar32(Nat n) = :ivar32(n);
+
 MembIntVar update_source_var(Atom n)                            = :update_source_var(n);
 MembIntVar null_locks_count_var(Atom id)                        = :null_locks_count_var(id);
 MembIntVar update_count_var(Nat l)                              = :update_count_var(l);
@@ -120,6 +122,7 @@ BoolExpr is_eq(ObjExpr e1, ObjExpr e2) =
   else
     if e2 :: InlineObj then inline_is_eq(e1, e2) else is_eq(expr1: e1, expr2: e2);
 
+
 IntExpr get_int_val(ObjExpr expr) =
   int_obj(e?) = e,
   _           = :get_int_val(expr);
@@ -145,6 +148,25 @@ NatIntOp rand_nat(ObjExpr e)                            = :rand_nat(get_int_val(
 NatIntOp ticks                                          = :ticks;
 
 
+Int32NatOp bool_to_bit(BoolExpr e)            = :bool_to_bit(e);
+Int32NatOp cast_int32(IntExpr e)              = :cast_int32(e);
+Int32NatOp add32(Int32Expr e1, Int32Expr e2)  = :add32(e1, e2);
+
+
+FloatExpr float_value(ObjExpr expr) =
+  float_obj(e?) = e,
+  _             = :float_value(expr);
+
+FloatNatOp neg_float(FloatExpr val)                 = :neg_float(val);
+FloatNatOp add_floats(FloatExpr lv, FloatExpr rv)   = :add_floats(lv, rv);
+FloatNatOp sub_floats(FloatExpr lv, FloatExpr rv)   = :sub_floats(lv, rv);
+FloatNatOp mult_floats(FloatExpr lv, FloatExpr rv)  = :mult_floats(lv, rv);
+FloatNatOp div_floats(FloatExpr lv, FloatExpr rv)   = :div_floats(lv, rv);
+FloatNatOp exp_floats(FloatExpr lv, FloatExpr rv)   = :exp_floats(lv, rv);
+FloatNatOp square_root(FloatExpr value)             = :square_root(value);
+FloatNatOp int_to_float(IntExpr value)              = :int_to_float(value);
+
+
 ObjExpr bool_obj(BoolExpr expr) =
   inline_is_eq()  = if expr.value == obj_true then expr.expr else :bool_obj(expr),
   _               = :bool_obj(expr);
@@ -158,8 +180,6 @@ ObjExpr int_obj(IntExpr expr) =
 ObjExpr float_obj(FloatExpr expr) =
   float_value(e?) = e,
   _               = :float_obj(expr);
-
-
 
 
 NatObjOp at(ObjExpr s, IntExpr i)                 = at(seq: s, idx: i);
@@ -277,6 +297,7 @@ Instr move_forward(ItVar v) = :move_forward(v);
 Instr set_var(<WriteObjVar, ImplArg> v, ObjExpr e)    = set_var(var: v, value: e);
 Instr set_bvar(BoolVar v, BoolExpr e)                 = set_bvar(var: v, value: e);
 Instr set_ivar(IntVar v, IntExpr e)                   = set_ivar(var: v, value: e);
+Instr set_ivar32(Int32Var v, Int32Expr e)             = set_ivar32(var: v, value: e);
 Instr set_fvar(FloatVar v, FloatExpr e)               = set_fvar(var: v, value: e);
 
 Instr set_var(WriteObjVar v, RefObjExpr e)  = set_rc_var(var: v, value: e);
@@ -446,6 +467,8 @@ CompiledMethod compiled_method(NeType* ats, [+MembTestPredId*] mps, NeType rt, I
 
 ////////////////////////////// Derived expressions /////////////////////////////
 
+BoolExpr bool_value(ObjExpr expr) = inline_is_eq(expr, obj_true);
+
 BoolExpr and(BoolExpr e1, BoolExpr e2)      = and((e1, e2));
 BoolExpr or(BoolExpr e1, BoolExpr e2)       = or((e1, e2));
 BoolExpr and_then(BoolExpr e1, BoolExpr e2) = and_then((e1, e2));
@@ -486,6 +509,9 @@ Instr repeat_while(BoolExpr cond, Instr+ body) = repeat(nonempty((do_if_not(cond
 Instr increment(IntVar v, IntExpr a)  = set_ivar(v, add(v, a));
 Instr increment(IntVar v)             = increment(v, 1);
 Instr decrement(IntVar v)             = increment(v, -1);
+
+Instr increment(Int32Var v, Int32Expr e)  = set_ivar32(v, add32(v, e));
+Instr increment(Int32Var v)               = increment(v, 1);
 
 Instr do_if(BoolExpr cond, Instr* instrs)      = branch(cond, instrs, ());
 Instr do_if_not(BoolExpr cond, Instr* instrs)  = branch(cond, (), instrs);
