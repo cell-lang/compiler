@@ -59,7 +59,7 @@ implicit program      : Program,
     cls_call()          = undefined,
     builtin_call()      = builtin_call_opt_eval_info(expr, subexpr_info),
     size_expr()         = size_expr_opt_eval_info(expr.coll, subexpr_info),
-    unary_pseudo_call() = undefined,
+    unary_pseudo_call() = unary_pseudo_call_opt_eval_info(expr.target, expr.arg, subexpr_info),
     rel_memb_test()     = undefined,
     rel_lookup()        = undefined,
     relvar_memb_test()  = undefined,
@@ -84,6 +84,36 @@ implicit program      : Program,
     tern_rel_comp()     = undefined,
     seq_comp()          = undefined,
     range_comp()        = undefined;
+
+
+  (Instr*, ObjExpr, VarGen) unary_pseudo_call_opt_eval_info(Expr target, Expr arg, (ExprRef -> SubExprInfo) subexpr_info) {
+    target_info = subexpr_info(cast_expr_ref(target));
+    arg_info = subexpr_info(cast_expr_ref(arg));
+
+    target_type = target_info.type;
+    target_expr = target_info.surr_expr;
+    arg_expr = arg_info.surr_expr;
+
+    eval_code = target_info.eval_code & arg_info.eval_code;
+    var_gen = next_var_gen;
+
+    if is_subset(target_type, type_seq):
+      surr_expr = at(target_expr, get_int_val(arg_expr));
+
+    elif is_subset(target_type, type_set):
+      surr_expr = bool_obj(has_elem(target_expr, arg_expr));
+
+    elif is_subset(target_type, type_map):
+      surr_expr = lookup(target_expr, arg_expr);
+
+    else
+      assert is_subset(target_type, atom_type);
+      surr_expr, var_gen = next_obj_var(var_gen);
+      eval_code = (eval_code | mk_tagged_obj(surr_expr, target_expr, arg_expr));
+    ;
+
+    return (eval_code, surr_expr, var_gen);
+  }
 
 
   (Instr*, ObjExpr, VarGen) size_expr_opt_eval_info(Expr collection, (ExprRef -> SubExprInfo) subexpr_info) {

@@ -104,7 +104,7 @@ type InlineObj      = LeafObj, empty_seq, empty_rel;
 
 type AtomicBoolExpr = Bool, BoolVar;
 
-type NatBoolOp      = is_symb(ObjExpr),
+type BoolNatOp      = is_symb(ObjExpr),
                       is_int(ObjExpr),
                       is_float(ObjExpr),
                       is_ne_set(ObjExpr),
@@ -131,7 +131,7 @@ type NatBoolOp      = is_symb(ObjExpr),
                       contains(coll: ObjExpr, entry: ObjExpr+),
                       table_contains(table: AnyRelVar, tuple: IntVar+);
 
-type NatIntOp       = get_int_val(ObjExpr),
+type IntNatOp       = get_int_val(ObjExpr),
                       get_size(ObjExpr),
                       minus(IntExpr),
                       add(val1: IntExpr, val2: IntExpr),
@@ -166,7 +166,7 @@ type FloatNatOp     = float_value(ObjExpr),
                       // ceiling_op(FloatExpr),
                       int_to_float(IntExpr);
 
-type NatObjOp       = at(seq: ObjExpr, idx: IntExpr),
+type ObjNatOp       = at(seq: ObjExpr, idx: IntExpr),
                       lookup(rel: ObjExpr, key: ObjExpr),
                       lookup_field(record: ObjExpr, field: SymbObj),
                       get_tag(ObjExpr),
@@ -184,7 +184,7 @@ type BoolFnCall     = is_member(pred: MembTestPredId, obj: AtomicExpr),
                       state_is_def(auto_var: AnyAutoVar, type: AutoSymbol);
 
 type BoolExpr       = AtomicBoolExpr,
-                      NatBoolOp,
+                      BoolNatOp,
                       BoolFnCall,
                       neg(BoolExpr),
                       and(BoolExpr+), ## SEQUENCES OR SETS?
@@ -192,13 +192,13 @@ type BoolExpr       = AtomicBoolExpr,
                       and_then(BoolExpr+),
                       or_else(BoolExpr+);
 
-type IntExpr        = Int, IntConst, IntVar, NatIntOp, Int32Expr;
+type IntExpr        = Int, IntConst, IntVar, IntNatOp, Int32Expr;
 
 type Int32Expr      = Int32, Int32Var, Int32NatOp;
 
 type FloatExpr      = FloatLit, FloatVar, FloatNatOp;
 
-type ObjExpr        = InlineObj, StdObjVar, NatObjOp;
+type ObjExpr        = InlineObj, StdObjVar, ObjNatOp;
 
 type AtomicExpr     = ObjExpr;
 
@@ -237,7 +237,7 @@ type RefObjExpr     = mk_set_from_stream(stream: StreamVar),
                       // Can be used only once per pending variable, and does not automatically clear it,
                       // it has to be manually cleared with init_memb_var(...)
                       read_pending_var(<PendingStateVar, PendingInputVar>),
-                      lookup_surrogate(store: AnyValueStoreId, surrogate: IntExpr); ## THIS SHOULD BELONG IN NatObjOp, NOT HERE...
+                      lookup_surrogate(store: AnyValueStoreId, surrogate: IntExpr); ## THIS SHOULD BELONG IN ObjNatOp, NOT HERE...
 
 type BasicInstr     = init_stream(StreamVar),
                       append(stream: StreamVar, obj: AtomicExpr),  // Ownership transfer: <obj>
