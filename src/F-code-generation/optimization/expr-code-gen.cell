@@ -3,56 +3,62 @@
 type SubExprInfo = (type: Type, surr_expr: ObjExpr, eval_code: Instr*);
 
 
-implicit program : Program, typedefs : [TypeName -> NeType], context : Context, var_surrs : [EnvVar -> ObjExpr] {
-  (Instr*, ObjExpr, VarGen) opt_eval_info(<undefined>, VarGen var_gen, (ExprRef -> SubExprInfo) subexpr_info) {
-    return ((terminate), never_used_lvar, var_gen);
+implicit program      : Program,
+         typedefs     : [TypeName -> NeType],
+         context      : Context,
+         var_surrs    : [EnvVar -> ObjExpr],
+         expr_type    : Type,
+         next_var_gen : VarGen
+{
+  (Instr*, ObjExpr, VarGen) opt_eval_info(<undefined>, (ExprRef -> SubExprInfo) subexpr_info) {
+    return ((terminate), never_used_lvar, next_var_gen);
   }
 
 
-  (Instr*, ObjExpr, VarGen) opt_eval_info(LeafObj expr, VarGen var_gen, (ExprRef -> SubExprInfo) subexpr_info) {
-    return ((), expr, var_gen);
+  (Instr*, ObjExpr, VarGen) opt_eval_info(LeafObj expr, (ExprRef -> SubExprInfo) subexpr_info) {
+    return ((), expr, next_var_gen);
   }
 
 
-  (Instr*, ObjExpr, VarGen) opt_eval_info(FloatLit expr, VarGen var_gen, (ExprRef -> SubExprInfo) subexpr_info) {
+  (Instr*, ObjExpr, VarGen) opt_eval_info(FloatLit expr, (ExprRef -> SubExprInfo) subexpr_info) {
     fail;
   }
 
 
-  (Instr*, ObjExpr, VarGen) opt_eval_info(Var var, VarGen var_gen, (ExprRef -> SubExprInfo) subexpr_info) {
+  (Instr*, ObjExpr, VarGen) opt_eval_info(Var var, (ExprRef -> SubExprInfo) subexpr_info) {
     surr = if var :: EnvVar then var_surrs(var, !!) else var;
-    return ((), surr, var_gen);
+    return ((), surr, next_var_gen);
   }
 
 
-  (Instr*, ObjExpr, VarGen) opt_eval_info(OutputIsDefExpr expr, VarGen var_gen, (ExprRef -> SubExprInfo) subexpr_info) {
+  (Instr*, ObjExpr, VarGen) opt_eval_info(OutputIsDefExpr expr, (ExprRef -> SubExprInfo) subexpr_info) {
     fail;
   }
 
 
-  (Instr*, ObjExpr, VarGen) opt_eval_info(OutputIsSetExpr expr, VarGen var_gen, (ExprRef -> SubExprInfo) subexpr_info) {
+  (Instr*, ObjExpr, VarGen) opt_eval_info(OutputIsSetExpr expr, (ExprRef -> SubExprInfo) subexpr_info) {
     fail;
   }
 
 
-  (Instr*, ObjExpr, VarGen) opt_eval_info(ExprRef expr, VarGen var_gen, (ExprRef -> SubExprInfo) subexpr_info) {
+  (Instr*, ObjExpr, VarGen) opt_eval_info(ExprRef expr, (ExprRef -> SubExprInfo) subexpr_info) {
     fail;
   }
 
 
-  (Instr*, ObjExpr, VarGen) opt_eval_info(RecExpr expr, VarGen var_gen, (ExprRef -> SubExprInfo) subexpr_info) =
+  (Instr*, ObjExpr, VarGen) opt_eval_info(RecExpr expr, (ExprRef -> SubExprInfo) subexpr_info) =
     seq_expr(ses?)      |
-    tuple_expr(ses?)    = seq_expr_opt_eval_info(ses, var_gen, subexpr_info),
+    tuple_expr(ses?)    = seq_expr_opt_eval_info(ses, subexpr_info),
     seq_tail_expr()     = undefined,
     set_expr(ses?)      = undefined,
     map_expr(es?)       = undefined,
     bin_rel_expr(es?)   = undefined,
     tern_rel_expr(es?)  = undefined,
     tag_obj_expr()      = undefined,
-    fn_call()           = fn_call_opt_eval_info(expr, var_gen, subexpr_info),
+    fn_call()           = fn_call_opt_eval_info(expr, subexpr_info),
     cls_call()          = undefined,
-    builtin_call()      = builtin_call_opt_eval_info(expr, var_gen, subexpr_info),
-    size_expr()         = undefined,
+    builtin_call()      = builtin_call_opt_eval_info(expr, subexpr_info),
+    size_expr()         = size_expr_opt_eval_info(expr.coll, subexpr_info),
     unary_pseudo_call() = undefined,
     rel_memb_test()     = undefined,
     rel_lookup()        = undefined,
@@ -80,17 +86,20 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     range_comp()        = undefined;
 
 
-  // type CondExpr = cond_expr(expr: Expr, cond: Expr);
-  // type SubExpr  = Expr, CondExpr;
-  // type SeqExpr  = seq_expr(SubExpr*);
-  (Instr*, ObjExpr, VarGen) seq_expr_opt_eval_info(SubExpr* elts, VarGen init_var_gen, (ExprRef -> SubExprInfo) subexpr_info) {
-    return ((), empty_seq, init_var_gen) if elts == ();
+  (Instr*, ObjExpr, VarGen) size_expr_opt_eval_info(Expr collection, (ExprRef -> SubExprInfo) subexpr_info) {
+    info = subexpr_info(cast_expr_ref(collection));
+    return (info.eval_code, info.surr_expr, next_var_gen);
+  }
+
+
+  (Instr*, ObjExpr, VarGen) seq_expr_opt_eval_info(SubExpr* elts, (ExprRef -> SubExprInfo) subexpr_info) {
+    return ((), empty_seq, next_var_gen) if elts == ();
 
     elts_type = union_superset([elt_type(e, subexpr_info) : e <~ elts]);
-    return ((terminate), never_used_lvar, init_var_gen) if elts_type == empty_type;
+    return ((terminate), never_used_lvar, next_var_gen) if elts_type == empty_type;
 
     elt_repr = low_level_elt_repr(elts_type);
-    array_var, var_gen = next_array_var(init_var_gen, elt_repr);
+    array_var, var_gen = next_array_var(next_var_gen, elt_repr);
 
     conds = ((e.cond, i) : e @ i <- elts, is_cond_expr(e));
 
@@ -145,7 +154,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
 
   // fn_call(fn_id: FnFamilyId, args: AnyExpr*, impl_args: [ImplArg -> Expr])
-  (Instr*, ObjExpr, VarGen) fn_call_opt_eval_info(FnCallExpr expr, VarGen var_gen, (ExprRef -> SubExprInfo) subexpr_info) {
+  (Instr*, ObjExpr, VarGen) fn_call_opt_eval_info(FnCallExpr expr, (ExprRef -> SubExprInfo) subexpr_info) {
     assert expr.impl_args == [];
     fail if not expr.args :: ExprRef* or not expr.impl_args :: [ImplArg -> ExprRef];
 
@@ -159,43 +168,43 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     low_level_args = (low_level_expr(value_unsafe(low_level_sign.args(i)), a.surr_expr) : a @ i <- args_info);
 
     // Result variable, surrogate expression and next variable generator
-    res_var, surr_expr, next_var_gen = match (low_level_sign.ret_value)
-      bool            = {v, g = next_bool_var(var_gen);  return (v, bool_obj(v),  g);},
-      int             = {v, g = next_int_var(var_gen);   return (v, int_obj(v),   g);},
-      float           = {v, g = next_float_var(var_gen); return (v, float_obj(v), g);},
-      symbol | object = {v, g = next_obj_var(var_gen);   return (v, v,            g);};
+    res_var, surr_expr, var_gen = match (low_level_sign.ret_value)
+      bool            = {v, g = next_bool_var(next_var_gen);  return (v, bool_obj(v),  g);},
+      int             = {v, g = next_int_var(next_var_gen);   return (v, int_obj(v),   g);},
+      float           = {v, g = next_float_var(next_var_gen); return (v, float_obj(v), g);},
+      symbol | object = {v, g = next_obj_var(next_var_gen);   return (v, v,            g);};
 
     // Evaluation code for the call only
     eval_code = (join((a.eval_code : a <- args_info)) | call_proc(res_var, fn_id, low_level_args));
 
-    return (eval_code, surr_expr, next_var_gen);
+    return (eval_code, surr_expr, var_gen);
   }
 
 
   // builtin_call(name: BuiltIn, args: Expr+);
-  (Instr*, ObjExpr, VarGen) builtin_call_opt_eval_info(BuiltinCall expr, VarGen var_gen, (ExprRef -> SubExprInfo) subexpr_info) {
+  (Instr*, ObjExpr, VarGen) builtin_call_opt_eval_info(BuiltinCall expr, (ExprRef -> SubExprInfo) subexpr_info) {
     fail if not expr.args :: ExprRef+;
 
     args_info = (subexpr_info(a) : a <- expr.args);
     args_eval_code = join((a.eval_code : a <- args_info));
     surr_args = (a.surr_expr : a <- args_info);
 
-    code, surr, next_var_gen = eval_info(expr.name, surr_args, var_gen);
-    return (args_eval_code & code, surr, next_var_gen);
+    code, surr, var_gen = eval_info(expr.name, surr_args);
+    return (args_eval_code & code, surr, var_gen);
 
 
-    (Instr*, ObjExpr, VarGen) eval_info(BuiltIn name, ObjExpr+ args, VarGen var_gen) =
+    (Instr*, ObjExpr, VarGen) eval_info(BuiltIn name, ObjExpr+ args) =
       slice   |
       cat     |
       rev     |
       isort   |
       parse   |
       print   |
-      str     = { res_var, next_var_gen = next_obj_var(var_gen);
+      str     = { res_var, var_gen = next_obj_var(next_var_gen);
                   instr = eval_instr(name, args, res_var);
-                  return ((instr), res_var, next_var_gen);
+                  return ((instr), res_var, var_gen);
                 },
-      _       = ((), eval_info(name, args), var_gen);
+      _       = ((), eval_expr(name, args), next_var_gen);
 
 
     Instr eval_instr(BuiltIn name, ObjExpr+ args, LocVar res_var) =
@@ -208,8 +217,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
       str           = symb_to_str(res_var, args(0));
 
 
-
-    ObjExpr eval_info(BuiltIn name, ObjExpr+ args) =
+    ObjExpr eval_expr(BuiltIn name, ObjExpr+ args) =
       neg       |
       add       |
       sub       |
