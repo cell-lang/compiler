@@ -64,10 +64,10 @@ implicit program      : Program,
     rel_lookup()        = undefined,
     relvar_memb_test()  = undefined,
     relvar_lookup()     = undefined,
-    and_expr()          = undefined,
-    or_expr()           = undefined,
-    not_expr(e?)        = undefined,
-    eq()                = undefined,
+    and_expr()          = and_expr_opt_eval_info(expr.left, expr.right, subexpr_info),
+    or_expr()           = or_expr_opt_eval_info(expr.left, expr.right, subexpr_info),
+    not_expr(e?)        = not_expr_opt_eval_info(e, subexpr_info),
+    eq()                = eq_expr_opt_eval_info(expr.left, expr.right, subexpr_info),
     membership()        = undefined,
     cast_expr()         = undefined,
     accessor()          = undefined,
@@ -84,6 +84,63 @@ implicit program      : Program,
     tern_rel_comp()     = undefined,
     seq_comp()          = undefined,
     range_comp()        = undefined;
+
+
+  (Instr*, ObjExpr, VarGen) eq_expr_opt_eval_info(Expr left, Expr right, (ExprRef -> SubExprInfo) subexpr_info) {
+    left_info = subexpr_info(cast_expr_ref(left));
+    right_info = subexpr_info(cast_expr_ref(right));
+    return (
+      left_info.eval_code & right_info.eval_code,
+      bool_obj(is_eq(left_info.surr_expr, right_info.surr_expr)),
+      next_var_gen
+    );
+  }
+
+
+  (Instr*, ObjExpr, VarGen) and_expr_opt_eval_info(Expr left, Expr right, (ExprRef -> SubExprInfo) subexpr_info) {
+    left_info = subexpr_info(cast_expr_ref(left));
+    right_info = subexpr_info(cast_expr_ref(right));
+
+    if right_info.eval_code == ():
+      bool_expr = and_then(bool_value(left_info.surr_expr), bool_value(right_info.surr_expr));
+      return (left_info.eval_code, bool_obj(bool_expr), next_var_gen);
+
+    else
+      res_var, var_gen = next_bool_var(next_var_gen);
+      eval_code = (
+        left_info.eval_code |
+        set_bvar(res_var, bool_value(left_info.surr_expr)),
+        do_if(res_var, (right_info.eval_code | set_bvar(res_var, bool_value(right_info.surr_expr))))
+      );
+      return (eval_code, bool_obj(res_var), var_gen);
+    ;
+  }
+
+
+  (Instr*, ObjExpr, VarGen) or_expr_opt_eval_info(Expr left, Expr right, (ExprRef -> SubExprInfo) subexpr_info) {
+    left_info = subexpr_info(cast_expr_ref(left));
+    right_info = subexpr_info(cast_expr_ref(right));
+
+    if right_info.eval_code == ():
+      bool_expr = or_else(bool_value(left_info.surr_expr), bool_value(right_info.surr_expr));
+      return (left_info.eval_code, bool_obj(bool_expr), next_var_gen);
+
+    else
+      res_var, var_gen = next_bool_var(next_var_gen);
+      eval_code = (
+        left_info.eval_code |
+        set_bvar(res_var, bool_value(left_info.surr_expr)),
+        do_if_not(res_var, (right_info.eval_code | set_bvar(res_var, bool_value(right_info.surr_expr))))
+      );
+      return (eval_code, bool_obj(res_var), var_gen);
+    ;
+  }
+
+
+  (Instr*, ObjExpr, VarGen) not_expr_opt_eval_info(Expr expr, (ExprRef -> SubExprInfo) subexpr_info) {
+    info = subexpr_info(cast_expr_ref(expr));
+    return (info.eval_code, bool_obj(neg(bool_value(info.surr_expr))), next_var_gen);
+  }
 
 
   (Instr*, ObjExpr, VarGen) unary_pseudo_call_opt_eval_info(Expr target, Expr arg, (ExprRef -> SubExprInfo) subexpr_info) {

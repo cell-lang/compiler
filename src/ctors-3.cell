@@ -93,9 +93,7 @@ BoolNatOp is_ne_map(ObjExpr e)                            = :is_ne_map(e);
 BoolNatOp is_ne_bin_rel(ObjExpr e)                        = :is_ne_bin_rel(e);
 BoolNatOp is_ne_tern_rel(ObjExpr e)                       = :is_ne_tern_rel(e);
 BoolNatOp is_tagged_obj(ObjExpr e)                        = :is_tagged_obj(e);
-BoolNatOp is_eq(BoolExpr e1, BoolExpr e2)                 = is_eq_bool(expr1: e1, expr2: e2);
-BoolNatOp is_eq(IntExpr e1, IntExpr e2)                   = is_eq_int(expr1: e1, expr2: e2);
-// BoolNatOp is_eq(ObjExpr e1, ObjExpr e2)                  = is_eq(expr1: e1, expr2: e2);
+BoolNatOp are_eq(ObjExpr e1, ObjExpr e2)                  = :are_eq(e1, e2);
 BoolNatOp is_lt(IntExpr e1, IntExpr e2)                   = is_lt(expr1: e1, expr2: e2);
 BoolNatOp is_le(IntExpr e1, IntExpr e2)                   = is_le(expr1: e1, expr2: e2);
 BoolNatOp is_gt(IntExpr e1, IntExpr e2)                   = is_lt(expr1: e2, expr2: e1);
@@ -110,17 +108,11 @@ BoolNatOp has_field(ObjExpr r, SymbObj f)                 = has_field(record: r,
 BoolNatOp contains(ObjExpr r, ObjExpr+ t)                 = contains(coll: r, entry: t);
 BoolNatOp table_contains(AnyRelVar rv, IntVar+ vs)        = table_contains(table: rv, tuple: vs);
 
-BoolExpr inline_is_eq(ObjExpr expr, InlineObj value) =
-  bool_obj(e?),   object(true)      = e,
-  bool_obj(e?),   object(false)     = neg(e),
-  int_obj(e?),    object(<*..*> n?) = is_eq(e, n),
-  _,              _                 = inline_is_eq(expr: expr, value: value);
-
-BoolExpr is_eq(ObjExpr e1, ObjExpr e2) =
-  if e1 :: InlineObj
-    then if e2 :: InlineObj then e1 == e2 else inline_is_eq(e2, e1)
-  else
-    if e2 :: InlineObj then inline_is_eq(e1, e2) else is_eq(expr1: e1, expr2: e2);
+## THESE ARE ALL DEPRECATED AND SHOULD BE REMOVED
+BoolNatOp is_eq(BoolExpr e1, BoolExpr e2)       = are_eq(bool_obj(e1), bool_obj(e2));
+BoolNatOp is_eq(IntExpr e1, IntExpr e2)         = are_eq(int_obj(e1), int_obj(e2));
+BoolNatOp is_eq(ObjExpr e1, ObjExpr e2)         = are_eq(e1, e2);
+BoolNatOp inline_is_eq(ObjExpr e1, ObjExpr e2)  = are_eq(e1, e2);
 
 
 IntExpr get_int_val(ObjExpr expr) =
@@ -168,7 +160,9 @@ FloatNatOp int_to_float(IntExpr value)              = :int_to_float(value);
 
 
 ObjExpr bool_obj(BoolExpr expr) =
-  inline_is_eq()  = if expr.value == obj_true then expr.expr else :bool_obj(expr),
+  are_eq(e1?, e2?)  = if   e1 == obj_true then e2
+                      elif e2 == obj_true then e1
+                                          else :bool_obj(expr),
   _               = :bool_obj(expr);
 
 
@@ -467,7 +461,7 @@ CompiledMethod compiled_method(NeType* ats, [+MembTestPredId*] mps, NeType rt, I
 
 ////////////////////////////// Derived expressions /////////////////////////////
 
-BoolExpr bool_value(ObjExpr expr) = inline_is_eq(expr, obj_true);
+BoolExpr bool_value(ObjExpr expr) = are_eq(expr, obj_true);
 
 BoolExpr and(BoolExpr e1, BoolExpr e2)      = and((e1, e2));
 BoolExpr or(BoolExpr e1, BoolExpr e2)       = or((e1, e2));
