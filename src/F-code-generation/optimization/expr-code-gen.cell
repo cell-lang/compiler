@@ -74,7 +74,7 @@ implicit program      : Program,
     accessor_test()     = undefined,
     auto_method_call()  = undefined,
     db_method_call()    = undefined,
-    if_expr()           = undefined,
+    if_expr()           = if_expr_opt_eval_info(expr, subexpr_info),
     match_expr()        = undefined,
     do_expr()           = undefined,
     ex_qual()           = undefined,
@@ -84,6 +84,53 @@ implicit program      : Program,
     tern_rel_comp()     = undefined,
     seq_comp()          = undefined,
     range_comp()        = undefined;
+
+
+  (Instr*, ObjExpr, VarGen) if_expr_opt_eval_info(IfExpr expr, (ExprRef -> SubExprInfo) subexpr_info) {
+    cond_info = subexpr_info(cast_expr_ref(expr.cond));
+    then_info = subexpr_info(cast_expr_ref(expr.then));
+    else_info = subexpr_info(cast_expr_ref(expr.else));
+
+    cond_type = cond_info.type;
+    res_type = union_superset(then_info.type, else_info.type);
+    if cond_type == empty_type or res_type == empty_type:
+      return ((terminate), never_used_lvar, next_var_gen);
+    ;
+
+    repr = low_level_repr(res_type);
+    last_then_instr, last_else_instr, surr_expr, var_gen = match (repr)
+      bool            = { var, gen = next_bool_var(next_var_gen);
+                          then_instr = set_bvar(var, bool_value(then_info.surr_expr));
+                          else_instr = set_bvar(var, bool_value(else_info.surr_expr));
+                          return (then_instr, else_instr, bool_obj(var), gen);
+                        },
+      int             = { var, gen = next_int_var(next_var_gen);
+                          then_instr = set_ivar(var, get_int_val(then_info.surr_expr));
+                          else_instr = set_ivar(var, get_int_val(else_info.surr_expr));
+                          return (then_instr, else_instr, int_obj(var), gen);
+                        },
+      float           = { var, gen = next_float_var(next_var_gen);
+                          then_instr = set_fvar(var, float_value(then_info.surr_expr));
+                          else_instr = set_fvar(var, float_value(else_info.surr_expr));
+                          return (then_instr, else_instr, float_obj(var), gen);
+                        },
+      symbol | object = { var, gen = next_obj_var(next_var_gen);
+                          then_instr = set_var(var, then_info.surr_expr);
+                          else_instr = set_var(var, else_info.surr_expr);
+                          return (then_instr, else_instr, var, gen);
+                        };
+
+    eval_code = (
+      cond_info.eval_code |
+      branch(
+        bool_value(cond_info.surr_expr),
+        (then_info.eval_code | last_then_instr),
+        (else_info.eval_code | last_else_instr)
+      )
+    );
+
+    return (eval_code, surr_expr, var_gen);
+  }
 
 
   (Instr*, ObjExpr, VarGen) eq_expr_opt_eval_info(Expr left, Expr right, (ExprRef -> SubExprInfo) subexpr_info) {
