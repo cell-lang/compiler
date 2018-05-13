@@ -3,10 +3,9 @@ implicit program           : Program,
          var_aliases       : [[LocVar2]],
          var_subst_map     : [StdVar -> CaptVar],
          cls_var_subst_map : [ClsVar -> CaptClsVar],
-         next_var_gen      : VarGen,
          options           : CompilationOptions
 {
-  (Instr*, ObjExpr) opt_eval_code(Expr expr, [EnvVar -> NeType] env, [EnvVar -> ObjExpr] var_surrs) {
+  (Instr*, ObjExpr, VarGen) opt_eval_code(Expr expr, [EnvVar -> NeType] env, [EnvVar -> ObjExpr] surrogates, VarGen init_var_gen) {
     exprs_cluster = exprs_cluster(expr);
     rec_exprs = reconstruct_all(exprs_cluster);
 
@@ -34,41 +33,12 @@ implicit program           : Program,
 
       types = (expr_type(e, envs(i)) : e @ i <- rec_exprs);
 
-      let var_surrs = var_surrs:
-        var_gen = next_var_gen;
-        exprs_eval_code = ();
-        surr_exprs = ();
-        for i < cltr_size:
-          ri = cltr_size - i - 1;
-          eval_code, surr_expr, var_gen = opt_eval_info(
-            exprs_cluster(ri),
-            ( type:      types(untag($)),
-              surr_expr: surr_exprs(cltr_size - untag($) - 1),
-              eval_code: exprs_eval_code(cltr_size - untag($) - 1)
-            ),
-            expr_type = types(ri),
-            next_var_gen = var_gen
-          );
-          exprs_eval_code = (exprs_eval_code | eval_code);
-          surr_exprs = (surr_exprs | surr_expr);
-        ;
-        exprs_eval_code = reverse(exprs_eval_code);
-        surr_exprs = reverse(surr_exprs);
+      let cluster = exprs_cluster, types = types, surrogates = surrogates, expr_id = 0:
+        eval_code, surr, var_gen = opt_eval_info(exprs_cluster(0), init_var_gen);
       ;
     ;
 
-// print "exprs_cluster";
-// print exprs_cluster;
-// print "envs";
-// print envs;
-// print "types";
-// print types;
-// print "exprs_eval_code";
-// print exprs_eval_code;
-// print "surr_exprs";
-// print surr_exprs;
-
-    return (exprs_eval_code(0), surr_exprs(0));
+    return (eval_code, surr, var_gen);
   }
 }
 

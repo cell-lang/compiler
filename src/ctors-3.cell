@@ -116,10 +116,10 @@ BoolNatOp inline_is_eq(ObjExpr e1, ObjExpr e2)  = are_eq(e1, e2);
 
 
 IntExpr get_int_val(ObjExpr expr) =
-  int_obj(e?) = e,
-  _           = :get_int_val(expr);
+  int_obj(e?)       = e,
+  object(<*..*> n?) = n,
+  _                 = :get_int_val(expr);
 
-IntNatOp get_size(ObjExpr e)                            = :get_size(e);
 IntNatOp minus(IntExpr e)                               = :minus(e);
 IntNatOp add(IntExpr e1, IntExpr e2)                    = add(val1: e1, val2: e2);
 IntNatOp sub(IntExpr e1, IntExpr e2)                    = sub(val1: e1, val2: e2);
@@ -141,6 +141,7 @@ IntNatOp ticks                                          = :ticks;
 
 
 Int32NatOp bool_to_bit(BoolExpr e)            = :bool_to_bit(e);
+Int32NatOp get_size(ObjExpr e)                = :get_size(e);
 Int32NatOp cast_int32(IntExpr e)              = :cast_int32(e);
 Int32NatOp add32(Int32Expr e1, Int32Expr e2)  = :add32(e1, e2);
 
@@ -157,6 +158,12 @@ FloatNatOp div_floats(FloatExpr lv, FloatExpr rv)   = :div_floats(lv, rv);
 FloatNatOp exp_floats(FloatExpr lv, FloatExpr rv)   = :exp_floats(lv, rv);
 FloatNatOp square_root(FloatExpr value)             = :square_root(value);
 FloatNatOp int_to_float(IntExpr value)              = :int_to_float(value);
+
+
+ObjExpr obj_expr(BoolExpr  expr)  = bool_obj(expr);
+ObjExpr obj_expr(IntExpr   expr)  = int_obj(expr);
+ObjExpr obj_expr(FloatExpr expr)  = float_obj(expr);
+ObjExpr obj_expr(ObjExpr   expr)  = expr;
 
 
 ObjExpr bool_obj(BoolExpr expr) =
@@ -272,10 +279,13 @@ Instr lookup_surrogate(WriteObjVar v, AnyValueStoreId s, IntExpr e) = set_var(v,
 
 Instr read_pending_var(WriteObjVar tv, <PendingStateVar, PendingInputVar> sv) = set_var(tv, :read_pending_var(sv));
 
-Instr alloc_array(ArrayVar v, IntExpr n)                = alloc_array(var: v, size: n);
+Instr alloc_array(ArrayVar v, Int32Expr n) = alloc_array(var: v, size: n);
 
 Instr write_array(ArrayVar v, IntExpr i, ObjExpr e) =
   write_array(var: v, idx: i, value: low_level_expr(v.repr, e));
+
+Instr map_array(<LocVar, StdVar> s, ArrayVar br, ArrayVar t, Int32Var i, AnyLocVar it, AnyTypeExpr e, Instr* b) =
+  map_array(src: s, buffer: br, target: t, idx_var: i, it_var: it, res_expr: e, body: b);
 
 Instr get_iter(SeqItVar v, AtomicExpr s) = get_seq_iter(var: v, src: s);
 Instr get_iter(SetItVar v, AtomicExpr s) = get_set_iter(var: v, src: s);

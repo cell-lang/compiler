@@ -127,7 +127,6 @@ type BoolNatOp      = is_symb(ObjExpr),
                       table_contains(table: AnyRelVar, tuple: IntVar+);
 
 type IntNatOp       = get_int_val(ObjExpr),
-                      get_size(ObjExpr),
                       minus(IntExpr),
                       add(val1: IntExpr, val2: IntExpr),
                       sub(val1: IntExpr, val2: IntExpr),
@@ -147,7 +146,10 @@ type IntNatOp       = get_int_val(ObjExpr),
                       unique_nat,         // Non-deterministic
                       ticks;              // Impure
 
-type Int32NatOp     = bool_to_bit(BoolExpr), cast_int32(IntExpr), add32(Int32Expr, Int32Expr);
+type Int32NatOp     = bool_to_bit(BoolExpr),
+                      get_size(ObjExpr),
+                      cast_int32(IntExpr),
+                      add32(Int32Expr, Int32Expr);
 
 type FloatNatOp     = float_value(ObjExpr),
                       neg_float(FloatExpr),
@@ -241,8 +243,18 @@ type BasicInstr     = init_stream(StreamVar),
                       ## I COULD END UP WITH A CYCLE IN THE OBJECT GRAPH AND MAYBE OTHER PROBLEMS
                       set_at(var: WriteObjVar, idx: IntExpr, value: AtomicExpr),  // Ownership transfer: <value>
 
-                      alloc_array(var: ArrayVar, size: IntExpr),
+                      alloc_array(var: ArrayVar, size: Int32Expr),
                       write_array(var: ArrayVar, idx: IntExpr, value: AnyTypeExpr),
+                      map_array(
+                        src:      <LocVar, StdVar>,
+                        buffer:   ArrayVar,
+                        target:   ArrayVar,
+                        idx_var:  Int32Var,
+                        it_var:   AnyLocVar,
+                        res_expr: AnyTypeExpr,
+                        body:     Instr*
+                      ),
+
 
                       get_set_iter(var: SetItVar, src: AtomicExpr),
                       get_seq_iter(var: SeqItVar, src: AtomicExpr),

@@ -1,80 +1,111 @@
-// type EnvExpr = EnvVar, ExprRef;
-
-type SubExprInfo = (type: Type, surr_expr: ObjExpr, eval_code: Instr*);
-
-
 implicit program      : Program,
          typedefs     : [TypeName -> NeType],
          context      : Context,
-         var_surrs    : [EnvVar -> ObjExpr],
-         expr_type    : Type,
-         next_var_gen : VarGen
+         cluster      : Expr+,
+         types        : Type+,
+         surrogates   : [EnvVar -> ObjExpr],
+         expr_id      : Nat
 {
-  (Instr*, ObjExpr, VarGen) opt_eval_info(<undefined>, (ExprRef -> SubExprInfo) subexpr_info) {
-    return ((terminate), never_used_lvar, next_var_gen);
+  Type subexpr_type(Expr) =
+    expr_ref(id?)  = types(id);
+
+  //////////////////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////
+
+  (Instr*, VarGen) opt_eval_info(Expr expr, AnyLocVar res_var, VarGen init_var_gen) {
+    eval_code, surr_expr, var_gen = opt_eval_info(expr, init_var_gen);
+    eval_code = store_result(eval_code, surr_expr, res_var);
+    return (eval_code, var_gen);
   }
 
 
-  (Instr*, ObjExpr, VarGen) opt_eval_info(LeafObj expr, (ExprRef -> SubExprInfo) subexpr_info) {
-    return ((), expr, next_var_gen);
+  Instr+ opt_eval_code(Expr expr, AnyLocVar res_var, VarGen var_gen) {
+    eval_code, surr_expr, unused_var = opt_eval_info(expr, var_gen);
+    return store_result(eval_code, surr_expr, res_var);
   }
 
 
-  (Instr*, ObjExpr, VarGen) opt_eval_info(FloatLit expr, (ExprRef -> SubExprInfo) subexpr_info) {
+  (Instr*, ObjExpr*, VarGen) opt_eval_info(Expr* exprs, VarGen init_var_gen) {
+    var_gen = init_var_gen;
+    code = ();
+    surrs = ();
+    for e <- exprs:
+      expr_code, surr, var_gen = opt_eval_info(e, var_gen);
+      code = code & expr_code;
+      surrs = (surrs | surr);
+    ;
+    return (code, surrs, var_gen);
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////
+
+  (Instr*, ObjExpr, VarGen) opt_eval_info(<undefined>, VarGen var_gen) {
+    return ((terminate), never_used_lvar, var_gen);
+  }
+
+
+  (Instr*, ObjExpr, VarGen) opt_eval_info(LeafObj expr, VarGen var_gen) {
+    return ((), expr, var_gen);
+  }
+
+
+  (Instr*, ObjExpr, VarGen) opt_eval_info(FloatLit expr, VarGen init_var_gen) {
     fail;
   }
 
 
-  (Instr*, ObjExpr, VarGen) opt_eval_info(Var var, (ExprRef -> SubExprInfo) subexpr_info) {
-    surr = if var :: EnvVar then var_surrs(var, !!) else var;
-    return ((), surr, next_var_gen);
+  (Instr*, ObjExpr, VarGen) opt_eval_info(Var var, VarGen var_gen) {
+    surr = if var :: EnvVar then surrogates(var, !!) else var;
+    return ((), surr, var_gen);
   }
 
 
-  (Instr*, ObjExpr, VarGen) opt_eval_info(OutputIsDefExpr expr, (ExprRef -> SubExprInfo) subexpr_info) {
+  (Instr*, ObjExpr, VarGen) opt_eval_info(OutputIsDefExpr expr, VarGen var_gen) {
     fail;
   }
 
 
-  (Instr*, ObjExpr, VarGen) opt_eval_info(OutputIsSetExpr expr, (ExprRef -> SubExprInfo) subexpr_info) {
+  (Instr*, ObjExpr, VarGen) opt_eval_info(OutputIsSetExpr expr, VarGen var_gen) {
     fail;
   }
 
 
-  (Instr*, ObjExpr, VarGen) opt_eval_info(ExprRef expr, (ExprRef -> SubExprInfo) subexpr_info) {
-    fail;
+  (Instr*, ObjExpr, VarGen) opt_eval_info(ExprRef expr, VarGen var_gen) {
+    id = untag(expr);
+    return opt_eval_info(cluster(id), var_gen, expr_id = id);
   }
 
 
-  (Instr*, ObjExpr, VarGen) opt_eval_info(RecExpr expr, (ExprRef -> SubExprInfo) subexpr_info) =
+  (Instr*, ObjExpr, VarGen) opt_eval_info(RecExpr expr, VarGen var_gen) =
     seq_expr(ses?)      |
-    tuple_expr(ses?)    = seq_expr_opt_eval_info(ses, subexpr_info),
+    tuple_expr(ses?)    = seq_expr_opt_eval_info(ses, var_gen),
     seq_tail_expr()     = undefined,
     set_expr(ses?)      = undefined,
     map_expr(es?)       = undefined,
     bin_rel_expr(es?)   = undefined,
     tern_rel_expr(es?)  = undefined,
     tag_obj_expr()      = undefined,
-    fn_call()           = fn_call_opt_eval_info(expr, subexpr_info),
+    fn_call()           = fn_call_opt_eval_info(expr, var_gen),
     cls_call()          = undefined,
-    builtin_call()      = builtin_call_opt_eval_info(expr, subexpr_info),
-    size_expr()         = size_expr_opt_eval_info(expr.coll, subexpr_info),
-    unary_pseudo_call() = unary_pseudo_call_opt_eval_info(expr.target, expr.arg, subexpr_info),
+    builtin_call()      = builtin_call_opt_eval_info(expr, var_gen),
+    size_expr()         = size_expr_opt_eval_info(expr.coll, var_gen),
+    unary_pseudo_call() = unary_pseudo_call_opt_eval_info(expr.target, expr.arg, var_gen),
     rel_memb_test()     = undefined,
     rel_lookup()        = undefined,
     relvar_memb_test()  = undefined,
     relvar_lookup()     = undefined,
-    and_expr()          = and_expr_opt_eval_info(expr.left, expr.right, subexpr_info),
-    or_expr()           = or_expr_opt_eval_info(expr.left, expr.right, subexpr_info),
-    not_expr(e?)        = not_expr_opt_eval_info(e, subexpr_info),
-    eq()                = eq_expr_opt_eval_info(expr.left, expr.right, subexpr_info),
+    and_expr()          = and_expr_opt_eval_info(expr.left, expr.right, var_gen),
+    or_expr()           = or_expr_opt_eval_info(expr.left, expr.right, var_gen),
+    not_expr(e?)        = not_expr_opt_eval_info(e, var_gen),
+    eq()                = eq_expr_opt_eval_info(expr.left, expr.right, var_gen),
     membership()        = undefined,
     cast_expr()         = undefined,
     accessor()          = undefined,
     accessor_test()     = undefined,
     auto_method_call()  = undefined,
     db_method_call()    = undefined,
-    if_expr()           = if_expr_opt_eval_info(expr, subexpr_info),
+    if_expr()           = if_expr_opt_eval_info(expr, var_gen),
     match_expr()        = undefined,
     do_expr()           = undefined,
     ex_qual()           = undefined,
@@ -82,263 +113,332 @@ implicit program      : Program,
     map_comp()          = undefined,
     bin_rel_comp()      = undefined,
     tern_rel_comp()     = undefined,
-    seq_comp()          = undefined,
-    range_comp()        = undefined;
+    seq_comp()          = seq_comp_opt_eval_info(expr, var_gen),
+    range_comp()        = range_comp_opt_eval_info(expr, var_gen);
 
 
-  (Instr*, ObjExpr, VarGen) if_expr_opt_eval_info(IfExpr expr, (ExprRef -> SubExprInfo) subexpr_info) {
-    cond_info = subexpr_info(cast_expr_ref(expr.cond));
-    then_info = subexpr_info(cast_expr_ref(expr.then));
-    else_info = subexpr_info(cast_expr_ref(expr.else));
+  // seq_comp(expr: Expr, vars: StdVar+, idx_var: StdVar?, src_expr: Expr, sel_expr: Expr?);
+  (Instr*, ObjExpr, VarGen) seq_comp_opt_eval_info(SeqCompExpr expr, VarGen init_var_gen) {
+    // Generating the result variable and setting up the variable generator
+    res_var, ret_var_gen = next_obj_var(init_var_gen);
+    var_gen = ret_var_gen;
 
-    cond_type = cond_info.type;
-    res_type = union_superset(then_info.type, else_info.type);
-    if cond_type == empty_type or res_type == empty_type:
-      return ((terminate), never_used_lvar, next_var_gen);
+    // Calculating source type, and returning early if the type is trivial
+    src_type = subexpr_type(expr.src_expr);
+    if src_type == empty_type:
+      return ((terminate), never_used_lvar, init_var_gen);
+    elif is_subset(src_type, empty_seq_type):
+      return ((), empty_seq, init_var_gen);
     ;
 
-    repr = low_level_repr(res_type);
-    last_then_instr, last_else_instr, surr_expr, var_gen = match (repr)
-      bool            = { var, gen = next_bool_var(next_var_gen);
-                          then_instr = set_bvar(var, bool_value(then_info.surr_expr));
-                          else_instr = set_bvar(var, bool_value(else_info.surr_expr));
-                          return (then_instr, else_instr, bool_obj(var), gen);
-                        },
-      int             = { var, gen = next_int_var(next_var_gen);
-                          then_instr = set_ivar(var, get_int_val(then_info.surr_expr));
-                          else_instr = set_ivar(var, get_int_val(else_info.surr_expr));
-                          return (then_instr, else_instr, int_obj(var), gen);
-                        },
-      float           = { var, gen = next_float_var(next_var_gen);
-                          then_instr = set_fvar(var, float_value(then_info.surr_expr));
-                          else_instr = set_fvar(var, float_value(else_info.surr_expr));
-                          return (then_instr, else_instr, float_obj(var), gen);
-                        },
-      symbol | object = { var, gen = next_obj_var(next_var_gen);
-                          then_instr = set_var(var, then_info.surr_expr);
-                          else_instr = set_var(var, else_info.surr_expr);
-                          return (then_instr, else_instr, var, gen);
-                        };
+    // Types of elements of source and destination sequences
+    src_elt_type = seq_elem_supertype(src_type);
+    elt_type = subexpr_type(expr.expr);
+    fail if src_elt_type == empty_type or elt_type == empty_type;
 
-    eval_code = (
-      cond_info.eval_code |
-      branch(
-        bool_value(cond_info.surr_expr),
-        (then_info.eval_code | last_then_instr),
-        (else_info.eval_code | last_else_instr)
-      )
-    );
+    // Low-level representation of elements of source and destination sequences
+    src_repr = low_level_repr(src_elt_type);
+    elt_repr = low_level_repr(elt_type);
 
-    return (eval_code, surr_expr, var_gen);
-  }
+    // Evaluation of source expression
+    eval_code, src_surr, var_gen = opt_eval_info(expr.src_expr, var_gen);
+    fail if not src_surr :: <LocVar, StdVar>;
 
+    // Temporary buffer for source data
+    buffer_var, var_gen = next_array_var(var_gen, src_repr);
 
-  (Instr*, ObjExpr, VarGen) eq_expr_opt_eval_info(Expr left, Expr right, (ExprRef -> SubExprInfo) subexpr_info) {
-    left_info = subexpr_info(cast_expr_ref(left));
-    right_info = subexpr_info(cast_expr_ref(right));
-    return (
-      left_info.eval_code & right_info.eval_code,
-      bool_obj(is_eq(left_info.surr_expr, right_info.surr_expr)),
-      next_var_gen
-    );
-  }
+    // Allocation of destination array
+    array_var, var_gen = next_array_var(var_gen, elt_repr);
+    eval_code = (eval_code | alloc_array(array_var, get_size(src_surr)));
 
-
-  (Instr*, ObjExpr, VarGen) and_expr_opt_eval_info(Expr left, Expr right, (ExprRef -> SubExprInfo) subexpr_info) {
-    left_info = subexpr_info(cast_expr_ref(left));
-    right_info = subexpr_info(cast_expr_ref(right));
-
-    if right_info.eval_code == ():
-      bool_expr = and_then(bool_value(left_info.surr_expr), bool_value(right_info.surr_expr));
-      return (left_info.eval_code, bool_obj(bool_expr), next_var_gen);
+    vars = expr.vars;
+    if |vars| == 1:
+      var = only(vars);
+      physical_var, var_gen = next_var_def(src_repr, var, var_gen);
+      surrs = surrogates & [var -> obj_expr(physical_var)];
+      it_var = physical_var;
+      body_code = ();
 
     else
-      res_var, var_gen = next_bool_var(next_var_gen);
-      eval_code = (
-        left_info.eval_code |
-        set_bvar(res_var, bool_value(left_info.surr_expr)),
-        do_if(res_var, (right_info.eval_code | set_bvar(res_var, bool_value(right_info.surr_expr))))
-      );
-      return (eval_code, bool_obj(res_var), var_gen);
+      assert src_repr == :object;
+      vars_types = (restricted_seq_elem_supertype(src_type, singleton_type(i)) : i < |vars|);
+      fail if not vars_types :: NeType+;
+      reprs = (low_level_repr(t) : t <- vars_types);
+      physical_vars, var_gen = mapli(vars, var_gen, next_var_def(reprs($b), $a, $c));
+      surrs = surrogates & [v -> obj_expr(physical_vars(i)) : v @ i <~ vars];
+      it_var, var_gen = next_obj_var(var_gen);
+      body_code = (set_any_var(v, at(it_var, i)) : v @ i <- physical_vars);
     ;
+
+    // Index variables
+    hidden_idx_var, var_gen = next_int32_var(var_gen);
+    surrs = surrs & [expr.idx_var -> int_obj(hidden_idx_var)] if expr.idx_var?;
+
+    // Evaluation of destination element expression
+    elt_eval_code, elt_surr, var_gen = opt_eval_info(expr.expr, var_gen, surrogates = surrs);
+    body_code = body_code & elt_eval_code;
+    elt_low_level_surr = low_level_expr(elt_repr, elt_surr);
+
+    // Mapping source to destination arrays
+    map_instr = map_array(src_surr, buffer_var, array_var, hidden_idx_var, it_var, elt_low_level_surr, body_code);
+
+    eval_code = (eval_code | map_instr, mk_seq(res_var, array_var));
+    return (eval_code, res_var, ret_var_gen);
   }
 
 
-  (Instr*, ObjExpr, VarGen) or_expr_opt_eval_info(Expr left, Expr right, (ExprRef -> SubExprInfo) subexpr_info) {
-    left_info = subexpr_info(cast_expr_ref(left));
-    right_info = subexpr_info(cast_expr_ref(right));
+  // range_comp(expr: Expr, var: StdVar, bound_expr: Expr, inclusive: Bool, sel_expr: Expr?);
+  (Instr*, ObjExpr, VarGen) range_comp_opt_eval_info(RangeCompExpr expr, VarGen init_var_gen) {
+    fail;
+  }
 
-    if right_info.eval_code == ():
-      bool_expr = or_else(bool_value(left_info.surr_expr), bool_value(right_info.surr_expr));
-      return (left_info.eval_code, bool_obj(bool_expr), next_var_gen);
 
-    else
-      res_var, var_gen = next_bool_var(next_var_gen);
-      eval_code = (
-        left_info.eval_code |
-        set_bvar(res_var, bool_value(left_info.surr_expr)),
-        do_if_not(res_var, (right_info.eval_code | set_bvar(res_var, bool_value(right_info.surr_expr))))
-      );
-      return (eval_code, bool_obj(res_var), var_gen);
+  (Instr*, ObjExpr, VarGen) if_expr_opt_eval_info(IfExpr expr, VarGen init_var_gen) {
+    type = types(expr_id);
+    return ((terminate), never_used_lvar, init_var_gen) if type == empty_type;
+    repr = low_level_repr(type);
+
+    cond_eval_code, cond_surr, var_gen = opt_eval_info(expr.cond, init_var_gen);
+
+    res_var, var_gen = next_var(repr, var_gen);
+    then_eval_code, unused_var = opt_eval_info(expr.then, res_var, var_gen);
+    else_eval_code, unused_var = opt_eval_info(expr.else, res_var, var_gen);
+
+    eval_code = (cond_eval_code | branch(bool_value(cond_surr), then_eval_code, else_eval_code));
+    return (eval_code, obj_expr(res_var), var_gen);
+  }
+
+
+  (Instr*, ObjExpr, VarGen) eq_expr_opt_eval_info(Expr left, Expr right, VarGen init_var_gen) {
+    left_eval_code, left_surr, var_gen = opt_eval_info(left, init_var_gen);
+    right_eval_code, right_surr, var_gen = opt_eval_info(right, var_gen);
+
+    eval_code = left_eval_code & right_eval_code;
+    return (eval_code, bool_obj(is_eq(left_surr, right_surr)), var_gen);
+  }
+
+
+  (Instr*, ObjExpr, VarGen) and_expr_opt_eval_info(Expr left, Expr right, VarGen init_var_gen) {
+    right_eval_code, right_surr, var_gen = opt_eval_info(right, init_var_gen);
+    if right_eval_code == ():
+      // Special case: the right expression is an inline one
+      assert var_gen == init_var_gen;
+      left_eval_code, left_surr, var_gen = opt_eval_info(left, var_gen);
+      bool_expr = and_then(bool_value(left_surr), bool_value(right_surr));
+      return (left_eval_code, bool_obj(bool_expr), var_gen);
     ;
+
+    // No special case, we need to store the result in a boolean variable
+    res_var, ret_var_gen = next_bool_var(init_var_gen);
+
+    left_eval_code, unused_var = opt_eval_info(left, res_var, ret_var_gen);
+    right_eval_code, unused_var = opt_eval_info(right, res_var, ret_var_gen);
+
+    eval_code = (left_eval_code | do_if(res_var, right_eval_code));
+    return (eval_code, bool_obj(res_var), var_gen);
   }
 
 
-  (Instr*, ObjExpr, VarGen) not_expr_opt_eval_info(Expr expr, (ExprRef -> SubExprInfo) subexpr_info) {
-    info = subexpr_info(cast_expr_ref(expr));
-    return (info.eval_code, bool_obj(neg(bool_value(info.surr_expr))), next_var_gen);
+  (Instr*, ObjExpr, VarGen) or_expr_opt_eval_info(Expr left, Expr right, VarGen init_var_gen) {
+    right_eval_code, right_surr, var_gen = opt_eval_info(right, init_var_gen);
+    if right_eval_code == ():
+      // Special case: the right expression is an inline one
+      assert var_gen == init_var_gen;
+      left_eval_code, left_surr, var_gen = opt_eval_info(left, var_gen);
+      bool_expr = or_else(bool_value(left_surr), bool_value(right_surr));
+      return (left_eval_code, bool_obj(bool_expr), var_gen);
+    ;
+
+    // No special case, we need to store the result in a boolean variable
+    res_var, ret_var_gen = next_bool_var(init_var_gen);
+
+    left_eval_code, unused_var = opt_eval_info(left, res_var, ret_var_gen);
+    right_eval_code, unused_var = opt_eval_info(right, res_var, ret_var_gen);
+
+    eval_code = (left_eval_code | do_if_not(res_var, right_eval_code));
+    return (eval_code, bool_obj(res_var), var_gen);
   }
 
 
-  (Instr*, ObjExpr, VarGen) unary_pseudo_call_opt_eval_info(Expr target, Expr arg, (ExprRef -> SubExprInfo) subexpr_info) {
-    target_info = subexpr_info(cast_expr_ref(target));
-    arg_info = subexpr_info(cast_expr_ref(arg));
+  (Instr*, ObjExpr, VarGen) not_expr_opt_eval_info(Expr expr, VarGen init_var_gen) {
+    eval_code, surr_expr, var_gen = opt_eval_info(expr, init_var_gen);
+    return (eval_code, bool_obj(neg(bool_value(surr_expr))), var_gen);
+  }
 
-    target_type = target_info.type;
-    target_expr = target_info.surr_expr;
-    arg_expr = arg_info.surr_expr;
 
-    eval_code = target_info.eval_code & arg_info.eval_code;
-    var_gen = next_var_gen;
+  (Instr*, ObjExpr, VarGen) unary_pseudo_call_opt_eval_info(Expr target, Expr arg, VarGen init_var_gen) {
+    target_type = subexpr_type(target);
+    return ((terminate), never_used_lvar, init_var_gen) if target_type == empty_type;
+
+    coll_eval_code, coll_surr, var_gen = opt_eval_info(target, init_var_gen);
+    arg_eval_code, arg_surr, var_gen = opt_eval_info(arg, var_gen);
+    eval_code = coll_eval_code & arg_eval_code;
 
     if is_subset(target_type, type_seq):
-      surr_expr = at(target_expr, get_int_val(arg_expr));
+      expr_surr = at(coll_surr, get_int_val(arg_surr));
 
     elif is_subset(target_type, type_set):
-      surr_expr = bool_obj(has_elem(target_expr, arg_expr));
+      expr_surr = bool_obj(has_elem(coll_surr, arg_surr));
 
     elif is_subset(target_type, type_map):
-      surr_expr = lookup(target_expr, arg_expr);
+      expr_surr = lookup(coll_surr, arg_surr);
 
     else
       assert is_subset(target_type, atom_type);
-      surr_expr, var_gen = next_obj_var(var_gen);
-      eval_code = (eval_code | mk_tagged_obj(surr_expr, target_expr, arg_expr));
+      expr_surr, var_gen = next_obj_var(var_gen);
+      eval_code = (eval_code | mk_tagged_obj(expr_surr, coll_surr, arg_surr));
+      var_gen = init_var_gen;
     ;
 
-    return (eval_code, surr_expr, var_gen);
+    return (eval_code, expr_surr, var_gen);
   }
 
 
-  (Instr*, ObjExpr, VarGen) size_expr_opt_eval_info(Expr collection, (ExprRef -> SubExprInfo) subexpr_info) {
-    info = subexpr_info(cast_expr_ref(collection));
-    return (info.eval_code, info.surr_expr, next_var_gen);
+  (Instr*, ObjExpr, VarGen) size_expr_opt_eval_info(Expr collection, VarGen init_var_gen) {
+    eval_code, surr_expr, var_gen = opt_eval_info(collection, init_var_gen);
+    return (eval_code, int_obj(get_size(surr_expr)), var_gen);
   }
 
 
-  (Instr*, ObjExpr, VarGen) seq_expr_opt_eval_info(SubExpr* elts, (ExprRef -> SubExprInfo) subexpr_info) {
-    return ((), empty_seq, next_var_gen) if elts == ();
+  (Instr*, ObjExpr, VarGen) seq_expr_opt_eval_info(SubExpr* elts, VarGen init_var_gen) {
+    // Empty sequence
+    return ((), empty_seq, init_var_gen) if elts == ();
 
-    elts_type = union_superset([elt_type(e, subexpr_info) : e <~ elts]);
-    return ((terminate), never_used_lvar, next_var_gen) if elts_type == empty_type;
+    // Types of elements of the sequence
+    elts_types = [subexpr_type(if is_cond_expr(e) then e.expr else e) : e <~ elts];
+    elts_type = union_superset(elts_types);
 
+    // Unreachable expression
+    return ((terminate), never_used_lvar, init_var_gen) if elts_types(empty_type) or elts_type == empty_type;
+
+    // Elements representation
     elt_repr = low_level_elt_repr(elts_type);
-    array_var, var_gen = next_array_var(next_var_gen, elt_repr);
 
-    conds = ((e.cond, i) : e @ i <- elts, is_cond_expr(e));
+    // Sequence and array variables
+    seq_var, var_gen = next_obj_var(init_var_gen);
+    array_var, var_gen = next_array_var(var_gen, elt_repr);
 
+    // Both seq_var and array_var must survive the evaluation of the expression
+    ret_var_gen = var_gen;
+
+    conds = (e.cond : e <- elts, is_cond_expr(e));
     if conds == ():
-      code = (alloc_array(array_var, |elts|));
+      // Easy case, no conditional inclusions
+      code = (alloc_array(array_var, int32(|elts|)));
       for e @ i <- elts:
-        info = subexpr_info(cast_expr_ref(e));
-        code = code & (info.eval_code | write_array(array_var, i, info.surr_expr));
+        fail if is_cond_expr(e); ## ANY BETTER WAY TO DO THIS?
+        elt_eval_code, elt_surr, unused_var = opt_eval_info(e, var_gen);
+        code = code & (elt_eval_code | write_array(array_var, i, elt_surr));
       ;
+      code = (code | mk_seq(seq_var, array_var));
+      return (code, seq_var, ret_var_gen);
+    ;
 
-    else
-      conds_info = (subexpr_info(cast_expr_ref(c)) : c, i <- conds);
-      code = join((info.eval_code : info <- conds_info));
-      surr_conds = (bool_to_bit(bool_value(info.surr_expr)) : info <- conds_info);
-      min_size = |elts| - |conds|;
-      fail if not min_size :: Int32;
-      len_expr = foldl(nonempty((min_size if min_size != 0) & surr_conds), add32);
+    // Evaluation of all conditions
+    ## HERE MAYBE WE COULD DO BETTER WITH THE VARIABLES GENERATOR
+    cond_vars, var_gen = next_bool_vars(var_gen, |conds|);
+    conds_eval_code = join((opt_eval_code(c, cond_vars(i), var_gen) : c @ i <- conds));
 
-      // int32_var is local, can be reused by the parent expression
-      int32_var, unused_var = next_int32_var(var_gen);
-      code = (code |
-        set_ivar32(int32_var, len_expr),
-        alloc_array(array_var, int32_var),
-        set_ivar32(int32_var, 0)
-      );
+    // Integer variable for both size and cursor
+    int32_var, var_gen = next_int32_var(var_gen);
 
-      cond_idx = 0;
-      for e @ i <- elts:
-        if is_cond_expr(e):
-          cond = bool_value(conds_info(cond_idx).surr_expr);
-          info = subexpr_info(cast_expr_ref(e.expr));
-          elt_code = (info.eval_code | write_array(array_var, int32_var, info.surr_expr), increment(int32_var));
-          code = (code | do_if(cond, elt_code));
-          cond_idx = cond_idx + 1;
-        else
-          info = subexpr_info(cast_expr_ref(e));
-          elt_code = (info.eval_code | write_array(array_var, int32_var, info.surr_expr), increment(int32_var));
-          code = code & elt_code;
-        ;
+    // Computation of final array size
+    len_expr = foldr(nonempty((bool_to_bit(v) : v <- cond_vars)), add32);
+    min_size = int32(|elts| - |conds|);
+    len_expr = add32(min_size, len_expr) if min_size != 0;
+    conds_eval_code = (conds_eval_code | set_ivar32(int32_var, len_expr));
+
+    // Destination array allocation
+    code = (alloc_array(array_var, int32_var));
+
+    // Computation of all array elements
+    cond_expr_idx = 0;
+    for e @ i <- elts:
+      is_last = i == |elts| - 1;
+      if is_cond_expr(e): // Conditional inclusion expression
+        elt_eval_code, elt_surr, unused_var = opt_eval_info(e.expr, var_gen);
+        // If it's the first conditional expression, we statically know the
+        // destination array index. After that we need to use the cursor variable
+        write_code = if cond_expr_idx == 0
+          then (write_array(array_var, i, elt_surr), set_ivar32(int32_var, int32(i+1)))
+          else (write_array(array_var, int32_var, elt_surr), increment(int32_var) if not is_last);
+        // Making the inclusion conditional
+        code = (code | do_if(cond_vars(cond_expr_idx), elt_eval_code & write_code));
+        cond_expr_idx = cond_expr_idx + 1;
+
+      else // Non-conditional expression
+        elt_eval_code, elt_surr, unused_var = opt_eval_info(e, var_gen);
+        // Until we reach the first conditional element we statically know the
+        // destination array index. After that we need to use the cursor variable
+        write_code = if cond_expr_idx == 0
+          then (write_array(array_var, i, elt_surr))
+          else (write_array(array_var, int32_var, elt_surr), increment(int32_var) if not is_last);
+        code = code & elt_eval_code & write_code;
       ;
     ;
 
-    seq_var, var_gen = next_obj_var(var_gen);
+    // Creation of the wrapping sequence object
     code = (code | mk_seq(seq_var, array_var));
-    return (code, seq_var, var_gen);
 
+    // Checking for the empty sequence case, if all expression are conditional
+    code = (branch(is_eq(int32_var, 0), (set_var(seq_var, empty_seq)), code)) if min_size == 0;
 
-    Type elt_type(SubExpr expr, (ExprRef -> SubExprInfo) subexpr_info) =
-      expr_ref()  = subexpr_info(expr).type,
-      cond_expr() = elt_type(expr.expr, subexpr_info);
+    return (conds_eval_code & code, seq_var, ret_var_gen);
   }
 
 
-  // fn_call(fn_id: FnFamilyId, args: AnyExpr*, impl_args: [ImplArg -> Expr])
-  (Instr*, ObjExpr, VarGen) fn_call_opt_eval_info(FnCallExpr expr, (ExprRef -> SubExprInfo) subexpr_info) {
+  (Instr*, ObjExpr, VarGen) fn_call_opt_eval_info(FnCallExpr expr, VarGen init_var_gen) {
+    // fn_call(fn_id: FnFamilyId, args: AnyExpr*, impl_args: [ImplArg -> Expr])
     assert expr.impl_args == [];
-    fail if not expr.args :: ExprRef* or not expr.impl_args :: [ImplArg -> ExprRef];
+    fail if not expr.args :: Expr* or not expr.impl_args :: [ImplArg -> ExprRef];
 
     // Actual arguments information
-    args_info = (subexpr_info(a) : a <- expr.args);
+    args_types = (subexpr_type(a) : a <- expr.args);
+
+    // Evaluation of the arguments
+    args_eval_code, args_surrs, unused_var = opt_eval_info(expr.args, init_var_gen);
 
     // Signature of the target function
-    fn_id, low_level_sign = low_level_sign(expr.fn_id, (just(a.type) : a <- args_info));
+    fn_id, low_level_sign = low_level_sign(expr.fn_id, (just(t) : t <- args_types));
 
     // Low-level actual arguments
-    low_level_args = (low_level_expr(value_unsafe(low_level_sign.args(i)), a.surr_expr) : a @ i <- args_info);
+    low_level_args = (low_level_expr(value_unsafe(low_level_sign.args(i)), s) : s @ i <- args_surrs);
 
-    // Result variable, surrogate expression and next variable generator
-    res_var, surr_expr, var_gen = match (low_level_sign.ret_value)
-      bool            = {v, g = next_bool_var(next_var_gen);  return (v, bool_obj(v),  g);},
-      int             = {v, g = next_int_var(next_var_gen);   return (v, int_obj(v),   g);},
-      float           = {v, g = next_float_var(next_var_gen); return (v, float_obj(v), g);},
-      symbol | object = {v, g = next_obj_var(next_var_gen);   return (v, v,            g);};
+    // Return value variable. Once the call returns the arguments
+    // are not needed anymore, so we can reuse the variables
+    res_var, var_gen = next_var(low_level_sign.ret_value, init_var_gen);
 
     // Evaluation code for the call only
-    eval_code = (join((a.eval_code : a <- args_info)) | call_proc(res_var, fn_id, low_level_args));
+    eval_code = (args_eval_code | call_proc(res_var, fn_id, low_level_args));
 
-    return (eval_code, surr_expr, var_gen);
+    return (eval_code, obj_expr(res_var), var_gen);
   }
 
 
   // builtin_call(name: BuiltIn, args: Expr+);
-  (Instr*, ObjExpr, VarGen) builtin_call_opt_eval_info(BuiltinCall expr, (ExprRef -> SubExprInfo) subexpr_info) {
-    fail if not expr.args :: ExprRef+;
+  (Instr*, ObjExpr, VarGen) builtin_call_opt_eval_info(BuiltinCall expr, VarGen init_var_gen) {
+    // Evaluation of the arguments
+    args_eval_code, args_surrs, unused_var = opt_eval_info(expr.args, init_var_gen);
 
-    args_info = (subexpr_info(a) : a <- expr.args);
-    args_eval_code = join((a.eval_code : a <- args_info));
-    surr_args = (a.surr_expr : a <- args_info);
+    // Builtin call. The arguments are not needed anymore once the call
+    // returns, so we can restart from the initial variables generator
+    code, surr, var_gen = eval_info(expr.name, nonempty(args_surrs), init_var_gen);
 
-    code, surr, var_gen = eval_info(expr.name, surr_args);
     return (args_eval_code & code, surr, var_gen);
 
 
-    (Instr*, ObjExpr, VarGen) eval_info(BuiltIn name, ObjExpr+ args) =
+    (Instr*, ObjExpr, VarGen) eval_info(BuiltIn name, ObjExpr+ args, VarGen init_var_gen) =
       slice   |
       cat     |
       rev     |
       isort   |
       parse   |
       print   |
-      str     = { res_var, var_gen = next_obj_var(next_var_gen);
+      str     = { res_var, var_gen = next_obj_var(init_var_gen);
                   instr = eval_instr(name, args, res_var);
                   return ((instr), res_var, var_gen);
                 },
-      _       = ((), eval_expr(name, args), next_var_gen);
+      _       = ((), eval_expr(name, args), init_var_gen);
 
 
     Instr eval_instr(BuiltIn name, ObjExpr+ args, LocVar res_var) =
@@ -417,50 +517,87 @@ implicit program      : Program,
   }
 }
 
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
 
-ExprRef cast_expr_ref(SubExpr e) =
-  expr_ref() = e;
+Instr+ store_result(Instr* code, ObjExpr surr_expr, AnyLocVar res_var) {
+  def_code = (code | set_any_var(res_var, surr_expr));
+  return def_code if code == ();
+  trimmed_code = take(code, |code| - 1);
 
+  return match (rev_at(code, 0))
+    set_bvar()   i? |
+    set_ivar()   i? |
+    set_ivar32() i? | ## WHY DOES THIS EXPRESSION TYPECHECKS EVEN WITH AN Int32Var?
+    set_fvar()   i? |
+    set_var()    i? = if i.var :: AnyLocVar and surr_expr == obj_expr(i.var)
+                        then (trimmed_code | set_any_var(res_var, obj_expr(i.value)))
+                        else def_code,
 
-  // Instr+ gen_eval_code_for_fn_call_expr(FnFamilyId id, AnyExpr* params, [ImplArg -> Expr] impl_args, EvalDestVar res_var) {
-  //   if impl_args != []:
-  //     ## BUG BUG BUG. THE ASSIGNMENTS ARE DONE IN RANDOM ORDER. FIX THIS
-  //     var = an_elem(nonempty(keys(impl_args)));
-  //     expr = impl_args[var];
-  //     rem_impl_args = [v -> e : v, e <- impl_args, v != var];
-  //     backup_var, var_gen = next_obj_var(next_var_gen);
-  //     info = gen_eval_info(expr, next_var_gen = var_gen);
-  //     body = gen_eval_code_for_fn_call_expr(id, params, rem_impl_args, res_var, next_var_gen = info.next_var_gen);
-  //     set_up_code = (set_var(backup_var, var), set_var(var, info.expr));
-  //     tear_down_code = (set_var(var, backup_var));
-  //     return nonempty(info.eval_code & set_up_code & body & tear_down_code);
+    call_proc()  i? = if i.var? and i.var :: AnyLocVar and surr_expr == obj_expr(i.var)
+                        then (trimmed_code | call_proc(res_var, i.name, i.args))
+                        else def_code,
 
-  //   else
-  //     pars_are_first_order = (is_expr(p) : p <- params);
-  //     par_packed_idxs = packed_seq_idxs(pars_are_first_order);
-  //     pars_info = gen_eval_info((cast_as_expr(p) : p @ i <- params, pars_are_first_order(i)));
-  //     all_params = (
-  //       if pars_are_first_order(i)
-  //         then pars_info.exprs(par_packed_idxs[i])
-  //         else compiled_closure(cast_as_cls_expr(p))
-  //     : p @ i <- params);
-  //     core_call_code = (call_proc(res_var, id, all_params));
-  //     return nonempty(pars_info.eval_code & core_call_code);
-  //   ;
-  // }
+    _               = def_code;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+type AnyLocVar = LocBoolVar, LocIntVar, LocFloatVar, LocVar, StdVar;
 
 
-// type RecExpr  = SetExpr, SeqExpr, TupleExpr, SeqTailExpr,
-//                 MapExpr, BinRelExpr, TernRelExpr, TagObjExpr,
-//                 FnCallExpr, ClsCall, BuiltinCall,
-//                 SizeExpr,
-//                 UnaryPseudoCall, RelMembTest, RelLookup,
-//                 RelVarMembTest, RelVarLookup,
-//                 AndExpr, OrExpr, NotExpr,
-//                 EqExpr,
-//                 MembExpr, CastExpr,
-//                 AccExpr, AccTestExpr,
-//                 AutoMethodCall, DBMethodCall,
-//                 IfExpr, MatchExpr, DoExpr,
-//                 ExQualExpr, SetCompExpr, MapCompExpr, BinRelCompExpr, TernRelCompExpr,
-//                 SeqCompExpr, RangeCompExpr;
+LowLevelRepr low_level_repr(AnyLocVar) =
+  bvar()  = :bool,
+  ivar()  = :int,
+  fvar()  = :float,
+  lvar()  = :object,
+  var()   = :object;
+
+
+(AnyLocVar, VarGen) next_var(LowLevelRepr repr, VarGen gen) =
+  bool    = next_bool_var(gen),
+  int     = next_int_var(gen),
+  float   = next_float_var(gen),
+  symbol  |
+  object  = next_obj_var(gen);
+
+
+## FIND BETTER NAME
+(AnyLocVar, VarGen) next_var_def(LowLevelRepr repr, StdVar var, VarGen var_gen) =
+  bool      |
+  int       |
+  float     = next_var(repr, var_gen),
+  symbol    |
+  object    = (var, var_gen);
+
+
+Instr set_any_var(LocBoolVar  var, ObjExpr expr) = set_bvar(var, bool_value(expr));
+Instr set_any_var(LocIntVar   var, ObjExpr expr) = set_ivar(var, get_int_val(expr));
+Instr set_any_var(LocFloatVar var, ObjExpr expr) = set_fvar(var, float_value(expr));
+Instr set_any_var(WriteObjVar var, ObjExpr expr) = set_var(var, expr);
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+(B*, C) mapl(A* xs, C seed, (A C -> (B, C)) next) {
+  ys = ();
+  state = seed;
+  for x <- xs:
+    y, state = next(x, state);
+    ys = (ys | y);
+  ;
+  return (ys, state);
+}
+
+
+// (Y*, S) mapli(X* xs, S seed, (X x, Nat i, S s -> (Y, S)) next)
+(B*, C) mapli(A* xs, C seed, (A Nat C -> (B, C)) next) {
+  ys = ();
+  state = seed;
+  for x @ i <- xs:
+    y, state = next(x, i, state);
+    ys = (ys | y);
+  ;
+  return (ys, state);
+}
