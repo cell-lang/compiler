@@ -178,12 +178,25 @@ implicit program      : Program,
     elt_eval_code, elt_surr, var_gen = opt_eval_info(expr.expr, var_gen, surrogates = surrs);
 
     // Finalizing loop body
-    body_code = (body_code & elt_eval_code | write_array(array_var, hidden_idx_var, elt_surr));
+    body_code = body_code & elt_eval_code;
+    if expr.sel_expr?:
+      target_idx_var, var_gen = next_int32_var(var_gen);
+      cond_eval_code, cond_surr, var_gen = opt_eval_info(expr.sel_expr, var_gen, surrogates = surrs);
+      body_code = (body_code | write_array(array_var, target_idx_var, elt_surr), increment(target_idx_var));
+      body_code = (cond_eval_code | do_if(bool_value(cond_surr), body_code));
+      loop_init_code = (set_ivar32(target_idx_var, 0));
+      mk_seq_instr = mk_seq(res_var, array_var, target_idx_var);
+
+    else
+      body_code = (body_code | write_array(array_var, hidden_idx_var, elt_surr));
+      loop_init_code = ();
+      mk_seq_instr = mk_seq(res_var, array_var);
+    ;
 
     // Mapping source to destination arrays
     map_instr = traverse_array(src_surr, buffer_var, array_var, hidden_idx_var, it_var, body_code);
 
-    eval_code = (eval_code | map_instr, mk_seq(res_var, array_var));
+    eval_code = (eval_code & loop_init_code | map_instr, mk_seq_instr);
     return (eval_code, res_var, ret_var_gen);
   }
 
