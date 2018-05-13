@@ -142,7 +142,7 @@ implicit program      : Program,
 
     // Evaluation of source expression
     eval_code, src_surr, var_gen = opt_eval_info(expr.src_expr, var_gen);
-    fail if not src_surr :: <LocVar, StdVar>;
+    fail if not src_surr :: <LocVar, StdVar>; ## MAYBE THIS COULD BE AVOIDED...
 
     // Temporary buffer for source data
     buffer_var, var_gen = next_array_var(var_gen, src_repr);
@@ -176,11 +176,12 @@ implicit program      : Program,
 
     // Evaluation of destination element expression
     elt_eval_code, elt_surr, var_gen = opt_eval_info(expr.expr, var_gen, surrogates = surrs);
-    body_code = body_code & elt_eval_code;
-    elt_low_level_surr = low_level_expr(elt_repr, elt_surr);
+
+    // Finalizing loop body
+    body_code = (body_code & elt_eval_code | write_array(array_var, hidden_idx_var, elt_surr));
 
     // Mapping source to destination arrays
-    map_instr = map_array(src_surr, buffer_var, array_var, hidden_idx_var, it_var, elt_low_level_surr, body_code);
+    map_instr = traverse_array(src_surr, buffer_var, array_var, hidden_idx_var, it_var, body_code);
 
     eval_code = (eval_code | map_instr, mk_seq(res_var, array_var));
     return (eval_code, res_var, ret_var_gen);
