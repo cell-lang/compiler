@@ -22,11 +22,13 @@ type LocVar2  = StdVar, FnArg;
 implicit program : Program, typedefs : [TypeName -> NeType] {
   [TypeCheckingError] typecheck_function(Function func) {
     args = func.args;
-    var_aliases = [[fn_arg(i), a.var] : a @ i <~ args, a :: FormalObjArg and a.var?];
-    obj_vars = [a.var -> a.type : a <~ args, formal_obj_arg() ?= a, a.var?] &
-               [fn_arg(i) -> a.type : a @ i <~ args, formal_obj_arg() ?= a] &
-               [v -> t : v, t <- func.impl_args];
-    let context=func, var_aliases=var_aliases, typed_vars = []:
+    // var_aliases = [[fn_arg(i), a.var] : a @ i <~ args, a :: FormalObjArg and a.var?];
+    // obj_vars = [a.var -> a.type : a <~ args, formal_obj_arg() ?= a, a.var?] &
+    //            [fn_arg(i) -> a.type : a @ i <~ args, formal_obj_arg() ?= a] &
+    //            [v -> t : v, t <- func.impl_args];
+
+    obj_vars = [v -> t : v, t <~ args] & [v -> t : v, t <- func.impl_args];
+    let context=func, var_aliases=[], typed_vars = []:
       errs = typecheck(func.expr, func.res_type, obj_vars);
     ;
     return errs;

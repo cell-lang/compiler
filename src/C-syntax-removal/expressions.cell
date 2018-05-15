@@ -19,8 +19,8 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
     cls_par(n?)           = fn_arg(n),
     const_or_var(a?)      = desugar_const_or_var_expr(a, def_vars),
     impl_args_call()      = desugar_impl_args_call_expr(expr.name, expr.args, nonempty(expr.impl_args), def_vars),
-    unary_op_call()       = fn_call(fn_family_id(op_symbol(expr.op), 1), (desugar_expr(expr.expr, def_vars))),
-    binary_op_call()      = fn_call(fn_family_id(op_symbol(expr.op), 2), (desugar_expr(expr.left_arg, def_vars), desugar_expr(expr.right_arg, def_vars))),
+    unary_op_call()       = fn_call(fn_family_id(op_symbol(expr.op), 1), (desugar_expr(expr.expr, def_vars)), ()),
+    binary_op_call()      = fn_call(fn_family_id(op_symbol(expr.op), 2), (desugar_expr(expr.left_arg, def_vars), desugar_expr(expr.right_arg, def_vars)), ()),
     builtin_call()        = builtin_call(expr.name, (desugar_expr(e, def_vars) : e <- expr.args)),
     size_expr()           = size_expr(desugar_expr(expr.coll, def_vars)),
     call_lookalike()      = desugar_call_lookalike(expr.target, expr.args, def_vars),
@@ -104,8 +104,9 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
       if target :: <PreFnCall, PreNestedFnCall>:
         fn_id = fn_family_id(target, arity);
         arg_arities = arg_arities(fn_id);
-        args = (desugar_fn_arg(a, ea, def_vars) : a, ea <- zip(syn_args, arg_arities));
-        return fn_call(fn_id, args, []);
+        args = (desugar_expr(a, def_vars) : a @ i <- syn_args, arg_arities(i) == 0);
+        cls_args = (desugar_cls_arg(e, nz_nat(arg_arities(i)), def_vars) : e @ i <- syn_args, arg_arities(i) != 0);
+        return fn_call(fn_id, args, cls_args, []);
       else
         args = (desugar_expr(a, def_vars) : a <- syn_args);
         return desugar_call_lookalike(target, args);
@@ -210,16 +211,15 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
     arity = |syn_args|;
     res_name = only(resolve_by_priority_as_fn_name(name, arity, def_vars));
     arg_arities = arg_arities(res_name);
-    args = (desugar_fn_arg(a, ea, def_vars) : a, ea <- zip(syn_args, arg_arities));
+    args = (desugar_expr(a, def_vars) : a @ i <- syn_args, arg_arities(i) == 0);
+    cls_args = (desugar_cls_arg(e, nz_nat(arg_arities(i)), def_vars) : e @ i <- syn_args, arg_arities(i) != 0);
     redef_impl_args = merge(([n -> desugar_expr(e, def_vars)] : n, e <- syn_impl_args));
-    return fn_call(res_name, args, redef_impl_args);
+    return fn_call(res_name, args, cls_args, redef_impl_args);
   }
 
 
-  AnyExpr desugar_fn_arg(SynExpr syn_arg, Nat exp_arity, [StdVar] def_vars) =
-    if exp_arity == 0
-      then desugar_expr(syn_arg, def_vars)
-    elif syn_arg :: ConstOrVar
+  AnyClsExpr desugar_cls_arg(SynExpr syn_arg, NzNat exp_arity, [StdVar] def_vars) =
+    if syn_arg :: ConstOrVar
       then only(resolve_by_priority_as_cls_expr(match (syn_arg) const_or_var(a?) = a, exp_arity, def_vars))
     else
       no_args_cls_expr(exp_arity, desugar_expr(syn_arg, def_vars));

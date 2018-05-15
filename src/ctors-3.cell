@@ -283,8 +283,10 @@ Instr symb_switch(ObjExpr e, [+([+SymbObj], Instr+)] cs, Instr* eis) = symb_swit
 
 Instr* opt_symb_switch(ObjExpr e, [([+SymbObj], Instr+)] cs, Instr* eis) = if cs != [] then (symb_switch(e, cs, eis)) else eis;
 
-Instr call_proc(WriteObjVar v, ObjFnName n, <AtomicExpr, BoundCls>* as) = call_proc(var: v, name: n, args: as);
-Instr call_cls(WriteObjVar v, AnyClsVar cv, AtomicExpr+ as)             = call_cls(var: v, cls_var: cv, args: as);
+Instr call_proc(WriteObjVar v, ObjFnName n, AtomicExpr* as, BoundCls* cas) = call_proc(var: v, name: n, args: as, cls_args: cas);
+Instr call_proc(ObjFnName n, AtomicExpr* as, BoundCls* cas) = call_proc(name: n, args: as, cls_args: cas);
+
+Instr call_cls(WriteObjVar v, AnyClsVar cv, AtomicExpr+ as) = call_cls(var: v, cls_var: cv, args: as);
 
 Instr queue_update(AutoSymbol s, BlockNodeId id)        = queue_update(type: s, id: id, args: ());
 Instr queue_update(AutoSymbol s, BlockNodeId id, Nat a) = queue_update(type: s, id: id, args: (a));
@@ -349,7 +351,7 @@ Instr queue_deletes(RelVar rv, Maybe[IntVar]+ as) = queue_deletes(rel_var: rv, a
 Instr queue_insert(IntVar v, ValueStoreId s, AtomicExpr e)  = queue_insert_value(res_var: v, store: s, value: e);
 Instr queue_insert(RelVar v, IntVar+ t)                     = queue_insert_tuple(rel_var: v, tuple: t);
 
-Instr push_call_info(ObjFnName fn_name, Maybe[FnArg]* params) = push_call_info(fn_name: fn_name, params: params);
+Instr push_call_info(ObjFnName fn_name, Maybe[<StdVar, FnArg>]* params) = push_call_info(fn_name: fn_name, params: params);
 Instr pop_call_info = :pop_call_info;
 
 Instr runtime_check(AtomicExpr c, String f, NzNat l, Maybe[String] t, <StdVar, ImplArg>* vs) =
@@ -363,9 +365,7 @@ ClsDef cls_def(NzNat a, Instr+ b) = cls_def(arity: a, body: b);
 
 BoundCls bound_cls(ClsDef c, <StdVar, CaptVar>* vs, AnyClsVar* cs) = bound_cls(cls: c, capt_vars: vs, capt_cls_vars: cs);
 
-<obj> obj = :obj;
-ObjProcPar cls(ClsVar n, NzNat a) = cls(name: n, arity: a);
-ObjProcPar cls(NzNat a) = cls(arity: a);
+ClsProcArg cls(ClsVar v, NzNat a) = cls(var: v, arity: a);
 
 BoolProcDef bool_proc_def(MembTestPredId name, NzNat arity, Instr+ body) =
   bool_proc_def(

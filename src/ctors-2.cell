@@ -116,10 +116,10 @@ Type union_type([Type] ts) {
 
 ClsType cls_type(NeType+ its, NeType ot) = cls_type(in_types: its, out_type: ot);
 
-FnType fn_type(AnyType* as, NeType rt) = fn_type(as, [], rt, []);
+FnType fn_type(NeType* as, ClsType* cas, NeType rt) = fn_type(as, cas, [], rt, []);
 
-FnType fn_type(AnyType* as, [ImplArg -> NeType] nas, NeType rt, [FnSymbol -> [+ClsType]] rs) =
-  fn_type(args: as, impl_args: nas, ret_type: rt, constrs: rs);
+FnType fn_type(NeType* as, ClsType* cas, [ImplArg -> NeType] nas, NeType rt, [FnSymbol -> [+ClsType]] rs) =
+  fn_type(args: as, cls_args: cas, impl_args: nas, ret_type: rt, constrs: rs);
 
 BuiltInType builtin_type(NeType+ pts, NeType rt) = builtin_type(args_types: pts, ret_type: rt);
 
@@ -306,8 +306,9 @@ TernRelExpr tern_rel_expr([+(args: (Expr, Expr, Expr), cond: Expr?)] es) = :tern
 
 Expr tag_obj_expr(Expr t, Expr o)   = tag_obj_expr(tag: t, obj: o);
 
-FnCallExpr fn_call(FnFamilyId n, AnyExpr* as) = fn_call(n, as, []);
-FnCallExpr fn_call(FnFamilyId n, AnyExpr* as, [ImplArg -> Expr] nas) = fn_call(fn_id: n, args: as, impl_args: nas);
+FnCallExpr fn_call(FnFamilyId n, Expr* as, AnyClsExpr* cas) = fn_call(n, as, cas, []);
+FnCallExpr fn_call(FnFamilyId n, Expr* as, AnyClsExpr* cas, [ImplArg -> Expr] nas) =
+  fn_call(fn_id: n, args: as, cls_args: cas, impl_args: nas);
 
 Expr builtin_call(BuiltIn n, Expr+ as)  = builtin_call(name: n, args: as);
 Expr cls_call(ClsVar v, Expr+ as)       = cls_call(name: v, args: as);
@@ -447,12 +448,6 @@ CompositeStmt[T] for_stmt(Maybe[StdVar] v, Expr sv, Expr ev, Bool evi, T+ b) =
 ////////////////////////////////////////////////////////////////////////////////
 
 ProcSymbol proc_symbol(Atom a) = :proc_symbol(a);
-
-////////////////////////////////////////////////////////////////////////////////
-
-FormalObjArg formal_obj_arg(NeType t)             = formal_obj_arg(type: t);
-FormalObjArg formal_obj_arg(StdVar v, NeType t)   = formal_obj_arg(var: v, type: t);
-FormalClsArg formal_cls_arg(ClsVar v, ClsType t)  = formal_cls_arg(var: v, type: t);
 
 ////////////////////////////////////////////////////////////////////////////////
 

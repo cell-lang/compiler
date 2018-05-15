@@ -97,9 +97,25 @@ implicit syn_prg : SynPrg, artifact : Artifact {
     // Protocol type -> type variable substitution map (just for signature types, not constraints types)
     subst_map = merge(([a -> type_var(i)] : a @ i <- sorted_prot_types));
 
-    // Desugaring types
-    args = (desugar_formal_arg(a, subst_map) : a <- syn_args);
+    // First order arguments
+    args = ({
+        var = if a.name? then var(a.name) else fn_arg(i);
+        type = desugar_arbitrary_type(a.type, subst_map, schema_names);
+        return (var, type);
+      } : a @ i <- syn_args, a :: SynObjArg
+    );
+
+    // Closures
+    cls_args = ({
+        type = desugar_cls_type(a.type, desugar_arbitrary_type($, subst_map, schema_names));
+        return (cls_var(a.name), type);
+      } : a <- syn_args, a :: SynClsArg
+    );
+
+    // Implicit arguments
     impl_args = [a.name -> desugar_plain_type(a.type) : a <- syn_impl_args];
+
+    // Return type
     res_type = desugar_arbitrary_type(syn_res_type, subst_map, schema_names);
 
     // Desugaring expression
@@ -115,6 +131,7 @@ implicit syn_prg : SynPrg, artifact : Artifact {
     return function(
       id:         id,
       args:       args,
+      cls_args:   cls_args,
       impl_args:  impl_args,
       res_type:   res_type,
       expr:       expr,
@@ -147,19 +164,5 @@ implicit syn_prg : SynPrg, artifact : Artifact {
       var_type_by_prot = group_by(var_type_pairs, prot_decl_by_type(right($)));
       return [[left(vt) -> right(vt) : vt <- vts] : p, vts <- var_type_by_prot];
     }
-
-
-    FormalObjArg desugar_formal_arg(SynObjArg arg, [Atom -> TypeVar] subst_map) =
-      formal_obj_arg(
-        var:  var(arg.name) if arg.name?,
-        type: desugar_arbitrary_type(arg.type, subst_map, schema_names)
-      );
-
-
-    FormalClsArg desugar_formal_arg(SynClsArg arg, [Atom -> TypeVar] subst_map) =
-      formal_cls_arg(
-        var:  cls_var(arg.name),
-        type: desugar_cls_type(arg.type, desugar_arbitrary_type($, subst_map, schema_names))
-      );
   }
 }

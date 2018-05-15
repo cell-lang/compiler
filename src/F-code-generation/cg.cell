@@ -102,7 +102,8 @@ implicit program : Program, options : CompilationOptions {
 
     return obj_proc_def(
       name:           procedure.id,
-      args:           arity(procedure) * (:obj),
+      args:           (a.var : a <- procedure.args),
+      cls_args:       (),
       impl_args:      [],
       loc_auto_vars:  procedure.auto_vars,
       loc_db_vars:    [v -> info.type : v, info <- procedure.db_vars],
@@ -116,28 +117,24 @@ implicit program : Program, options : CompilationOptions {
     fn_res_var, var_gen = next_obj_var(blank_var_gen);
     tmp_bvar,   var_gen = next_bool_var(var_gen);
 
-    // Setting named variables for parameters
-    body = (set_var(a.var, fn_arg(i)) : a @ i <- func.args, a :: FormalObjArg and a.var?);
-
     // Evaluating the expression
     let context=func, var_subst_map = [], cls_var_subst_map = [], next_var_gen=var_gen:
-      body = body & gen_eval_code(func.expr, fn_res_var);
+      body = gen_eval_code(func.expr, fn_res_var);
     ;
 
-    body = (push_call_info(func.id, (maybe(fn_arg(i), a :: FormalObjArg) : a @ i <- func.args))) & body & (pop_call_info, ret_val(fn_res_var));
+    // Adding push_call_info/pop_call_info and return
+    args_info = (just(v) : v, unused_var <- func.args) & (nothing : i < |func.cls_args|);
+    body = (push_call_info(func.id, args_info)) & body & (pop_call_info, ret_val(fn_res_var));
 
-    args = (
-      match (a)
-        formal_obj_arg()  = :obj,
-        formal_cls_arg()  = cls(a.var, arity(a.type))
-      : a <- func.args
-    );
+    args = (v : v, unused_var <- func.args);
+    cls_args = (cls(v, arity(t)) : v, t <- func.cls_args);
 
     cached = func.args == () and not is_too_simple_to_be_worth_caching(func.expr);
 
     return obj_proc_def(
       name:           func.id,
       args:           args,
+      cls_args:       cls_args,
       impl_args:      keys(func.impl_args),
       loc_auto_vars:  [],
       loc_db_vars:    [],
@@ -182,11 +179,12 @@ implicit program : Program, options : CompilationOptions {
     rand_fn         = an_elem(fns);
     id              = rand_fn.id;
     rand_args       = nonempty(rand_fn.args);
-    obj_args        = (i : a @ i <- rand_args, a :: FormalObjArg);
+    rand_cls_args   = rand_fn.cls_args;
     rand_impl_args  = rand_fn.impl_args;
 
-    disp_args = choose_disp_args(((a.type : a <- nonempty(fn.args)) : fn <- rand_sort(fns)), program.typedefs);
-    call_args = (if a :: FormalObjArg then fn_arg(i) else cls_var(i) : a @ i <- rand_args);
+    disp_args = choose_disp_args(((t : unused_var, t <- nonempty(fn.args)) : fn <- rand_sort(fns)), program.typedefs);
+    call_args = (fn_arg(i) : i < |rand_args|);
+    call_cls_args = (cls_var(i) : i < |rand_cls_args|);
 
     ## HERE WE SHOULD LEAVE THE FUNCTION WITH THE MOST EXPENSIVE CHECKING LAST
     ## SO THAT IT CAN BE MATCHED BY THE CHEAP "ANY" PATTERN.
@@ -194,7 +192,7 @@ implicit program : Program, options : CompilationOptions {
       if i < count-1:
         ptrns = ();
         for j <- disp_args:
-          pt = pseudotype(cast_type(fn.args(j).type), program.typedefs);
+          pt = pseudotype(right(fn.args(j)), program.typedefs);
           // return () if pt == :pseudotype([]); ## THIS SHOULD ACTUALLY WORK
           return () if not pt :: NePseudoType;
           ptrns = (ptrns | pseudotype_pattern(pt));
@@ -202,7 +200,7 @@ implicit program : Program, options : CompilationOptions {
       else
         ptrns = (ptrn_any : unused_var <- disp_args);
       ;
-      code = (call_proc(l0, fn.id, call_args), exit_block);
+      code = (call_proc(l0, fn.id, call_args, call_cls_args), exit_block);
       return ((ptrns: nonempty(ptrns), code: code));
     } : fn @ i <- rand_sort(fns)));
 
@@ -213,16 +211,13 @@ implicit program : Program, options : CompilationOptions {
       code = (terminate);
     ;
 
-    args = (
-      match (a)
-        formal_obj_arg()  = obj,
-        formal_cls_arg()  = cls(arity(a.type))
-      : a <- rand_args
-    );
+    args = (fn_arg(i) : i < |rand_args|);
+    cls_args = (cls(cls_var(i), arity(t)) : unused_var, t @ i <- rand_cls_args);
 
     return obj_proc_def(
       name:           family_id(id),
       args:           args,
+      cls_args:       cls_args,
       impl_args:      [], ## THIS IS WRONG, BUT IT SHOULDN'T MATTER FOR NOW
       loc_auto_vars:  [],
       loc_db_vars:    [],

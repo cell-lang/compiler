@@ -127,8 +127,9 @@ implicit program : Program, context : Context, var_subst_map : [StdVar -> CaptVa
 
   BoundCls compiled_closure(FnPtr ptr) {
     var = lvar(0);
-    ps = (fn_arg(i) : i < arity(ptr));
-    body = (call_proc(var, match (ptr) fn_ptr(id?) = id, ps), ret_val(var));
+    args = (fn_arg(i) : i < arity(ptr));
+    call_instr = call_proc(var, untag(ptr), args, ());
+    body = (call_instr, ret_val(var));
     cls = cls_def(arity(ptr), body);
     return bound_cls(cls, (), ());
   }

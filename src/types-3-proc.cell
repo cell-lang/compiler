@@ -247,10 +247,10 @@ type BasicInstr     = init_stream(StreamVar),
 
                       no_op,
 
-                      call_proc(var: WriteObjVar?, name: ObjFnName, args: <AtomicExpr, BoundCls>*),
+                      call_proc(var: WriteObjVar?, name: ObjFnName, args: AtomicExpr*, cls_args: BoundCls*),
                       call_cls(var: WriteObjVar, cls_var: AnyClsVar, args: AtomicExpr+),
 
-                      push_call_info(fn_name: ObjFnName, params: Maybe[FnArg]*),
+                      push_call_info(fn_name: ObjFnName, params: Maybe[<StdVar, FnArg>]*),
                       pop_call_info,
 
                       runtime_check(cond: AtomicExpr, file: String, line: NzNat, text: Maybe[String], vars: <StdVar, ImplArg>*),
@@ -336,11 +336,13 @@ type BoundCls       = AnyClsVar,
                         capt_cls_vars: AnyClsVar*
                       );
 
-type ObjProcPar     = obj, cls(name: ClsVar?, arity: NzNat);
+type ObjProcArg     = StdVar, FnArg;
+type ClsProcArg     = cls(var: ClsVar, arity: NzNat);
 
 type ObjProcDef     = obj_proc_def(
                         name:           ObjFnName,
-                        args:           ObjProcPar*,
+                        args:           ObjProcArg*,
+                        cls_args:       ClsProcArg*,
                         impl_args:      [ImplArg],
                         loc_auto_vars:  [LocAutoVar -> AutoSymbol],
                         loc_db_vars:    [LocDBVar -> DBSymbol],

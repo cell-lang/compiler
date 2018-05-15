@@ -370,7 +370,9 @@ implicit program : Program, context : Context, var_subst_map : [StdVar -> CaptVa
 
   Instr+ gen_code_for_proc_call_stmt(Maybe[StdVar] maybe_res_var, ProcSymbol proc_name, Expr* params) {
     pars_info = gen_eval_info(params);
-    call_code = (call_proc(var: value(maybe_res_var) if maybe_res_var != nothing, name: proc_name, args: pars_info.exprs));
-    return nonempty(pars_info.eval_code & call_code);
+    call_instr = if maybe_res_var != nothing
+      then call_proc(value(maybe_res_var), proc_name, pars_info.exprs, ())
+      else call_proc(proc_name, pars_info.exprs, ());
+    return (pars_info.eval_code | call_instr);
   }
 }

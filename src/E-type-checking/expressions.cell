@@ -50,7 +50,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
       bin_rel_expr(es?)   |
       tern_rel_expr(es?)  = union([pre_typecheck_rel_entry(e, env) : e <- es]),
       tag_obj_expr()      = typecheck(expr.tag, atom_type, env) & typecheck(expr.obj, type_any, env),
-      fn_call()           = fully_typecheck_fn_call(expr.fn_id, expr.args, expr.impl_args, exp_type, env),
+      fn_call()           = fully_typecheck_fn_call(expr.fn_id, expr.args, expr.cls_args, expr.impl_args, exp_type, env),
       cls_call()          = seq_union((typecheck(e, t, env) : e, t <- zip(expr.args, closures[expr.name].in_types))),
       builtin_call()      = pre_typecheck_builtin_call(expr.name, expr.args, env),
       size_expr()         = typecheck(expr.coll, type_coll, env),
@@ -352,15 +352,14 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     for s <- rand_sort(sgn_set.sgns):
       assert s.impl_args == [] and s.constrs == [] and |args_types| == |s.args|;
       types = zip(args_types, s.args);
-      ## REMOVE THE THREE CALLS TO cast_type()
-      if all((is_subset(at, cast_type(ft)) : at, ft <- types)):
+      if all((is_subset(at, ft) : at, ft <- types)):
         return [invalid_return_type(s.ret_type, exp_type) if not is_subset(s.ret_type, exp_type)];
-      elif none((are_ptype_disjoint(at, cast_type(ft)) : at, ft <- types)):
+      elif none((are_ptype_disjoint(at, ft) : at, ft <- types)):
         return [invalid_return_type(s.ret_type, exp_type)] if not is_subset(s.ret_type, exp_type);
       ;
     ;
     for s <- rand_sort(sgn_set.agg_sgns):
-      return [] if all((is_subset(at, cast_type(ft)) : at, ft <- zip(args_types, s.args)));
+      return [] if all((is_subset(at, ft) : at, ft <- zip(args_types, s.args)));
     ;
     return [no_disp_db_method(expr.name, args_types, exp_type, sgn_set.sgns)];
   }
@@ -375,17 +374,16 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     sgn_set = method_signatures(db_type, expr.name, |args_types|);
 
     for s <- rand_sort(sgn_set.sgns):
-      assert s.impl_args == [] and s.constrs == [] and |args_types| == |s.args|;
+      assert s.cls_args == () and s.impl_args == [] and s.constrs == [] and |args_types| == |s.args|;
       types = zip(args_types, s.args);
-      ## REMOVE THE THREE CALLS TO cast_type()
-      if all((is_subset(at, cast_type(ft)) : at, ft <- types)):
+      if all((is_subset(at, ft) : at, ft <- types)):
         return [invalid_return_type(s.ret_type, exp_type) if not is_subset(s.ret_type, exp_type)];
-      elif none((are_ptype_disjoint(at, cast_type(ft)) : at, ft <- types)):
+      elif none((are_ptype_disjoint(at, ft) : at, ft <- types)):
         return [invalid_return_type(s.ret_type, exp_type)] if not is_subset(s.ret_type, exp_type);
       ;
     ;
     for s <- rand_sort(sgn_set.agg_sgns):
-      return [] if all((is_subset(at, cast_type(ft)) : at, ft <- zip(args_types, s.args)));
+      return [] if all((is_subset(at, ft) : at, ft <- zip(args_types, s.args)));
     ;
     return [no_disp_db_method(expr.name, args_types, exp_type, sgn_set.sgns)];
   }

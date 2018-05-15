@@ -1,17 +1,15 @@
-Nat+ choose_disp_args(AnyType++ types, [TypeName -> Type] typedefs) {
+Nat+ choose_disp_args(NeType++ types, [TypeName -> Type] typedefs) {
+  count = |types|;
+  ptypes = ((pseudotype(t, typedefs) : t <- ts) : ts <- types);
+
   ## IF THERE'S MORE THAN ONE CHOICE OF DISPATCH ARGUMENTS,
   ## WE SHOULD CHOOSE THE ONE THAT IS THE MOST EFFICIENT
-  some_types = types(0);
-  obj_args = nonempty((i : t @ i <- some_types, t :: NeType));
-  ptypes = ((pseudotype(cast_type(ts(i)), typedefs) : i <- obj_args) : ts <- types);
-  count = |obj_args|;
   for n = 1...count:
     for idxs <- ordered_combinations(n, count):
-      if are_sufficient(idxs, ptypes, typedefs):
-        return (obj_args(i) : i <- idxs);
-      ;
+      return idxs if are_sufficient(idxs, ptypes, typedefs);
     ;
   ;
+
   fail;
 
 

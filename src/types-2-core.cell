@@ -48,10 +48,10 @@ type Type               = empty_type, NeType;
 ///////////////////////////////////////////////////////////////////////////////
 
 type ClsType  = cls_type(in_types: NeType+, out_type: NeType);
-type AnyType  = NeType, ClsType;
 
 type FnType   = fn_type(
-                  args:       AnyType*,
+                  args:       NeType*,
+                  cls_args:   ClsType*,
                   impl_args:  [ImplArg -> NeType],
                   ret_type:   NeType,
                   constrs:    [FnSymbol -> [+ClsType]]
@@ -160,7 +160,7 @@ type BinRelExpr     = bin_rel_expr([+(args: (Expr, Expr), cond: Expr?)]);
 type TernRelExpr    = tern_rel_expr([+(args: (Expr, Expr, Expr), cond: Expr?)]);
 type TagObjExpr     = tag_obj_expr(tag: Expr, obj: Expr);
 
-type FnCallExpr     = fn_call(fn_id: FnFamilyId, args: AnyExpr*, impl_args: [ImplArg -> Expr]);
+type FnCallExpr     = fn_call(fn_id: FnFamilyId, args: Expr*, cls_args: AnyClsExpr*, impl_args: [ImplArg -> Expr]);
 type ClsCall        = cls_call(name: ClsVar, args: Expr+);
 type BuiltinCall    = builtin_call(name: BuiltIn, args: Expr+);
 
@@ -212,8 +212,6 @@ type FnPtr    = fn_ptr(FnFamilyId);
 type ClsExpr  = cls_expr(args: Maybe[StdVar]+, expr: Expr);
 
 type AnyClsExpr = ClsVar, FnPtr, ClsExpr;
-
-type AnyExpr    = Expr, AnyClsExpr;
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -291,13 +289,10 @@ type Statement      = AtomicFnStmt, AtomicUpdateStmt, AtomicProcStmt, CtrlStmt, 
 
 ///////////////////////////////////////////////////////////////////////////////
 
-type FormalObjArg = formal_obj_arg(var: StdVar?, type: NeType);
-type FormalClsArg = formal_cls_arg(var: ClsVar, type: ClsType);
-type FormalArg    = FormalObjArg, FormalClsArg;
-
 type Function   = function(
                     id:         FnId,
-                    args:       FormalArg*,
+                    args:       (<StdVar, FnArg>, NeType)*,
+                    cls_args:   (ClsVar, ClsType)*,
                     impl_args:  [ImplArg -> NeType], // Types here should not contain type variables
                     res_type:   NeType,
                     expr:       Expr,

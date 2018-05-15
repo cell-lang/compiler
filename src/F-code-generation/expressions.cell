@@ -25,7 +25,7 @@ implicit program : Program, context : Context, var_subst_map : [StdVar -> CaptVa
       tern_rel_expr(es?)  = gen_eval_code_for_tern_rel_expr(es, res_var),
       tag_obj_expr()      = gen_eval_code_for_tag_obj_expr(expr.tag, expr.obj, res_var),
 
-      fn_call()           = gen_eval_code_for_fn_call_expr(expr.fn_id, expr.args, expr.impl_args, res_var),
+      fn_call()           = gen_eval_code_for_fn_call_expr(expr.fn_id, expr.args,expr.cls_args, expr.impl_args, res_var),
       cls_call()          = gen_eval_code_for_cls_call(expr.name, expr.args, res_var),
       builtin_call()      = gen_eval_code_for_builtin_call(expr.name, expr.args, res_var),
 
@@ -280,7 +280,7 @@ implicit program : Program, context : Context, var_subst_map : [StdVar -> CaptVa
   }
 
 
-  Instr+ gen_eval_code_for_fn_call_expr(FnFamilyId id, AnyExpr* params, [ImplArg -> Expr] impl_args, EvalDestVar res_var) {
+  Instr+ gen_eval_code_for_fn_call_expr(FnFamilyId id, Expr* args, AnyClsExpr* cls_args, [ImplArg -> Expr] impl_args, EvalDestVar res_var) {
     if impl_args != []:
       ## BUG BUG BUG. THE ASSIGNMENTS ARE DONE IN RANDOM ORDER. FIX THIS
       var = an_elem(nonempty(keys(impl_args)));
@@ -288,22 +288,16 @@ implicit program : Program, context : Context, var_subst_map : [StdVar -> CaptVa
       rem_impl_args = [v -> e : v, e <- impl_args, v != var];
       backup_var, var_gen = next_obj_var(next_var_gen);
       info = gen_eval_info(expr, next_var_gen = var_gen);
-      body = gen_eval_code_for_fn_call_expr(id, params, rem_impl_args, res_var, next_var_gen = info.next_var_gen);
+      body = gen_eval_code_for_fn_call_expr(id, args, cls_args, rem_impl_args, res_var, next_var_gen = info.next_var_gen);
       set_up_code = (set_var(backup_var, var), set_var(var, info.expr));
       tear_down_code = (set_var(var, backup_var));
       return nonempty(info.eval_code & set_up_code & body & tear_down_code);
 
     else
-      pars_are_first_order = (is_expr(p) : p <- params);
-      par_packed_idxs = packed_seq_idxs(pars_are_first_order);
-      pars_info = gen_eval_info((cast_as_expr(p) : p @ i <- params, pars_are_first_order(i)));
-      all_params = (
-        if pars_are_first_order(i)
-          then pars_info.exprs(par_packed_idxs[i])
-          else compiled_closure(cast_as_cls_expr(p))
-      : p @ i <- params);
-      core_call_code = (call_proc(res_var, id, all_params));
-      return nonempty(pars_info.eval_code & core_call_code);
+      args_info = gen_eval_info(args);
+      comp_cls_args = (compiled_closure(a) : a <- cls_args);
+      core_call_instr = call_proc(res_var, id, args_info.exprs, comp_cls_args);
+      return (args_info.eval_code | core_call_instr);
     ;
   }
 

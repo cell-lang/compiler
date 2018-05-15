@@ -34,11 +34,8 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
     ord_fns = rand_sort(functions);
     return [overlapping_signatures(f1, f2) : f1 @ i1 <~ ord_fns, f2 <~ drop(ord_fns, i1+1), overlap(f1, f2)];
 
-    Bool overlap(Function f1, Function f2) = not (a1, a2 <~ zip(f1.args, f2.args) : are_disjoint(a1, a2));
-
-    Bool are_disjoint(FormalArg arg1, FormalArg arg2) =
-      formal_obj_arg(), formal_obj_arg()  = are_ptype_disjoint(arg1.type, arg2.type),
-      formal_cls_arg(), formal_cls_arg()  = false;
+    Bool overlap(Function f1, Function f2) =
+      not (a1, a2 <~ zip(f1.args, f2.args) : are_ptype_disjoint(right(a1), right(a2)));
   }
 
   //////////////////////////////////////////////////////////////////////////////
