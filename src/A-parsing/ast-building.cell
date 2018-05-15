@@ -357,9 +357,17 @@ implicit filename : String, lines : Nat** {
     assert |nodes| == 6;
     ret_type = build_type_ast(nodes(0));
     args = build_fn_args_ast(nodes(2));
-    cases = (build_match_case_ast(n) : n <- rep_rule_nodes(nodes(4)));
+    cases = (build_match_case_ast(n) : n <- nonempty(rep_rule_nodes(nodes(4))));
     arity = syn_case_arity(cases(0));
-    expr = syn_try_expr(nonempty((fn_arg(i) : i < arity)), nonempty(cases));
+    matched_args = ({
+        if i < |args|:
+          a = args(i);
+          return const_or_var(a.name) if a.name?;
+        ;
+        return fn_arg(i);
+      } : i < arity
+    );
+    expr = syn_try_expr(matched_args, cases);
     return syn_fn_def(
       name:       fn_symbol(get_lowercase_id(nodes(1))),
       args:       args,

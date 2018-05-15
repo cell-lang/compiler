@@ -119,57 +119,57 @@ Bool is_param_type(FnType type) = (t <~ type.args : is_param_type(t)) or is_para
 [T] retrieve_from_nested_exprs(Expr expr, (Expr -> [T]) retrieve) {
   return [] if expr :: Var;
   return match (expr)
-    undefined               = [],
-    object()                = [],
-    float_lit()             = [],
-    set_expr(ses?)          = union([any_expr_retrieve_from_nested_exprs(se, retrieve) : se <- ses]),
-    seq_expr(ses?)          = seq_union((any_expr_retrieve_from_nested_exprs(se, retrieve) : se <- ses)),
-    tuple_expr(es?)         = seq_union((retrieve(e) : e <- es)),
-    seq_tail_expr()         = retrieve(expr.seq) & seq_union((retrieve(e) : e <- expr.tail)),
-    map_expr(es?)           = union([retrieve(e.key) & retrieve(e.value) & if e.cond? then retrieve(e.cond) else [] : e <- es]),
-    bin_rel_expr(es?)       |
-    tern_rel_expr(es?)      = union([seq_union((retrieve(e2) : e2 <- e1.args & (e1.cond if e1.cond?))) : e1 <- es]),
-    tag_obj_expr()          = retrieve(expr.tag) & retrieve(expr.obj),
-    fn_call()               = union([any_expr_retrieve_from_nested_exprs(p, retrieve) : p <- set(expr.args) & values(expr.impl_args)]),
-    cls_call()              = seq_union((retrieve(p) : p <- expr.args)),
-    builtin_call()          = seq_union((retrieve(p) : p <- expr.args)),
-    size_expr()             = retrieve(expr.coll),
-    unary_pseudo_call()     = retrieve(expr.target) & retrieve(expr.arg),
-    rel_memb_test()         = retrieve(expr.rel) & seq_union((retrieve(value(a)) : a <- expr.args, a != nothing)),
-    rel_lookup()            = retrieve(expr.rel) & seq_union((retrieve(a) : a <- expr.set_args)),
-    relvar_memb_test()      = seq_union((retrieve(value(a)) : a <- expr.args, a != nothing)),
-    relvar_lookup()         = seq_union((retrieve(e) : e <- expr.set_args)),
-    and_expr()              = retrieve(expr.left) & retrieve(expr.right),
-    or_expr()               = retrieve(expr.left) & retrieve(expr.right),
-    not_expr(e?)            = retrieve(e),
-    eq()                    = retrieve(expr.left) & retrieve(expr.right),
-    membership()            = retrieve(expr.obj),
-    cast_expr()             = retrieve(expr.expr),
-    accessor()              = retrieve(expr.expr),
-    accessor_test()         = retrieve(expr.expr),
-    auto_method_call()      = seq_union((retrieve(a) : a <- expr.args)),
-    db_method_call()        = seq_union((retrieve(a) : a <- expr.args)),
-    if_expr()               = retrieve(expr.cond) & retrieve(expr.then) & retrieve(expr.else),
-    match_expr()            = seq_union((retrieve(e) : e <- expr.exprs)) &
-                              seq_union((retrieve(c.expr) : c <- expr.cases)),
-    do_expr()               = retrieve_from_nested_exprs(expr.body, retrieve),
-    ex_qual()               = retrieve_from_nested_exprs(expr.source, retrieve) & retrieve(expr.cond),
-    set_comp()              = retrieve_from_nested_exprs(expr.source, retrieve) & retrieve(expr.expr),
-    map_comp()              = retrieve_from_nested_exprs(expr.source, retrieve) & retrieve(expr.key_expr) & retrieve(expr.value_expr),
-    bin_rel_comp()          |
-    tern_rel_comp()         = retrieve_from_nested_exprs(expr.source, retrieve) & seq_union((retrieve(e) : e <- expr.exprs)),
-    seq_comp()              = retrieve(expr.expr) & retrieve(expr.src_expr)   & if expr.sel_expr? then retrieve(expr.sel_expr) else [],
-    range_comp()            = retrieve(expr.expr) & retrieve(expr.bound_expr) & if expr.sel_expr? then retrieve(expr.sel_expr) else [],
-    output_is_def()         = [],
-    output_is_set()         = [];
+    undefined             = [],
+    object()              = [],
+    float_lit()           = [],
+    set_expr(ses?)        = union([retrieve_from_nested_exprs(se, retrieve) : se <- ses]),
+    seq_expr(ses?)        = seq_union((retrieve_from_nested_exprs(se, retrieve) : se <- ses)),
+    tuple_expr(es?)       = seq_union((retrieve(e) : e <- es)),
+    seq_tail_expr()       = retrieve(expr.seq) & seq_union((retrieve(e) : e <- expr.tail)),
+    map_expr(es?)         = union([retrieve(e.key) & retrieve(e.value) & if e.cond? then retrieve(e.cond) else [] : e <- es]),
+    bin_rel_expr(es?)     |
+    tern_rel_expr(es?)    = union([seq_union((retrieve(e2) : e2 <- e1.args & (e1.cond if e1.cond?))) : e1 <- es]),
+    tag_obj_expr()        = retrieve(expr.tag) & retrieve(expr.obj),
+    fn_call()             = { sources = set(expr.args) & set(expr.cls_args) & values(expr.impl_args);
+                              return union([retrieve_from_nested_exprs(e, retrieve) : e <- sources]);
+                            },
+    cls_call()            = seq_union((retrieve(p) : p <- expr.args)),
+    builtin_call()        = seq_union((retrieve(p) : p <- expr.args)),
+    size_expr()           = retrieve(expr.coll),
+    unary_pseudo_call()   = retrieve(expr.target) & retrieve(expr.arg),
+    rel_memb_test()       = retrieve(expr.rel) & seq_union((retrieve(value(a)) : a <- expr.args, a != nothing)),
+    rel_lookup()          = retrieve(expr.rel) & seq_union((retrieve(a) : a <- expr.set_args)),
+    relvar_memb_test()    = seq_union((retrieve(value(a)) : a <- expr.args, a != nothing)),
+    relvar_lookup()       = seq_union((retrieve(e) : e <- expr.set_args)),
+    and_expr()            = retrieve(expr.left) & retrieve(expr.right),
+    or_expr()             = retrieve(expr.left) & retrieve(expr.right),
+    not_expr(e?)          = retrieve(e),
+    eq()                  = retrieve(expr.left) & retrieve(expr.right),
+    membership()          = retrieve(expr.obj),
+    cast_expr()           = retrieve(expr.expr),
+    accessor()            = retrieve(expr.expr),
+    accessor_test()       = retrieve(expr.expr),
+    auto_method_call()    = seq_union((retrieve(a) : a <- expr.args)),
+    db_method_call()      = seq_union((retrieve(a) : a <- expr.args)),
+    if_expr()             = retrieve(expr.cond) & retrieve(expr.then) & retrieve(expr.else),
+    match_expr()          = seq_union((retrieve(e) : e <- expr.exprs)) &
+                            seq_union((retrieve(c.expr) : c <- expr.cases)),
+    do_expr()             = retrieve_from_nested_exprs(expr.body, retrieve),
+    ex_qual()             = retrieve_from_nested_exprs(expr.source, retrieve) & retrieve(expr.cond),
+    set_comp()            = retrieve_from_nested_exprs(expr.source, retrieve) & retrieve(expr.expr),
+    map_comp()            = retrieve_from_nested_exprs(expr.source, retrieve) & retrieve(expr.key_expr) & retrieve(expr.value_expr),
+    bin_rel_comp()        |
+    tern_rel_comp()       = retrieve_from_nested_exprs(expr.source, retrieve) & seq_union((retrieve(e) : e <- expr.exprs)),
+    seq_comp()            = retrieve(expr.expr) & retrieve(expr.src_expr)   & if expr.sel_expr? then retrieve(expr.sel_expr) else [],
+    range_comp()          = retrieve(expr.expr) & retrieve(expr.bound_expr) & if expr.sel_expr? then retrieve(expr.sel_expr) else [],
+    output_is_def()       = [],
+    output_is_set()       = [];
 }
 
 
-[T] any_expr_retrieve_from_nested_exprs(Expr expr, (Expr -> [T]) retrieve)      = retrieve(expr);
+[T] retrieve_from_nested_exprs(CondExpr expr, (Expr -> [T]) retrieve)  = retrieve(expr.expr) & retrieve(expr.cond);
 
-[T] any_expr_retrieve_from_nested_exprs(CondExpr expr, (Expr -> [T]) retrieve)  = retrieve(expr.expr) & retrieve(expr.cond);
-
-[T] any_expr_retrieve_from_nested_exprs(AnyClsExpr expr, (Expr -> [T]) retrieve) =
+[T] retrieve_from_nested_exprs(AnyClsExpr expr, (Expr -> [T]) retrieve) =
   cls_var()   = [],
   fn_ptr()    = [],
   cls_expr()  = retrieve(expr.expr);
