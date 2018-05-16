@@ -122,17 +122,16 @@ Bool is_param_type(FnType type) = (t <~ type.args : is_param_type(t)) or is_para
     undefined             = [],
     object()              = [],
     float_lit()           = [],
-    set_expr(ses?)        = union([retrieve_from_nested_exprs(se, retrieve) : se <- ses]),
-    seq_expr(ses?)        = seq_union((retrieve_from_nested_exprs(se, retrieve) : se <- ses)),
+    set_expr(ses?)        = union([subexpr_retrieve(se, retrieve) : se <- ses]),
+    seq_expr(ses?)        = seq_union((subexpr_retrieve(se, retrieve) : se <- ses)),
     tuple_expr(es?)       = seq_union((retrieve(e) : e <- es)),
     seq_tail_expr()       = retrieve(expr.seq) & seq_union((retrieve(e) : e <- expr.tail)),
     map_expr(es?)         = union([retrieve(e.key) & retrieve(e.value) & if e.cond? then retrieve(e.cond) else [] : e <- es]),
     bin_rel_expr(es?)     |
     tern_rel_expr(es?)    = union([seq_union((retrieve(e2) : e2 <- e1.args & (e1.cond if e1.cond?))) : e1 <- es]),
     tag_obj_expr()        = retrieve(expr.tag) & retrieve(expr.obj),
-    fn_call()             = { sources = set(expr.args) & set(expr.cls_args) & values(expr.impl_args);
-                              return union([retrieve_from_nested_exprs(e, retrieve) : e <- sources]);
-                            },
+    fn_call()             = union([retrieve(e) : e <- set(expr.args) & values(expr.impl_args)]) &
+                            union([retrieve_from_nested_exprs(e, retrieve) : e <~ expr.cls_args]),
     cls_call()            = seq_union((retrieve(p) : p <- expr.args)),
     builtin_call()        = seq_union((retrieve(p) : p <- expr.args)),
     size_expr()           = retrieve(expr.coll),
@@ -167,7 +166,9 @@ Bool is_param_type(FnType type) = (t <~ type.args : is_param_type(t)) or is_para
 }
 
 
-[T] retrieve_from_nested_exprs(CondExpr expr, (Expr -> [T]) retrieve)  = retrieve(expr.expr) & retrieve(expr.cond);
+[T] subexpr_retrieve(Expr expr, (Expr -> [T]) retrieve)     = retrieve(expr);
+[T] subexpr_retrieve(CondExpr expr, (Expr -> [T]) retrieve) = retrieve(expr.expr) & retrieve(expr.cond);
+
 
 [T] retrieve_from_nested_exprs(AnyClsExpr expr, (Expr -> [T]) retrieve) =
   cls_var()   = [],
