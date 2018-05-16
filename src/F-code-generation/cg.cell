@@ -129,42 +129,20 @@ implicit program : Program, options : CompilationOptions {
     args_info = (just(v) : v, unused_var <- func.args) & (nothing : i < |func.cls_args|);
     body = (push_call_info(func.id, args_info)) & body & (pop_call_info, ret_val(fn_res_var));
 
-    args = (low_level_arg(v, t) : v, t <- func.args);
+    args = ({
+        repr = low_level_repr(t, typedefs=program.typedefs);
+        return low_level_arg(v, repr);
+      } : v, t <- func.args
+    );
     args_surrs = [v -> obj_expr(args(i)) : v, unused_var @ i <~ func.args];
 
     cls_args = (cls(v, arity(t)) : v, t <- func.cls_args);
 
-// print "---------------------------------------";
-// print "func";
-// print func;
-// print "func.args";
-// print func.args;
-// print "args";
-// print args;
-// print "args_surrs";
-// print args_surrs;
-
     cached = func.args == () and not is_too_simple_to_be_worth_caching(func.expr);
 
-alt_expr = exprs_cluster(func.expr);
-rec_expr = reconstruct(alt_expr, 0);
-rec_exprs = reconstruct_all(alt_expr);
-
-
-// if func.expr != rec_expr or rec_expr != rec_exprs(0):
-  // print "------------------------------------------------------";
-  // print "func.id";
-  // print func.id;
-  // print "func.expr";
-  // print func.expr;
-  // print "alt_expr";
-  // print alt_expr;
-  // print "rec_expr";
-  // print rec_expr;
-  // print "rec_exprs";
-  // print rec_exprs;
-  // fail;
-// ;
+    alt_expr = exprs_cluster(func.expr);
+    rec_expr = reconstruct(alt_expr, 0);
+    rec_exprs = reconstruct_all(alt_expr);
 
     env = [v -> t : v, t <~ func.args] & [v -> t : v, t <- func.impl_args];
 
@@ -193,30 +171,6 @@ rec_exprs = reconstruct_all(alt_expr);
     ObjExpr surrogate(BoolFnArg var)  = bool_obj(var);
     ObjExpr surrogate(IntFnArg var)   = int_obj(var);
     ObjExpr surrogate(FloatFnArg var) = float_obj(var);
-
-
-    // <StdVar, FnArg> original_arg(ObjProcArg var) =
-    //   bool_arg(id?)     |
-    //   int_arg(id?)      |
-    //   float_arg(id?)    = original_arg(id),
-    //   var() | fn_arg()  = var;
-
-    // StdVar original_arg(Symbol id) = var(id);
-    // FnArg  original_arg(Nat id)    = fn_arg(id);
-
-
-    ObjProcArg low_level_arg(<StdVar, FnArg> var, NeType type) {
-      repr = low_level_repr(type, typedefs=program.typedefs);
-      id = untag(var);
-      return match (repr)
-        bool      = bool_arg(id),
-        int       = int_arg(id),
-        float     = float_arg(id),
-        symbol    |
-        object    = var;
-    }
-
-    ClsProcArg low_level_arg(ClsVar var, ClsType type) = cls(var, arity(type));
 
 
     Bool is_too_simple_to_be_worth_caching(Expr expr) = is_within_complexity_level(expr, 1);
@@ -259,13 +213,16 @@ rec_exprs = reconstruct_all(alt_expr);
     rand_impl_args  = rand_fn.impl_args;
 
     disp_args = choose_disp_args(((t : unused_var, t <- nonempty(fn.args)) : fn <- rand_sort(fns)), program.typedefs);
-    call_args = (fn_arg(i) : i < |rand_args|);
-    call_cls_args = (cls_var(i) : i < |rand_cls_args|);
 
+    let typedefs = program.typedefs: ## SETTING THIS ARGUMENT HERE MAY CAUSE PERFORMANCE PROBLEMS...
+      low_level_signs = [fn.id -> low_level_sign(fn) : fn <- fns];
+    ;
+    aggr_sign = aggr_sign([s : unused_var, s <- low_level_signs]);
 
-    // low_level_signs = [fn.id -> low_level_sign(fn) : fn <- fns];
-    // aggr_sign = aggr_sign(values(low_level_signs));
+    args = (low_level_arg(fn_arg(i), r) : r @ i <- aggr_sign.args);
+    cls_args = (cls(cls_var(i), arity(t)) : unused_var, t @ i <- rand_cls_args);
 
+    aggr_ret_var, unused_var_1 = next_var(aggr_sign.ret_value, blank_var_gen);
 
     ## HERE WE SHOULD LEAVE THE FUNCTION WITH THE MOST EXPENSIVE CHECKING LAST
     ## SO THAT IT CAN BE MATCHED BY THE CHEAP "ANY" PATTERN.
@@ -279,9 +236,22 @@ rec_exprs = reconstruct_all(alt_expr);
           ptrns = (ptrns | pseudotype_pattern(pt));
         ;
       else
-        ptrns = (ptrn_any : unused_var <- disp_args);
+        ptrns = (ptrn_any : unused_var_2 <- disp_args);
       ;
-      code = (call_proc(l0, fn.id, call_args, call_cls_args), exit_block);
+
+      sign = low_level_signs(fn.id, !!);
+      call_args = (low_level_expr(r, obj_expr(args(j))) : r @ j <- sign.args);
+      call_cls_args = (cls_var(j) : j < |rand_cls_args|);
+
+      // We can reuse the same seed to generate variables
+      ret_var, unused_var_2 = next_var(sign.ret_value, blank_var_gen);
+
+      code = (
+        call_proc(ret_var, fn.id, call_args, call_cls_args),
+        set_any_var(aggr_ret_var, obj_expr(ret_var)) if ret_var != aggr_ret_var,
+        exit_block
+      );
+
       return ((ptrns: nonempty(ptrns), code: code));
     } : fn @ i <- rand_sort(fns)));
 
@@ -292,32 +262,11 @@ rec_exprs = reconstruct_all(alt_expr);
       code = (terminate);
     ;
 
-    args = (fn_arg(i) : i < |rand_args|);
-    cls_args = (cls(cls_var(i), arity(t)) : unused_var, t @ i <- rand_cls_args);
-
-    ## IMPLEMENT IMPLEMENT IMPLEMENT
-    // args = (
-    //   match (a)
-    //     formal_obj_arg()  = obj,
-    //     formal_cls_arg()  = cls(arity(a.type))
-    //   : a <- rand_args
-    // );
-
-    // args = ();
-
-    // args_types = ({
-    //     types = [fn.args(i).type : fn <- fns];
-    //     return ne_union_superset(types) if types :: [+NeType];
-    //     fail;
-    //     ## IMPLEMENT IMPLEMENT IMPLEMENT
-    //   } : i < |args|
-    // );
+    ## IMPLICIT ARGUMENTS AND CONSTRAINTS ARE MISSING
+    ## IT PROBABLY DOESN'T MATTER
     args_types = ();
     cls_args_types = ();
     ret_type = ne_union_superset([fn.res_type : fn <- fns]);
-
-    ## IMPLICIT ARGUMENTS AND CONSTRAINTS ARE MISSING
-    ## IT PROBABLY DOESN'T MATTER
     proc_type = fn_type(args_types, cls_args_types, ret_type);
 
     return obj_proc_def(
@@ -325,7 +274,7 @@ rec_exprs = reconstruct_all(alt_expr);
       args:           args,
       cls_args:       cls_args,
       impl_args:      [], ## THIS IS WRONG, BUT IT SHOULDN'T MATTER FOR NOW
-      ret_val_repr:   :object,
+      ret_val_repr:   aggr_sign.ret_value,
       type:           proc_type,
       loc_auto_vars:  [],
       loc_db_vars:    [],
@@ -333,6 +282,19 @@ rec_exprs = reconstruct_all(alt_expr);
       cached:         false
     );
   }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+ObjProcArg low_level_arg(<StdVar, FnArg> var, LowLevelRepr repr) {
+  id = untag(var);
+  return match (repr)
+    bool      = bool_arg(id),
+    int       = int_arg(id),
+    float     = float_arg(id),
+    symbol    |
+    object    = var;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
