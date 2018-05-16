@@ -1,10 +1,13 @@
-implicit program      : Program,
-         typedefs     : [TypeName -> NeType],
-         context      : Context,
-         cluster      : Expr+,
-         types        : Type+,
-         surrogates   : [EnvVar -> ObjExpr],
-         expr_id      : Nat
+implicit program           : Program,
+         typedefs          : [TypeName -> NeType],
+         context           : Context,
+         var_subst_map     : [StdVar -> CaptVar],
+         cls_var_subst_map : [ClsVar -> CaptClsVar],
+         cluster           : Expr+,
+         types             : Type+,
+         surrogates        : [EnvVar -> ObjExpr],
+         expr_id           : Nat,
+         options           : CompilationOptions
 {
   Type subexpr_type(Expr) =
     expr_ref(id?)  = types(id);
@@ -413,17 +416,18 @@ implicit program      : Program,
     args_eval_code, args_surrs, unused_var = opt_eval_info(expr.args, init_var_gen);
 
     // Signature of the target function
-    fn_id, low_level_sign = low_level_sign(expr.fn_id, (just(t) : t <- args_types));
+    fn_id, low_level_sign = low_level_sign(expr.fn_id, args_types);
 
     // Low-level actual arguments
-    low_level_args = (low_level_expr(value_unsafe(low_level_sign.args(i)), s) : s @ i <- args_surrs);
+    low_level_args = (low_level_expr(low_level_sign.args(i), s) : s @ i <- args_surrs);
 
     // Return value variable. Once the call returns the arguments
     // are not needed anymore, so we can reuse the variables
     res_var, var_gen = next_var(low_level_sign.ret_value, init_var_gen);
 
     // Evaluation code for the call only
-    eval_code = (args_eval_code | call_proc(res_var, fn_id, low_level_args));
+    cls_args = (compiled_closure(a, next_var_gen = init_var_gen) : a <- expr.cls_args);
+    eval_code = (args_eval_code | call_proc(res_var, fn_id, low_level_args, cls_args));
 
     return (eval_code, obj_expr(res_var), var_gen);
   }
@@ -549,7 +553,7 @@ Instr+ store_result(Instr* code, ObjExpr surr_expr, AnyLocVar res_var) {
                         else def_code,
 
     call_proc()  i? = if i.var? and i.var :: AnyLocVar and surr_expr == obj_expr(i.var)
-                        then (trimmed_code | call_proc(res_var, i.name, i.args))
+                        then (trimmed_code | call_proc(res_var, i.name, i.args, i.cls_args))
                         else def_code,
 
     _               = def_code;

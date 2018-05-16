@@ -200,27 +200,16 @@ Expr* exprs_cluster(TernRelCompExpr expr, Nat offset) =
 ////////////////////////////////////////////////////////////////////////////////
 /////////////////////////// More complex expressions ///////////////////////////
 
-// fn_call(fn_id: FnFamilyId, args: AnyExpr*, impl_args: [ImplArg -> Expr]);
+// fn_call(fn_id: FnFamilyId, args: Expr*, cls_args: AnyClsExpr*, impl_args: [ImplArg -> Expr]);
 Expr* exprs_cluster(FnCallExpr expr, Nat offset) {
-  first_ord_args = (pack(a) : a <- expr.args);
   impl_args_names = isort(keys(expr.impl_args));
-  impl_args = (just(expr.impl_args(n, !!)) : n <- impl_args_names);
-  return maybe_exprs_cluster(first_ord_args & impl_args, offset, reconstruct($, expr, impl_args_names));
-
-
-  Expr reconstruct(Maybe[Expr]* exprs, FnCallExpr expr, ImplArg* impl_args_names) {
-    args = (unpack(a, exprs(i)) : a @ i <- expr.args);
-    offset = |args|;
-    impl_args = [n -> value_unsafe(exprs(offset+i)) : n @ i <~ impl_args_names];
-    return fn_call(expr.fn_id, args, impl_args);
-  }
-
-  Just[Expr] pack(Expr expr)  = just(expr);
-  Nothing    pack(AnyClsExpr) = nothing;
-
-  Expr       unpack(Expr, Maybe[Expr] alt_expr)  = value_unsafe(alt_expr);
-  AnyClsExpr unpack(AnyClsExpr, Just[Expr])      = undefined;
-  AnyClsExpr unpack(AnyClsExpr expr, Nothing)    = expr;
+  exprs = (expr.args, (expr.impl_args(n, !!) : n <- impl_args_names));
+  repl_exprs, cluster = cluster_expr_seqs(exprs, nat(offset+1));
+  fail if |repl_exprs| != 2;
+  repl_args, repl_impl_args = repl_exprs;
+  impl_args = [n -> repl_impl_args(i) : n @ i <~ impl_args_names];
+  call_instr = fn_call(expr.fn_id, repl_args, expr.cls_args, impl_args);
+  return (call_instr) & cluster;
 }
 
 
@@ -448,6 +437,7 @@ Expr replace_nested(RecExpr expr, (Expr -> Expr) replace) =
   fn_call()           = fn_call(
                           expr.fn_id,
                           (replace_nested_2(a, replace) : a <- expr.args),
+                          expr.cls_args,
                           [n -> replace(e) : n, e <- expr.impl_args]
                         ),
   cls_call()          = cls_call(expr.name, (replace(a) : a <- expr.args)),

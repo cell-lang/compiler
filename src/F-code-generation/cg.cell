@@ -107,7 +107,7 @@ implicit program : Program, options : CompilationOptions {
       cls_args:       (),
       impl_args:      [],
       ret_val_repr:   :object,
-      type:           fn_type((a.type : a <- procedure.args), proc_ret_type),
+      type:           fn_type((a.type : a <- procedure.args), (), proc_ret_type),
       loc_auto_vars:  procedure.auto_vars,
       loc_db_vars:    [v -> info.type : v, info <- procedure.db_vars],
       body:           nonempty(body),
@@ -129,8 +129,8 @@ implicit program : Program, options : CompilationOptions {
     args_info = (just(v) : v, unused_var <- func.args) & (nothing : i < |func.cls_args|);
     body = (push_call_info(func.id, args_info)) & body & (pop_call_info, ret_val(fn_res_var));
 
-    args = (low_level_arg(a, i) : a @ i <- func.args);
-    args_surrs = [original_arg(v) -> surrogate(v) : a @ i <~ args, obj(v?) ?= a];
+    args = (low_level_arg(v, t) : v, t <- func.args);
+    args_surrs = [v -> obj_expr(args(i)) : v, unused_var @ i <~ func.args];
 
     cls_args = (cls(v, arity(t)) : v, t <- func.cls_args);
 
@@ -166,14 +166,9 @@ rec_exprs = reconstruct_all(alt_expr);
   // fail;
 // ;
 
-    env = [a.var -> a.type : a <~ func.args, formal_obj_arg() ?= a, a.var?] &
-          [fn_arg(i) -> a.type : a @ i <~ func.args, formal_obj_arg() ?= a] &
-          [v -> t : v, t <- func.impl_args];
+    env = [v -> t : v, t <~ func.args] & [v -> t : v, t <- func.impl_args];
 
-    // var_aliases = [[fn_arg(i), a.var] : a @ i <~ func.args, a :: FormalObjArg and a.var?];
-    var_aliases = [];
-
-    let context=func, var_subst_map = [], cls_var_subst_map = [], var_aliases = var_aliases:
+    let context=func, var_subst_map = [], cls_var_subst_map = [], var_aliases = []:
       opt_code, ret_val_surr, unused_var = opt_eval_code(func.expr, env, args_surrs, blank_var_gen);
     ;
 
@@ -200,29 +195,28 @@ rec_exprs = reconstruct_all(alt_expr);
     ObjExpr surrogate(FloatFnArg var) = float_obj(var);
 
 
-    <StdVar, FnArg> original_arg(AnyFnArg var) =
-      bool_arg(id?)     |
-      int_arg(id?)      |
-      float_arg(id?)    = original_arg(id),
-      var() | fn_arg()  = var;
+    // <StdVar, FnArg> original_arg(ObjProcArg var) =
+    //   bool_arg(id?)     |
+    //   int_arg(id?)      |
+    //   float_arg(id?)    = original_arg(id),
+    //   var() | fn_arg()  = var;
 
-    StdVar original_arg(Symbol id) = var(id);
-    FnArg  original_arg(Nat id)    = fn_arg(id);
+    // StdVar original_arg(Symbol id) = var(id);
+    // FnArg  original_arg(Nat id)    = fn_arg(id);
 
 
-    ObjProcPar low_level_arg(FormalObjArg arg, Nat idx) {
-      repr = low_level_repr(arg.type, typedefs=program.typedefs);
-      id = if arg.var? then bare_id(arg.var) else idx;
-      var = match (repr)
+    ObjProcArg low_level_arg(<StdVar, FnArg> var, NeType type) {
+      repr = low_level_repr(type, typedefs=program.typedefs);
+      id = untag(var);
+      return match (repr)
         bool      = bool_arg(id),
         int       = int_arg(id),
         float     = float_arg(id),
         symbol    |
-        object    = if arg.var? then arg.var else fn_arg(idx);
-      return obj(var);
+        object    = var;
     }
 
-    ObjProcPar low_level_arg(FormalClsArg arg, Nat) = cls(arg.var, arity(arg.type));
+    ClsProcArg low_level_arg(ClsVar var, ClsType type) = cls(var, arity(type));
 
 
     Bool is_too_simple_to_be_worth_caching(Expr expr) = is_within_complexity_level(expr, 1);
@@ -319,11 +313,12 @@ rec_exprs = reconstruct_all(alt_expr);
     //   } : i < |args|
     // );
     args_types = ();
+    cls_args_types = ();
     ret_type = ne_union_superset([fn.res_type : fn <- fns]);
 
     ## IMPLICIT ARGUMENTS AND CONSTRAINTS ARE MISSING
     ## IT PROBABLY DOESN'T MATTER
-    proc_type = fn_type(args_types, ret_type);
+    proc_type = fn_type(args_types, cls_args_types, ret_type);
 
     return obj_proc_def(
       name:           family_id(id),
