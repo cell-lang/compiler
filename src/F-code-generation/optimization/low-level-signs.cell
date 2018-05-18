@@ -3,7 +3,7 @@ type SmallIntRepr     = int8, int16, int32; // nat8, nat16, nat32;
 type LowLevelEltRepr  = LowLevelRepr, SmallIntRepr;
 
 type LowLevelRepr = bool, int, symbol, float, object,
-                    array(type: LowLevelEltRepr, size_var: LocIntVar);
+                    array(type: LowLevelEltRepr, size_var: LocIntVar); ## WHAT'S THE size_var FIELD FOR?
 
 type LowLevelSign = low_level_sign(args: LowLevelRepr*, ret_value: LowLevelRepr);
 
@@ -29,6 +29,31 @@ NeType low_level_repr_type(SmallIntRepr) =
   // nat8    = type_byte,
   // nat16   = type_nat16,
   // nat32   = type_nat32,
+
+////////////////////////////////////////////////////////////////////////////////
+
+Bool is_subset(LowLevelRepr r1, LowLevelRepr r2) {
+  return true if r1 == r2 or r2 == :object;
+
+  return match (r1)
+    bool      = r2 == :symbol,
+    int       |
+    float     |
+    symbol    |
+    object    = false,
+    array()   = undefined; ## IMPLEMENT
+}
+
+
+Bool overlap(LowLevelRepr r1, LowLevelRepr r2) {
+  return true if r1 == r2 or r1 == :object or r2 == :object;
+
+  return match (r1)
+    bool    = r2 == :symbol,
+    int     |
+    float   |
+    symbol  = false;
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 

@@ -1,0 +1,110 @@
+type OptRecRepr       = opt_rec_repr([+Symbol -> (repr: LowLevelRepr, optional: Bool)]);
+
+type TaggedRecordType = tag_obj_type(tag_type: SymbType, obj_type: RecordType);
+
+
+implicit program : Program {
+  [Symbol -> [+OptRecRepr]] optimized_tagged_records {
+    tag_recs = [
+      untag(untag(tr.tag_type)), tr.obj_type
+      : unused_var, t <- program.typedefs, tr <- tagged_records(t)
+    ];
+    recs_by_tag = group_by_left_arg(tag_recs);
+    let typedefs = program.typedefs:
+      res = [s -> rs : s, ts <- recs_by_tag, rs = optimized_reprs(ts), rs != []];
+    ;
+    return res;
+  }
+}
+
+
+implicit typedefs : [TypeName -> NeType] {
+  [+OptRecRepr] optimized_reprs([+RecordType] types) {
+    // Best representation for each type
+    reprs = isort([opt_rec_repr(t) : t <- types]);
+    // Removing representations that are a subset of another one
+    reprs = (r1 : r1 @ i1 <- reprs, not (r2 @ i2 <~ reprs : i1 != i2 and is_subset(r1, r2)));
+    // Picking one representation at random if two of them overlap
+    last_idx = |reprs| - 1;
+    reprs = (r : r @ i <- reprs, none((overlap(r, reprs(i+j+1)) : j < last_idx - i)));
+    return nonempty(set(reprs));
+
+    OptRecRepr opt_rec_repr(RecordType type) = :opt_rec_repr([
+      untag(s) -> (repr: low_level_repr(f.type), optional: f.optional)
+      : s, f <- untag(type)
+    ]);
+  }
+
+
+  Bool is_subset(OptRecRepr repr1, OptRecRepr repr2) {
+    fields1 = untag(repr1);
+    labels1 = [s : s, unused_var <- fields1];
+    req_labels_1 = [s : s, f <- fields1, not f.optional];
+    opt_labels_1 = labels1 - req_labels_1;
+
+    fields2 = untag(repr2);
+    labels2 = [s : s, unused_var <- fields2];
+    req_labels_2 = [s : s, f <- fields2, not f.optional];
+    opt_labels_2 = labels2 - req_labels_2;
+
+    // Mandatory fields in the subtype can be either mandatory or optional in the supertype
+    for l <- isort(req_labels_1):
+      return false if not labels2(l);
+    ;
+
+    // Optional fields that in the subtype must be optional in the supertype too
+    for l <- isort(opt_labels_1):
+      return false if not opt_labels_2(l);
+    ;
+
+    // Mandatory fields in the supertype must be mandatory in the subtype too
+    for l <- isort(req_labels_2):
+      return false if not labels1(l);
+    ;
+
+    // Checking the types of all fields of the subtype
+    for l <- isort(labels1):
+      return false if not is_subset(fields1(l, !!).repr, fields2(l, !!).repr);
+    ;
+
+    return true;
+  }
+
+
+  Bool overlap(OptRecRepr repr1, OptRecRepr repr2) {
+    fields1 = untag(repr1);
+    labels1 = [s : s, unused_var <- fields1];
+    req_labels_1 = [s : s, f <- fields1, not f.optional];
+
+    fields2 = untag(repr2);
+    labels2 = [s : s, unused_var <- fields2];
+    req_labels_2 = [s : s, f <- fields2, not f.optional];
+
+    return false if not subset(req_labels_2, labels1) or not subset(req_labels_1, labels2);
+
+    for l <- isort(req_labels_1 & req_labels_2):
+      return false if not overlap(fields1(l, !!).repr, fields2(l, !!).repr);
+    ;
+
+    return true;
+  }
+}
+
+
+[TaggedRecordType] tagged_records(Type type) {
+  nested_types = retrieve_from_nested_types(type, tagged_records);
+  this_type = match (type)
+    tag_obj_type()  = #( match (type.tag_type, type.obj_type)
+                           symb_type(),   ne_record_type()  = [type],
+                           _,             _                 = []
+                      ),
+    _               = [];
+  return this_type & nested_types;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+[A -> [+B]] group_by_left_arg([A, B] rel) {
+  keys = [k : k, unused_var <- rel];
+  return [k -> nonempty([v : v <- rel(k, ?)]) : k <- keys];
+}
