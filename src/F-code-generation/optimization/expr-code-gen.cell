@@ -10,7 +10,10 @@ implicit program           : Program,
          options           : CompilationOptions
 {
   Type subexpr_type(Expr) =
-    expr_ref(id?)  = types(id);
+    expr_ref(id?) = types(id);
+
+  Expr expand_subexpr(Expr) =
+    expr_ref(id?) = cluster(id);
 
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////
@@ -88,7 +91,7 @@ implicit program           : Program,
     // map_expr(es?)       = undefined,
     // bin_rel_expr(es?)   = undefined,
     // tern_rel_expr(es?)  = undefined,
-    tag_obj_expr()      = undefined,
+    tag_obj_expr()      = tag_obj_expr_opt_eval_info(expr, var_gen),
     fn_call()           = fn_call_opt_eval_info(expr, var_gen),
     cls_call()          = undefined,
     builtin_call()      = builtin_call_opt_eval_info(expr, var_gen),
@@ -118,6 +121,79 @@ implicit program           : Program,
     // tern_rel_comp()     = undefined,
     seq_comp()          = seq_comp_opt_eval_info(expr, var_gen),
     range_comp()        = range_comp_opt_eval_info(expr, var_gen);
+
+
+  // tag_obj_expr(tag: Expr, obj: Expr);
+  // type MapExpr        = map_expr([+(key: Expr, value: Expr, cond: Expr?)]);
+  // type OptRecRepr       = opt_rec_repr([+Symbol -> (repr: LowLevelRepr, optional: Bool)]);
+  // write_rec_field(var: WriteObjVar, label: Symbol, value: AnyTypeExpr),
+
+  (Instr*, ObjExpr, VarGen) tag_obj_expr_opt_eval_info(TagObjExpr expr, VarGen init_var_gen) {
+    tag_type = subexpr_type(expr.tag);
+    if is_symb_singl_type(tag_type):
+      // The tag is a known symbol
+      symb = untag(only_symb(tag_type));
+      if optimized_tagged_records(symb, *):
+        // There's at least one optimized representation for values with such tag
+        reprs = optimized_tagged_records(symb, !!);
+        obj_expr = expr.obj;
+        obj_type = subexpr_type(obj_expr);
+        for repr @ repr_idx <- reprs:
+          repr_type = low_level_repr_type(repr);
+          if is_subset(obj_type, repr_type):
+            // The tagged value has an optimized representation
+            obj_expr = expand_subexpr(obj_expr);
+            if obj_expr :: MapExpr:
+              // The expression that defines the tagged value is a map expression
+              fields = isort(untag(obj_expr));
+              keys_types = (subexpr_type(f.key) : f <- fields);
+              if not (t <~ keys_types : not is_symb_singl_type(t)):
+                // Every key in the map expression is a known symbol
+                labels = (untag(only_symb(t)) : t <- keys_types);
+                low_level_fields = untag(repr);
+                var, var_gen = next_obj_var(init_var_gen);
+                surrs = ();
+                conds = ();
+                code = (inst_opt_tag_rec(var, symb, repr_idx));
+                var_gen = init_var_gen;
+                for f @ i <- fields:
+                  label = labels(i);
+                  field_repr = low_level_fields(label, !!).repr;
+
+                  if f.cond?:
+                    cond_code, cond_surr, var_gen = opt_eval_info(f.cond, var_gen);
+                    code = code & cond_code;
+                    maybe_cond = just(bool_value(cond_surr));
+                  else
+                    maybe_cond = nothing;
+                  ;
+
+                  field_code, surr, var_gen = opt_eval_info(f.value, var_gen);
+                  set_field_instr = write_rec_field(var, label, low_level_expr(field_repr, surr));
+                  field_code = (field_code | set_field_instr);
+                  if maybe_cond != nothing:
+                    cond_surr = value(maybe_cond);
+                    field_code = (do_if(value(maybe_cond), field_code));
+                  ;
+
+                  code = code & field_code;
+                ;
+
+                return (code, var, var_gen);
+              ;
+            ;
+          elif not are_ptype_disjoint(obj_type, repr_type):
+            fail;
+          ;
+        ;
+      ;
+      // The tagged value does not have an optimized representation
+      fail;
+    else
+      // The symbol is not known at compile time
+      fail;
+    ;
+  }
 
 
   // seq_comp(expr: Expr, vars: StdVar+, idx_var: StdVar?, src_expr: Expr, sel_expr: Expr?);

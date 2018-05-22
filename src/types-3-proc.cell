@@ -213,9 +213,10 @@ type RefObjExpr     = mk_set_from_stream(stream: StreamVar),
                       mk_bin_rel(cols: (VecVar, VecVar), size: IntExpr),
                       mk_tern_rel_from_streams(streams: (StreamVar, StreamVar, StreamVar)),
                       mk_tern_rel(cols: (VecVar, VecVar, VecVar), size: IntExpr),
-                      mk_tagged_obj(tag: AtomicExpr, obj: AtomicExpr),      // Ownership transfer: <obj>
+                      mk_tagged_obj(tag: AtomicExpr, obj: AtomicExpr), // Ownership transfer: <obj>
                       mk_array(size: IntExpr),
                       mk_record(fields: [+SymbObj -> AtomicExpr]),
+                      inst_opt_tag_rec(tag: Symbol, repr_idx: Nat),
                       get_seq_slice(seq: AtomicExpr, idx_first: IntExpr, len: IntExpr),
                       append_to_seq(seq: AtomicExpr, new_elem: AtomicExpr), // Ownership transfer: <seq>, <new_elem>
                       update_seq_at(seq: AtomicExpr, idx: AtomicExpr, value: AtomicExpr), // Ownership transfer: <value>
@@ -254,6 +255,8 @@ type BasicInstr     = init_stream(StreamVar),
                         body:     Instr*
                       ),
 
+                      write_rec_field(var: WriteObjVar, label: Symbol, value: AnyTypeExpr),
+                      // clear_rec_field(var: WriteObjVar, label: Symbol),
 
                       get_set_iter(var: SetItVar, src: AtomicExpr),
                       get_seq_iter(var: SeqItVar, src: AtomicExpr),
@@ -463,7 +466,7 @@ type StaticBlock = static_block(
 
 type CompiledPrg  = compiled_prg(
                       typedefs:       [TypeName -> NeType],
-                      opt_reprs:      [Symbol, OptRecRepr],
+                      opt_reprs:      [Symbol -> OptRecRepr+],
                       bool_procs:     [BoolProcDef],
                       procs:          [ObjProcDef],
                       react_blocks:   [ReactBlock],

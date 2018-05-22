@@ -4,18 +4,25 @@ type TaggedRecordType = tag_obj_type(tag_type: SymbType, obj_type: RecordType);
 
 
 implicit program : Program {
-  [Symbol -> [+OptRecRepr]] optimized_tagged_records {
+  [Symbol -> OptRecRepr+] optimized_tagged_records {
     tag_recs = [
       untag(untag(tr.tag_type)), tr.obj_type
       : unused_var, t <- program.typedefs, tr <- tagged_records(t)
     ];
     recs_by_tag = group_by_left_arg(tag_recs);
     let typedefs = program.typedefs:
-      res = [s -> rs : s, ts <- recs_by_tag, rs = optimized_reprs(ts), rs != []];
+      res = [s -> isort(rs) : s, ts <- recs_by_tag, rs = optimized_reprs(ts), rs != []];
     ;
     return res;
   }
 }
+
+
+RecordType low_level_repr_type(OptRecRepr repr) =
+  ne_record_type([
+    object(s) -> (type: low_level_repr_type(f.repr), optional: f.optional)
+    : s, f <- untag(repr)
+  ]);
 
 
 implicit typedefs : [TypeName -> NeType] {
