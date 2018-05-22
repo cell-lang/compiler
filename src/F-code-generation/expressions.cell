@@ -160,12 +160,22 @@ implicit program : Program, context : Context, var_subst_map : [StdVar -> CaptVa
   // }
 
 
-  Instr+ gen_eval_code_for_map_expr([+(key: Expr, value: Expr, cond: Expr?)] entries, EvalDestVar res_var) =
-    gen_eval_code_for_map_or_bin_rel_expr(
-      mk_map,
-      [(args: (e.key, e.value), cond: e.cond if e.cond?) : e <- entries],
-      res_var
-    );
+  Instr+ gen_eval_code_for_map_expr([+(key: Expr, value: Expr, cond: Expr?)] entries, EvalDestVar res_var) {
+    if entries :: [+(key: SymbObj, value: Expr)]:
+      ord_entries = isort(entries);
+      assert duplicates((e.key : e <- ord_entries)) == [];
+      return gen_eval_code_for_record_expr(ord_entries, res_var);
+    else
+      bin_rel_entries = [(args: (e.key, e.value), cond: e.cond if e.cond?) : e <- entries];
+      return gen_eval_code_for_map_or_bin_rel_expr(mk_map, bin_rel_entries, res_var);
+    ;
+  }
+
+
+  Instr+ gen_eval_code_for_record_expr((key: SymbObj, value: Expr)+ fields, EvalDestVar res_var) {
+    info = gen_eval_info((f.value : f <- fields));
+    return (info.eval_code | mk_record(res_var, [f.key -> info.exprs(i) : f @ i <~ fields]));
+  }
 
 
   Instr+ gen_eval_code_for_bin_rel_expr([+(args: (Expr, Expr), cond: Expr?)] entries, EvalDestVar res_var) =
