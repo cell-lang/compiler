@@ -158,7 +158,7 @@ implicit program           : Program,
                 var_gen = init_var_gen;
                 for f @ i <- fields:
                   label = labels(i);
-                  field_repr = low_level_fields(label, !!).repr;
+                  field = low_level_fields(label, !!);
 
                   if f.cond?:
                     cond_code, cond_surr, var_gen = opt_eval_info(f.cond, var_gen);
@@ -169,7 +169,7 @@ implicit program           : Program,
                   ;
 
                   field_code, surr, var_gen = opt_eval_info(f.value, var_gen);
-                  set_field_instr = write_rec_field(var, label, low_level_expr(field_repr, surr));
+                  set_field_instr = write_rec_field(var, label, low_level_expr(field.repr, surr), field.optional);
                   field_code = (field_code | set_field_instr);
                   if maybe_cond != nothing:
                     cond_surr = value(maybe_cond);
@@ -639,14 +639,6 @@ Instr+ store_result(Instr* code, ObjExpr surr_expr, AnyLocVar res_var) {
 ////////////////////////////////////////////////////////////////////////////////
 
 type AnyLocVar = LocBoolVar, LocIntVar, LocFloatVar, LocVar, StdVar;
-
-
-LowLevelRepr low_level_repr(AnyLocVar) =
-  bvar()  = :bool,
-  ivar()  = :int,
-  fvar()  = :float,
-  lvar()  = :object,
-  var()   = :object;
 
 
 (AnyLocVar, VarGen) next_var(LowLevelRepr repr, VarGen gen) =
