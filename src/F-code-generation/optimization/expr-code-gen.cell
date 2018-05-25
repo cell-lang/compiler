@@ -150,36 +150,7 @@ implicit program           : Program,
               if not (t <~ keys_types : not is_symb_singl_type(t)):
                 // Every key in the map expression is a known symbol
                 labels = (untag(only_symb(t)) : t <- keys_types);
-                low_level_fields = untag(repr);
-                var, var_gen = next_obj_var(init_var_gen);
-                surrs = ();
-                conds = ();
-                code = (inst_opt_tag_rec(var, symb, repr_idx));
-                var_gen = init_var_gen;
-                for f @ i <- fields:
-                  label = labels(i);
-                  field = low_level_fields(label, !!);
-
-                  if f.cond?:
-                    cond_code, cond_surr, var_gen = opt_eval_info(f.cond, var_gen);
-                    code = code & cond_code;
-                    maybe_cond = just(bool_value(cond_surr));
-                  else
-                    maybe_cond = nothing;
-                  ;
-
-                  field_code, surr, var_gen = opt_eval_info(f.value, var_gen);
-                  set_field_instr = write_rec_field(var, label, low_level_expr(field.repr, surr), field.optional);
-                  field_code = (field_code | set_field_instr);
-                  if maybe_cond != nothing:
-                    cond_surr = value(maybe_cond);
-                    field_code = (do_if(value(maybe_cond), field_code));
-                  ;
-
-                  code = code & field_code;
-                ;
-
-                return (code, var, var_gen);
+                return direct_opt_rec_eval_info(symb, labels, obj_expr, repr, repr_idx, init_var_gen);
               ;
             ;
           elif not are_ptype_disjoint(obj_type, repr_type):
@@ -193,6 +164,41 @@ implicit program           : Program,
       // The symbol is not known at compile time
       fail;
     ;
+
+
+
+    (Instr*, ObjExpr, VarGen) direct_opt_rec_eval_info(Symbol tag, Symbol+ labels, MapExpr rec_expr, OptRecRepr repr, Nat repr_idx, VarGen init_var_gen) {
+      low_level_fields = untag(repr);
+      var, var_gen = next_obj_var(init_var_gen);
+      surrs = ();
+      conds = ();
+      code = (inst_opt_tag_rec(var, tag, repr_idx));
+      var_gen = init_var_gen;
+      for f @ i <- isort(untag(rec_expr)):
+        label = labels(i);
+        field = low_level_fields(label, !!);
+
+        if f.cond?:
+          cond_code, cond_surr, var_gen = opt_eval_info(f.cond, var_gen);
+          code = code & cond_code;
+          maybe_cond = just(bool_value(cond_surr));
+        else
+          maybe_cond = nothing;
+        ;
+
+        field_code, surr, var_gen = opt_eval_info(f.value, var_gen);
+        set_field_instr = write_rec_field(var, label, low_level_expr(field.repr, surr), field.optional);
+        field_code = (field_code | set_field_instr);
+        if maybe_cond != nothing:
+          cond_surr = value(maybe_cond);
+          field_code = (do_if(value(maybe_cond), field_code));
+        ;
+
+        code = code & field_code;
+      ;
+
+      return (code, var, var_gen);
+    }
   }
 
 
