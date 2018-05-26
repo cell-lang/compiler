@@ -1,3 +1,17 @@
+type SmallIntRepr     = int8, int16, int32; // nat8, nat16, nat32;
+
+type LowLevelRepr     = bool, int, symbol, float, object, array(type: LowLevelEltRepr);
+
+type LowLevelEltRepr  = LowLevelRepr, SmallIntRepr;
+
+type OptRecRepr       = opt_rec_repr([+Symbol -> (repr: LowLevelRepr, optional: Bool)]);
+
+type OptTagRecRepr    = opt_tag_rec_repr(tag: Symbol, index: Nat);
+
+type LowLevelSign     = low_level_sign(args: LowLevelRepr*, ret_value: LowLevelRepr);
+
+////////////////////////////////////////////////////////////////////////////////
+
 type LocVar           = lvar(Nat), never_used_lvar;  ## FIND BETTER NAME.
 type ElemVar          = evar(id: Nat, idx: <Nat, IntVar, add(val1: IntVar, val2: Nat)>);
 
@@ -79,7 +93,9 @@ type LocFloatVar    = fvar(Nat);
 type FloatFnArg     = float_arg(<Symbol, Nat>);
 type FloatVar       = LocFloatVar, FloatFnArg;
 
-type OptTagRecVar   = opt_tag_rec_var(id: Nat, tag: Symbol, index: Nat);
+type LocOptTagRecVar  = opt_tag_rec_var(id: Nat, tag: Symbol, index: Nat);
+type OptTagRecFnArg   = opt_tag_rec_fn_arg(id: <Symbol, Nat>, tag: Symbol, index: Nat);
+type OptTagRecVar     = LocOptTagRecVar, OptTagRecFnArg;
 
 type ArrayVar       = avar(id: Nat, repr: LowLevelEltRepr);
 
@@ -96,7 +112,10 @@ type TableItVar     = table_it_var(id: Nat, arity: NzNat); ## DITTO
 
 type ItVar          = SeqItVar, SetItVar, BinRelItVar, TernRelItVar, TableItVar;
 
-type AnyVar         = ObjVar, OptTagRecVar, VecVar, ArrayVar, BoolVar, IntVar, Int32Var, FloatVar, ItVar, StreamVar;
+type AnyVar         = ObjVar, OptTagRecVar, VecVar, ArrayVar, BoolVar, IntVar,
+                      Int32Var, FloatVar, ItVar, StreamVar;
+
+////////////////////////////////////////////////////////////////////////////////
 
 type ObjFnName      = FnId, ProcSymbol;
 
@@ -257,7 +276,7 @@ type BasicInstr     = init_stream(StreamVar),
                         body:     Instr*
                       ),
 
-                      write_rec_field(var: OptTagRecVar, label: Symbol, value: AnyTypeExpr, optional: Bool),
+                      write_rec_field(var: LocOptTagRecVar, label: Symbol, value: AnyTypeExpr, optional: Bool),
 
                       get_set_iter(var: SetItVar, src: AtomicExpr),
                       get_seq_iter(var: SeqItVar, src: AtomicExpr),
@@ -272,7 +291,7 @@ type BasicInstr     = init_stream(StreamVar),
                       set_ivar32(var: Int32Var, value: Int32Expr),
                       set_fvar(var: FloatVar, value: FloatExpr),
 
-                      set_rc_var(var: <WriteObjVar, OptTagRecVar>, value: RefObjExpr),
+                      set_rc_var(var: <WriteObjVar, LocOptTagRecVar>, value: RefObjExpr),
 
                       init_memb_var(var: <MembVar, SignalVar, PrevVarValue, MembObjVar, PendingInputVar, PendingStateVar>, new_state: <blank, undefined>),
                       reset_memb_var(var: <SignalVar, PrevVarValue, MembVar, PendingInputVar>, new_state: <blank, undefined>),
@@ -374,7 +393,7 @@ type BoundCls       = AnyClsVar,
                         capt_cls_vars: AnyClsVar*
                       );
 
-type ObjProcArg     = StdVar, FnArg, BoolFnArg, IntFnArg, FloatFnArg;
+type ObjProcArg     = StdVar, FnArg, BoolFnArg, IntFnArg, FloatFnArg, OptTagRecFnArg;
 type ClsProcArg     = cls(var: ClsVar, arity: NzNat);
 
 type ObjProcDef     = obj_proc_def(
@@ -382,7 +401,7 @@ type ObjProcDef     = obj_proc_def(
                         args:           ObjProcArg*,
                         cls_args:       ClsProcArg*,
                         impl_args:      [ImplArg],
-                        ret_val_repr:   LowLevelRepr,
+                        ret_val_repr:   <LowLevelRepr, OptTagRecRepr>,
                         type:           FnType,
                         loc_auto_vars:  [LocAutoVar -> AutoSymbol],
                         loc_db_vars:    [LocDBVar -> DBSymbol],

@@ -131,7 +131,7 @@ implicit program : Program, options : CompilationOptions {
     body = (push_call_info(func.id, args_info)) & body & (pop_call_info, ret_val(fn_res_var));
 
     args = ({
-        repr = low_level_repr(t, typedefs=program.typedefs);
+        repr = opt_repr(t, typedefs=program.typedefs);
         return low_level_arg(v, repr);
       } : v, t <- func.args
     );
@@ -151,7 +151,7 @@ implicit program : Program, options : CompilationOptions {
       opt_code, ret_val_surr, unused_var = opt_eval_code(func.expr, env, args_surrs, blank_var_gen);
     ;
 
-    ret_val_repr = low_level_repr(func.res_type, typedefs = program.typedefs);
+    ret_val_repr = opt_repr(func.res_type, typedefs = program.typedefs);
     ret_val_instr = ret_val(low_level_expr(ret_val_repr, ret_val_surr));
 
     return obj_proc_def(
@@ -288,14 +288,15 @@ implicit program : Program, options : CompilationOptions {
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-ObjProcArg low_level_arg(<StdVar, FnArg> var, LowLevelRepr repr) {
+ObjProcArg low_level_arg(<StdVar, FnArg> var, <LowLevelRepr, OptTagRecRepr> repr) {
   id = untag(var);
   return match (repr)
-    bool      = bool_arg(id),
-    int       = int_arg(id),
-    float     = float_arg(id),
-    symbol    |
-    object    = var;
+    bool                = bool_arg(id),
+    int                 = int_arg(id),
+    float               = float_arg(id),
+    opt_tag_rec_repr()  = opt_tag_rec_fn_arg(id, repr.tag, repr.index),
+    symbol              |
+    object              = var;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
