@@ -60,7 +60,7 @@ CounterSet[T] increment(CounterSet[T] ctr_set, T ctr) {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-type GenVarType = obj, int, int32, float, bool, array,
+type GenVarType = obj, int, int32, float, bool, array, tag_rec,
                   set_it, seq_it, bin_rel_it, tern_rel_it, table_it, stream, vector;
 
 type VarGen = CounterSet[GenVarType];
@@ -77,25 +77,23 @@ VarGen blank_var_gen = counter_set(nz_ctrs: []);
   // (mk_var(next_value(gen)), increment(gen, var_type));
 
 
-(LocVar,      VarGen) next_obj_var(VarGen gen)   = next_var(gen, :obj, lvar);
-(LocIntVar,   VarGen) next_int_var(VarGen gen)   = next_var(gen, :int, ivar);
-(LocFloatVar, VarGen) next_float_var(VarGen gen) = next_var(gen, :float, fvar);
-(LocBoolVar,  VarGen) next_bool_var(VarGen gen)  = next_var(gen, :bool, bvar);
-(Int32Var,    VarGen) next_int32_var(VarGen gen) = next_var(gen, :int32, ivar32);
+(LocVar,       VarGen) next_obj_var(VarGen gen)   = next_var(gen, :obj, lvar);
+(LocIntVar,    VarGen) next_int_var(VarGen gen)   = next_var(gen, :int, ivar);
+(LocFloatVar,  VarGen) next_float_var(VarGen gen) = next_var(gen, :float, fvar);
+(LocBoolVar,   VarGen) next_bool_var(VarGen gen)  = next_var(gen, :bool, bvar);
+(Int32Var,     VarGen) next_int32_var(VarGen gen) = next_var(gen, :int32, ivar32);
 
-(SeqItVar, VarGen) next_seq_it_var(VarGen gen) = next_var(gen, :seq_it, seq_it_var);
-
-(SetItVar,     VarGen) next_set_it_var(VarGen gen) = next_var(gen, :set_it, set_it_var);
+(SeqItVar,     VarGen) next_seq_it_var(VarGen gen)      = next_var(gen, :seq_it, seq_it_var);
+(SetItVar,     VarGen) next_set_it_var(VarGen gen)      = next_var(gen, :set_it, set_it_var);
 (BinRelItVar,  VarGen) next_bin_rel_it_var(VarGen gen)  = next_var(gen, :bin_rel_it, bin_rel_it_var);
 (TernRelItVar, VarGen) next_tern_rel_it_var(VarGen gen) = next_var(gen, :tern_rel_it, tern_rel_it_var);
 
-(TableItVar, VarGen) next_table_it_var(VarGen gen, NzNat arity) = next_var(gen, :table_it, table_it_var($, arity));
+(TableItVar,   VarGen) next_table_it_var(VarGen gen, NzNat arity)             = next_var(gen, :table_it, table_it_var($, arity));
+(StreamVar,    VarGen) next_stream_var(VarGen gen)                            = next_var(gen, :stream, svar);
+(VecVar,       VarGen) next_vector_var(VarGen gen, NzNat size)                = next_var(gen, :vector, vvar($, size));
+(ArrayVar,     VarGen) next_array_var(VarGen gen, LowLevelEltRepr repr)       = next_var(gen, :array, avar($, repr));
+(OptTagRecVar, VarGen) next_opt_tag_rec_var(VarGen gen, Symbol tag, Nat idx)  = next_var(gen, :tag_rec, opt_tag_rec_var($, tag, idx));
 
-(StreamVar, VarGen) next_stream_var(VarGen gen) = next_var(gen, :stream, svar);
-
-(VecVar, VarGen) next_vector_var(VarGen gen, NzNat size) = next_var(gen, :vector, vvar($, size));
-
-(ArrayVar, VarGen) next_array_var(VarGen gen, LowLevelEltRepr repr) = next_var(gen, :array, avar($, repr));
 
 (LocIntVar*, VarGen) next_int_vars(VarGen gen, Nat count) {
   g = gen;

@@ -58,6 +58,8 @@ MembIntVar nested_auto_int_var(NestedAutoVar av, MembIntVar mv) = nested_auto_in
 LocFloatVar fvar(Nat n) = :fvar(n);
 FloatFnArg  float_arg(<Symbol, Nat> id) = :float_arg(id);
 
+OptTagRecVar opt_tag_rec_var(Nat id, Symbol s, Nat i) = opt_tag_rec_var(id: id, tag: s, index: i);
+
 ArrayVar avar(Nat id, LowLevelEltRepr r) = avar(id: id, repr: r);
 
 MembObjVar watched_signal_value_var(Atom id)                  = :watched_signal_value_var(id);
@@ -254,7 +256,7 @@ Instr mk_array(WriteObjVar v, IntExpr s) = set_var(v, mk_array(size: s));
 
 Instr mk_record(WriteObjVar v, [+SymbObj -> AtomicExpr] fs) = set_var(v, mk_record(fields: fs));
 
-Instr inst_opt_tag_rec(WriteObjVar v, Symbol s, Nat i) = set_var(v, inst_opt_tag_rec(tag: s, repr_idx: i));
+Instr inst_opt_tag_rec(OptTagRecVar v, Symbol s, Nat i) = set_var(v, inst_opt_tag_rec(tag: s, repr_idx: i));
 
 Instr get_seq_slice(WriteObjVar v, AtomicExpr s, IntExpr f, IntExpr l)  = set_var(v, get_seq_slice(seq: s, idx_first: f, len: l));
 Instr append_to_seq(WriteObjVar v, AtomicExpr s, AtomicExpr e)          = set_var(v, append_to_seq(seq: s, new_elem: e));
@@ -290,7 +292,7 @@ Instr write_array(ArrayVar v, IntExpr i, ObjExpr e) =
 Instr traverse_array(<LocVar, StdVar> s, ArrayVar br, ArrayVar t, Int32Var i, AnyLocVar it, Instr* b) =
   traverse_array(src: s, buffer: br, target: t, idx_var: i, it_var: it, body: b);
 
-Instr write_rec_field(WriteObjVar v, Symbol s, AnyTypeExpr e, Bool b) = write_rec_field(var: v, label: s, value: e, optional: b);
+Instr write_rec_field(OptTagRecVar v, Symbol s, AnyTypeExpr e, Bool b) = write_rec_field(var: v, label: s, value: e, optional: b);
 
 Instr get_iter(SeqItVar v, AtomicExpr s) = get_seq_iter(var: v, src: s);
 Instr get_iter(SetItVar v, AtomicExpr s) = get_set_iter(var: v, src: s);
@@ -309,7 +311,7 @@ Instr set_ivar(IntVar v, IntExpr e)                   = set_ivar(var: v, value: 
 Instr set_ivar32(Int32Var v, Int32Expr e)             = set_ivar32(var: v, value: e);
 Instr set_fvar(FloatVar v, FloatExpr e)               = set_fvar(var: v, value: e);
 
-Instr set_var(WriteObjVar v, RefObjExpr e)  = set_rc_var(var: v, value: e);
+Instr set_var(<WriteObjVar, OptTagRecVar> v, RefObjExpr e)  = set_rc_var(var: v, value: e);
 
 Instr init_memb_var(<MembVar, SignalVar, PrevVarValue, MembObjVar, PendingInputVar, PendingStateVar> v, <blank, undefined> s) = init_memb_var(var: v, new_state: s);
 Instr reset_memb_var(<SignalVar, PrevVarValue, MembVar, PendingInputVar> v, <blank, undefined> s) = reset_memb_var(var: v, new_state: s);
