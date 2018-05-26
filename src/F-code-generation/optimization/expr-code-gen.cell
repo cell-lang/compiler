@@ -88,7 +88,7 @@ implicit program           : Program,
     tuple_expr(ses?)    = seq_expr_opt_eval_info(ses, var_gen),
     seq_tail_expr()     = undefined,
     // set_expr(ses?)      = undefined,
-    // map_expr(es?)       = undefined,
+    map_expr(es?)       = map_expr_opt_eval_info(es, var_gen),
     // bin_rel_expr(es?)   = undefined,
     // tern_rel_expr(es?)  = undefined,
     tag_obj_expr()      = tag_obj_expr_opt_eval_info(expr, var_gen),
@@ -123,36 +123,45 @@ implicit program           : Program,
     range_comp()        = range_comp_opt_eval_info(expr, var_gen);
 
 
-  // tag_obj_expr(tag: Expr, obj: Expr);
-  // type MapExpr        = map_expr([+(key: Expr, value: Expr, cond: Expr?)]);
-  // type OptRecRepr       = opt_rec_repr([+Symbol -> (repr: LowLevelRepr, optional: Bool)]);
-  // write_rec_field(var: WriteObjVar, label: Symbol, value: AnyTypeExpr),
+  (Instr*, ObjExpr, VarGen) map_expr_opt_eval_info([+(key: Expr, value: Expr, cond: Expr?)] entries, VarGen init_var_gen) {
+    if not (e <- entries : e.cond?):
+      ord_entries = isort(entries);
+      keys_types = (subexpr_type(e.key) : e <- ord_entries);
+      if not (t <~ keys_types : not is_symb_singl_type(t)):
+        labels = (only_symb(t) : t <- keys_types);
+        if duplicates(labels) == []:
+          return record_opt_eval_info(labels, (e.value : e <- ord_entries), init_var_gen);
+        ;
+      ;
+    ;
+
+    fail; ## IMPLEMENT IMPLEMENT IMPLEMENT
+  }
+
+
+  (Instr*, ObjExpr, VarGen) record_opt_eval_info(SymbObj+ labels, Expr+ values, VarGen init_var_gen) {
+    var, var_gen = next_obj_var(init_var_gen);
+    code, surrs, var_gen = opt_eval_info(values, var_gen);
+    code = (code | mk_record(var, [l -> surrs(i) : l @ i <~ labels]));
+    return (code, var, var_gen);
+  }
+
 
   (Instr*, ObjExpr, VarGen) tag_obj_expr_opt_eval_info(TagObjExpr expr, VarGen init_var_gen) {
     tag_type = subexpr_type(expr.tag);
     if is_symb_singl_type(tag_type):
       // The tag is a known symbol
-      symb = untag(only_symb(tag_type));
-      if optimized_tagged_records(symb, *):
+      tag = untag(only_symb(tag_type));
+      if optimized_tagged_records(tag, *):
         // There's at least one optimized representation for values with such tag
-        reprs = optimized_tagged_records(symb, !!);
+        reprs = optimized_tagged_records(tag, !!);
         obj_expr = expr.obj;
         obj_type = subexpr_type(obj_expr);
         for repr @ repr_idx <- reprs:
           repr_type = low_level_repr_type(repr);
           if is_subset(obj_type, repr_type):
             // The tagged value has an optimized representation
-            obj_expr = expand_subexpr(obj_expr);
-            if obj_expr :: MapExpr:
-              // The expression that defines the tagged value is a map expression
-              fields = isort(untag(obj_expr));
-              keys_types = (subexpr_type(f.key) : f <- fields);
-              if not (t <~ keys_types : not is_symb_singl_type(t)):
-                // Every key in the map expression is a known symbol
-                labels = (untag(only_symb(t)) : t <- keys_types);
-                return direct_opt_rec_eval_info(symb, labels, obj_expr, repr, repr_idx, init_var_gen);
-              ;
-            ;
+            return opt_rec_eval_info(tag, obj_expr, repr, repr_idx, init_var_gen);
           elif not are_ptype_disjoint(obj_type, repr_type):
             fail;
           ;
@@ -165,6 +174,33 @@ implicit program           : Program,
       fail;
     ;
 
+
+    (Instr*, ObjExpr, VarGen) opt_rec_eval_info(Symbol tag, Expr rec_expr_ref, OptRecRepr repr, Nat repr_idx, VarGen init_var_gen) {
+      rec_expr = expand_subexpr(rec_expr_ref);
+      if rec_expr :: MapExpr:
+        // The expression that defines the tagged value is a map expression
+        fields = isort(untag(rec_expr));
+        keys_types = (subexpr_type(f.key) : f <- fields);
+        if not (t <~ keys_types : not is_symb_singl_type(t)):
+          // Every key in the map expression is a known symbol
+          labels = (untag(only_symb(t)) : t <- keys_types);
+          return direct_opt_rec_eval_info(tag, labels, rec_expr, repr, repr_idx, init_var_gen);
+        ;
+      ;
+
+      // Generic creation: evaluating the record expression first, then
+      // copying all fields into the ad-hoc representation
+      code, rec_surr, var_gen = opt_eval_info(rec_expr, init_var_gen);
+      var, var_gen = next_opt_tag_rec_var(var_gen, tag, repr_idx);
+      code = (code | inst_opt_tag_rec(var, tag, repr_idx));
+      for label, field @ i <- isort(untag(repr)):
+        field_surr = lookup_field(rec_surr, object(label));
+        set_field_instr = write_rec_field(var, label, low_level_expr(field.repr, field_surr), field.optional);
+        set_field_instr = do_if(has_field(rec_surr, object(label)), set_field_instr) if field.optional;
+        code = (code | set_field_instr);
+      ;
+      return (code, var, var_gen);
+    }
 
 
     (Instr*, ObjExpr, VarGen) direct_opt_rec_eval_info(Symbol tag, Symbol+ labels, MapExpr rec_expr, OptRecRepr repr, Nat repr_idx, VarGen init_var_gen) {
