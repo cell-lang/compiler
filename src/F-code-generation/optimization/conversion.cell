@@ -1,0 +1,111 @@
+implicit program : Program {
+  [ObjProcDef] conversion_functions {
+    per_tag_conv_fns = [repr_conv_fn(t, rs) : t, rs <- optimized_tagged_records];
+    per_repr_conv_fns = [repr_conv_fn(t, r, i) : t, rs <- optimized_tagged_records, r @ i <~ rs];
+    return [gen_tag_rec_repr_conv_fn] & per_tag_conv_fns & per_repr_conv_fns;
+  }
+
+
+  ObjProcDef gen_tag_rec_repr_conv_fn {
+    opt_tags = keys(optimized_tagged_records);
+
+    tag_var = fn_arg(0);
+    value_var = fn_arg(1);
+    output_var = lvar(0);
+
+    inst_instr = mk_tagged_obj(output_var, tag_var, value_var);
+    if opt_tags != []:
+      cases = [
+        ([object(t)], (call_proc(output_var, :tag_rec_conv(t), (value_var), ())))
+        : t <- opt_tags
+      ];
+      inst_instr = symb_switch(fn_arg(0), cases, (inst_instr));
+    ;
+    body = (inst_instr, ret_val(output_var));
+
+    return obj_proc_def(
+      name:           :any_tag_rec_conv,
+      args:           (tag_var, value_var),
+      cls_args:       (),
+      impl_args:      [],
+      ret_val_repr:   :object,
+      type:           fn_type((atom_type, type_any), (), type_any),
+      loc_auto_vars:  [],
+      loc_db_vars:    [],
+      body:           body,
+      cached:         false
+    );
+  }
+
+
+  ObjProcDef repr_conv_fn(Symbol tag, OptRecRepr+ reprs) {
+    input_var = fn_arg(0);
+    output_var = lvar(0);
+
+    body = ({
+        repr_type = low_level_repr_type(r);
+        pred = memb_test_preds_map(repr_type, !!);
+        return do_if(
+          is_member(pred, input_var),
+          ( call_proc(output_var, :tag_rec_repr_conv(tag, i), (input_var), ()),
+            ret_val(output_var) ## THIS MAY NOT WORK WITH REFERENCE COUNTING
+          )
+        );
+      } : r @ i <- reprs
+    );
+
+    body = (body | mk_tagged_obj(output_var, object(tag), input_var), ret_val(output_var));
+
+    return obj_proc_def(
+      name:           :tag_rec_conv(tag),
+      args:           (fn_arg(0)),
+      cls_args:       (),
+      impl_args:      [],
+      ret_val_repr:   :object,
+      type:           fn_type((type_any), (), type_any),
+      loc_auto_vars:  [],
+      loc_db_vars:    [],
+      body:           body,
+      cached:         false
+    );
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+implicit program : Program {
+  [Symbol -> Instr*+] opt_repr_conv_code = [
+    t -> (opt_repr_conv_code(fn_arg(0), t, r, i) : r @ i <- rs) : t, rs <- optimized_tagged_records
+  ];
+}
+
+
+ObjProcDef repr_conv_fn(Symbol tag, OptRecRepr repr, Nat repr_idx) {
+  code, surr, unused_var = opt_repr_conv_code(fn_arg(0), tag, repr, repr_idx, blank_var_gen);
+
+  return obj_proc_def(
+    name:           :tag_rec_repr_conv(tag, repr_idx),
+    args:           (fn_arg(0)),
+    cls_args:       (),
+    impl_args:      [],
+    ret_val_repr:   opt_tag_rec_repr(tag, repr_idx),
+    type:           fn_type((type_any), (), type_any),
+    loc_auto_vars:  [],
+    loc_db_vars:    [],
+    body:           (code | ret_val(surr)),
+    cached:         false
+  );
+}
+
+
+(Instr*, ObjExpr, VarGen) opt_repr_conv_code(ObjExpr input_rec, Symbol tag, OptRecRepr repr, Nat repr_idx, VarGen init_var_gen) {
+  var, var_gen = next_opt_tag_rec_var(init_var_gen, tag, repr_idx);
+  code = (inst_opt_tag_rec(var, tag, repr_idx));
+  for label, field @ i <- isort(untag(repr)):
+    field_surr = lookup_field(input_rec, object(label));
+    instr = write_rec_field(var, label, low_level_expr(field.repr, field_surr), field.optional);
+    instr = do_if(has_field(input_rec, object(label)), instr) if field.optional;
+    code = (code | instr);
+  ;
+  return (code, var, var_gen);
+}

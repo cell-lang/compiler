@@ -13,65 +13,11 @@ implicit program : Program, options : CompilationOptions {
       typedefs:       program.typedefs,
       opt_reprs:      optimized_tagged_records,
       bool_procs:     memb_test_preds,
-      procs:          fndefs & proc_defs & dispatch_functions,
+      procs:          fndefs & proc_defs & dispatch_functions & conversion_functions,
       react_blocks:   react_blocks,
       static_blocks:  static_blocks,
       int_seqs:       int_seqs
     );
-  }
-
-  //////////////////////////////////////////////////////////////////////////////
-
-  [NeType] runtime_checked_root_types =
-    union([retrieve_types(fd.expr) : fd <- program.fndefs]) &
-    union([retrieve_from_nested_exprs(pd.body, retrieve_types) : pd <- program.proc_defs]) &
-    union([retrieve_from_nested_exprs(a, retrieve_types) : a <- program.auto_defs]) &
-    union([retrieve_from_nested_exprs(db, retrieve_types) : db <- program.data_bases]) &
-    [info.type : a <- program.auto_defs, unused_var, info <- a.inputs] &
-    [t : a <- program.auto_defs, m <- a.methods, t, unused_var <~ m.args] &
-    [t : db <- program.data_bases, m <- db.methods, t, unused_var <~ m.args] &
-    [ne_union_type(ts) : db <- program.data_bases, ts = [h.type : h <- db.handlers], ts != []] &
-    [type_ref(schema_type_symbol(untag(db.name))) : db <- program.data_bases] &
-    [deep_state_type(a) : a <- program.auto_defs];
-
-
-  ## CASE STUDY: THINK OF A BETTER WAY TO WRITE THIS FUNCTION
-  [NeType] runtime_checked_types {
-    root_type_symbs = union([retrieve_type_symbs(t) : t <- runtime_checked_root_types]);
-    type_symbs = root_type_symbs;
-    new_type_symbs = type_symbs;
-    while new_type_symbs != []:
-      new_types = [expand_type_ref(ts, schema_and_typedefs) : ts <- new_type_symbs];
-      new_type_symbs = union([retrieve_type_symbs(t) : t <- new_types]) - type_symbs;
-      type_symbs = type_symbs & new_type_symbs;
-    ;
-    nested_types = [type_ref(ts) : ts <- type_symbs];
-    return runtime_checked_root_types & nested_types;
-  }
-
-
-  ## CASE STUDY: THINK OF A BETTER WAY TO WRITE THIS FUNCTION, WITHOUT LOOPS OR SORTING
-  [NeType -> MembTestPredId] memb_test_preds_map {
-    entries = ();
-    next_id = 0;
-    for type <- rand_sort(runtime_checked_types):
-      pred_name, next_id = match (type)
-        type_ref(type_symbol(a?))         |
-        type_ref(schema_type_symbol(a?))  = (memb_test(a), next_id),
-        type_ref(par_type_symbol() ts?)   = pred_name(ts, next_id),
-        _                                 = (memb_test(next_id), nat(next_id + 1));
-      entries = (entries | [type -> pred_name]);
-    ;
-    return merge(entries);
-
-
-    (MembTestPredId, Nat) pred_name(ParTypeSymbol type_symb, Nat next_id) {
-      outer_id = match (type_symb.symbol) type_symbol(a?) = a;
-      inner_id, new_next_id = match (type_symb.params)
-        (type_ref(type_symbol(a?))) = (a, next_id),
-        _                           = (next_id, nat(next_id + 1));
-      return (memb_test(outer_id, inner_id), new_next_id);
-    }
   }
 
   //////////////////////////////////////////////////////////////////////////////
@@ -282,6 +228,63 @@ implicit program : Program, options : CompilationOptions {
       body:           code,
       cached:         false
     );
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+implicit program : Program {
+  [NeType] runtime_checked_root_types =
+    [low_level_repr_type(r) : unused_var, rs <- optimized_tagged_records, r <~ rs] &
+    union([retrieve_types(fd.expr) : fd <- program.fndefs]) &
+    union([retrieve_from_nested_exprs(pd.body, retrieve_types) : pd <- program.proc_defs]) &
+    union([retrieve_from_nested_exprs(a, retrieve_types) : a <- program.auto_defs]) &
+    union([retrieve_from_nested_exprs(db, retrieve_types) : db <- program.data_bases]) &
+    [info.type : a <- program.auto_defs, unused_var, info <- a.inputs] &
+    [t : a <- program.auto_defs, m <- a.methods, t, unused_var <~ m.args] &
+    [t : db <- program.data_bases, m <- db.methods, t, unused_var <~ m.args] &
+    [ne_union_type(ts) : db <- program.data_bases, ts = [h.type : h <- db.handlers], ts != []] &
+    [type_ref(schema_type_symbol(untag(db.name))) : db <- program.data_bases] &
+    [deep_state_type(a) : a <- program.auto_defs];
+
+
+  ## CASE STUDY: THINK OF A BETTER WAY TO WRITE THIS FUNCTION
+  [NeType] runtime_checked_types {
+    root_type_symbs = union([retrieve_type_symbs(t) : t <- runtime_checked_root_types]);
+    type_symbs = root_type_symbs;
+    new_type_symbs = type_symbs;
+    while new_type_symbs != []:
+      new_types = [expand_type_ref(ts, schema_and_typedefs) : ts <- new_type_symbs];
+      new_type_symbs = union([retrieve_type_symbs(t) : t <- new_types]) - type_symbs;
+      type_symbs = type_symbs & new_type_symbs;
+    ;
+    nested_types = [type_ref(ts) : ts <- type_symbs];
+    return runtime_checked_root_types & nested_types;
+  }
+
+
+  ## CASE STUDY: THINK OF A BETTER WAY TO WRITE THIS FUNCTION, WITHOUT LOOPS OR SORTING
+  [NeType -> MembTestPredId] memb_test_preds_map {
+    entries = ();
+    next_id = 0;
+    for type <- rand_sort(runtime_checked_types):
+      pred_name, next_id = match (type)
+        type_ref(type_symbol(a?))         |
+        type_ref(schema_type_symbol(a?))  = (memb_test(a), next_id),
+        type_ref(par_type_symbol() ts?)   = pred_name(ts, next_id),
+        _                                 = (memb_test(next_id), nat(next_id + 1));
+      entries = (entries | [type -> pred_name]);
+    ;
+    return merge(entries);
+
+
+    (MembTestPredId, Nat) pred_name(ParTypeSymbol type_symb, Nat next_id) {
+      outer_id = match (type_symb.symbol) type_symbol(a?) = a;
+      inner_id, new_next_id = match (type_symb.params)
+        (type_ref(type_symbol(a?))) = (a, next_id),
+        _                           = (next_id, nat(next_id + 1));
+      return (memb_test(outer_id, inner_id), new_next_id);
+    }
   }
 }
 

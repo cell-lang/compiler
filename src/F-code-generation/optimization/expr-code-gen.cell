@@ -152,6 +152,7 @@ implicit program           : Program,
     if is_symb_singl_type(tag_type):
       // The tag is a known symbol
       tag = untag(only_symb(tag_type));
+      may_need_conv = false;
       if optimized_tagged_records(tag, *):
         // There's at least one optimized representation for values with such tag
         reprs = optimized_tagged_records(tag, !!);
@@ -161,17 +162,30 @@ implicit program           : Program,
           repr_type = low_level_repr_type(repr);
           if is_subset(obj_type, repr_type):
             // The tagged value has an optimized representation
+            assert not may_need_conv;
             return opt_rec_eval_info(tag, obj_expr, repr, repr_idx, init_var_gen);
           elif not are_ptype_disjoint(obj_type, repr_type):
-            fail;
+            may_need_conv = true;
           ;
         ;
       ;
-      // The tagged value does not have an optimized representation
-      fail;
+      // The tagged value may or may not have an optimized representation
+      code, value_surr, var_gen = opt_eval_info(expr.obj, init_var_gen);
+      var, var_gen = next_obj_var(var_gen);
+      creation_instr = if may_need_conv
+        then call_proc(var, :tag_rec_conv(tag), (value_surr), ())
+        else mk_tagged_obj(var, object(tag), value_surr);
+      code = (code | creation_instr);
+      return (code, var, var_gen);
+
     else
       // The symbol is not known at compile time
-      fail;
+      tag_code, tag_surr, var_gen = opt_eval_info(expr.tag, init_var_gen);
+      value_code, value_surr, var_gen = opt_eval_info(expr.obj, var_gen);
+      var, var_gen = next_obj_var(var_gen);
+      ## HERE WE COULD CHECK IF THE TARGET OBJECT NEEDS TO BE OPTIMIZED
+      code = (tag_code & value_code | call_proc(var, :any_tag_rec_conv, (tag_surr, value_surr), ()));
+      return (code, var, var_gen);
     ;
 
 
@@ -189,16 +203,10 @@ implicit program           : Program,
       ;
 
       // Generic creation: evaluating the record expression first, then
-      // copying all fields into the ad-hoc representation
-      code, rec_surr, var_gen = opt_eval_info(rec_expr, init_var_gen);
+      // passing it on to the representation-specific convertion function
+      code, value_surr, var_gen = opt_eval_info(rec_expr, init_var_gen);
       var, var_gen = next_opt_tag_rec_var(var_gen, tag, repr_idx);
-      code = (code | inst_opt_tag_rec(var, tag, repr_idx));
-      for label, field @ i <- isort(untag(repr)):
-        field_surr = lookup_field(rec_surr, object(label));
-        set_field_instr = write_rec_field(var, label, low_level_expr(field.repr, field_surr), field.optional);
-        set_field_instr = do_if(has_field(rec_surr, object(label)), set_field_instr) if field.optional;
-        code = (code | set_field_instr);
-      ;
+      code = (code | call_proc(var, :tag_rec_repr_conv(tag, repr_idx), (value_surr), ()));
       return (code, var, var_gen);
     }
 
@@ -421,7 +429,8 @@ implicit program           : Program,
     else
       assert is_subset(target_type, atom_type);
       expr_surr, var_gen = next_obj_var(var_gen);
-      eval_code = (eval_code | mk_tagged_obj(expr_surr, coll_surr, arg_surr));
+      ## HERE WE COULD CHECK IF THE TARGET OBJECT NEEDS TO BE OPTIMIZED
+      eval_code = (eval_code | call_proc(expr_surr, :any_tag_rec_conv, (coll_surr, arg_surr), ()));
       var_gen = init_var_gen;
     ;
 
