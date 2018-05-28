@@ -13,19 +13,10 @@ implicit program : Program {
     ;
     return res;
   }
-}
 
-
-Instr* opt_repr_conv_code(ObjExpr input_rec, Symbol tag, OptRecRepr repr, Nat repr_idx) {
-  var, var_gen = next_opt_tag_rec_var(blank_var_gen, tag, repr_idx);
-  code = (inst_opt_tag_rec(var, tag, repr_idx));
-  for label, field @ i <- isort(untag(repr)):
-    field_surr = lookup_field(input_rec, object(label));
-    instr = write_rec_field(var, label, low_level_expr(field.repr, field_surr), field.optional);
-    instr = do_if(has_field(input_rec, object(label)), instr) if field.optional;
-    code = (code | instr);
-  ;
-  return code;
+  [Symbol -> NeType+] optimized_tagged_records_types = [
+    s -> (low_level_repr_type(r) : r <- rs) : s, rs <- optimized_tagged_records
+  ];
 }
 
 

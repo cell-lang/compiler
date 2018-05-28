@@ -191,7 +191,7 @@ ObjExpr float_obj(FloatExpr expr) =
 
 ObjNatOp at(ObjExpr s, IntExpr i)                 = at(seq: s, idx: i);
 ObjNatOp lookup(ObjExpr r, ObjExpr k)             = lookup(rel: r, key: k);
-ObjNatOp lookup_field(ObjExpr r, SymbObj f)       = lookup_field(record: r, field: f);
+ObjNatOp lookup_field(ObjExpr e, SymbObj f)       = lookup_field(record: e, field: f, repr: nothing);
 ObjNatOp get_tag(ObjExpr e)                       = :get_tag(e);
 ObjNatOp get_inner_obj(ObjExpr e)                 = :get_inner_obj(e);
 ObjNatOp to_symb(ObjExpr e)                       = :to_symb(e);
@@ -199,6 +199,12 @@ ObjNatOp get_curr_obj(<SetItVar, SeqItVar> it)    = :get_curr_obj(it);
 ObjNatOp get_curr_arg(BinRelItVar v, <0..1> a)    = get_curr_arg(var: v, arg: a);
 ObjNatOp get_curr_arg(TernRelItVar v, <0..2> a)   = get_curr_arg(var: v, arg: a);
 ObjNatOp rand_elem(ObjExpr s)                     = :rand_elem(s);
+
+ObjNatOp lookup_field(ObjExpr e, SymbObj f, Maybe[LowLevelRepr] r) {
+  assert e :: OptTagRecExpr or r == nothing;
+  assert not (e :: OptTagRecExpr and r == nothing); ## JUST A TEMPORARY CHECK, IT'S PROBABLY NOT ALWAYS TRUE
+  return lookup_field(record: e, field: f, repr: r);
+}
 
 BoolFnCall is_member(MembTestPredId p, AtomicExpr e)  = is_member(pred: p, obj: e);
 BoolFnCall state_is_def(AnyAutoVar v, AutoSymbol t)   = state_is_def(auto_var: v, type: t);
@@ -216,6 +222,8 @@ BoolExpr and([+BoolExpr] es)                          = :and(rand_sort(es));
 BoolExpr or([+BoolExpr] es)                           = :or(rand_sort(es));
 
 RefObjExpr lookup_surrogate(AnyValueStoreId s, IntExpr e) = lookup_surrogate(store: s, surrogate: e);
+
+OptTagRecExpr cast_opt_tag_rec(Symbol s, Nat i, ObjExpr e) = cast_opt_tag_rec(tag: s, index: i, expr: e);
 
 // Basic instructions
 
@@ -270,7 +278,8 @@ Instr join_seqs(WriteObjVar v, AtomicExpr l, AtomicExpr r)              = set_va
 Instr rev_seq(WriteObjVar v, AtomicExpr s)                              = set_var(v, rev_seq(seq: s));
 Instr set_at(WriteObjVar v, IntExpr i, AtomicExpr x)                    = set_at(var: v, idx: i, value: x);
 
-Instr lookup_field(WriteObjVar v, ObjExpr r, SymbObj f) = set_var(v, lookup_field(r, f));
+Instr lookup_field(WriteObjVar v, ObjExpr e, SymbObj f)                        = set_var(v, lookup_field(e, f));
+Instr lookup_field(WriteObjVar v, ObjExpr e, SymbObj f, Maybe[LowLevelRepr] r) = set_var(v, lookup_field(e, f, r));
 
 Instr internal_sort(WriteObjVar v, AtomicExpr s) = set_var(v, internal_sort(set: s));
 

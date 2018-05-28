@@ -107,8 +107,8 @@ implicit program           : Program,
     eq()                = eq_expr_opt_eval_info(expr.left, expr.right, var_gen),
     membership()        = undefined,
     // cast_expr()         = undefined,
-    accessor()          = undefined,
-    accessor_test()     = undefined,
+    accessor()          = accessor_opt_eval_info(expr.expr, expr.field, var_gen),
+    accessor_test()     = accessor_test_opt_eval_info(expr.expr, expr.field, var_gen),
     // auto_method_call()  = undefined,
     // db_method_call()    = undefined,
     if_expr()           = if_expr_opt_eval_info(expr, var_gen),
@@ -121,6 +121,40 @@ implicit program           : Program,
     // tern_rel_comp()     = undefined,
     seq_comp()          = seq_comp_opt_eval_info(expr, var_gen),
     range_comp()        = range_comp_opt_eval_info(expr, var_gen);
+
+
+  (Instr*, ObjExpr, VarGen) accessor_opt_eval_info(Expr expr, SymbObj field, VarGen init_var_gen) {
+    code, surr, var_gen = opt_eval_info(expr, init_var_gen);
+    target_type = subexpr_type(expr);
+    maybe_repr = nothing;
+    if is_subset(target_type, tag_obj_type(atom_type, type_any)):
+      tag_type = tag_supertype(target_type);
+      if is_symb_singl_type(tag_type):
+        tag_obj = only_symb(tag_type);
+        tag = untag(tag_obj);
+        tag_type = symb_type(tag_obj);
+        opt_types = if optimized_tagged_records_types(tag, *)
+          then optimized_tagged_records_types(tag, !!)
+          else ();
+        for t @ i <- opt_types:
+          if is_subset(target_type, tag_obj_type(tag_type, t)):
+            surr = cast_opt_tag_rec(tag, i, surr) if not surr :: OptTagRecVar;
+            fields_reprs = untag(optimized_tagged_records(tag, !!)(i));
+            maybe_repr = just(fields_reprs(untag(field), !!).repr);
+            break;
+          ;
+        ;
+      ;
+    ;
+    return (code, lookup_field(surr, field, maybe_repr), var_gen);
+  }
+
+
+  (Instr*, ObjExpr, VarGen) accessor_test_opt_eval_info(Expr expr, SymbObj field, VarGen init_var_gen) {
+    fail;
+    // info = gen_eval_info(expr);
+    // return (info.eval_code | set_var(res_var, bool_obj(has_field(info.expr, field))));
+  }
 
 
   (Instr*, ObjExpr, VarGen) map_expr_opt_eval_info([+(key: Expr, value: Expr, cond: Expr?)] entries, VarGen init_var_gen) {
@@ -203,7 +237,7 @@ implicit program           : Program,
       ;
 
       // Generic creation: evaluating the record expression first, then
-      // passing it on to the representation-specific convertion function
+      // passing it on to the representation-specific conversion function
       code, value_surr, var_gen = opt_eval_info(rec_expr, init_var_gen);
       var, var_gen = next_opt_tag_rec_var(var_gen, tag, repr_idx);
       code = (code | call_proc(var, :tag_rec_repr_conv(tag, repr_idx), (value_surr), ()));

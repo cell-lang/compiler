@@ -188,7 +188,7 @@ type FloatNatOp     = float_value(ObjExpr),
 
 type ObjNatOp       = at(seq: ObjExpr, idx: IntExpr),
                       lookup(rel: ObjExpr, key: ObjExpr),
-                      lookup_field(record: ObjExpr, field: SymbObj),
+                      lookup_field(record: ObjExpr, field: SymbObj, repr: Maybe[LowLevelRepr]),
                       get_tag(ObjExpr),
                       get_inner_obj(ObjExpr), ## RENAME?
                       bool_obj(BoolExpr),
@@ -218,7 +218,9 @@ type Int32Expr      = Int32, Int32Var, Int32NatOp;
 
 type FloatExpr      = FloatLit, FloatVar, FloatNatOp;
 
-type ObjExpr        = InlineObj, StdObjVar, ObjNatOp, OptTagRecVar;
+type OptTagRecExpr  = OptTagRecVar, cast_opt_tag_rec(tag: Symbol, index: Nat, expr: ObjExpr);
+
+type ObjExpr        = InlineObj, StdObjVar, ObjNatOp, OptTagRecExpr;
 
 type AtomicExpr     = ObjExpr;
 
