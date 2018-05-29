@@ -3,7 +3,6 @@
 ## THAT ALL CLOSURE PARAMETERS HAVE EXACTLY THE SAME TYPE.
 
 type EnvVar   = StdVar, FnArg, ImplArg, SignalVar;
-type LocVar2  = StdVar, FnArg;
 
 
 [<Function, Database, Method, Update, Handler, Automaton, Procedure> -> [+TypeCheckingError]] typecheck(Program prg) {
@@ -22,13 +21,8 @@ type LocVar2  = StdVar, FnArg;
 implicit program : Program, typedefs : [TypeName -> NeType] {
   [TypeCheckingError] typecheck_function(Function func) {
     args = func.args;
-    // var_aliases = [[fn_arg(i), a.var] : a @ i <~ args, a :: FormalObjArg and a.var?];
-    // obj_vars = [a.var -> a.type : a <~ args, formal_obj_arg() ?= a, a.var?] &
-    //            [fn_arg(i) -> a.type : a @ i <~ args, formal_obj_arg() ?= a] &
-    //            [v -> t : v, t <- func.impl_args];
-
     obj_vars = [v -> t : v, t <~ args] & [v -> t : v, t <- func.impl_args];
-    let context=func, var_aliases=[], typed_vars = []:
+    let context=func, typed_vars = []:
       errs = typecheck(func.expr, func.res_type, obj_vars);
     ;
     return errs;
@@ -46,14 +40,14 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
     ;
     env = [a.var -> a.type : a <~ proc.args];
     ret_type = if proc.res_type != nothing then value(proc.res_type) else empty_type;
-    return typecheck(proc.body, ret_type, env, context=proc, var_aliases=[], typed_vars=[]);
+    return typecheck(proc.body, ret_type, env, context=proc, typed_vars=[]);
   }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-implicit program : Program, typedefs : [TypeName -> NeType], context : Context, var_aliases : [[LocVar2]], typed_vars : [StdVar -> NeType] {
+implicit program : Program, typedefs : [TypeName -> NeType], context : Context, typed_vars : [StdVar -> NeType] {
   [TypeCheckingError] typecheck(CondExpr expr, Type exp_type, [EnvVar -> Type] env) {
     errs = typecheck(expr.cond, type_bool, env);
     return errs if errs != [];

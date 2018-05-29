@@ -87,14 +87,12 @@ implicit program : Program, options : CompilationOptions {
 
     cached = func.args == () and not is_too_simple_to_be_worth_caching(func.expr);
 
-    alt_expr = exprs_cluster(func.expr);
-    rec_expr = reconstruct(alt_expr, 0);
-    rec_exprs = reconstruct_all(alt_expr);
-
     env = [v -> t : v, t <~ func.args] & [v -> t : v, t <- func.impl_args];
 
-    let context=func, var_subst_map = [], cls_var_subst_map = [], var_aliases = []:
-      opt_code, ret_val_surr, unused_var = opt_eval_code(func.expr, env, args_surrs, blank_var_gen);
+    let typedefs = program.typedefs, context = func, surrogates = args_surrs:
+      let var_subst_map = [], cls_var_subst_map = [], typed_vars = []:
+        opt_code, ret_val_surr, unused_var = opt_eval_code(func.expr, env, blank_var_gen);
+      ;
     ;
 
     ret_val_repr = opt_repr(func.res_type, typedefs = program.typedefs);
@@ -112,12 +110,6 @@ implicit program : Program, options : CompilationOptions {
       body:           (opt_code | ret_val_instr),
       cached:         cached
     );
-
-
-    ObjExpr surrogate(Var var)        = var;
-    ObjExpr surrogate(BoolFnArg var)  = bool_obj(var);
-    ObjExpr surrogate(IntFnArg var)   = int_obj(var);
-    ObjExpr surrogate(FloatFnArg var) = float_obj(var);
 
 
     Bool is_too_simple_to_be_worth_caching(Expr expr) = is_within_complexity_level(expr, 1);

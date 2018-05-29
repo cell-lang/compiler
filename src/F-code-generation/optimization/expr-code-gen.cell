@@ -5,6 +5,7 @@ implicit program           : Program,
          cls_var_subst_map : [ClsVar -> CaptClsVar],
          cluster           : Expr+,
          types             : Type+,
+         environments      : [EnvVar -> Type]+,
          surrogates        : [EnvVar -> ObjExpr],
          expr_id           : Nat,
          options           : CompilationOptions
@@ -22,12 +23,6 @@ implicit program           : Program,
     eval_code, surr_expr, var_gen = opt_eval_info(expr, init_var_gen);
     eval_code = store_result(eval_code, surr_expr, res_var);
     return (eval_code, var_gen);
-  }
-
-
-  Instr+ opt_eval_code(Expr expr, AnyLocVar res_var, VarGen var_gen) {
-    eval_code, surr_expr, unused_var = opt_eval_info(expr, var_gen);
-    return store_result(eval_code, surr_expr, res_var);
   }
 
 
@@ -113,7 +108,7 @@ implicit program           : Program,
     // db_method_call()    = undefined,
     if_expr()           = if_expr_opt_eval_info(expr, var_gen),
     match_expr()        = undefined,
-    do_expr()           = undefined,
+    do_expr()           = stmts_opt_eval_code(expr.body, environments(expr_id), var_gen, typed_vars=expr.typed_vars),
     // ex_qual()           = undefined,
     // set_comp()          = undefined,
     // map_comp()          = undefined,
@@ -514,7 +509,27 @@ implicit program           : Program,
     // Evaluation of all conditions
     ## HERE MAYBE WE COULD DO BETTER WITH THE VARIABLES GENERATOR
     cond_vars, var_gen = next_bool_vars(var_gen, |conds|);
-    conds_eval_code = join((opt_eval_code(c, cond_vars(i), var_gen) : c @ i <- conds));
+    conds_eval_code = join(({
+        // Instr+ opt_eval_code(Expr expr, AnyLocVar res_var, VarGen var_gen) {
+        //   eval_code, surr_expr, unused_var = opt_eval_info(expr, var_gen);
+        //   return store_result(eval_code, surr_expr, res_var);
+        // }
+        // opt_eval_code(c, cond_vars(i), var_gen)
+
+        eval_code, surr_expr, unused_var = opt_eval_info(c, var_gen);
+        return store_result(eval_code, surr_expr, cond_vars(i));
+      } : c @ i <- conds
+    ));
+
+
+
+
+
+
+
+
+
+
 
     // Integer variable for both size and cursor
     int32_var, var_gen = next_int32_var(var_gen);

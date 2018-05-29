@@ -1,0 +1,55 @@
+implicit program           : Program,
+         typedefs          : [TypeName -> NeType],
+         context           : Context,
+         var_subst_map     : [StdVar -> CaptVar],
+         cls_var_subst_map : [ClsVar -> CaptClsVar],
+         typed_vars        : [StdVar -> NeType],
+         surrogates        : [EnvVar -> ObjExpr],
+         options           : CompilationOptions
+{
+  (Instr*, ObjExpr, VarGen) stmts_opt_eval_code(Statement+ stmts, [EnvVar -> Type] init_env, VarGen init_var_gen) {
+    var_gen = init_var_gen;
+    code = ();
+    env = init_env;
+    surrs = surrogates;
+    for s <- stmts:
+      stmt_code, surrs, var_gen = stmt_opt_eval_code(s, env, var_gen, surrogates = surrs);
+      code = code & stmt_code;
+      env = update_env(s, env);
+    ;
+    return (code, undefined, undefined);
+
+  }
+
+
+  (Instr*, [EnvVar -> ObjExpr], VarGen) stmt_opt_eval_code(Statement stmt, [EnvVar -> Type] env, VarGen var_gen) =
+    break_stmt                = undefined,
+    fail_stmt                 = undefined,
+    loop_stmt(ss?)            = undefined,
+    print_stmt(e?)            = undefined,
+    return_stmt(e?)           = undefined,
+    assert_stmt()             = undefined,
+    let_stmt()                = undefined,
+    assignment_stmt()         = assignment_stmt_opt_eval_code(stmt.vars, stmt.value, env, var_gen),
+    seq_update_stmt()         = undefined,
+    if_stmt()                 = undefined,
+    for_stmt()                = undefined,
+    foreach_stmt()            = undefined,
+    return_stmt               = undefined,
+    proc_call_stmt()          = undefined;
+
+
+  (Instr*, [EnvVar -> ObjExpr], VarGen) assignment_stmt_opt_eval_code(StdVar+ vars, Expr value, [EnvVar -> Type] env, VarGen init_var_gen) {
+    if |vars| == 1:
+      type = expr_type(value, env);
+      eval_code, surr, var_gen = opt_eval_code(value, env, init_var_gen);
+      surrs = update(surrogates, only(vars), surr);
+      return (eval_code, surrs, var_gen);
+
+    else
+      fail;
+    ;
+  }
+
+
+}

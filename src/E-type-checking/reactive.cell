@@ -1,10 +1,10 @@
 implicit program : Program, typedefs : [TypeName -> NeType] {
   [<Automaton, Method> -> [+TypeCheckingError]] typecheck_automaton(Automaton auto) =
-    typecheck_automaton(context=auto, var_aliases=[], typed_vars=[]);
+    typecheck_automaton(context=auto, typed_vars=[]);
 }
 
 
-implicit program : Program, typedefs : [TypeName -> NeType], context : Automaton, var_aliases : [], typed_vars : [] {
+implicit program : Program, typedefs : [TypeName -> NeType], context : Automaton, typed_vars : [] {
   [<Automaton, Method> -> [+TypeCheckingError]] typecheck_automaton {
     // Typechecking and inferring type of constants
     consts = context.params;
@@ -137,9 +137,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Automaton
 
 
   [TypeCheckingError] typecheck_auto_method(Method method, [EnvVar -> Type] env) {
-    aliases = [[fn_arg(i), value(v)] : unused_var, v @ i <~ method.args, v != nothing];
     env_delta = merge([[fn_arg(i) -> t, value(v) -> t if v != nothing] : t, v @ i <~ method.args]);
-    return typecheck(method.expr, method.ret_type, env & env_delta, var_aliases = aliases);
+    return typecheck(method.expr, method.ret_type, env & env_delta);
   }
 }
 

@@ -2,7 +2,7 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
   [<Database, Method, Update, Handler> -> [+TypeCheckingError]] typecheck_database(Database db) {
     let context = db:
       schemas_errs  = [db -> es : unused_var, info <- db.state_vars,
-                        es = typecheck_db_expr(info.init_value, info.type, [], []), es != []];
+                        es = typecheck_db_expr(info.init_value, info.type, []), es != []];
       methods_errs  = [m -> es : m <- db.methods, es = typecheck_method(m), es != []];
       updates_errs  = [u -> es : u <- db.updates, es = typecheck_update(u), es != []];
       handlers_errs = [h -> es : h <- db.handlers, es = typecheck_handler(h), es != []];
@@ -14,23 +14,22 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
 
 implicit program : Program, typedefs : [TypeName -> NeType], context : Database {
   [TypeCheckingError] typecheck_method(Method method) {
-    var_aliases = [[fn_arg(i), value(v)] : unused_var, v @ i <~ method.args, v != nothing];
     env = merge([[fn_arg(i) -> t, value(v) -> t if v != nothing] : t, v @ i <~ method.args]);
-    return typecheck_db_expr(method.expr, method.ret_type, env, var_aliases);
+    return typecheck_db_expr(method.expr, method.ret_type, env);
   }
 
 
   [TypeCheckingError] typecheck_update(Update update) {
     env = merge(([v -> t] : t, v <- update.args));
-    return typecheck(update.body, empty_type, env, var_aliases=[], typed_vars=[]);
+    return typecheck(update.body, empty_type, env, typed_vars=[]);
   }
 
 
   [TypeCheckingError] typecheck_handler(Handler handler) =
-    typecheck(handler.body, empty_type, [var(:self) -> handler.type], var_aliases=[], typed_vars=[]);
+    typecheck(handler.body, empty_type, [var(:self) -> handler.type], typed_vars=[]);
 
   //////////////////////////////////////////////////////////////////////////////
 
-  [TypeCheckingError] typecheck_db_expr(Expr expr, Type exp_type, [EnvVar -> Type] env, [[LocVar2]] var_aliases) =
-    typecheck(expr, exp_type, env, var_aliases = var_aliases, typed_vars = []);
+  [TypeCheckingError] typecheck_db_expr(Expr expr, Type exp_type, [EnvVar -> Type] env) =
+    typecheck(expr, exp_type, env, typed_vars = []);
 }

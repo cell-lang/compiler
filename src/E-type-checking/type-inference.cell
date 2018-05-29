@@ -1,5 +1,4 @@
-implicit program : Program, typedefs : [TypeName -> NeType], context : Context,
-         var_aliases : [[LocVar2]], typed_vars : [StdVar -> NeType] {
+implicit program : Program, typedefs : [TypeName -> NeType], context : Context, typed_vars : [StdVar -> NeType] {
 
   Type expr_type(CondExpr expr, [EnvVar -> Type] env) = expr_type(expr.expr, left(refine_env(expr.cond, env)));
 
@@ -948,7 +947,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context,
 type IterTree = never, once([EnvVar -> Type]), repeated(IterTree), any([+IterTree]), all(IterTree+);
 
 
-implicit program : Program, typedefs : [TypeName -> NeType], context : Context, var_aliases : [[LocVar2]], typed_vars : [StdVar -> NeType] {
+implicit program : Program, typedefs : [TypeName -> NeType], context : Context, typed_vars : [StdVar -> NeType] {
 
   IterTree full_iter_tree(Clause cls, [EnvVar -> Type] env) = iter_tree(cls, env, :once($));
 
@@ -1385,7 +1384,7 @@ TernRelCompType tern_rel_both(TernRelCompType type1, TernRelCompType type2) =
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-implicit program : Program, typedefs : [TypeName -> NeType], context : Context, var_aliases : [[LocVar2]], typed_vars : [StdVar -> NeType] {
+implicit program : Program, typedefs : [TypeName -> NeType], context : Context, typed_vars : [StdVar -> NeType] {
 
   Type return_type(Statement* stmts, [EnvVar -> Type] env) {
     curr_env = env;
@@ -1649,6 +1648,4 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 type VarField = accessor(expr: EnvVar, field: SymbObj);
 
 
-implicit var_aliases : [[LocVar2]] {
-  [EnvVar] var_group(EnvVar var) = only_element_or_def_if_empty([as : as <- var_aliases, in(var, as)], [var]);
-}
+[EnvVar] var_group(EnvVar var) = [var]; ## GET RID OF THIS

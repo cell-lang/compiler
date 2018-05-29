@@ -1,41 +1,41 @@
 implicit program           : Program,
+         typedefs          : [TypeName -> NeType],
          context           : Context,
-         var_aliases       : [[LocVar2]],
          var_subst_map     : [StdVar -> CaptVar],
          cls_var_subst_map : [ClsVar -> CaptClsVar],
+         typed_vars        : [StdVar -> NeType],
+         surrogates        : [EnvVar -> ObjExpr],
          options           : CompilationOptions
 {
-  (Instr*, ObjExpr, VarGen) opt_eval_code(Expr expr, [EnvVar -> NeType] env, [EnvVar -> ObjExpr] surrogates, VarGen init_var_gen) {
+  (Instr*, ObjExpr, VarGen) opt_eval_code(Expr expr, [EnvVar -> Type] env, VarGen init_var_gen) {
     exprs_cluster = exprs_cluster(expr);
     rec_exprs = reconstruct_all(exprs_cluster);
 
     cltr_size = |exprs_cluster|;
     envs = (if i == 0 then env else [] : i < cltr_size);
 
-    let typedefs = program.typedefs, typed_vars = []:
-      let rec_exprs = rec_exprs:
-        for e @ i <- exprs_cluster:
-          for j, vs <- subenvs(e, envs(i)):
-            assert envs(j) == [];
-            envs(j) := vs;
-          ;
+    let rec_exprs = rec_exprs:
+      for e @ i <- exprs_cluster:
+        for j, vs <- subenvs(e, envs(i)):
+          assert envs(j) == [];
+          envs(j) := vs;
         ;
       ;
+    ;
 
-      assert {
-        if env != []:
-          for e <- envs:
-            return false if e == [];
-          ;
+    assert {
+      if env != []:
+        for e <- envs:
+          return false if e == [];
         ;
-        return true;
-      };
-
-      types = (expr_type(e, envs(i)) : e @ i <- rec_exprs);
-
-      let cluster = exprs_cluster, types = types, surrogates = surrogates, expr_id = 0:
-        eval_code, surr, var_gen = opt_eval_info(exprs_cluster(0), init_var_gen);
       ;
+      return true;
+    };
+
+    types = (expr_type(e, envs(i)) : e @ i <- rec_exprs);
+
+    let cluster = exprs_cluster, types = types, environments = envs, expr_id = 0:
+      eval_code, surr, var_gen = opt_eval_info(exprs_cluster(0), init_var_gen);
     ;
 
     return (eval_code, surr, var_gen);
@@ -46,7 +46,6 @@ implicit program           : Program,
 implicit program     : Program,
          typedefs    : [TypeName -> NeType],
          context     : Context,
-         var_aliases : [[LocVar2]],
          typed_vars  : [StdVar -> NeType],
          rec_exprs   : Expr+
 {
