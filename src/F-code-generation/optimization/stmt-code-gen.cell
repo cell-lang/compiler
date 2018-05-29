@@ -58,9 +58,15 @@ implicit program           : Program,
   (Instr*, [EnvVar -> ObjExpr], VarGen) assignment_stmt_opt_code(StdVar+ vars, Expr value, [EnvVar -> Type] env, VarGen init_var_gen) {
     if |vars| == 1:
       type = expr_type(value, env);
-      eval_code, surr, var_gen = opt_eval_code(value, env, init_var_gen);
-      surrs = update(surrogates, only(vars), surr);
-      return (eval_code, surrs, var_gen);
+      repr = if type != empty_type then low_level_repr(type) else :object;
+      code, surr, var_gen = opt_eval_code(value, env, init_var_gen);
+      var = only(vars);
+      ll_var = low_level_var(repr, var);
+      code = store_result(code, surr, ll_var);
+      surrs = if var != ll_var
+        then update(surrogates, var, obj_expr(ll_var))
+        else remove_key(surrogates, var);
+      return (code, surrs, var_gen);
 
     else
       fail;
