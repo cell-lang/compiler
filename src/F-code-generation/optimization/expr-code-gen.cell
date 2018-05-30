@@ -57,7 +57,7 @@ implicit program           : Program,
 
 
   (Instr*, ObjExpr, VarGen) opt_eval_info(Var var, VarGen var_gen) {
-    surr = if var :: EnvVar then surrogates(var, !!) else var;
+    surr = lookup(surrogates, var, var);
     return ((), surr, var_gen);
   }
 
@@ -737,7 +737,7 @@ Instr+ store_result(Instr* code, ObjExpr surr_expr, AnyLocVar res_var) {
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-type AnyLocVar = LocBoolVar, LocIntVar, LocFloatVar, LocVar, StdVar;
+type AnyLocVar = LocBoolVar, LocIntVar, LocFloatVar, LocOptTagRecVar, LocVar, StdVar;
 
 
 (AnyLocVar, VarGen) next_var(LowLevelRepr repr, VarGen gen) =
@@ -761,6 +761,7 @@ Instr set_any_var(LocBoolVar  var, ObjExpr expr) = set_bvar(var, bool_value(expr
 Instr set_any_var(LocIntVar   var, ObjExpr expr) = set_ivar(var, get_int_val(expr));
 Instr set_any_var(LocFloatVar var, ObjExpr expr) = set_fvar(var, float_value(expr));
 Instr set_any_var(WriteObjVar var, ObjExpr expr) = set_var(var, expr);
+Instr set_any_var(LocOptTagRecVar var, ObjExpr expr) = set_var(var, expr);
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////

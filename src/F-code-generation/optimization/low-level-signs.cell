@@ -78,6 +78,9 @@ AnyLocVar low_level_var(LowLevelRepr repr, StdVar var) =
   object    = var;
 
 
+LocOptTagRecVar low_level_var(OptTagRecRepr repr, StdVar var) =
+  opt_tag_rec_var(untag(var), repr.tag, repr.index);
+
 
 AnyTypeExpr low_level_expr(LowLevelRepr repr, ObjExpr expr) =
   bool      = bool_value(expr),
@@ -129,7 +132,8 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
       return r if is_subset(type, low_level_repr_type(r));
     ;
 
-    for tag <- isort(keys(optimized_tagged_records)): ## THIS IS BAD FOR PERFORMANCE
+    ## PERFORMANCE HERE IS PROBABLY HORRIFYING. FIX
+    for tag <- isort(keys(optimized_tagged_records)):
       if is_subset(type, tag_obj_type(symb_type(tag), type_any)):
         untagged_type = untagged_objs_supertype(type);
         for repr @ i <- optimized_tagged_records(tag, !!):
