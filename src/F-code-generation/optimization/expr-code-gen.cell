@@ -6,7 +6,7 @@ implicit program           : Program,
          cluster           : Expr+,
          types             : Type+,
          environments      : [EnvVar -> Type]+,
-         surrogates        : [EnvVar -> ObjExpr],
+         surrogates        : [SurrExpr -> ObjExpr],
          expr_id           : Nat,
          options           : CompilationOptions
 {
@@ -51,8 +51,8 @@ implicit program           : Program,
   }
 
 
-  (Instr*, ObjExpr, VarGen) opt_eval_info(FloatLit expr, VarGen init_var_gen) {
-    fail;
+  (Instr*, ObjExpr, VarGen) opt_eval_info(FloatLit expr, VarGen var_gen) {
+    return ((), float_obj(expr), var_gen);
   }
 
 
@@ -746,6 +746,9 @@ type AnyLocVar = LocBoolVar, LocIntVar, LocFloatVar, LocOptTagRecVar, LocVar, St
   float   = next_float_var(gen),
   symbol  |
   object  = next_obj_var(gen);
+
+(LocOptTagRecVar, VarGen) next_var(OptTagRecRepr repr, VarGen gen) =
+  next_opt_tag_rec_var(gen, repr.tag, repr.index);
 
 
 ## FIND BETTER NAME

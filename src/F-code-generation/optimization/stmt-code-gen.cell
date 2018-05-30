@@ -4,25 +4,15 @@ implicit program           : Program,
          context           : Context,
          var_subst_map     : [StdVar -> CaptVar],
          cls_var_subst_map : [ClsVar -> CaptClsVar],
-         surrogates        : [EnvVar -> ObjExpr]
+         surrogates        : [SurrExpr -> ObjExpr]
 {
   (Instr*, ObjExpr, VarGen) do_expr_opt_eval_code(DoExpr expr, [EnvVar -> Type] init_env, VarGen init_var_gen) {
     type = expr_type(expr, init_env, typed_vars = []); ## NOT SURE ABOUT typed_vars HERE
-    repr = if type != empty_type then low_level_repr(type) else :object;
+    repr = if type != empty_type then opt_repr(type) else :object;
     var, ret_var_gen = next_var(repr, init_var_gen);
-
-    var_gen = ret_var_gen;
-    code = ();
-    env = init_env;
-    surrs = surrogates;
     let typed_vars = expr.typed_vars, result_var = var:
-      for s <- expr.body:
-        stmt_code, surrs, var_gen = stmt_opt_code(s, env, var_gen, surrogates = surrs);
-        code = code & stmt_code;
-        env = update_env(s, env);
-      ;
+      code, unused_var_1, unused_var_2 = stmts_opt_code(expr.body, init_env, ret_var_gen);
     ;
-
     return (code, obj_expr(var), ret_var_gen);
   }
 }
@@ -35,10 +25,25 @@ implicit program           : Program,
          var_subst_map     : [StdVar -> CaptVar],
          cls_var_subst_map : [ClsVar -> CaptClsVar],
          typed_vars        : [StdVar -> NeType],
-         surrogates        : [EnvVar -> ObjExpr],
+         surrogates        : [SurrExpr -> ObjExpr],
          result_var        : AnyLocVar
 {
-  (Instr*, [EnvVar -> ObjExpr], VarGen) stmt_opt_code(Statement stmt, [EnvVar -> Type] env, VarGen var_gen) =
+  (Instr*, [SurrExpr -> ObjExpr], VarGen) stmts_opt_code(Statement+ stmts, [EnvVar -> Type] init_env, VarGen init_var_gen) {
+    var_gen = init_var_gen;
+    code = ();
+    env = init_env;
+    surrs = surrogates;
+    for s <- stmts:
+      stmt_code, surrs, var_gen = stmt_opt_code(s, env, var_gen, surrogates = surrs);
+      code = code & stmt_code;
+      env = update_env(s, env);
+    ;
+    return (code, surrs, var_gen);
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  (Instr*, [SurrExpr -> ObjExpr], VarGen) stmt_opt_code(Statement stmt, [EnvVar -> Type] env, VarGen var_gen) =
     break_stmt                = undefined,
     fail_stmt                 = undefined,
     loop_stmt(ss?)            = undefined,
@@ -48,14 +53,14 @@ implicit program           : Program,
     let_stmt()                = undefined,
     assignment_stmt()         = assignment_stmt_opt_code(stmt.vars, stmt.value, env, var_gen),
     seq_update_stmt()         = undefined,
-    if_stmt()                 = undefined,
+    if_stmt()                 = if_stmt_opt_code(stmt.cond, stmt.body, stmt.else, env, var_gen),
     for_stmt()                = undefined,
     foreach_stmt()            = undefined,
     return_stmt               = undefined,
     proc_call_stmt()          = undefined;
 
 
-  (Instr*, [EnvVar -> ObjExpr], VarGen) assignment_stmt_opt_code(StdVar+ vars, Expr value, [EnvVar -> Type] env, VarGen init_var_gen) {
+  (Instr*, [SurrExpr -> ObjExpr], VarGen) assignment_stmt_opt_code(StdVar+ vars, Expr value, [EnvVar -> Type] env, VarGen init_var_gen) {
     if |vars| == 1:
       type = expr_type(value, env);
       repr = if type != empty_type then opt_repr(type) else :object;
@@ -74,9 +79,45 @@ implicit program           : Program,
   }
 
 
-  (Instr*, [EnvVar -> ObjExpr], VarGen) return_stmt_opt_code(Expr value, [EnvVar -> Type] env, VarGen init_var_gen) {
+  (Instr*, [SurrExpr -> ObjExpr], VarGen) return_stmt_opt_code(Expr value, [EnvVar -> Type] env, VarGen init_var_gen) {
     code, surr, var_gen = opt_eval_code(value, env, init_var_gen);
     code = store_result(code, surr, result_var);
     return (code, surrogates, init_var_gen);
+  }
+
+
+  (Instr*, [SurrExpr -> ObjExpr], VarGen) if_stmt_opt_code(Expr cond, Statement+ body, Statement* else, [EnvVar -> Type] env, VarGen init_var_gen) {
+    cond_code, cond_surr, unused_var = opt_eval_code(cond, env, init_var_gen);
+
+    then_env, else_env = refine_env(cond, env);
+
+    // The variable used to store the value of the condition is not
+    // needed anymore here, so there's no need to update next_var_gen
+    then_code, then_surrs, var_gen = stmts_opt_code(body, then_env, init_var_gen);
+
+    // Here I could start again from init_var_gen, but then I
+    // would have to reconcile the two resulting generators
+    else_code, else_surrs, var_gen = if else != ()
+      then stmts_opt_code(else, else_env, var_gen)
+      else ((), surrogates, var_gen);
+
+    ## CHECK WHETHER THE TWO BRANCHES CAN FALL THROUGH (USE may_fall_through(Statement*))
+
+    // Reconciling the surrogates
+    rec_if_stmt = if_stmt(cond, body, else); ## UGLY UGLY UGLY
+    surr_vars = [v : v <- keys(env) & new_vars(rec_if_stmt), v :: SurrExpr];
+    sync_vars = [v : v <- surr_vars, lookup(then_surrs, v, v) == lookup(else_surrs, v, v)];
+    unsync_vars = surr_vars - sync_vars;
+    fail if not unsync_vars :: [StdVar];
+    surrs = [v -> then_surrs(v, !!) : v <- sync_vars, then_surrs(v, *)];
+
+    // Putting together the complete compiled code
+    for v <- isort(unsync_vars):
+      then_code = (then_code | set_var(v, then_surrs(v, !!))) if then_surrs(v, *);
+      else_code = (else_code | set_var(v, else_surrs(v, !!))) if else_surrs(v, *);
+    ;
+    code = (cond_code | branch(bool_value(cond_surr), then_code, else_code));
+
+    return (code, surrs, var_gen);
   }
 }
