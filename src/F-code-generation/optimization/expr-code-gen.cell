@@ -294,8 +294,8 @@ implicit program           : Program,
     fail if src_elt_type == empty_type or elt_type == empty_type;
 
     // Low-level representation of elements of source and destination sequences
-    src_repr = low_level_repr(src_elt_type);
-    elt_repr = low_level_repr(elt_type);
+    src_repr = opt_repr(src_elt_type);
+    elt_repr = opt_repr(elt_type);
 
     // Evaluation of source expression
     eval_code, src_surr, var_gen = opt_eval_info(expr.src_expr, var_gen);
@@ -320,7 +320,7 @@ implicit program           : Program,
       assert src_repr == :object;
       vars_types = (restricted_seq_elem_supertype(src_type, singleton_type(i)) : i < |vars|);
       fail if not vars_types :: NeType+;
-      reprs = (low_level_repr(t) : t <- vars_types);
+      reprs = (opt_repr(t) : t <- vars_types);
       physical_vars, var_gen = mapli(vars, var_gen, next_var_def(reprs($b), $a, $c));
       surrs = surrogates & [v -> obj_expr(physical_vars(i)) : v @ i <~ vars];
       it_var, var_gen = next_obj_var(var_gen);
@@ -367,7 +367,7 @@ implicit program           : Program,
   (Instr*, ObjExpr, VarGen) if_expr_opt_eval_info(IfExpr expr, VarGen init_var_gen) {
     type = types(expr_id);
     return ((terminate), never_used_lvar, init_var_gen) if type == empty_type;
-    repr = low_level_repr(type);
+    repr = opt_repr(type);
 
     cond_eval_code, cond_surr, var_gen = opt_eval_info(expr.cond, init_var_gen);
 
@@ -742,6 +742,9 @@ type AnyLocVar = LocBoolVar, LocIntVar, LocFloatVar, LocOptTagRecVar, LocVar, St
   float     = next_var(repr, var_gen),
   symbol    |
   object    = (var, var_gen);
+
+(LocOptTagRecVar, VarGen) next_var_def(OptTagRecRepr repr, StdVar var, VarGen var_gen) =
+  next_var(repr, var_gen);
 
 
 Instr set_any_var(LocBoolVar  var, ObjExpr expr) = set_bvar(var, bool_value(expr));
