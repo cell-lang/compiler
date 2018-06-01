@@ -284,13 +284,21 @@ type CtrlStmt = set_input_ctrl_stmt(var: LocAutoVar, input: Atom, value: Expr),
                 read_state_ctrl_stmt(res_var: StdVar, auto_var: <LocAutoVar, LocDBVar>),
                 restore_state_ctrl_stmt(res_var: StdVar, auto_var: <LocAutoVar, LocDBVar>, state: Expr);
 
-type CompositeStmt[T] = if_stmt(cond: Expr, body: T+, else: T*),
-                        loop_stmt(T+),
-                        foreach_stmt(vars: StdVar+, idx_var: StdVar?, values: Expr, body: T+),
-                        for_stmt(var: StdVar?, start_val: Expr, end_val: Expr, end_val_incl: Bool, body: T+),
-                        let_stmt(asgnms: [ImplArg -> Expr], body: T+);
+type IfStmt[T]      = if_stmt(cond: Expr, body: T+, else: T*);
+type LoopStmt[T]    = loop_stmt(T+);
+type ForeachStmt[T] = foreach_stmt(vars: StdVar+, idx_var: StdVar?, values: Expr, body: T+);
+type ForStmt[T]     = for_stmt(var: StdVar?, start_val: Expr, end_val: Expr, end_val_incl: Bool, body: T+);
+type LetStmt[T]     = let_stmt(asgnms: [ImplArg -> Expr], body: T+);
+
+type CompositeStmt[T] = IfStmt[T], LoopStmt[T], ForeachStmt[T], ForStmt[T], LetStmt[T];
 
 type Statement      = AtomicFnStmt, AtomicUpdateStmt, AtomicProcStmt, CtrlStmt, CompositeStmt[Statement];
+
+type IfStmt       = IfStmt[Statement];
+type LoopStmt     = LoopStmt[Statement];
+type ForeachStmt  = ForeachStmt[Statement];
+type ForStmt      = ForStmt[Statement];
+type LetStmt      = LetStmt[Statement];
 
 ///////////////////////////////////////////////////////////////////////////////
 

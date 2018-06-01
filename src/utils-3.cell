@@ -22,6 +22,7 @@ type CodeOutcome = fails, returns, breaks_loop, exits_block, falls_through;
   switch_on_nat()     = nonempty(union([code_outcomes(c) : c <~ instr.cases])),
   symb_switch()       = nonempty(union([code_outcomes(right(c)) : c <- instr.cases]) & code_outcomes(instr.else)),
   repeat(is?)         = loop_outcomes(is),
+  foreach()           = [if o == breaks_loop then falls_through else o : o <- code_outcomes(instr.body)],
   execute_block(is?)  = block_outcomes(is),
   try_block()         = { assert block_outcomes(instr.body) :: [<fails, falls_through>];
                           return [falls_through];

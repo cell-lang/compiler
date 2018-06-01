@@ -83,6 +83,7 @@ Instr* remove_dead_code(Instr instr) =
   switch_on_nat()     = remove_dead_nat_switch_code(instr.value, instr.cases),
   symb_switch()       = remove_dead_symb_switch_code(instr.value, instr.cases, instr.else),
   repeat(is?)         = remove_dead_loop_code(is),
+  foreach()           = remove_dead_foreach_code(instr.seq, instr.buffer, instr.idx_var, instr.it_var, instr.body),
   execute_block(is?)  = remove_dead_block_code(is),
   try_block()         = remove_dead_try_block_code(instr.var, instr.body),
   _                   = (instr);
@@ -112,6 +113,12 @@ Instr* remove_dead_symb_switch_code(ObjExpr expr, [+([+SymbObj], Instr+)] cases,
 Instr* remove_dead_loop_code(Instr+ body) {
   opt_body = remove_dead_code(body);
   return (repeat(opt_body) if opt_body != ());
+}
+
+
+Instr* remove_dead_foreach_code(<LocVar, StdVar> seq, ArrayVar buffer, Int32Var idx_var, AnyLocVar it_var, Instr* body) {
+  opt_body = remove_dead_code(body);
+  return (foreach(seq, buffer, idx_var, it_var, opt_body) if opt_body != ());
 }
 
 
