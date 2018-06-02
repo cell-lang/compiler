@@ -13,7 +13,7 @@ implicit program           : Program,
     let typed_vars = expr.typed_vars, result_var = var:
       code, unused_var_1, unused_var_2 = stmts_opt_code(expr.body, init_env, ret_var_gen);
     ;
-    return (code, obj_expr(var), ret_var_gen);
+    return ((execute_block(code) if code != ()), obj_expr(var), ret_var_gen);
   }
 }
 
@@ -56,33 +56,55 @@ implicit program           : Program,
     if_stmt()                 = if_stmt_opt_code(stmt, env, var_gen),
     for_stmt()                = for_stmt_opt_code(stmt, env, var_gen),
     foreach_stmt()            = foreach_stmt_opt_code(stmt, env, var_gen),
-    return_stmt               = undefined,
-    proc_call_stmt()          = undefined;
+    return_stmt               = ((exit_block), surrogates, var_gen),
+    proc_call_stmt()          = proc_call_stmt_opt_code(stmt, env, var_gen);
+
+
+  // proc_call_stmt(res_var: StdVar?, proc_name: ProcSymbol, args: Expr*);
+  (Instr*, [SurrExpr -> ObjExpr], VarGen) proc_call_stmt_opt_code(ProcCallStmt stmt, [EnvVar -> Type] env, VarGen init_var_gen) {
+    code, args_surrs, var_gen = opt_eval_code(stmt.args, env, init_var_gen);
+    call_instr = if stmt.res_var?
+      then call_proc(stmt.res_var, stmt.proc_name, args_surrs, ())
+      else call_proc(stmt.proc_name, args_surrs, ());
+    return ((code | call_instr), surrogates, var_gen);
+  }
 
 
   (Instr*, [SurrExpr -> ObjExpr], VarGen) assignment_stmt_opt_code(StdVar+ vars, Expr value, [EnvVar -> Type] env, VarGen init_var_gen) {
+    type = expr_type(value, env);
+    return ((terminate), surrogates, init_var_gen) if type == empty_type;
+
+    repr = opt_repr(type);
+    code, surr, var_gen = opt_eval_code(value, env, init_var_gen);
+
     if |vars| == 1:
-      type = expr_type(value, env);
-      repr = if type != empty_type then opt_repr(type) else :object;
-      code, surr, var_gen = opt_eval_code(value, env, init_var_gen);
       var = only(vars);
       ll_var = low_level_var(repr, var);
       code = store_result(code, surr, ll_var);
       surrs = if var != ll_var
         then update(surrogates, var, obj_expr(ll_var))
         else remove_key(surrogates, var);
-      return (code, surrs, var_gen);
 
     else
-      fail;
+      assert repr == :object;
+      types = tuple_field_supertypes(type, |vars|);
+      assert types == (restricted_seq_elem_supertype(type, singleton_type(i)) : i < |vars|);
+      fail if not types :: NeType+;
+      reprs = (opt_repr(t) : t <- types);
+      phys_vars, var_gen = mapli(vars, var_gen, next_var_def(reprs($b), $a, $c));
+      code = code & (set_any_var(v, at(surr, i)) : v @ i <- phys_vars);
+      surrs = remove_keys(surrogates, set(vars));
+      surrs = surrs & [v -> obj_expr(pv) : v @ i <~ vars, pv = phys_vars(i), v != pv];
     ;
+
+    return (code, surrs, var_gen);
   }
 
 
   (Instr*, [SurrExpr -> ObjExpr], VarGen) return_stmt_opt_code(Expr value, [EnvVar -> Type] env, VarGen init_var_gen) {
     code, surr, var_gen = opt_eval_code(value, env, init_var_gen);
     code = store_result(code, surr, result_var);
-    return (code, surrogates, init_var_gen);
+    return ((code | exit_block), surrogates, init_var_gen);
   }
 
 

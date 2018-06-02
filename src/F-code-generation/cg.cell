@@ -23,19 +23,27 @@ implicit program : Program, options : CompilationOptions {
   //////////////////////////////////////////////////////////////////////////////
 
   ObjProcDef gen_proc_code(Procedure procedure) {
-    fn_res_var, var_gen = next_obj_var(blank_var_gen);
-    tmp_bvar, var_gen = next_bool_var(var_gen);
+    res_var, var_gen = next_obj_var(blank_var_gen);
 
     body = rand_sort([auto_pre_init(v, t) : v, t <- procedure.auto_vars]) &
            rand_sort([init_db(v, info.links, info.type) : v, info <- procedure.db_vars]);
 
     // Evaluating the expression
-    proc_body = procedure.body;
-    if proc_body != ():
-      let context=procedure, var_subst_map = [], cls_var_subst_map = [], next_var_gen=var_gen:
-        code = gen_code(proc_body, fn_res_var);
-      ;
-      body = body & (execute_block(code));
+    if procedure.body != ():
+      code, unused_var, var_gen = stmts_opt_code(
+        procedure.body,
+        [a.var -> a.type : a <~ procedure.args],
+        var_gen,
+        typedefs          = program.typedefs,
+        context           = procedure,
+        var_subst_map     = [],
+        cls_var_subst_map = [],
+        typed_vars        = [],
+        surrogates        = [],
+        result_var        = res_var
+      );
+
+      body = (body | execute_block(code)) if code != ();
     ;
 
     body = body & rand_sort([auto_cleanup(v, t) : v, t <- procedure.auto_vars]);
@@ -43,7 +51,7 @@ implicit program : Program, options : CompilationOptions {
 
     debug_code = (push_call_info(procedure.id, (just(fn_arg(i)) : p @ i <- procedure.args)));
 
-    val = if procedure.res_type != nothing then fn_res_var else object(:void); ## BAD: HERE I'M CHEATING...
+    val = if procedure.res_type != nothing then res_var else object(:void); ## BAD: HERE I'M CHEATING...
     body = debug_code & body & (pop_call_info, ret_val(val));
 
     proc_ret_type = if procedure.res_type != nothing then value(procedure.res_type) else symb_type(:void);

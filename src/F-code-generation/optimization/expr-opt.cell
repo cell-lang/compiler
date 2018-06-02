@@ -43,6 +43,19 @@ implicit program           : Program,
 
     return (eval_code, surr, var_gen);
   }
+
+
+  (Instr*, ObjExpr*, VarGen) opt_eval_code(Expr* exprs, [EnvVar -> Type] env, VarGen init_var_gen) {
+    var_gen = init_var_gen;
+    code = ();
+    surrs = ();
+    for e <- exprs:
+      expr_code, surr, var_gen = opt_eval_code(e, env, var_gen);
+      code = code & expr_code;
+      surrs = (surrs | surr);
+    ;
+    return (code, surrs, var_gen);
+  }
 }
 
 

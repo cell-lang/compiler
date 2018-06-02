@@ -100,7 +100,7 @@ implicit program           : Program,
     or_expr()           = or_expr_opt_eval_info(expr.left, expr.right, var_gen),
     not_expr(e?)        = not_expr_opt_eval_info(e, var_gen),
     eq()                = eq_expr_opt_eval_info(expr.left, expr.right, var_gen),
-    membership()        = undefined,
+    membership()        = membership_opt_eval_info(expr.obj, expr.type, var_gen),
     // cast_expr()         = undefined,
     accessor()          = accessor_opt_eval_info(expr.expr, expr.field, var_gen),
     accessor_test()     = accessor_test_opt_eval_info(expr.expr, expr.field, var_gen),
@@ -116,6 +116,14 @@ implicit program           : Program,
     // tern_rel_comp()     = undefined,
     seq_comp()          = seq_comp_opt_eval_info(expr, var_gen),
     range_comp()        = range_comp_opt_eval_info(expr, var_gen);
+
+
+  (Instr*, ObjExpr, VarGen) membership_opt_eval_info(Expr obj, NeType type, VarGen init_var_gen) {
+    pred = memb_test_preds_map[type];
+    res_var, ret_var_gen = next_bool_var(init_var_gen);
+    code, surr, var_gen = opt_eval_info(obj, ret_var_gen);
+    return ((code | set_bvar(res_var, is_member(pred, surr))), obj_expr(res_var), ret_var_gen);
+  }
 
 
   (Instr*, ObjExpr, VarGen) accessor_opt_eval_info(Expr expr, SymbObj field, VarGen init_var_gen) {
