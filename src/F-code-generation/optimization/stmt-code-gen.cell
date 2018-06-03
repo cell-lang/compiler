@@ -44,9 +44,9 @@ implicit program           : Program,
   //////////////////////////////////////////////////////////////////////////////
 
   (Instr*, [SurrExpr -> ObjExpr], VarGen) stmt_opt_code(Statement stmt, [EnvVar -> Type] env, VarGen var_gen) =
-    break_stmt                = undefined,
+    break_stmt                = break_stmt_opt_code(env, var_gen),
     fail_stmt                 = undefined,
-    loop_stmt(ss?)            = undefined,
+    loop_stmt(ss?)            = loop_stmt_opt_code(ss, env, var_gen),
     print_stmt(e?)            = undefined,
     return_stmt(e?)           = return_stmt_opt_code(e, env, var_gen),
     assert_stmt()             = undefined,
@@ -58,6 +58,12 @@ implicit program           : Program,
     foreach_stmt()            = foreach_stmt_opt_code(stmt, env, var_gen),
     return_stmt               = ((exit_block), surrogates, var_gen),
     proc_call_stmt()          = proc_call_stmt_opt_code(stmt, env, var_gen);
+
+
+  (Instr*, [SurrExpr -> ObjExpr], VarGen) break_stmt_opt_code([EnvVar -> Type] env, VarGen var_gen) {
+    ## IMPLEMENT IMPLEMENT IMPLEMENT FOR REAL
+    return ((break_loop), surrogates, var_gen);
+  }
 
 
   // proc_call_stmt(res_var: StdVar?, proc_name: ProcSymbol, args: Expr*);
@@ -126,21 +132,54 @@ implicit program           : Program,
     ## CHECK WHETHER THE TWO BRANCHES CAN FALL THROUGH (USE may_fall_through(Statement*))
     ## COULD ALSO CHECK WHETHER ONE OF THE BRANCHES IS UNREACHABLE, AND JUST ELIMINATE IT
 
-    // Reconciling the surrogates
-    surr_vars = [v : v <- keys(env) & new_vars(stmt), v :: SurrExpr];
-    sync_vars = [v : v <- surr_vars, lookup(then_surrs, v, v) == lookup(else_surrs, v, v)];
-    unsync_vars = surr_vars - sync_vars;
-    fail if not unsync_vars :: [StdVar];
-    surrs = [v -> then_surrs(v, !!) : v <- sync_vars, then_surrs(v, *)];
+    then_may_fall_through = may_fall_through(stmt.body);
+    else_may_fall_through = may_fall_through(stmt.else);
 
-    // Putting together the complete compiled code
-    for v <- isort(unsync_vars):
-      then_code = (then_code | set_var(v, then_surrs(v, !!))) if then_surrs(v, *);
-      else_code = (else_code | set_var(v, else_surrs(v, !!))) if else_surrs(v, *);
+    if then_may_fall_through and else_may_fall_through:
+      // Reconciling the surrogates
+      surr_vars = [v : v <- keys(env) & new_vars(stmt), v :: SurrExpr];
+      sync_vars = [v : v <- surr_vars, lookup(then_surrs, v, v) == lookup(else_surrs, v, v)];
+      unsync_vars = surr_vars - sync_vars;
+      fail if not unsync_vars :: [StdVar];
+      surrs = [v -> then_surrs(v, !!) : v <- sync_vars, then_surrs(v, *)];
+
+      // Putting together the complete compiled code
+      for v <- isort(unsync_vars):
+        then_code = (then_code | set_var(v, then_surrs(v, !!))) if then_surrs(v, *);
+        else_code = (else_code | set_var(v, else_surrs(v, !!))) if else_surrs(v, *);
+      ;
+
+    elif then_may_fall_through:
+      surrs = then_surrs;
+
+    elif else_may_fall_through:
+      surrs = else_surrs;
+
+    else
+      surrs = [];
     ;
-    code = (cond_code | branch(bool_value(cond_surr), then_code, else_code));
 
+    code = (cond_code | branch(bool_value(cond_surr), then_code, else_code));
     return (code, surrs, var_gen);
+  }
+
+
+  (Instr*, [SurrExpr -> ObjExpr], VarGen) loop_stmt_opt_code(Statement+ body, [EnvVar -> Type] env, VarGen var_gen) {
+    body_env = loop_stmt_body_env(body, env);
+print "##################################################";
+print "env";
+print env;
+print "body_env";
+print body_env;
+    entry_code, body_code, surrs = loop_stable_code(body, [], body_env, var_gen);
+    return ((entry_code | repeat(nonempty(body_code))), surrs, var_gen);
+
+
+    ## THIS OUGHT TO BE MOVED SOMEWHERE ELSE, MAYBE IN type-inference.cell
+    [EnvVar -> Type] loop_stmt_body_env(Statement+ stmts, [EnvVar -> Type] entry_env) {
+      exit_env = update_env(stmts, entry_env);
+      return merge_envs(entry_env, exit_env);
+    }
   }
 
 
@@ -162,7 +201,7 @@ implicit program           : Program,
     surrs = surrogates;
     loop
       // Trying to generate the body code with the current set of surrogates
-      entry_surrs = surrogates & [stmt.var -> obj_expr(idx_var) if stmt.var?];
+      entry_surrs = surrs & [stmt.var -> obj_expr(idx_var) if stmt.var?];
       ## HERE I ALSO HAVE TO PASS DOWN THE LIST OF EXPECTED SURROGATES FOR BREAK INSTRUCTIONS
       let surrogates = entry_surrs:
         body_code, exit_surrs, exit_var_gen = stmts_opt_code(stmt.body, body_env, var_gen);
@@ -265,7 +304,7 @@ implicit program           : Program,
     surr_vars = [v : v, unused_var <- env, v :: SurrExpr];
     loop
       // Trying to generate the body code with the current set of surrogates
-      // entry_surrs = surrogates & [stmt.var -> obj_expr(idx_var) if stmt.var?];
+      // entry_surrs = surrs & [stmt.var -> obj_expr(idx_var) if stmt.var?];
       ## HERE I ALSO HAVE TO PASS DOWN THE LIST OF EXPECTED SURROGATES FOR BREAK INSTRUCTIONS
       let surrogates = surrs:
         body_code, exit_surrs, exit_var_gen = stmts_opt_code(stmt.body, body_env, var_gen);
@@ -317,5 +356,64 @@ implicit program           : Program,
       exit_env = update_env(stmt.body, env & loop_vars_env);
       return merge_envs(env, exit_env) & loop_vars_env;
     }
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////
+
+  (Instr*, Instr*, [SurrExpr -> ObjExpr]) loop_stable_code(Statement+ stmts, [SurrExpr -> ObjExpr] local_surrs, [EnvVar -> Type] env, VarGen var_gen) {
+    surr_vars = [v : v, unused_var <- env, v :: SurrExpr];
+    entry_surrs = surrogates;
+    entry_code = ();
+
+print "---------------------------------------------------------------";
+print "env";
+print env;
+print "surr_vars";
+print surr_vars;
+print "stmts";
+print stmts;
+
+    loop
+print "--  --  --  --  --  --  --  --  --  --";
+print "entry_surrs";
+print entry_surrs;
+
+
+      ## HERE I ALSO HAVE TO PASS DOWN THE LIST OF EXPECTED SURROGATES FOR BREAK INSTRUCTIONS
+      let surrogates = entry_surrs & local_surrs:
+        body_code, exit_surrs, unused_var = stmts_opt_code(stmts, env, var_gen);
+      ;
+
+      // Finding out what variables get out of sync after one iteraction of the loop
+      out_of_sync_vars = [v : v, e <- entry_surrs, not exit_surrs(v, *) or exit_surrs(v, !!) != e];
+
+print "exit_surrs";
+print exit_surrs;
+print "out_of_sync_vars";
+print out_of_sync_vars;
+print "body_code";
+print body_code;
+
+      // If no variable is out of sync, then we're done
+      if out_of_sync_vars == []:
+        for v <- isort(surr_vars):
+          assert not entry_surrs(v, *) or (exit_surrs(v, *) and entry_surrs(v, !!) == exit_surrs(v, !!));
+          if not entry_surrs(v, *) and exit_surrs(v, *):
+            fail if not v :: StdVar;
+            body_code = (body_code | set_var(v, exit_surrs(v, !!)));
+          ;
+        ;
+        return (entry_code, body_code, entry_surrs);
+      ;
+
+      // Removing the unsyncronized variables from the initial list of surrogates
+      // by physically storing them into their corresponding variables
+      for v <- isort(out_of_sync_vars):
+        fail if not v :: StdVar;
+        entry_code = (entry_code | set_var(v, entry_surrs(v, !!)));
+      ;
+      entry_surrs = remove_keys(entry_surrs, out_of_sync_vars);
+    ;
   }
 }
