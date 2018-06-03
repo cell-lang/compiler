@@ -28,7 +28,9 @@ implicit program           : Program,
          surrogates        : [SurrExpr -> ObjExpr],
          result_var        : AnyLocVar
 {
-  (Instr*, [SurrExpr -> ObjExpr], VarGen) stmts_opt_code(Statement+ stmts, [EnvVar -> Type] init_env, VarGen init_var_gen) {
+  (Instr*, [SurrExpr -> ObjExpr], VarGen) stmts_opt_code(Statement* stmts, [EnvVar -> Type] init_env, VarGen init_var_gen) {
+    return ((), surrogates, init_var_gen) if stmts == ();
+
     var_gen = init_var_gen;
     code = ();
     env = init_env;
@@ -116,18 +118,21 @@ implicit program           : Program,
 
   (Instr*, [SurrExpr -> ObjExpr], VarGen) if_stmt_opt_code(IfStmt stmt, [EnvVar -> Type] env, VarGen init_var_gen) {
     cond_code, cond_surr, unused_var = opt_eval_code(stmt.cond, env, init_var_gen);
-
     then_env, else_env = refine_env(stmt.cond, env);
 
-    // The variable used to store the value of the condition is not
-    // needed anymore here, so there's no need to update next_var_gen
-    then_code, then_surrs, var_gen = stmts_opt_code(stmt.body, then_env, init_var_gen);
+    surrs = surrogates;
+    loop
+      let surrogates = surrs:
+        // The variable used to store the value of the condition is not
+        // needed anymore here, so there's no need to update next_var_gen
+        then_code, then_surrs, var_gen = stmts_opt_code(stmt.body, then_env, init_var_gen);
 
-    // Here I could start again from init_var_gen, but then I
-    // would have to reconcile the two resulting generators
-    else_code, else_surrs, var_gen = if stmt.else != ()
-      then stmts_opt_code(stmt.else, else_env, var_gen)
-      else ((), surrogates, var_gen);
+        // Here I could start again from init_var_gen, but then I
+        // would have to reconcile the two resulting generators
+        else_code, else_surrs, var_gen = stmts_opt_code(stmt.else, else_env, var_gen);
+      ;
+
+    ;
 
     ## CHECK WHETHER THE TWO BRANCHES CAN FALL THROUGH (USE may_fall_through(Statement*))
     ## COULD ALSO CHECK WHETHER ONE OF THE BRANCHES IS UNREACHABLE, AND JUST ELIMINATE IT
