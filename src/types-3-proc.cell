@@ -271,14 +271,6 @@ type BasicInstr     = init_stream(StreamVar),
 
                       alloc_array(var: ArrayVar, size: Int32Expr),
                       write_array(var: ArrayVar, idx: IntExpr, value: AnyTypeExpr),
-                      traverse_array(
-                        src:      <LocVar, StdVar>,
-                        buffer:   ArrayVar,
-                        target:   ArrayVar,
-                        idx_var:  Int32Var,
-                        it_var:   AnyLocVar,
-                        body:     Instr*
-                      ),
 
                       write_rec_field(var: LocOptTagRecVar, label: Symbol, value: AnyTypeExpr, optional: Bool),
 
@@ -380,15 +372,19 @@ type CompInstr      = branch(cond: BoolExpr, when_true: Instr+, when_false: Inst
                       switch_on_nat(value: IntExpr, cases: Instr*+),
                       symb_switch(value: ObjExpr, cases: [+([+SymbObj], Instr+)], else: Instr*),
                       repeat(Instr+),
-                      foreach(
-                        seq:      <LocVar, StdVar>,
-                        buffer:   ArrayVar,
-                        idx_var:  Int32Var,
-                        it_var:   AnyLocVar,
-                        body:     Instr*
-                      ),
                       execute_block(Instr+),
-                      try_block(var: LocVar, body: Instr+);
+                      try_block(var: LocVar, body: Instr+),
+                      ForeachInstr;
+
+type ForeachInstr   = foreach(
+                        seq:        <LocVar, StdVar>,
+                        src_array:  ArrayVar,
+                        tmp_buffer: ArrayVar?,
+                        count_var:  Int32Var,
+                        idx_var:    Int32Var,
+                        it_var:     AnyLocVar,
+                        body:       Instr*
+                      );
 
 type Instr          = BasicInstr, JumpInstr, CompInstr;
 

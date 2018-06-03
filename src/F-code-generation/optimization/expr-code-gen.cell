@@ -310,11 +310,15 @@ implicit program           : Program,
     fail if not src_surr :: <LocVar, StdVar>; ## MAYBE THIS COULD BE AVOIDED...
 
     // Temporary buffer for source data
-    buffer_var, var_gen = next_array_var(var_gen, src_repr);
+    src_array_var, var_gen = next_array_var(var_gen, src_repr);
 
     // Allocation of destination array
+    array_size_var, var_gen = next_int32_var(var_gen);
     array_var, var_gen = next_array_var(var_gen, elt_repr);
-    eval_code = (eval_code | alloc_array(array_var, get_size(src_surr)));
+    eval_code = (eval_code |
+      set_ivar32(array_size_var, get_size(src_surr)),
+      alloc_array(array_var, array_size_var)
+    );
 
     vars = expr.vars;
     if |vars| == 1:
@@ -359,7 +363,15 @@ implicit program           : Program,
     ;
 
     // Mapping source to destination arrays
-    map_instr = traverse_array(src_surr, buffer_var, array_var, hidden_idx_var, it_var, body_code);
+    map_instr = foreach(
+      seq:        src_surr,
+      src_array:  src_array_var,
+      tmp_buffer: array_var,
+      count_var:  array_size_var,
+      idx_var:    hidden_idx_var,
+      it_var:     it_var,
+      body:       body_code
+    );
 
     eval_code = (eval_code & loop_init_code | map_instr, mk_seq_instr);
     return (eval_code, res_var, ret_var_gen);

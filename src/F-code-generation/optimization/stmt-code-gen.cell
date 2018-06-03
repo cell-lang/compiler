@@ -231,7 +231,7 @@ implicit program           : Program,
     fail if not seq_surr :: <LocVar, StdVar>; ## MAYBE THIS COULD BE AVOIDED...
 
     // Temporary buffer for source data
-    buffer_var, var_gen = next_array_var(var_gen, elt_repr);
+    src_array_var, var_gen = next_array_var(var_gen, elt_repr);
 
     vars = stmt.vars;
     if |vars| == 1:
@@ -253,6 +253,7 @@ implicit program           : Program,
     ;
 
     // Index variables
+    count_var, var_gen = next_int32_var(var_gen);
     hidden_idx_var, var_gen = next_int32_var(var_gen);
     surrs = surrs & [stmt.idx_var -> int_obj(hidden_idx_var)] if stmt.idx_var?;
 
@@ -294,9 +295,17 @@ implicit program           : Program,
     ;
 
     // Mapping source to destination arrays
-    map_instr = foreach(seq_surr, buffer_var, hidden_idx_var, it_var, body_code);
+    read_len_instr = set_ivar32(count_var, get_size(seq_surr));
+    map_instr = foreach(
+      seq:        seq_surr,
+      src_array:  src_array_var,
+      count_var:  count_var,
+      idx_var:    hidden_idx_var,
+      it_var:     it_var,
+      body:       body_code
+    );
 
-    return ((entry_code | map_instr), surrs, init_var_gen);
+    return ((entry_code | read_len_instr, map_instr), surrs, init_var_gen);
 
 
     ## THIS OUGHT TO BE MOVED SOMEWHERE ELSE, MAYBE IN type-inference.cell
