@@ -55,10 +55,10 @@ implicit program           : Program,
     break_stmt                = break_stmt_opt_code(env, var_gen),
     fail_stmt                 = undefined,
     loop_stmt(ss?)            = loop_stmt_opt_code(ss, env, var_gen),
-    print_stmt(e?)            = undefined,
+    print_stmt(e?)            = print_stmt_opt_code(e, env, var_gen),
     return_stmt(e?)           = return_stmt_opt_code(e, env, var_gen),
     assert_stmt()             = undefined,
-    let_stmt()                = undefined,
+    let_stmt()                = let_stmt_opt_code(stmt.asgnms, stmt.body, env, var_gen),
     assignment_stmt()         = assignment_stmt_opt_code(stmt.vars, stmt.value, env, var_gen),
     seq_update_stmt()         = undefined,
     if_stmt()                 = if_stmt_opt_code(stmt, env, var_gen),
@@ -66,6 +66,41 @@ implicit program           : Program,
     foreach_stmt()            = foreach_stmt_opt_code(stmt, env, var_gen),
     return_stmt               = ((exit_block), just(surrogates), [], var_gen),
     proc_call_stmt()          = proc_call_stmt_opt_code(stmt, env, var_gen);
+
+
+  (Instr*, Maybe[[SurrExpr -> ObjExpr]], [[SurrExpr -> ObjExpr]], VarGen)
+  print_stmt_opt_code(Expr expr, [EnvVar -> Type] env, VarGen var_gen) {
+    eval_code, surr, unused_var = opt_eval_code(expr, env, var_gen);
+    return ((eval_code | print_obj(surr)), just(surrogates), [], var_gen);
+  }
+
+
+  (Instr*, Maybe[[SurrExpr -> ObjExpr]], [[SurrExpr -> ObjExpr]], VarGen)
+  let_stmt_opt_code([ImplArg -> Expr] asgnms, Statement+ body, [EnvVar -> Type] env, VarGen init_var_gen) {
+    ## THIS SHOULD BE CHECKED IN THE PROPER PLACE, BOTH IN LAYER 1 AND 2
+    ## IT'S A TEMPORARY LIMITATION THAT SHOULD BE REMOVED
+    assert subset(outcomes(body), [:fails, :falls_through]);
+
+    ## BUG BUG BUG. THE ASSIGNMENTS ARE DONE IN RANDOM ORDER. FIX THIS
+    ord_asgnms = isort(asgnms);
+    backup_vars, var_gen = next_obj_vars(init_var_gen, |ord_asgnms|);
+
+    set_up_code = join(({
+        eval_code, surr, unused_var = opt_eval_code(e, env, var_gen);
+        backup_var = backup_vars(i);
+        return (eval_code | set_var(backup_var, v), set_var(v, surr));
+      } : v, e @ i <- ord_asgnms
+    ));
+
+    tear_down_code = reverse((set_var(v, backup_vars(i)) : v, unused_var @ i <- ord_asgnms));
+
+    body_env = env; ## BUG BUG BUG: THIS IS PROBABLY WRONG
+    body_code, surrs, break_surrs, var_gen = stmts_opt_code(body, body_env, var_gen);
+    assert break_surrs == []; ## SEE COMMENT AT THE BEGINNING OF THIS FUNCTION
+
+    code = set_up_code & body_code & tear_down_code;
+    return (code, surrs, break_surrs, var_gen);
+  }
 
 
   // If a surrogates is defined here but not in the expected list,
