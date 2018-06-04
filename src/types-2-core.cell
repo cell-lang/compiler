@@ -260,8 +260,6 @@ type FilterClause = filter_clause(Expr);
 ////////////////////////////////////////////////////////////////////////////////
 
 type AtomicFnStmt   = assignment_stmt(vars: StdVar+, value: Expr),
-                      return_stmt(Expr),
-                      break_stmt,
                       fail_stmt,
                       assert_stmt(cond: Expr, env: [<StdVar, ImplArg>], file: String, line: NzNat, text: Maybe[String]),
                       print_stmt(Expr),
@@ -274,7 +272,6 @@ type AtomicUpdateStmt = send_msg_stmt(target: NestedDBVar, msg: Expr),
                         insert_stmt(var: RelVar, fields: Expr+, force: Bool);
 
 type ProcCallStmt   = proc_call_stmt(res_var: StdVar?, proc_name: ProcSymbol, args: Expr*);
-type AtomicProcStmt = return_stmt, ProcCallStmt;
 
 type CtrlStmt = set_input_ctrl_stmt(var: LocAutoVar, input: Atom, value: Expr),
                 clear_input_ctrl_stmt(var: LocAutoVar, input: Atom),
@@ -284,6 +281,8 @@ type CtrlStmt = set_input_ctrl_stmt(var: LocAutoVar, input: Atom, value: Expr),
                 read_state_ctrl_stmt(res_var: StdVar, auto_var: <LocAutoVar, LocDBVar>),
                 restore_state_ctrl_stmt(res_var: StdVar, auto_var: <LocAutoVar, LocDBVar>, state: Expr);
 
+type JumpStmt = return_stmt(Expr), break_stmt, return_stmt;
+
 type IfStmt[T]      = if_stmt(cond: Expr, body: T+, else: T*);
 type LoopStmt[T]    = loop_stmt(T+);
 type ForeachStmt[T] = foreach_stmt(vars: StdVar+, idx_var: StdVar?, values: Expr, body: T+);
@@ -292,7 +291,7 @@ type LetStmt[T]     = let_stmt(asgnms: [ImplArg -> Expr], body: T+);
 
 type CompositeStmt[T] = IfStmt[T], LoopStmt[T], ForeachStmt[T], ForStmt[T], LetStmt[T];
 
-type Statement      = AtomicFnStmt, AtomicUpdateStmt, AtomicProcStmt, CtrlStmt, CompositeStmt[Statement];
+type Statement  = AtomicFnStmt, AtomicUpdateStmt, ProcCallStmt, CtrlStmt, JumpStmt, CompositeStmt[Statement];
 
 type IfStmt       = IfStmt[Statement];
 type LoopStmt     = LoopStmt[Statement];

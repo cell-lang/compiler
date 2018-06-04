@@ -10,8 +10,8 @@ implicit program           : Program,
     type = expr_type(expr, init_env, typed_vars = []); ## NOT SURE ABOUT typed_vars HERE
     repr = if type != empty_type then opt_repr(type) else :object;
     var, ret_var_gen = next_var(repr, init_var_gen);
-    let typed_vars = expr.typed_vars, result_var = var:
-      code, unused_var_1, unused_var_2 = stmts_opt_code(expr.body, init_env, ret_var_gen);
+    let typed_vars = expr.typed_vars, exp_break_surrs = nothing, result_var = var:
+      code, unused_var_1, unused_var_2, unused_var_3 = stmts_opt_code(expr.body, init_env, ret_var_gen);
     ;
     return ((execute_block(code) if code != ()), obj_expr(var), ret_var_gen);
   }
@@ -26,26 +26,32 @@ implicit program           : Program,
          cls_var_subst_map : [ClsVar -> CaptClsVar],
          typed_vars        : [StdVar -> NeType],
          surrogates        : [SurrExpr -> ObjExpr],
+         exp_break_surrs   : Maybe[[SurrExpr -> ObjExpr]],
          result_var        : AnyLocVar
 {
-  (Instr*, [SurrExpr -> ObjExpr], VarGen) stmts_opt_code(Statement* stmts, [EnvVar -> Type] init_env, VarGen init_var_gen) {
-    return ((), surrogates, init_var_gen) if stmts == ();
+  (Instr*, Maybe[[SurrExpr -> ObjExpr]], [[SurrExpr -> ObjExpr]], VarGen)
+  stmts_opt_code(Statement* stmts, [EnvVar -> Type] init_env, VarGen init_var_gen) {
+    return ((), just(surrogates), [], init_var_gen) if stmts == ();
 
     var_gen = init_var_gen;
     code = ();
     env = init_env;
-    surrs = surrogates;
+    surrs = just(surrogates);
+    break_surrs = [];
     for s <- stmts:
-      stmt_code, surrs, var_gen = stmt_opt_code(s, env, var_gen, surrogates = surrs);
+      fail if surrs == nothing;
+      stmt_code, surrs, stmt_break_surrs, var_gen = stmt_opt_code(s, env, var_gen, surrogates = value(surrs));
       code = code & stmt_code;
+      break_surrs = break_surrs & stmt_break_surrs;
       env = update_env(s, env);
     ;
-    return (code, surrs, var_gen);
+    return (code, surrs, break_surrs, var_gen);
   }
 
   //////////////////////////////////////////////////////////////////////////////
 
-  (Instr*, [SurrExpr -> ObjExpr], VarGen) stmt_opt_code(Statement stmt, [EnvVar -> Type] env, VarGen var_gen) =
+  (Instr*, Maybe[[SurrExpr -> ObjExpr]], [[SurrExpr -> ObjExpr]], VarGen)
+  stmt_opt_code(Statement stmt, [EnvVar -> Type] env, VarGen var_gen) =
     break_stmt                = break_stmt_opt_code(env, var_gen),
     fail_stmt                 = undefined,
     loop_stmt(ss?)            = loop_stmt_opt_code(ss, env, var_gen),
@@ -58,29 +64,48 @@ implicit program           : Program,
     if_stmt()                 = if_stmt_opt_code(stmt, env, var_gen),
     for_stmt()                = for_stmt_opt_code(stmt, env, var_gen),
     foreach_stmt()            = foreach_stmt_opt_code(stmt, env, var_gen),
-    return_stmt               = ((exit_block), surrogates, var_gen),
+    return_stmt               = ((exit_block), just(surrogates), [], var_gen),
     proc_call_stmt()          = proc_call_stmt_opt_code(stmt, env, var_gen);
 
 
-  (Instr*, [SurrExpr -> ObjExpr], VarGen) break_stmt_opt_code([EnvVar -> Type] env, VarGen var_gen) {
-    ## IMPLEMENT IMPLEMENT IMPLEMENT FOR REAL
-    return ((break_loop), surrogates, var_gen);
+  // If a surrogates is defined here but not in the expected list,
+  // we just remove it by physically storing its value.
+
+  // If a surrogates is defined in the expected list but not here
+  // there's nothing we can do here to fix that. We just return
+  // the list of surrogates we end up with and we leave it to code
+  // higher up in the call stack to fix that and retry
+
+  // Finally, if a surrogate is defined in both lists, but the
+  // definitions are different, we remove it here and we leave
+  // to the calling code to fix the expected list and retry
+
+  (Instr*, Maybe[[SurrExpr -> ObjExpr]], [[SurrExpr -> ObjExpr]], VarGen)
+  break_stmt_opt_code([EnvVar -> Type] env, VarGen var_gen) {
+    exp_surrs = value_unsafe(exp_break_surrs);
+    surrs_to_drop = [v : v, e <- surrogates, not exp_surrs(v, *) or exp_surrs(v, !!) != e];
+    fail if not surrs_to_drop :: [StdVar];
+    sync_code = (set_var(v, surrogates(v, !!)) : v <- isort(surrs_to_drop));
+    surrs = remove_keys(surrogates, surrs_to_drop);
+    return ((sync_code | break_loop), nothing, [surrs], var_gen);
   }
 
 
   // proc_call_stmt(res_var: StdVar?, proc_name: ProcSymbol, args: Expr*);
-  (Instr*, [SurrExpr -> ObjExpr], VarGen) proc_call_stmt_opt_code(ProcCallStmt stmt, [EnvVar -> Type] env, VarGen init_var_gen) {
+  (Instr*, Maybe[[SurrExpr -> ObjExpr]], [[SurrExpr -> ObjExpr]], VarGen)
+  proc_call_stmt_opt_code(ProcCallStmt stmt, [EnvVar -> Type] env, VarGen init_var_gen) {
     code, args_surrs, var_gen = opt_eval_code(stmt.args, env, init_var_gen);
     call_instr = if stmt.res_var?
       then call_proc(stmt.res_var, stmt.proc_name, args_surrs, ())
       else call_proc(stmt.proc_name, args_surrs, ());
-    return ((code | call_instr), surrogates, var_gen);
+    return ((code | call_instr), just(surrogates), [], var_gen);
   }
 
 
-  (Instr*, [SurrExpr -> ObjExpr], VarGen) assignment_stmt_opt_code(StdVar+ vars, Expr value, [EnvVar -> Type] env, VarGen init_var_gen) {
+  (Instr*, Maybe[[SurrExpr -> ObjExpr]], [[SurrExpr -> ObjExpr]], VarGen)
+  assignment_stmt_opt_code(StdVar+ vars, Expr value, [EnvVar -> Type] env, VarGen init_var_gen) {
     type = expr_type(value, env);
-    return ((terminate), surrogates, init_var_gen) if type == empty_type;
+    return ((terminate), just(surrogates), [], init_var_gen) if type == empty_type;
 
     repr = opt_repr(type);
     code, surr, var_gen = opt_eval_code(value, env, init_var_gen);
@@ -105,71 +130,58 @@ implicit program           : Program,
       surrs = surrs & [v -> obj_expr(pv) : v @ i <~ vars, pv = phys_vars(i), v != pv];
     ;
 
-    return (code, surrs, var_gen);
+    return (code, just(surrs), [], var_gen);
   }
 
 
-  (Instr*, [SurrExpr -> ObjExpr], VarGen) return_stmt_opt_code(Expr value, [EnvVar -> Type] env, VarGen init_var_gen) {
+  (Instr*, Maybe[[SurrExpr -> ObjExpr]], [[SurrExpr -> ObjExpr]], VarGen)
+  return_stmt_opt_code(Expr value, [EnvVar -> Type] env, VarGen init_var_gen) {
     code, surr, var_gen = opt_eval_code(value, env, init_var_gen);
     code = store_result(code, surr, result_var);
-    return ((code | exit_block), surrogates, init_var_gen);
+    return ((code | exit_block), nothing, [], init_var_gen);
   }
 
 
-  (Instr*, [SurrExpr -> ObjExpr], VarGen) if_stmt_opt_code(IfStmt stmt, [EnvVar -> Type] env, VarGen init_var_gen) {
+  (Instr*, Maybe[[SurrExpr -> ObjExpr]], [[SurrExpr -> ObjExpr]], VarGen)
+  if_stmt_opt_code(IfStmt stmt, [EnvVar -> Type] env, VarGen init_var_gen) {
+    ## HERE WE COULD CHECK WHETHER ONE OF THE BRANCHES IS UNREACHABLE, AND JUST ELIMINATE IT
+
     cond_code, cond_surr, unused_var = opt_eval_code(stmt.cond, env, init_var_gen);
     then_env, else_env = refine_env(stmt.cond, env);
 
-    surrs = surrogates;
-    loop
-      let surrogates = surrs:
-        // The variable used to store the value of the condition is not
-        // needed anymore here, so there's no need to update next_var_gen
-        then_code, then_surrs, var_gen = stmts_opt_code(stmt.body, then_env, init_var_gen);
+    // The variable used to store the value of the condition is not
+    // needed anymore here, so there's no need to update next_var_gen
+    then_code, then_surrs, then_break_surrs, var_gen = stmts_opt_code(stmt.body, then_env, init_var_gen);
 
-        // Here I could start again from init_var_gen, but then I
-        // would have to reconcile the two resulting generators
-        else_code, else_surrs, var_gen = stmts_opt_code(stmt.else, else_env, var_gen);
-      ;
+    // Here I could start again from init_var_gen, but then I
+    // would have to reconcile the two resulting generators
+    else_code, else_surrs, else_break_surrs, var_gen = stmts_opt_code(stmt.else, else_env, var_gen);
 
-    ;
-
-    ## CHECK WHETHER THE TWO BRANCHES CAN FALL THROUGH (USE may_fall_through(Statement*))
-    ## COULD ALSO CHECK WHETHER ONE OF THE BRANCHES IS UNREACHABLE, AND JUST ELIMINATE IT
-
-    then_may_fall_through = may_fall_through(stmt.body);
-    else_may_fall_through = may_fall_through(stmt.else);
-
-    if then_may_fall_through and else_may_fall_through:
-      // Reconciling the surrogates
+    if then_surrs != nothing and else_surrs != nothing:
+      // If both branches can fall through, we need to syncronize their lists of surrogates
       surr_vars = [v : v <- keys(env) & new_vars(stmt), v :: SurrExpr];
-      sync_vars = [v : v <- surr_vars, lookup(then_surrs, v, v) == lookup(else_surrs, v, v)];
-      unsync_vars = surr_vars - sync_vars;
-      fail if not unsync_vars :: [StdVar];
-      surrs = [v -> then_surrs(v, !!) : v <- sync_vars, then_surrs(v, *)];
+      surrs, then_sync_code, else_sync_code = reconcile(surr_vars, value(then_surrs), value(else_surrs));
+      surrs = just(surrs);
+      then_code = then_code & then_sync_code;
+      else_code = else_code & else_sync_code;
 
-      // Putting together the complete compiled code
-      for v <- isort(unsync_vars):
-        then_code = (then_code | set_var(v, then_surrs(v, !!))) if then_surrs(v, *);
-        else_code = (else_code | set_var(v, else_surrs(v, !!))) if else_surrs(v, *);
-      ;
-
-    elif then_may_fall_through:
+    elif then_surrs != nothing:
       surrs = then_surrs;
 
-    elif else_may_fall_through:
+    elif else_surrs != nothing:
       surrs = else_surrs;
 
     else
-      surrs = [];
+      surrs = nothing;
     ;
 
     code = (cond_code | branch(bool_value(cond_surr), then_code, else_code));
-    return (code, surrs, var_gen);
+    return (code, surrs, then_break_surrs & else_break_surrs, var_gen);
   }
 
 
-  (Instr*, [SurrExpr -> ObjExpr], VarGen) loop_stmt_opt_code(Statement+ body, [EnvVar -> Type] env, VarGen var_gen) {
+  (Instr*, Maybe[[SurrExpr -> ObjExpr]], [[SurrExpr -> ObjExpr]], VarGen)
+  loop_stmt_opt_code(Statement+ body, [EnvVar -> Type] env, VarGen var_gen) {
     body_env = loop_stmt_body_env(body, env);
 print "##################################################";
 print "env";
@@ -177,7 +189,7 @@ print env;
 print "body_env";
 print body_env;
     entry_code, body_code, surrs = loop_stable_code(body, [], body_env, var_gen);
-    return ((entry_code | repeat(nonempty(body_code))), surrs, var_gen);
+    return ((entry_code | repeat(nonempty(body_code))), just(surrs), [], var_gen);
 
 
     ## THIS OUGHT TO BE MOVED SOMEWHERE ELSE, MAYBE IN type-inference.cell
@@ -188,59 +200,62 @@ print body_env;
   }
 
 
-  (Instr*, [SurrExpr -> ObjExpr], VarGen) for_stmt_opt_code(ForStmt stmt, [EnvVar -> Type] env, VarGen init_var_gen) {
-    // Generating the hidden loop variable
-    idx_var, var_gen = next_int_var(init_var_gen);
+  (Instr*, Maybe[[SurrExpr -> ObjExpr]], [[SurrExpr -> ObjExpr]], VarGen)
+  for_stmt_opt_code(ForStmt stmt, [EnvVar -> Type] env, VarGen init_var_gen) {
+    fail;
 
-    // Code that evaluates the bounds and initializes the loop variable
-    start_val_code, start_val_surr, var_gen = opt_eval_code(stmt.start_val, env, var_gen);
-    end_val_code, end_val_surr, var_gen = opt_eval_code(stmt.end_val, env, var_gen);
-    entry_code = store_result(start_val_code, start_val_surr, idx_var) & end_val_code;
+    // // Generating the hidden loop variable
+    // idx_var, var_gen = next_int_var(init_var_gen);
 
-    // Environment the body runs in
-    body_env = for_stmt_body_env(stmt, env);
+    // // Code that evaluates the bounds and initializes the loop variable
+    // start_val_code, start_val_surr, var_gen = opt_eval_code(stmt.start_val, env, var_gen);
+    // end_val_code, end_val_surr, var_gen = opt_eval_code(stmt.end_val, env, var_gen);
+    // entry_code = store_result(start_val_code, start_val_surr, idx_var) & end_val_code;
 
-    body_code = (); exit_surrs = []; ## BAD BAD BAD: THESE SHOULD NOT BE NECESSARY
+    // // Environment the body runs in
+    // body_env = for_stmt_body_env(stmt, env);
 
-    surr_vars = [v : v, unused_var <- env, v :: SurrExpr];
-    surrs = surrogates;
-    loop
-      // Trying to generate the body code with the current set of surrogates
-      entry_surrs = surrs & [stmt.var -> obj_expr(idx_var) if stmt.var?];
-      ## HERE I ALSO HAVE TO PASS DOWN THE LIST OF EXPECTED SURROGATES FOR BREAK INSTRUCTIONS
-      let surrogates = entry_surrs:
-        body_code, exit_surrs, exit_var_gen = stmts_opt_code(stmt.body, body_env, var_gen);
-      ;
+    // body_code = (); exit_surrs = []; ## BAD BAD BAD: THESE SHOULD NOT BE NECESSARY
 
-      // Finding out what variables get out of sync after one iteraction of the loop
-      out_of_sync_vars = [v : v, e <- surrs, lookup(exit_surrs, v, v) != e];
+    // surr_vars = [v : v, unused_var <- env, v :: SurrExpr];
+    // surrs = surrogates;
+    // loop
+    //   // Trying to generate the body code with the current set of surrogates
+    //   entry_surrs = surrs & [stmt.var -> obj_expr(idx_var) if stmt.var?];
+    //   ## HERE I ALSO HAVE TO PASS DOWN THE LIST OF EXPECTED SURROGATES FOR BREAK INSTRUCTIONS
+    //   let surrogates = entry_surrs:
+    //     body_code, exit_surrs, exit_var_gen = stmts_opt_code(stmt.body, body_env, var_gen);
+    //   ;
 
-      // If no variable is out of sync, then we're done
-      break if out_of_sync_vars == [];
+    //   // Finding out what variables get out of sync after one iteraction of the loop
+    //   out_of_sync_vars = [v : v, e <- surrs, lookup(exit_surrs, v, v) != e];
 
-      // Removing the unsyncronized variables from the initial list of surrogates
-      // by physically storing them into their corresponding variables
-      for v <- isort(out_of_sync_vars):
-        fail if not v :: StdVar;
-        entry_code = (entry_code | set_var(v, surrs(v, !!)));
-      ;
-      surrs = remove_keys(surrs, out_of_sync_vars);
-    ;
+    //   // If no variable is out of sync, then we're done
+    //   break if out_of_sync_vars == [];
 
-    for v <- isort(surr_vars):
-      assert not surrs(v, *) or (exit_surrs(v, *) and surrs(v, !!) == exit_surrs(v, !!));
-      if not surrs(v, *) and exit_surrs(v, *):
-        fail if not v :: StdVar;
-        body_code = (body_code | set_var(v, exit_surrs(v, !!)));
-      ;
-    ;
+    //   // Removing the unsyncronized variables from the initial list of surrogates
+    //   // by physically storing them into their corresponding variables
+    //   for v <- isort(out_of_sync_vars):
+    //     fail if not v :: StdVar;
+    //     entry_code = (entry_code | set_var(v, surrs(v, !!)));
+    //   ;
+    //   surrs = remove_keys(surrs, out_of_sync_vars);
+    // ;
 
-    loop_over_expr = if stmt.end_val_incl
-      then is_gt(idx_var, get_int_val(end_val_surr))
-      else is_ge(idx_var, get_int_val(end_val_surr));
-    loop_instr = repeat(nonempty((break_if(loop_over_expr)) & body_code & (increment(idx_var))));
+    // for v <- isort(surr_vars):
+    //   assert not surrs(v, *) or (exit_surrs(v, *) and surrs(v, !!) == exit_surrs(v, !!));
+    //   if not surrs(v, *) and exit_surrs(v, *):
+    //     fail if not v :: StdVar;
+    //     body_code = (body_code | set_var(v, exit_surrs(v, !!)));
+    //   ;
+    // ;
 
-    return ((entry_code | loop_instr), surrs, init_var_gen);
+    // loop_over_expr = if stmt.end_val_incl
+    //   then is_gt(idx_var, get_int_val(end_val_surr))
+    //   else is_ge(idx_var, get_int_val(end_val_surr));
+    // loop_instr = repeat(nonempty((break_if(loop_over_expr)) & body_code & (increment(idx_var))));
+
+    // return ((entry_code | loop_instr), surrs, init_var_gen);
 
 
     ## THIS OUGHT TO BE MOVED SOMEWHERE ELSE, MAYBE IN type-inference.cell
@@ -256,100 +271,103 @@ print body_env;
   }
 
 
-  (Instr*, [SurrExpr -> ObjExpr], VarGen) foreach_stmt_opt_code(ForeachStmt stmt, [EnvVar -> Type] env, VarGen init_var_gen) {
-    // Calculating input sequence type, and returning early if the type is trivial
-    seq_type = expr_type(stmt.values, env);
-    if seq_type == empty_type:
-      return ((terminate), surrogates, init_var_gen);
-    elif is_subset(seq_type, empty_seq_type):
-      return ((), surrogates, init_var_gen);
-    ;
+  (Instr*, Maybe[[SurrExpr -> ObjExpr]], [[SurrExpr -> ObjExpr]], VarGen)
+  foreach_stmt_opt_code(ForeachStmt stmt, [EnvVar -> Type] env, VarGen init_var_gen) {
+    fail;
 
-    // Type and representation of the elements of the input sequence
-    elt_type = seq_elem_supertype(seq_type);
-    fail if elt_type == empty_type;
-    elt_repr = opt_repr(elt_type);
+    // // Calculating input sequence type, and returning early if the type is trivial
+    // seq_type = expr_type(stmt.values, env);
+    // if seq_type == empty_type:
+    //   return ((terminate), surrogates, init_var_gen);
+    // elif is_subset(seq_type, empty_seq_type):
+    //   return ((), surrogates, init_var_gen);
+    // ;
 
-    // Evaluation of input expression
-    entry_code, seq_surr, var_gen = opt_eval_code(stmt.values, env, init_var_gen);
-    fail if not seq_surr :: <LocVar, StdVar>; ## MAYBE THIS COULD BE AVOIDED...
+    // // Type and representation of the elements of the input sequence
+    // elt_type = seq_elem_supertype(seq_type);
+    // fail if elt_type == empty_type;
+    // elt_repr = opt_repr(elt_type);
 
-    // Temporary buffer for source data
-    src_array_var, var_gen = next_array_var(var_gen, elt_repr);
+    // // Evaluation of input expression
+    // entry_code, seq_surr, var_gen = opt_eval_code(stmt.values, env, init_var_gen);
+    // fail if not seq_surr :: <LocVar, StdVar>; ## MAYBE THIS COULD BE AVOIDED...
 
-    vars = stmt.vars;
-    if |vars| == 1:
-      var = only(vars);
-      physical_var, var_gen = next_var_def(elt_repr, var, var_gen);
-      surrs = surrogates & [var -> obj_expr(physical_var)];
-      it_var = physical_var;
-      body_code = ();
+    // // Temporary buffer for source data
+    // src_array_var, var_gen = next_array_var(var_gen, elt_repr);
 
-    else
-      assert elt_repr == :object;
-      vars_types = (restricted_seq_elem_supertype(seq_type, singleton_type(i)) : i < |vars|);
-      fail if not vars_types :: NeType+;
-      reprs = (opt_repr(t) : t <- vars_types);
-      physical_vars, var_gen = mapli(vars, var_gen, next_var_def(reprs($b), $a, $c));
-      surrs = surrogates & [v -> obj_expr(physical_vars(i)) : v @ i <~ vars];
-      it_var, var_gen = next_obj_var(var_gen);
-      body_code = (set_any_var(v, at(it_var, i)) : v @ i <- physical_vars);
-    ;
+    // vars = stmt.vars;
+    // if |vars| == 1:
+    //   var = only(vars);
+    //   physical_var, var_gen = next_var_def(elt_repr, var, var_gen);
+    //   surrs = surrogates & [var -> obj_expr(physical_var)];
+    //   it_var = physical_var;
+    //   body_code = ();
 
-    // Index variables
-    count_var, var_gen = next_int32_var(var_gen);
-    hidden_idx_var, var_gen = next_int32_var(var_gen);
-    surrs = surrs & [stmt.idx_var -> int_obj(hidden_idx_var)] if stmt.idx_var?;
+    // else
+    //   assert elt_repr == :object;
+    //   vars_types = (restricted_seq_elem_supertype(seq_type, singleton_type(i)) : i < |vars|);
+    //   fail if not vars_types :: NeType+;
+    //   reprs = (opt_repr(t) : t <- vars_types);
+    //   physical_vars, var_gen = mapli(vars, var_gen, next_var_def(reprs($b), $a, $c));
+    //   surrs = surrogates & [v -> obj_expr(physical_vars(i)) : v @ i <~ vars];
+    //   it_var, var_gen = next_obj_var(var_gen);
+    //   body_code = (set_any_var(v, at(it_var, i)) : v @ i <- physical_vars);
+    // ;
 
-    // Environment the body runs in
-    body_env = foreach_stmt_body_env(stmt, env);
+    // // Index variables
+    // count_var, var_gen = next_int32_var(var_gen);
+    // hidden_idx_var, var_gen = next_int32_var(var_gen);
+    // surrs = surrs & [stmt.idx_var -> int_obj(hidden_idx_var)] if stmt.idx_var?;
 
-    body_code = (); exit_surrs = []; ## BAD BAD BAD: THESE SHOULD NOT BE NECESSARY
+    // // Environment the body runs in
+    // body_env = foreach_stmt_body_env(stmt, env);
 
-    surr_vars = [v : v, unused_var <- env, v :: SurrExpr];
-    loop
-      // Trying to generate the body code with the current set of surrogates
-      // entry_surrs = surrs & [stmt.var -> obj_expr(idx_var) if stmt.var?];
-      ## HERE I ALSO HAVE TO PASS DOWN THE LIST OF EXPECTED SURROGATES FOR BREAK INSTRUCTIONS
-      let surrogates = surrs:
-        body_code, exit_surrs, exit_var_gen = stmts_opt_code(stmt.body, body_env, var_gen);
-      ;
+    // body_code = (); exit_surrs = []; ## BAD BAD BAD: THESE SHOULD NOT BE NECESSARY
 
-      // Finding out what variables get out of sync after one iteraction of the loop
-      out_of_sync_vars = [v : v, e <- surrs, lookup(exit_surrs, v, v) != e];
+    // surr_vars = [v : v, unused_var <- env, v :: SurrExpr];
+    // loop
+    //   // Trying to generate the body code with the current set of surrogates
+    //   // entry_surrs = surrs & [stmt.var -> obj_expr(idx_var) if stmt.var?];
+    //   ## HERE I ALSO HAVE TO PASS DOWN THE LIST OF EXPECTED SURROGATES FOR BREAK INSTRUCTIONS
+    //   let surrogates = surrs:
+    //     body_code, exit_surrs, exit_var_gen = stmts_opt_code(stmt.body, body_env, var_gen);
+    //   ;
 
-      // If no variable is out of sync, then we're done
-      break if out_of_sync_vars == [];
+    //   // Finding out what variables get out of sync after one iteraction of the loop
+    //   out_of_sync_vars = [v : v, e <- surrs, lookup(exit_surrs, v, v) != e];
 
-      // Removing the unsyncronized variables from the initial list of surrogates
-      // by physically storing them into their corresponding variables
-      for v <- isort(out_of_sync_vars):
-        fail if not v :: StdVar;
-        entry_code = (entry_code | set_var(v, surrs(v, !!)));
-      ;
-      surrs = remove_keys(surrs, out_of_sync_vars);
-    ;
+    //   // If no variable is out of sync, then we're done
+    //   break if out_of_sync_vars == [];
 
-    for v <- isort(surr_vars):
-      assert not surrs(v, *) or (exit_surrs(v, *) and surrs(v, !!) == exit_surrs(v, !!));
-      if not surrs(v, *) and exit_surrs(v, *):
-        fail if not v :: StdVar;
-        body_code = (body_code | set_var(v, exit_surrs(v, !!)));
-      ;
-    ;
+    //   // Removing the unsyncronized variables from the initial list of surrogates
+    //   // by physically storing them into their corresponding variables
+    //   for v <- isort(out_of_sync_vars):
+    //     fail if not v :: StdVar;
+    //     entry_code = (entry_code | set_var(v, surrs(v, !!)));
+    //   ;
+    //   surrs = remove_keys(surrs, out_of_sync_vars);
+    // ;
 
-    // Mapping source to destination arrays
-    read_len_instr = set_ivar32(count_var, get_size(seq_surr));
-    map_instr = foreach(
-      seq:        seq_surr,
-      src_array:  src_array_var,
-      count_var:  count_var,
-      idx_var:    hidden_idx_var,
-      it_var:     it_var,
-      body:       body_code
-    );
+    // for v <- isort(surr_vars):
+    //   assert not surrs(v, *) or (exit_surrs(v, *) and surrs(v, !!) == exit_surrs(v, !!));
+    //   if not surrs(v, *) and exit_surrs(v, *):
+    //     fail if not v :: StdVar;
+    //     body_code = (body_code | set_var(v, exit_surrs(v, !!)));
+    //   ;
+    // ;
 
-    return ((entry_code | read_len_instr, map_instr), surrs, init_var_gen);
+    // // Mapping source to destination arrays
+    // read_len_instr = set_ivar32(count_var, get_size(seq_surr));
+    // map_instr = foreach(
+    //   seq:        seq_surr,
+    //   src_array:  src_array_var,
+    //   count_var:  count_var,
+    //   idx_var:    hidden_idx_var,
+    //   it_var:     it_var,
+    //   body:       body_code
+    // );
+
+    // return ((entry_code | read_len_instr, map_instr), surrs, init_var_gen);
 
 
     ## THIS OUGHT TO BE MOVED SOMEWHERE ELSE, MAYBE IN type-inference.cell
@@ -366,42 +384,72 @@ print body_env;
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////
 
-  (Instr*, Instr*, [SurrExpr -> ObjExpr]) loop_stable_code(Statement+ stmts, [SurrExpr -> ObjExpr] local_surrs, [EnvVar -> Type] env, VarGen var_gen) {
+  ([SurrExpr -> ObjExpr], Instr*, Instr*) reconcile([SurrExpr] surr_vars, [SurrExpr -> ObjExpr] surrs1, [SurrExpr -> ObjExpr] surrs2) {
+    // Reconciling the surrogates
+    sync_vars = [v : v <- surr_vars, lookup(surrs1, v, v) == lookup(surrs2, v, v)];
+    unsync_vars = surr_vars - sync_vars;
+    fail if not unsync_vars :: [StdVar];
+    surrs = [v -> surrs1(v, !!) : v <- sync_vars, surrs1(v, *)];
+
+    // Syncronization code
+    sync_code_1 = ();
+    sync_code_2 = ();
+    for v <- isort(unsync_vars):
+      sync_code_1 = (sync_code_1 | set_var(v, surrs1(v, !!))) if surrs1(v, *);
+      sync_code_2 = (sync_code_2 | set_var(v, surrs2(v, !!))) if surrs2(v, *);
+    ;
+
+    return (surrs, sync_code_1, sync_code_2);
+  }
+
+
+  // The list of surrogates we return is the one we have:
+  //   1) Just before the loop starts
+  //   2) When the loop breaks
+  //   3) After any iteraction of the loop terminates
+
+  // That means that if the loop body never breaks or terminates we'll just
+  // return the entry environment.
+
+  // Since we can only remove surrogates from the initial list, then the
+  // returned one is always a subset of it, and we can start with the initial
+  // entry list and keep removing surrogates from it until everything matches
+
+  (Instr*, Instr*, [SurrExpr -> ObjExpr])
+  loop_stable_code(Statement+ stmts, [SurrExpr -> ObjExpr] local_surrs, [EnvVar -> Type] env, VarGen var_gen) {
     surr_vars = [v : v, unused_var <- env, v :: SurrExpr];
     entry_surrs = surrogates;
     entry_code = ();
 
-print "---------------------------------------------------------------";
-print "env";
-print env;
+print "----------------------------------------------------------";
 print "surr_vars";
 print surr_vars;
-print "stmts";
-print stmts;
-
-    loop
-print "--  --  --  --  --  --  --  --  --  --";
 print "entry_surrs";
 print entry_surrs;
 
-
-      ## HERE I ALSO HAVE TO PASS DOWN THE LIST OF EXPECTED SURROGATES FOR BREAK INSTRUCTIONS
-      let surrogates = entry_surrs & local_surrs:
-        body_code, exit_surrs, unused_var = stmts_opt_code(stmts, env, var_gen);
+    loop
+      body_surrs = entry_surrs & local_surrs;
+      let surrogates = body_surrs, exp_break_surrs = just(body_surrs):
+        body_code, exit_surrs, break_surrs, unused_var = stmts_opt_code(stmts, env, var_gen);
       ;
 
       // Finding out what variables get out of sync after one iteraction of the loop
-      out_of_sync_vars = [v : v, e <- entry_surrs, not exit_surrs(v, *) or exit_surrs(v, !!) != e];
+      out_of_sync_vars = [v : v, e <- entry_surrs, is_out_of_sync(v, e, exit_surrs, break_surrs)];
 
+print "  --  --  --  --  --  --  --  --  --  --";
+print "body_surrs";
+print body_surrs;
 print "exit_surrs";
 print exit_surrs;
+print "break_surrs";
+print break_surrs;
 print "out_of_sync_vars";
 print out_of_sync_vars;
-print "body_code";
-print body_code;
 
       // If no variable is out of sync, then we're done
       if out_of_sync_vars == []:
+        return (entry_code, body_code, entry_surrs) if exit_surrs == nothing;
+        exit_surrs = value(exit_surrs);
         for v <- isort(surr_vars):
           assert not entry_surrs(v, *) or (exit_surrs(v, *) and entry_surrs(v, !!) == exit_surrs(v, !!));
           if not entry_surrs(v, *) and exit_surrs(v, *):
@@ -420,5 +468,14 @@ print body_code;
       ;
       entry_surrs = remove_keys(entry_surrs, out_of_sync_vars);
     ;
+
+
+    Bool is_out_of_sync(SurrExpr var, ObjExpr entry_surr, Maybe[[SurrExpr -> ObjExpr]] maybe_exit_surrs, [[SurrExpr -> ObjExpr]] break_surrs) {
+      if maybe_exit_surrs != nothing:
+        exit_surrs = value(maybe_exit_surrs);
+        return true if not exit_surrs(var, *) or exit_surrs(var, !!) != entry_surr;
+      ;
+      return (surrs <- break_surrs : not surrs(var, *) or surrs(var, !!) != entry_surr);
+    }
   }
 }
