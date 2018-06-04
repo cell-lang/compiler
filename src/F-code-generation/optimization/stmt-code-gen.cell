@@ -183,11 +183,11 @@ implicit program           : Program,
   (Instr*, Maybe[[SurrExpr -> ObjExpr]], [[SurrExpr -> ObjExpr]], VarGen)
   loop_stmt_opt_code(Statement+ body, [EnvVar -> Type] env, VarGen var_gen) {
     body_env = loop_stmt_body_env(body, env);
-print "##################################################";
-print "env";
-print env;
-print "body_env";
-print body_env;
+// print "##################################################";
+// print "env";
+// print env;
+// print "body_env";
+// print body_env;
     entry_code, body_code, surrs = loop_stable_code(body, [], body_env, var_gen);
     return ((entry_code | repeat(nonempty(body_code))), just(surrs), [], var_gen);
 
@@ -202,60 +202,29 @@ print body_env;
 
   (Instr*, Maybe[[SurrExpr -> ObjExpr]], [[SurrExpr -> ObjExpr]], VarGen)
   for_stmt_opt_code(ForStmt stmt, [EnvVar -> Type] env, VarGen init_var_gen) {
-    fail;
+    // Generating the hidden loop variable
+    idx_var, var_gen = next_int_var(init_var_gen);
 
-    // // Generating the hidden loop variable
-    // idx_var, var_gen = next_int_var(init_var_gen);
+    // Code that evaluates the bounds and initializes the loop variable
+    start_val_code, start_val_surr, var_gen = opt_eval_code(stmt.start_val, env, var_gen);
+    end_val_code, end_val_surr, var_gen = opt_eval_code(stmt.end_val, env, var_gen);
+    entry_code = store_result(start_val_code, start_val_surr, idx_var) & end_val_code;
 
-    // // Code that evaluates the bounds and initializes the loop variable
-    // start_val_code, start_val_surr, var_gen = opt_eval_code(stmt.start_val, env, var_gen);
-    // end_val_code, end_val_surr, var_gen = opt_eval_code(stmt.end_val, env, var_gen);
-    // entry_code = store_result(start_val_code, start_val_surr, idx_var) & end_val_code;
+    // Environment the body runs in
+    body_env = for_stmt_body_env(stmt, env);
 
-    // // Environment the body runs in
-    // body_env = for_stmt_body_env(stmt, env);
+    // Compiling loop body adjusting entry code
+    local_surrs = [stmt.var -> obj_expr(idx_var) if stmt.var?];
+    entry_code_fixes, body_code, surrs = loop_stable_code(stmt.body, local_surrs, body_env, var_gen);
+    entry_code = entry_code & entry_code_fixes;
 
-    // body_code = (); exit_surrs = []; ## BAD BAD BAD: THESE SHOULD NOT BE NECESSARY
+    // Packing loop code in a repeat instruction
+    loop_over_expr = if stmt.end_val_incl
+      then is_gt(idx_var, get_int_val(end_val_surr))
+      else is_ge(idx_var, get_int_val(end_val_surr));
+    loop_instr = repeat(nonempty((break_if(loop_over_expr)) & body_code & (increment(idx_var))));
 
-    // surr_vars = [v : v, unused_var <- env, v :: SurrExpr];
-    // surrs = surrogates;
-    // loop
-    //   // Trying to generate the body code with the current set of surrogates
-    //   entry_surrs = surrs & [stmt.var -> obj_expr(idx_var) if stmt.var?];
-    //   ## HERE I ALSO HAVE TO PASS DOWN THE LIST OF EXPECTED SURROGATES FOR BREAK INSTRUCTIONS
-    //   let surrogates = entry_surrs:
-    //     body_code, exit_surrs, exit_var_gen = stmts_opt_code(stmt.body, body_env, var_gen);
-    //   ;
-
-    //   // Finding out what variables get out of sync after one iteraction of the loop
-    //   out_of_sync_vars = [v : v, e <- surrs, lookup(exit_surrs, v, v) != e];
-
-    //   // If no variable is out of sync, then we're done
-    //   break if out_of_sync_vars == [];
-
-    //   // Removing the unsyncronized variables from the initial list of surrogates
-    //   // by physically storing them into their corresponding variables
-    //   for v <- isort(out_of_sync_vars):
-    //     fail if not v :: StdVar;
-    //     entry_code = (entry_code | set_var(v, surrs(v, !!)));
-    //   ;
-    //   surrs = remove_keys(surrs, out_of_sync_vars);
-    // ;
-
-    // for v <- isort(surr_vars):
-    //   assert not surrs(v, *) or (exit_surrs(v, *) and surrs(v, !!) == exit_surrs(v, !!));
-    //   if not surrs(v, *) and exit_surrs(v, *):
-    //     fail if not v :: StdVar;
-    //     body_code = (body_code | set_var(v, exit_surrs(v, !!)));
-    //   ;
-    // ;
-
-    // loop_over_expr = if stmt.end_val_incl
-    //   then is_gt(idx_var, get_int_val(end_val_surr))
-    //   else is_ge(idx_var, get_int_val(end_val_surr));
-    // loop_instr = repeat(nonempty((break_if(loop_over_expr)) & body_code & (increment(idx_var))));
-
-    // return ((entry_code | loop_instr), surrs, init_var_gen);
+    return ((entry_code | loop_instr), just(surrs), [], init_var_gen);
 
 
     ## THIS OUGHT TO BE MOVED SOMEWHERE ELSE, MAYBE IN type-inference.cell
@@ -417,7 +386,9 @@ print body_env;
 
   (Instr*, Instr*, [SurrExpr -> ObjExpr])
   loop_stable_code(Statement+ stmts, [SurrExpr -> ObjExpr] local_surrs, [EnvVar -> Type] env, VarGen var_gen) {
-    surr_vars = [v : v, unused_var <- env, v :: SurrExpr];
+    ## MAYBE HERE I COULD EXPLICITLY PASS A LIST OF VARIABLES THAT ARE
+    ## EXPECTED TO SURVIVE THE LOOP INSTEAD OF TRYING TO FIGURE THAT OUT SOMEHOW
+    surr_vars = [v : v, unused_var <- env, v :: SurrExpr, not local_surrs(v, *)];
     entry_surrs = surrogates;
     entry_code = ();
 
