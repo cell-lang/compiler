@@ -213,7 +213,7 @@ implicit program           : Program,
     // Environment the body runs in
     body_env = for_stmt_body_env(stmt, env);
 
-    // Compiling loop body adjusting entry code
+    // Compiling loop body and adjusting entry code
     local_surrs = [stmt.var -> obj_expr(idx_var) if stmt.var?];
     entry_code_fixes, body_code, surrs = loop_stable_code(stmt.body, local_surrs, body_env, var_gen);
     entry_code = entry_code & entry_code_fixes;
@@ -242,101 +242,73 @@ implicit program           : Program,
 
   (Instr*, Maybe[[SurrExpr -> ObjExpr]], [[SurrExpr -> ObjExpr]], VarGen)
   foreach_stmt_opt_code(ForeachStmt stmt, [EnvVar -> Type] env, VarGen init_var_gen) {
-    fail;
+    // Calculating input sequence type, and returning early if the type is trivial
+    seq_type = expr_type(stmt.values, env);
+    if seq_type == empty_type:
+      ## just(surrogates) OR nothing?
+      return ((terminate), just(surrogates), [], init_var_gen);
+    elif is_subset(seq_type, empty_seq_type):
+      return ((), just(surrogates), [], init_var_gen);
+    ;
 
-    // // Calculating input sequence type, and returning early if the type is trivial
-    // seq_type = expr_type(stmt.values, env);
-    // if seq_type == empty_type:
-    //   return ((terminate), surrogates, init_var_gen);
-    // elif is_subset(seq_type, empty_seq_type):
-    //   return ((), surrogates, init_var_gen);
-    // ;
+    // Type and representation of the elements of the input sequence
+    elt_type = seq_elem_supertype(seq_type);
+    fail if elt_type == empty_type;
+    elt_repr = opt_repr(elt_type);
 
-    // // Type and representation of the elements of the input sequence
-    // elt_type = seq_elem_supertype(seq_type);
-    // fail if elt_type == empty_type;
-    // elt_repr = opt_repr(elt_type);
+    // Evaluation of input expression
+    entry_code, seq_surr, var_gen = opt_eval_code(stmt.values, env, init_var_gen);
+    fail if not seq_surr :: <LocVar, StdVar>; ## MAYBE THIS COULD BE AVOIDED...
 
-    // // Evaluation of input expression
-    // entry_code, seq_surr, var_gen = opt_eval_code(stmt.values, env, init_var_gen);
-    // fail if not seq_surr :: <LocVar, StdVar>; ## MAYBE THIS COULD BE AVOIDED...
+    // Temporary buffer for source data
+    src_array_var, var_gen = next_array_var(var_gen, elt_repr);
 
-    // // Temporary buffer for source data
-    // src_array_var, var_gen = next_array_var(var_gen, elt_repr);
+    vars = stmt.vars;
+    if |vars| == 1:
+      // Simple case, no destructuring of the elements of the source sequence
+      var = only(vars);
+      physical_var, var_gen = next_var_def(elt_repr, var, var_gen);
+      local_surrs = [var -> obj_expr(physical_var)];
+      it_var = physical_var;
+      body_code_setup = ();
 
-    // vars = stmt.vars;
-    // if |vars| == 1:
-    //   var = only(vars);
-    //   physical_var, var_gen = next_var_def(elt_repr, var, var_gen);
-    //   surrs = surrogates & [var -> obj_expr(physical_var)];
-    //   it_var = physical_var;
-    //   body_code = ();
+    else
+      // Elements of source sequence need to be destructured
+      assert elt_repr == :object;
+      vars_types = (restricted_seq_elem_supertype(seq_type, singleton_type(i)) : i < |vars|);
+      fail if not vars_types :: NeType+;
+      reprs = (opt_repr(t) : t <- vars_types);
+      physical_vars, var_gen = mapli(vars, var_gen, next_var_def(reprs($b), $a, $c));
+      local_surrs = [v -> obj_expr(physical_vars(i)) : v @ i <~ vars];
+      it_var, var_gen = next_obj_var(var_gen);
+      body_code_setup = (set_any_var(v, at(it_var, i)) : v @ i <- physical_vars);
+    ;
 
-    // else
-    //   assert elt_repr == :object;
-    //   vars_types = (restricted_seq_elem_supertype(seq_type, singleton_type(i)) : i < |vars|);
-    //   fail if not vars_types :: NeType+;
-    //   reprs = (opt_repr(t) : t <- vars_types);
-    //   physical_vars, var_gen = mapli(vars, var_gen, next_var_def(reprs($b), $a, $c));
-    //   surrs = surrogates & [v -> obj_expr(physical_vars(i)) : v @ i <~ vars];
-    //   it_var, var_gen = next_obj_var(var_gen);
-    //   body_code = (set_any_var(v, at(it_var, i)) : v @ i <- physical_vars);
-    // ;
+    // Index variables
+    count_var, var_gen = next_int32_var(var_gen);
+    hidden_idx_var, var_gen = next_int32_var(var_gen);
+    local_surrs = local_surrs & [stmt.idx_var -> int_obj(hidden_idx_var)] if stmt.idx_var?;
 
-    // // Index variables
-    // count_var, var_gen = next_int32_var(var_gen);
-    // hidden_idx_var, var_gen = next_int32_var(var_gen);
-    // surrs = surrs & [stmt.idx_var -> int_obj(hidden_idx_var)] if stmt.idx_var?;
+    // Environment the body runs in
+    body_env = foreach_stmt_body_env(stmt, env);
 
-    // // Environment the body runs in
-    // body_env = foreach_stmt_body_env(stmt, env);
+    // Compiling loop body and adjusting entry code
+    entry_code_fixes, body_code, surrs = loop_stable_code(stmt.body, local_surrs, body_env, var_gen);
+    entry_code = entry_code & entry_code_fixes;
+    body_code = body_code_setup & body_code;
 
-    // body_code = (); exit_surrs = []; ## BAD BAD BAD: THESE SHOULD NOT BE NECESSARY
+    // Mapping source to destination arrays
+    read_len_instr = set_ivar32(count_var, get_size(seq_surr));
+    map_instr = foreach(
+      seq:        seq_surr,
+      src_array:  src_array_var,
+      count_var:  count_var,
+      idx_var:    hidden_idx_var,
+      it_var:     it_var,
+      body:       body_code
+    );
 
-    // surr_vars = [v : v, unused_var <- env, v :: SurrExpr];
-    // loop
-    //   // Trying to generate the body code with the current set of surrogates
-    //   // entry_surrs = surrs & [stmt.var -> obj_expr(idx_var) if stmt.var?];
-    //   ## HERE I ALSO HAVE TO PASS DOWN THE LIST OF EXPECTED SURROGATES FOR BREAK INSTRUCTIONS
-    //   let surrogates = surrs:
-    //     body_code, exit_surrs, exit_var_gen = stmts_opt_code(stmt.body, body_env, var_gen);
-    //   ;
-
-    //   // Finding out what variables get out of sync after one iteraction of the loop
-    //   out_of_sync_vars = [v : v, e <- surrs, lookup(exit_surrs, v, v) != e];
-
-    //   // If no variable is out of sync, then we're done
-    //   break if out_of_sync_vars == [];
-
-    //   // Removing the unsyncronized variables from the initial list of surrogates
-    //   // by physically storing them into their corresponding variables
-    //   for v <- isort(out_of_sync_vars):
-    //     fail if not v :: StdVar;
-    //     entry_code = (entry_code | set_var(v, surrs(v, !!)));
-    //   ;
-    //   surrs = remove_keys(surrs, out_of_sync_vars);
-    // ;
-
-    // for v <- isort(surr_vars):
-    //   assert not surrs(v, *) or (exit_surrs(v, *) and surrs(v, !!) == exit_surrs(v, !!));
-    //   if not surrs(v, *) and exit_surrs(v, *):
-    //     fail if not v :: StdVar;
-    //     body_code = (body_code | set_var(v, exit_surrs(v, !!)));
-    //   ;
-    // ;
-
-    // // Mapping source to destination arrays
-    // read_len_instr = set_ivar32(count_var, get_size(seq_surr));
-    // map_instr = foreach(
-    //   seq:        seq_surr,
-    //   src_array:  src_array_var,
-    //   count_var:  count_var,
-    //   idx_var:    hidden_idx_var,
-    //   it_var:     it_var,
-    //   body:       body_code
-    // );
-
-    // return ((entry_code | read_len_instr, map_instr), surrs, init_var_gen);
+    return ((entry_code | read_len_instr, map_instr), just(surrs), [], init_var_gen);
 
 
     ## THIS OUGHT TO BE MOVED SOMEWHERE ELSE, MAYBE IN type-inference.cell
