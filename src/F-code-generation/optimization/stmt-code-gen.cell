@@ -83,10 +83,13 @@ implicit program           : Program,
 
 
   StmtCompInfo fail_stmt_opt_code(FailStmt stmt, [EnvVar -> Type] env, VarGen var_gen) {
-    instr = if options.debug_mode
-      then runtime_check(stmt.file, stmt.line, nothing, isort(stmt.env))
-      else terminate;
-    return ((instr), nothing, [], var_gen);
+    if options.debug_mode:
+      vars = ((v, lookup(surrogates, v, v)) : v <- isort(stmt.env));
+      code = (log_runtime_failure(false, stmt.file, stmt.line, nothing, vars));
+    else
+      code = ();
+    ;
+    return ((code | terminate), nothing, [], var_gen);
   }
 
 
@@ -96,7 +99,9 @@ implicit program           : Program,
     eval_code, surr, unused_var = opt_eval_code(stmt.cond, env, var_gen);
     expr_vars = extern_vars(stmt.cond);
     vars = isort([v : v <- stmt.env, expr_vars(v)]) & isort([v : v <- stmt.env, not expr_vars(v)]);
-    check_instr = runtime_check(bool_value(surr), stmt.file, stmt.line, stmt.text, vars);
+    vars = ((v, lookup(surrogates, v, v)) : v <- vars);
+    log_instr = log_runtime_failure(true, stmt.file, stmt.line, stmt.text, vars);
+    check_instr = do_if_not(bool_value(surr), (log_instr, terminate(true)));
     return ((eval_code | check_instr), just(surrogates), [], var_gen);
   }
 

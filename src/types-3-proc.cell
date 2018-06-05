@@ -306,8 +306,13 @@ type BasicInstr     = init_stream(StreamVar),
                       push_call_info(fn_name: ObjFnName, params: Maybe[<StdVar, FnArg>]*),
                       pop_call_info,
 
-                      ## IT'S NOT A RUNTIME CHECK ANYMORE IF THE CONDITION IS MISSING
-                      runtime_check(cond: Maybe[BoolExpr], file: String, line: NzNat, text: Maybe[String], vars: <StdVar, ImplArg>*),
+                      log_runtime_failure(
+                        is_assert: Bool,
+                        file: String,
+                        line: NzNat,
+                        text: Maybe[String],
+                        vars: (<StdVar, ImplArg>, ObjExpr)*
+                      ),
 
                       queue_update(type: AutoSymbol, id: BlockNodeId, args: Nat*),
 
@@ -367,7 +372,7 @@ type JumpInstr      = break_loop,
                       ## MAYBE IT WOULD BE A GOOD IDEA TO SEPARATE THE BOOLEAN FROM THE OBJECT VERSION
                       ## ALSO, THE BOOLEAN VERSION DOESN'T NEED TO USE AN ATOMIC EXPRESSION, IT CAN USE THE FULL ONE, CAN'T IT?
                       ret_val(AnyTypeExpr),
-                      terminate;
+                      terminate(hard_fail: Bool);
 
 type CompInstr      = branch(cond: BoolExpr, when_true: Instr+, when_false: Instr*),
                       switch_on_nat(value: IntExpr, cases: Instr*+),

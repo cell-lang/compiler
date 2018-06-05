@@ -216,11 +216,12 @@ implicit program : Program, context : Context, var_subst_map : [StdVar -> CaptVa
 
 
   Instr+ gen_code_for_assert_stmt(Expr cond, [<StdVar, ImplArg>] env, String file, NzNat line, Maybe[String] text) {
-    return (no_op) if options.ignore_assertions; ## WHY RETURNING (no_op) INSTEAD OF JUST []?
-    info = gen_eval_info(cond);
-    expr_vars = extern_vars(cond);
-    vars = rand_sort([v : v <- env, in(v, expr_vars)]) & rand_sort([v : v <- env, not in(v, expr_vars)]);
-    return (info.eval_code | runtime_check(bool_value(info.expr), file, line, text, vars));
+    return (no_op);
+    // return (no_op) if options.ignore_assertions; ## WHY RETURNING (no_op) INSTEAD OF JUST []?
+    // info = gen_eval_info(cond);
+    // expr_vars = extern_vars(cond);
+    // vars = rand_sort([v : v <- env, in(v, expr_vars)]) & rand_sort([v : v <- env, not in(v, expr_vars)]);
+    // return (info.eval_code | runtime_failure(bool_value(info.expr), file, line, text, ((v, v) : v <- vars)));
   }
 
 

@@ -339,7 +339,8 @@ Instr clear_loc_var(LocVar v)                             = :clear_loc_var(v);
 Instr make_var_undef(SignalVar v) = reset_memb_var(v, :undefined);
 Instr make_var_undef(LocVar v)      = clear_loc_var(v);
 
-Instr terminate = :terminate;
+Instr terminate(Bool b) = terminate(hard_fail: b);
+Instr terminate = terminate(false);
 
 Instr add_ref(ObjVar v)                     = :add_ref(v);
 Instr release(<ObjVar, PendingInputVar> v)  = :release(v);
@@ -445,11 +446,8 @@ Instr queue_insert(RelVar v, IntVar+ t)                     = queue_insert_tuple
 Instr push_call_info(ObjFnName fn_name, Maybe[<StdVar, FnArg>]* params) = push_call_info(fn_name: fn_name, params: params);
 Instr pop_call_info = :pop_call_info;
 
-Instr runtime_check(BoolExpr c, String f, NzNat l, Maybe[String] t, <StdVar, ImplArg>* vs) =
-  runtime_check(cond: just(c), file: f, line: l, text: t, vars: vs);
-
-Instr runtime_check(String f, NzNat l, Maybe[String] t, <StdVar, ImplArg>* vs) =
-  runtime_check(cond: nothing, file: f, line: l, text: t, vars: vs);
+Instr log_runtime_failure(Bool b, String f, NzNat l, Maybe[String] t, (<StdVar, ImplArg>, ObjExpr)* vs) =
+  log_runtime_failure(is_assert: b, file: f, line: l, text: t, vars: vs);
 
 ////////////////////////////////////////////////////////////////////////////////
 
