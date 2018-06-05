@@ -380,7 +380,48 @@ implicit program           : Program,
 
   // range_comp(expr: Expr, var: StdVar, bound_expr: Expr, inclusive: Bool, sel_expr: Expr?);
   (Instr*, ObjExpr, VarGen) range_comp_opt_eval_info(RangeCompExpr expr, VarGen init_var_gen) {
-    fail;
+    // Generating the result and hidden loop variables and setting up the variable generator
+    res_var, ret_var_gen = next_obj_var(init_var_gen);
+    idx_var, var_gen = next_int32_var(ret_var_gen);
+
+    // Code that evaluates the bounds and initializes the loop variable
+    code, bound_surr, var_gen = opt_eval_info(expr.bound_expr, var_gen);
+    if not bound_surr :: <Var, int_obj(<IntVar, Int32Var>)>:
+      bound_var, var_gen = next_int_var(var_gen);
+      code = store_result(code, bound_surr, bound_var);
+      bound_surr = bound_var;
+    else
+      bound_surr = get_int_val(bound_surr);
+    ;
+
+    // Types and low-level representation of the elements of the output sequence
+    elt_type = subexpr_type(expr.expr);
+    fail if elt_type == empty_type;
+    elt_repr = opt_repr(elt_type);
+
+    // Allocation of destination array
+    array_var, var_gen = next_array_var(var_gen, elt_repr);
+    size_expr = if expr.inclusive then add(bound_surr, 1) else bound_surr;
+    code = (code | alloc_array(array_var, cast_int32(size_expr)));
+
+    // Initialization of hidden loop var
+    code = (code | set_ivar32(idx_var, 0));
+
+    // Evaluation of target expression
+    surrs = surrogates & [expr.var -> obj_expr(idx_var)];
+    if expr.sel_expr?:
+      fail;
+
+    else
+      eval_code, elt_surr, var_gen = opt_eval_info(expr.expr, var_gen, surrogates = surrs);
+      break_cond = if expr.inclusive then is_ge(idx_var, bound_surr) else is_lt(idx_var, bound_surr);
+      write_instr = write_array(array_var, idx_var, elt_surr);
+      body_code = ((break_if(break_cond)) & eval_code | write_instr, increment(idx_var));
+      mk_seq_instr = mk_seq(res_var, array_var);
+    ;
+
+    code = (code | repeat(body_code), mk_seq_instr);
+    return (code, res_var, ret_var_gen);
   }
 
 
@@ -520,6 +561,7 @@ implicit program           : Program,
       for e @ i <- elts:
         fail if is_cond_expr(e); ## ANY BETTER WAY TO DO THIS?
         elt_eval_code, elt_surr, unused_var = opt_eval_info(e, var_gen);
+        fail if not i :: Int32;
         code = code & (elt_eval_code | write_array(array_var, i, elt_surr));
       ;
       code = (code | mk_seq(seq_var, array_var));
@@ -550,6 +592,7 @@ implicit program           : Program,
     // Computation of all array elements
     cond_expr_idx = 0;
     for e @ i <- elts:
+      fail if not i :: Int32; ## ANY BETTER WAY TO DO THIS?
       is_last = i == |elts| - 1;
       if is_cond_expr(e): // Conditional inclusion expression
         elt_eval_code, elt_surr, unused_var = opt_eval_info(e.expr, var_gen);
