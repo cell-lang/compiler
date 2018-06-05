@@ -186,7 +186,7 @@ Bool is_param_type(FnType type) = (t <~ type.args : is_param_type(t)) or is_para
   for_stmt()                = retrieve(stmt.start_val) & retrieve(stmt.end_val) & retrieve_from_nested_exprs(stmt.body, retrieve),
   let_stmt()                = union([retrieve(e) : unused_var, e <- stmt.asgnms]) & retrieve_from_nested_exprs(stmt.body, retrieve),
   break_stmt                = [],
-  fail_stmt                 = [],
+  fail_stmt()               = [],
   assert_stmt()             = retrieve(stmt.cond) & union([retrieve(v) : v <- stmt.env]), ## NOT SURE ABOUT THIS ONE. THE VARIABLES ARE KEPT ARTIFICIALLY ALIVE...
   print_stmt(e?)            = retrieve(e),
   seq_update_stmt()         = retrieve(stmt.idx) & retrieve(stmt.value),
@@ -287,7 +287,7 @@ Bool is_param_type(FnType type) = (t <~ type.args : is_param_type(t)) or is_para
   assignment_stmt()         |
   return_stmt()             |
   break_stmt                |
-  fail_stmt                 |
+  fail_stmt()               |
   assert_stmt()             |
   print_stmt()              |
   seq_update_stmt()         |
@@ -462,7 +462,7 @@ Bool is_pattern_any(Pattern ptrn) =
   foreach_stmt()    = extern_vars(s.values) & #(stmts_extern_vars(s.body) - #(set(s.vars) & [s.idx_var if s.idx_var?])),
   for_stmt()        = extern_vars(s.start_val) & extern_vars(s.end_val) & #(stmts_extern_vars(s.body) - [s.var if s.var?]),
   break_stmt        = [],
-  fail_stmt         = [],
+  fail_stmt()       = [],
   assert_stmt()     = extern_vars(s.cond),
   print_stmt(e?)    = extern_vars(e),
   seq_update_stmt() = [s.seq_var] & extern_vars(s.idx) & extern_vars(s.value),
@@ -522,7 +522,7 @@ type StmtOutcome = fails, returns, breaks, falls_through;
   for_stmt()                    = nonempty([:fails, :falls_through] & outcomes(stmt.body) - [:breaks]), // Shutting up the type checker ## BAD: SAME AS ABOVE
   let_stmt()                    = nonempty([:fails] & outcomes(stmt.body)), // Shutting up the type checker
   break_stmt                    = [:breaks],
-  fail_stmt                     = [:fails],
+  fail_stmt()                   = [:fails],
   assert_stmt()                 |
   print_stmt()                  |
   seq_update_stmt()             |

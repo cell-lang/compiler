@@ -1316,6 +1316,8 @@ implicit filename : String, lines : Nat** {
   }
 
   SynStmt build_fail_stmt_ast(RuleMatch mtc) {
+    start_line = left(left(value_unsafe(source_file_location(mtc))));
+    fail_stmt = syn_fail_stmt(filename, start_line);
     if_node = rule_seq_node(mtc, 1);
     return fail_stmt if if_node == null_match;
     cond = build_expr_ast(rule_seq_node(if_node, 1));

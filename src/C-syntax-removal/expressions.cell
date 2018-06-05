@@ -419,7 +419,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
     seq_update_stmt()         = seq_update_stmt(stmt.obj, desugar_expr(stmt.idx, def_vars), desugar_expr(stmt.value, def_vars)),
     return_stmt(e?)           = return_stmt(desugar_expr(e, def_vars)),
     break_stmt                = break_stmt,
-    fail_stmt                 = fail_stmt,
+    fail_stmt()               = desugar_fail_stmt(stmt, def_vars),
     assert_stmt()             = desugar_assert_stmt(stmt, def_vars),
     print_stmt(e?)            = print_stmt(desugar_expr(e, def_vars)),
     inf_loop_stmt(ss?)        = loop_stmt(desugar_stmts(ss, def_vars)),
@@ -522,6 +522,10 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
       return for_stmt(maybe_var, start_val, end_val, iter.end_val_incl, body);
     }
   }
+
+
+  Statement desugar_fail_stmt(SynFailStmt stmt, [StdVar] def_vars) =
+    fail_stmt(def_vars & impl_args, stmt.file, stmt.line);
 
 
   Statement desugar_assert_stmt(SynAssertStmt stmt, [StdVar] def_vars) {

@@ -259,11 +259,20 @@ type FilterClause = filter_clause(Expr);
 
 ////////////////////////////////////////////////////////////////////////////////
 
+type AssertStmt     = assert_stmt(
+                        cond: Expr,
+                        env:  [<StdVar, ImplArg>],
+                        file: String,
+                        line: NzNat,
+                        text: Maybe[String]
+                      );
+
+type FailStmt       = fail_stmt(env: [<StdVar, ImplArg>], file: String, line: NzNat);
+
 type AtomicFnStmt   = assignment_stmt(vars: StdVar+, value: Expr),
-                      fail_stmt,
-                      assert_stmt(cond: Expr, env: [<StdVar, ImplArg>], file: String, line: NzNat, text: Maybe[String]),
                       print_stmt(Expr),
-                      seq_update_stmt(seq_var: StdVar, idx: Expr, value: Expr); ## NOT SURE IT BELONGS HERE...
+                      seq_update_stmt(seq_var: StdVar, idx: Expr, value: Expr), ## NOT SURE IT BELONGS HERE...
+                      AssertStmt, FailStmt;
 
 type AtomicUpdateStmt = send_msg_stmt(target: NestedDBVar, msg: Expr),
                         try_update_stmt(name: UpdateSymbol, args: Expr*),

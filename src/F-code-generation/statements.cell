@@ -1,5 +1,5 @@
 implicit program : Program, context : Context, var_subst_map : [StdVar -> CaptVar],
-  cls_var_subst_map : [ClsVar -> CaptClsVar], next_var_gen : VarGen, options : CompilationOptions {
+  cls_var_subst_map : [ClsVar -> CaptClsVar], next_var_gen : VarGen, options : CompOptions {
 
   () gen_code((), EvalDestVar) = ();  ## BAD BAD: SHOULD BE A SUBSIGNATURE
 
@@ -14,7 +14,7 @@ implicit program : Program, context : Context, var_subst_map : [StdVar -> CaptVa
 
   Instr+ gen_code(Statement stmt, EvalDestVar res_var) =
     break_stmt                = (break_loop),
-    fail_stmt                 = (terminate),
+    fail_stmt()               = (terminate),
     loop_stmt(ss?)            = (repeat(gen_code(ss, res_var))),
     print_stmt(e?)            = {info = gen_eval_info(e); return nonempty(info.eval_code & (print_obj(info.expr)));},
     return_stmt(e?)           = nonempty(gen_eval_code(e, res_var) & (exit_block)),
@@ -220,7 +220,7 @@ implicit program : Program, context : Context, var_subst_map : [StdVar -> CaptVa
     info = gen_eval_info(cond);
     expr_vars = extern_vars(cond);
     vars = rand_sort([v : v <- env, in(v, expr_vars)]) & rand_sort([v : v <- env, not in(v, expr_vars)]);
-    return (info.eval_code | runtime_check(info.expr, file, line, text, vars));
+    return (info.eval_code | runtime_check(bool_value(info.expr), file, line, text, vars));
   }
 
 

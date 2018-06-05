@@ -1,5 +1,5 @@
 implicit program           : Program,
-         options           : CompilationOptions,
+         options           : CompOptions,
          typedefs          : [TypeName -> NeType],
          context           : Context,
          var_subst_map     : [StdVar -> CaptVar],
@@ -18,9 +18,12 @@ implicit program           : Program,
 }
 
 
+type StmtCompInfo = (Instr*, Maybe[[SurrExpr -> ObjExpr]], [[SurrExpr -> ObjExpr]], VarGen);
+
+
 implicit program           : Program,
          typedefs          : [TypeName -> NeType],
-         options           : CompilationOptions,
+         options           : CompOptions,
          context           : Context,
          var_subst_map     : [StdVar -> CaptVar],
          cls_var_subst_map : [ClsVar -> CaptClsVar],
@@ -29,8 +32,7 @@ implicit program           : Program,
          exp_break_surrs   : Maybe[[SurrExpr -> ObjExpr]],
          result_var        : AnyLocVar
 {
-  (Instr*, Maybe[[SurrExpr -> ObjExpr]], [[SurrExpr -> ObjExpr]], VarGen)
-  stmts_opt_code(Statement* stmts, [EnvVar -> Type] init_env, VarGen init_var_gen) {
+  StmtCompInfo stmts_opt_code(Statement* stmts, [EnvVar -> Type] init_env, VarGen init_var_gen) {
     return ((), just(surrogates), [], init_var_gen) if stmts == ();
 
     var_gen = init_var_gen;
@@ -50,14 +52,13 @@ implicit program           : Program,
 
   //////////////////////////////////////////////////////////////////////////////
 
-  (Instr*, Maybe[[SurrExpr -> ObjExpr]], [[SurrExpr -> ObjExpr]], VarGen)
-  stmt_opt_code(Statement stmt, [EnvVar -> Type] env, VarGen var_gen) =
+  StmtCompInfo stmt_opt_code(Statement stmt, [EnvVar -> Type] env, VarGen var_gen) =
     break_stmt                = break_stmt_opt_code(env, var_gen),
-    fail_stmt                 = undefined,
+    fail_stmt()               = fail_stmt_opt_code(stmt, env, var_gen),
     loop_stmt(ss?)            = loop_stmt_opt_code(ss, env, var_gen),
     print_stmt(e?)            = print_stmt_opt_code(e, env, var_gen),
     return_stmt(e?)           = return_stmt_opt_code(e, env, var_gen),
-    assert_stmt()             = undefined,
+    assert_stmt()             = assert_stmt_opt_code(stmt, env, var_gen),
     let_stmt()                = let_stmt_opt_code(stmt.asgnms, stmt.body, env, var_gen),
     assignment_stmt()         = assignment_stmt_opt_code(stmt.vars, stmt.value, env, var_gen),
     seq_update_stmt()         = undefined,
@@ -68,15 +69,32 @@ implicit program           : Program,
     proc_call_stmt()          = proc_call_stmt_opt_code(stmt, env, var_gen);
 
 
-  (Instr*, Maybe[[SurrExpr -> ObjExpr]], [[SurrExpr -> ObjExpr]], VarGen)
-  print_stmt_opt_code(Expr expr, [EnvVar -> Type] env, VarGen var_gen) {
+  StmtCompInfo fail_stmt_opt_code(FailStmt stmt, [EnvVar -> Type] env, VarGen var_gen) {
+    instr = if options.debug_mode
+      then runtime_check(stmt.file, stmt.line, nothing, isort(stmt.env))
+      else terminate;
+    return ((instr), nothing, [], var_gen);
+  }
+
+
+  StmtCompInfo assert_stmt_opt_code(AssertStmt stmt, [EnvVar -> Type] env, VarGen var_gen) {
+    return ((), just(surrogates), [], var_gen) if options.ignore_assertions;
+
+    eval_code, surr, unused_var = opt_eval_code(stmt.cond, env, var_gen);
+    expr_vars = extern_vars(stmt.cond);
+    vars = isort([v : v <- stmt.env, expr_vars(v)]) & isort([v : v <- stmt.env, not expr_vars(v)]);
+    check_instr = runtime_check(bool_value(surr), stmt.file, stmt.line, stmt.text, vars);
+    return ((eval_code | check_instr), just(surrogates), [], var_gen);
+  }
+
+
+  StmtCompInfo print_stmt_opt_code(Expr expr, [EnvVar -> Type] env, VarGen var_gen) {
     eval_code, surr, unused_var = opt_eval_code(expr, env, var_gen);
     return ((eval_code | print_obj(surr)), just(surrogates), [], var_gen);
   }
 
 
-  (Instr*, Maybe[[SurrExpr -> ObjExpr]], [[SurrExpr -> ObjExpr]], VarGen)
-  let_stmt_opt_code([ImplArg -> Expr] asgnms, Statement+ body, [EnvVar -> Type] env, VarGen init_var_gen) {
+  StmtCompInfo let_stmt_opt_code([ImplArg -> Expr] asgnms, Statement+ body, [EnvVar -> Type] env, VarGen init_var_gen) {
     ## THIS SHOULD BE CHECKED IN THE PROPER PLACE, BOTH IN LAYER 1 AND 2
     ## IT'S A TEMPORARY LIMITATION THAT SHOULD BE REMOVED
     assert subset(outcomes(body), [:fails, :falls_through]);
@@ -115,8 +133,7 @@ implicit program           : Program,
   // definitions are different, we remove it here and we leave
   // to the calling code to fix the expected list and retry
 
-  (Instr*, Maybe[[SurrExpr -> ObjExpr]], [[SurrExpr -> ObjExpr]], VarGen)
-  break_stmt_opt_code([EnvVar -> Type] env, VarGen var_gen) {
+  StmtCompInfo break_stmt_opt_code([EnvVar -> Type] env, VarGen var_gen) {
     exp_surrs = value_unsafe(exp_break_surrs);
     surrs_to_drop = [v : v, e <- surrogates, not exp_surrs(v, *) or exp_surrs(v, !!) != e];
     fail if not surrs_to_drop :: [StdVar];
@@ -127,8 +144,7 @@ implicit program           : Program,
 
 
   // proc_call_stmt(res_var: StdVar?, proc_name: ProcSymbol, args: Expr*);
-  (Instr*, Maybe[[SurrExpr -> ObjExpr]], [[SurrExpr -> ObjExpr]], VarGen)
-  proc_call_stmt_opt_code(ProcCallStmt stmt, [EnvVar -> Type] env, VarGen init_var_gen) {
+  StmtCompInfo proc_call_stmt_opt_code(ProcCallStmt stmt, [EnvVar -> Type] env, VarGen init_var_gen) {
     code, args_surrs, var_gen = opt_eval_code(stmt.args, env, init_var_gen);
     call_instr = if stmt.res_var?
       then call_proc(stmt.res_var, stmt.proc_name, args_surrs, ())
@@ -137,8 +153,7 @@ implicit program           : Program,
   }
 
 
-  (Instr*, Maybe[[SurrExpr -> ObjExpr]], [[SurrExpr -> ObjExpr]], VarGen)
-  assignment_stmt_opt_code(StdVar+ vars, Expr value, [EnvVar -> Type] env, VarGen init_var_gen) {
+  StmtCompInfo assignment_stmt_opt_code(StdVar+ vars, Expr value, [EnvVar -> Type] env, VarGen init_var_gen) {
     type = expr_type(value, env);
     return ((terminate), just(surrogates), [], init_var_gen) if type == empty_type;
 
@@ -169,16 +184,14 @@ implicit program           : Program,
   }
 
 
-  (Instr*, Maybe[[SurrExpr -> ObjExpr]], [[SurrExpr -> ObjExpr]], VarGen)
-  return_stmt_opt_code(Expr value, [EnvVar -> Type] env, VarGen init_var_gen) {
+  StmtCompInfo return_stmt_opt_code(Expr value, [EnvVar -> Type] env, VarGen init_var_gen) {
     code, surr, var_gen = opt_eval_code(value, env, init_var_gen);
     code = store_result(code, surr, result_var);
     return ((code | exit_block), nothing, [], init_var_gen);
   }
 
 
-  (Instr*, Maybe[[SurrExpr -> ObjExpr]], [[SurrExpr -> ObjExpr]], VarGen)
-  if_stmt_opt_code(IfStmt stmt, [EnvVar -> Type] env, VarGen init_var_gen) {
+  StmtCompInfo if_stmt_opt_code(IfStmt stmt, [EnvVar -> Type] env, VarGen init_var_gen) {
     ## HERE WE COULD CHECK WHETHER ONE OF THE BRANCHES IS UNREACHABLE, AND JUST ELIMINATE IT
 
     cond_code, cond_surr, unused_var = opt_eval_code(stmt.cond, env, init_var_gen);
@@ -215,8 +228,7 @@ implicit program           : Program,
   }
 
 
-  (Instr*, Maybe[[SurrExpr -> ObjExpr]], [[SurrExpr -> ObjExpr]], VarGen)
-  loop_stmt_opt_code(Statement+ body, [EnvVar -> Type] env, VarGen var_gen) {
+  StmtCompInfo loop_stmt_opt_code(Statement+ body, [EnvVar -> Type] env, VarGen var_gen) {
     body_env = loop_stmt_body_env(body, env);
     entry_code, body_code, surrs = loop_stable_code(body, [], body_env, var_gen);
     return ((entry_code | repeat(nonempty(body_code))), just(surrs), [], var_gen);
@@ -230,8 +242,7 @@ implicit program           : Program,
   }
 
 
-  (Instr*, Maybe[[SurrExpr -> ObjExpr]], [[SurrExpr -> ObjExpr]], VarGen)
-  for_stmt_opt_code(ForStmt stmt, [EnvVar -> Type] env, VarGen init_var_gen) {
+  StmtCompInfo for_stmt_opt_code(ForStmt stmt, [EnvVar -> Type] env, VarGen init_var_gen) {
     // Generating the hidden loop variable
     idx_var, var_gen = next_int_var(init_var_gen);
 
@@ -270,8 +281,7 @@ implicit program           : Program,
   }
 
 
-  (Instr*, Maybe[[SurrExpr -> ObjExpr]], [[SurrExpr -> ObjExpr]], VarGen)
-  foreach_stmt_opt_code(ForeachStmt stmt, [EnvVar -> Type] env, VarGen init_var_gen) {
+  StmtCompInfo foreach_stmt_opt_code(ForeachStmt stmt, [EnvVar -> Type] env, VarGen init_var_gen) {
     // Calculating input sequence type, and returning early if the type is trivial
     seq_type = expr_type(stmt.values, env);
     if seq_type == empty_type:
