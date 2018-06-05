@@ -61,12 +61,25 @@ implicit program           : Program,
     assert_stmt()             = assert_stmt_opt_code(stmt, env, var_gen),
     let_stmt()                = let_stmt_opt_code(stmt.asgnms, stmt.body, env, var_gen),
     assignment_stmt()         = assignment_stmt_opt_code(stmt.vars, stmt.value, env, var_gen),
-    seq_update_stmt()         = undefined,
+    seq_update_stmt()         = seq_update_stmt_opt_code(stmt, env, var_gen),
     if_stmt()                 = if_stmt_opt_code(stmt, env, var_gen),
     for_stmt()                = for_stmt_opt_code(stmt, env, var_gen),
     foreach_stmt()            = foreach_stmt_opt_code(stmt, env, var_gen),
     return_stmt               = ((exit_block), just(surrogates), [], var_gen),
     proc_call_stmt()          = proc_call_stmt_opt_code(stmt, env, var_gen);
+
+
+  StmtCompInfo seq_update_stmt_opt_code(SeqUpdateStmt stmt, [EnvVar -> Type] env, VarGen init_var_gen) {
+    idx_eval_code, idx_surr, var_gen = opt_eval_code(stmt.idx, env, init_var_gen);
+    val_eval_code, val_surr, var_gen = opt_eval_code(stmt.value, env, var_gen);
+    tmp_var, var_gen = next_obj_var(var_gen);
+    update_code = (
+      update_seq_at(tmp_var, stmt.seq_var, get_int_val(idx_surr), val_surr),
+      set_var(stmt.seq_var, tmp_var)
+    );
+    code = idx_eval_code & val_eval_code & update_code;
+    return (code, just(surrogates), [], init_var_gen);
+  }
 
 
   StmtCompInfo fail_stmt_opt_code(FailStmt stmt, [EnvVar -> Type] env, VarGen var_gen) {
