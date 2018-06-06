@@ -558,7 +558,8 @@ implicit program           : Program,
     return ((), empty_seq, init_var_gen) if elts == ();
 
     // Types of elements of the sequence
-    elts_types = [subexpr_type(if is_cond_expr(e) then e.expr else e) : e <~ elts];
+    ord_elts_types = (subexpr_type(if is_cond_expr(e) then e.expr else e) : e <- elts);
+    elts_types = set(ord_elts_types);
     elts_type = union_superset(elts_types);
 
     // Unreachable expression
@@ -573,6 +574,16 @@ implicit program           : Program,
 
     // Both seq_var and array_var must survive the evaluation of the expression
     ret_var_gen = var_gen;
+
+    // Dealing with the important special case of sequences of literal integers
+    if is_subset(elts_type, integer) and not (e <~ elts : is_cond_expr(e)):
+      if not (t <- elts_types : t == empty_type or not is_singleton(t)):
+        int_seq = (only_integer(t) : t <- ord_elts_types);
+        seq_id = int_seqs_ids[int_seq];
+        code = (build_const_int_seq(seq_var, seq_id));
+        return (code, seq_var, ret_var_gen);
+      ;
+    ;
 
     conds = (e.cond : e <- elts, is_cond_expr(e));
     if conds == ():
