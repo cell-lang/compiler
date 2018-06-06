@@ -557,7 +557,7 @@ implicit program           : Program,
     // Empty sequence
     return ((), empty_seq, init_var_gen) if elts == ();
 
-    // Types of elements of the sequence
+    // Types of the elements of the sequence
     ord_elts_types = (subexpr_type(if is_cond_expr(e) then e.expr else e) : e <- elts);
     elts_types = set(ord_elts_types);
     elts_type = union_superset(elts_types);
@@ -591,34 +591,37 @@ implicit program           : Program,
       code = (alloc_array(array_var, int32(|elts|)));
       for e @ i <- elts:
         fail if is_cond_expr(e); ## ANY BETTER WAY TO DO THIS?
-        elt_eval_code, elt_surr, unused_var = opt_eval_info(e, var_gen);
         fail if not i :: Int32;
+        elt_eval_code, elt_surr, unused_var = opt_eval_info(e, var_gen);
         code = code & (elt_eval_code | write_array(array_var, i, elt_surr));
       ;
-      code = (code | mk_seq(seq_var, array_var));
-      return (code, seq_var, ret_var_gen);
+      return ((code | mk_seq(seq_var, array_var)), seq_var, ret_var_gen);
     ;
 
     // Evaluation of all conditions
     ## HERE MAYBE WE COULD DO BETTER WITH THE VARIABLES GENERATOR
-    cond_vars, var_gen = next_bool_vars(var_gen, |conds|);
-    conds_eval_code = join(({
-        eval_code, surr_expr, unused_var = opt_eval_info(c, var_gen);
-        return store_result(eval_code, surr_expr, cond_vars(i));
-      } : c @ i <- conds
-    ));
+    cond_vars = ();
+    code = ();
+    for c @ i <- conds:
+      eval_code, surr_expr, unused_var = opt_eval_info(c, var_gen);
+      if not surr_expr :: <bool_obj(BoolVar)>:
+        surr_var, var_gen = next_bool_var(var_gen);
+        eval_code = store_result(eval_code, surr_expr, surr_var);
+      else
+        surr_var = untag(surr_expr);
+      ;
+      code = code & eval_code;
+      cond_vars = (cond_vars | surr_var);
+    ;
 
     // Integer variable for both size and cursor
     int32_var, var_gen = next_int32_var(var_gen);
 
-    // Computation of final array size
+    // Computation of final array size and destination array allocation
     len_expr = foldr(nonempty((bool_to_bit(v) : v <- cond_vars)), add32);
     min_size = int32(|elts| - |conds|);
     len_expr = add32(min_size, len_expr) if min_size != 0;
-    conds_eval_code = (conds_eval_code | set_ivar32(int32_var, len_expr));
-
-    // Destination array allocation
-    code = (alloc_array(array_var, int32_var));
+    code = (code | set_ivar32(int32_var, len_expr), alloc_array(array_var, int32_var));
 
     // Computation of all array elements
     cond_expr_idx = 0;
@@ -626,14 +629,25 @@ implicit program           : Program,
       fail if not i :: Int32; ## ANY BETTER WAY TO DO THIS?
       is_last = i == |elts| - 1;
       if is_cond_expr(e): // Conditional inclusion expression
-        elt_eval_code, elt_surr, unused_var = opt_eval_info(e.expr, var_gen);
-        // If it's the first conditional expression, we statically know the
-        // destination array index. After that we need to use the cursor variable
-        write_code = if cond_expr_idx == 0
-          then (write_array(array_var, i, elt_surr), set_ivar32(int32_var, int32(i+1)))
-          else (write_array(array_var, int32_var, elt_surr), increment(int32_var) if not is_last);
-        // Making the inclusion conditional
-        code = (code | do_if(cond_vars(cond_expr_idx), elt_eval_code & write_code));
+        elt_code, elt_surr, unused_var = opt_eval_info(e.expr, var_gen);
+        if cond_expr_idx == 0:
+          // If it's the first conditional expression, we statically know the
+          // destination array index. After that we need to use the cursor
+          // variable, unless this is the last element in the sequence
+          cond = cond_vars(cond_expr_idx);
+          elt_code = (elt_code | write_array(array_var, i, elt_surr));
+          if not is_last:
+            elt_code = (elt_code | set_ivar32(int32_var, int32(i+1)));
+            elt_instr = branch(cond, elt_code, (set_ivar32(int32_var, i)));
+          else
+            elt_instr = do_if(cond, elt_code);
+          ;
+        else
+          elt_code = (elt_code | write_array(array_var, int32_var, elt_surr));
+          elt_code = (elt_code | increment(int32_var)) if not is_last;
+          elt_instr = do_if(cond_vars(cond_expr_idx), elt_code);
+        ;
+        code = (code | elt_instr);
         cond_expr_idx = cond_expr_idx + 1;
 
       else // Non-conditional expression
@@ -650,10 +664,11 @@ implicit program           : Program,
     // Creation of the wrapping sequence object
     code = (code | mk_seq(seq_var, array_var));
 
-    // Checking for the empty sequence case, if all expression are conditional
+    // Checking for the empty sequence/set case, if all expression are conditional
+    ## IS THIS REALLY NECESSARY?
     code = (branch(is_eq(int32_var, 0), (set_var(seq_var, empty_seq)), code)) if min_size == 0;
 
-    return (conds_eval_code & code, seq_var, ret_var_gen);
+    return (code, seq_var, ret_var_gen);
   }
 
 

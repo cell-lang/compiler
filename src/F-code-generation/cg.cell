@@ -50,10 +50,10 @@ implicit program : Program, options : CompOptions {
     body = body & rand_sort([auto_cleanup(v, t) : v, t <- procedure.auto_vars]);
     body = body & rand_sort([cleanup_db(v, info.type) : v, info <- procedure.db_vars]);
 
-    debug_code = (push_call_info(procedure.id, (just(fn_arg(i)) : p @ i <- procedure.args)));
+    debug_entry_instr = push_call_info(procedure.id, (just(a.var) : a @ i <- procedure.args));
 
     val = if procedure.res_type != nothing then res_var else object(:void); ## BAD: HERE I'M CHEATING...
-    body = debug_code & body & (pop_call_info, ret_val(val));
+    body = (debug_entry_instr if options.debug_mode) & body & (pop_call_info if options.debug_mode, ret_val(val));
 
     proc_ret_type = if procedure.res_type != nothing then value(procedure.res_type) else symb_type(:void);
 
