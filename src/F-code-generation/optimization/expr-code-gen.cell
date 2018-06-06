@@ -404,23 +404,43 @@ implicit program           : Program,
     size_expr = if expr.inclusive then add(bound_surr, 1) else bound_surr;
     code = (code | alloc_array(array_var, cast_int32(size_expr)));
 
-    // Initialization of hidden loop var
-    code = (code | set_ivar32(idx_var, 0));
+    let surrogates = surrogates & [expr.var -> obj_expr(idx_var)]:
+      if expr.sel_expr?:
+        // Creating and initializing the target cursor
+        target_idx_var, var_gen = next_int32_var(var_gen);
+        code = (code | set_ivar32(target_idx_var, 0));
 
-    // Evaluation of target expression
-    surrs = surrogates & [expr.var -> obj_expr(idx_var)];
-    if expr.sel_expr?:
-      fail;
+        // Evaluating the condition. No need to save the variable generator
+        cond_eval_code, cond_surr, unused_var = opt_eval_info(expr.sel_expr, var_gen);
 
-    else
-      eval_code, elt_surr, var_gen = opt_eval_info(expr.expr, var_gen, surrogates = surrs);
-      break_cond = if expr.inclusive then is_ge(idx_var, bound_surr) else is_lt(idx_var, bound_surr);
-      write_instr = write_array(array_var, idx_var, elt_surr);
-      body_code = ((break_if(break_cond)) & eval_code | write_instr, increment(idx_var));
-      mk_seq_instr = mk_seq(res_var, array_var);
+        // Evaluating the expression that yields a new element
+        eval_code, elt_surr, unused_var = opt_eval_info(expr.expr, var_gen);
+
+        // Conditional array write
+        write_instr = write_array(array_var, target_idx_var, elt_surr);
+        cond_write_instr = do_if(bool_value(cond_surr), (eval_code | write_instr, increment(target_idx_var)));
+
+        // Body code and sequence creation instruction
+        body_code = (cond_eval_code | cond_write_instr);
+        mk_seq_instr = mk_seq(res_var, array_var, target_idx_var);
+
+      else
+        // Evaluating the expression that yields a new element
+        eval_code, elt_surr, unused_var = opt_eval_info(expr.expr, var_gen);
+
+        // Body code and sequence creation instruction
+        write_instr = write_array(array_var, idx_var, elt_surr);
+        body_code = (eval_code | write_instr);
+        mk_seq_instr = mk_seq(res_var, array_var);
+      ;
     ;
 
-    code = (code | repeat(body_code), mk_seq_instr);
+    // Final body code
+    break_cond = if expr.inclusive then is_ge(idx_var, bound_surr) else is_lt(idx_var, bound_surr);
+    body_code = ((break_if(break_cond)) & body_code | increment(idx_var));
+
+    // Final code
+    code = (code | set_ivar32(idx_var, 0), repeat(body_code), mk_seq_instr);
     return (code, res_var, ret_var_gen);
   }
 
