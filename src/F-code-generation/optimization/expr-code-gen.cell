@@ -159,22 +159,6 @@ implicit program           : Program,
   }
 
 
-  (Instr*, ObjExpr, VarGen) map_expr_opt_eval_info([+(key: Expr, value: Expr, cond: Expr?)] entries, VarGen init_var_gen) {
-    if not (e <- entries : e.cond?):
-      ord_entries = isort(entries);
-      keys_types = (subexpr_type(e.key) : e <- ord_entries);
-      if not (t <~ keys_types : not is_symb_singl_type(t)):
-        labels = (only_symb(t) : t <- keys_types);
-        if duplicates(labels) == []:
-          return record_opt_eval_info(labels, (e.value : e <- ord_entries), init_var_gen);
-        ;
-      ;
-    ;
-
-    fail; ## IMPLEMENT IMPLEMENT IMPLEMENT
-  }
-
-
   (Instr*, ObjExpr, VarGen) record_opt_eval_info(SymbObj+ labels, Expr+ values, VarGen init_var_gen) {
     var, var_gen = next_obj_var(init_var_gen);
     code, surrs, var_gen = opt_eval_info(values, var_gen);
@@ -570,9 +554,9 @@ implicit program           : Program,
 
     // Sequence and array variables
     seq_var, var_gen = next_obj_var(init_var_gen);
-    array_var, var_gen = next_array_var(var_gen, elt_repr);
+    elts_var, var_gen = next_array_var(var_gen, elt_repr);
 
-    // Both seq_var and array_var must survive the evaluation of the expression
+    // Both seq_var and elts_var must survive the evaluation of the expression
     ret_var_gen = var_gen;
 
     // Dealing with the important special case of sequences of literal integers
@@ -588,42 +572,22 @@ implicit program           : Program,
     conds = (e.cond : e <- elts, is_cond_expr(e));
     if conds == ():
       // Easy case, no conditional inclusions
-      code = (alloc_array(array_var, int32(|elts|)));
+      code = (alloc_array(elts_var, int32(|elts|)));
       for e @ i <- elts:
         fail if is_cond_expr(e); ## ANY BETTER WAY TO DO THIS?
         fail if not i :: Int32;
         elt_eval_code, elt_surr, unused_var = opt_eval_info(e, var_gen);
-        code = code & (elt_eval_code | write_array(array_var, i, elt_surr));
+        code = code & (elt_eval_code | write_array(elts_var, i, elt_surr));
       ;
-      return ((code | mk_seq(seq_var, array_var)), seq_var, ret_var_gen);
+      return ((code | mk_seq(seq_var, elts_var)), seq_var, ret_var_gen);
     ;
 
-    // Evaluation of all conditions
-    cond_vars = ();
-    conds_code = ();
-    for c @ i <- conds:
-      eval_code, surr_expr, var_gen = opt_eval_info(c, var_gen);
-      if not surr_expr :: <bool_obj(BoolVar)>:
-        surr_var, var_gen = next_bool_var(var_gen);
-        eval_code = store_result(eval_code, surr_expr, surr_var);
-      else
-        surr_var = untag(surr_expr);
-      ;
-      conds_code = conds_code & eval_code;
-      cond_vars = (cond_vars | surr_var);
-    ;
-
-    // Integer variable for both size and cursor
-    int32_var, var_gen = next_int32_var(var_gen);
-
-    // Computation of final array size
-    len_expr = foldr(nonempty((bool_to_bit(v) : v <- cond_vars)), add32);
+    // Evaluating conditions and final array size
     min_size = int32(|elts| - |conds|);
-    len_expr = add32(min_size, len_expr) if min_size != 0;
-    conds_code = (conds_code | set_ivar32(int32_var, len_expr));
+    conds_code, cond_vars, size_idx_var, var_gen = conds_eval_info(conds, min_size, var_gen);
 
     // Allocation of destination array
-    code = (alloc_array(array_var, int32_var));
+    code = (alloc_array(elts_var, size_idx_var));
 
     // Computation of all array elements
     cond_expr_idx = 0;
@@ -637,16 +601,16 @@ implicit program           : Program,
           // destination array index. After that we need to use the cursor
           // variable, unless this is the last element in the sequence
           cond = cond_vars(cond_expr_idx);
-          elt_code = (elt_code | write_array(array_var, i, elt_surr));
+          elt_code = (elt_code | write_array(elts_var, i, elt_surr));
           if not is_last:
-            elt_code = (elt_code | set_ivar32(int32_var, int32(i+1)));
-            elt_instr = branch(cond, elt_code, (set_ivar32(int32_var, i)));
+            elt_code = (elt_code | set_ivar32(size_idx_var, int32(i+1)));
+            elt_instr = branch(cond, elt_code, (set_ivar32(size_idx_var, i)));
           else
             elt_instr = do_if(cond, elt_code);
           ;
         else
-          elt_code = (elt_code | write_array(array_var, int32_var, elt_surr));
-          elt_code = (elt_code | increment(int32_var)) if not is_last;
+          elt_code = (elt_code | write_array(elts_var, size_idx_var, elt_surr));
+          elt_code = (elt_code | increment(size_idx_var)) if not is_last;
           elt_instr = do_if(cond_vars(cond_expr_idx), elt_code);
         ;
         code = (code | elt_instr);
@@ -657,17 +621,17 @@ implicit program           : Program,
         // Until we reach the first conditional element we statically know the
         // destination array index. After that we need to use the cursor variable
         write_code = if cond_expr_idx == 0
-          then (write_array(array_var, i, elt_surr))
-          else (write_array(array_var, int32_var, elt_surr), increment(int32_var) if not is_last);
+          then (write_array(elts_var, i, elt_surr))
+          else (write_array(elts_var, size_idx_var, elt_surr), increment(size_idx_var) if not is_last);
         code = code & elt_eval_code & write_code;
       ;
     ;
 
     // Creation of the wrapping sequence object
-    code = (code | mk_seq(seq_var, array_var));
+    code = (code | mk_seq(seq_var, elts_var));
 
     // Checking for the empty sequence/set case, if all expression are conditional
-    code = (branch(is_eq(int32_var, 0), (set_var(seq_var, empty_seq)), code)) if min_size == 0;
+    code = (branch(is_eq(size_idx_var, 0), (set_var(seq_var, empty_seq)), code)) if min_size == 0;
 
     return (conds_code & code, seq_var, ret_var_gen);
   }
@@ -679,85 +643,137 @@ implicit program           : Program,
 
     // Set object and array variables.
     set_obj_var, ret_var_gen = next_obj_var(init_var_gen);
-    array_var, var_gen = next_array_var(ret_var_gen, :object);
+    elts_var, var_gen = next_array_var(ret_var_gen, :object);
 
     exprs = isort([e : e <- elts, not is_cond_expr(e)]);
     cond_exprs = isort([e : e <- elts, is_cond_expr(e)]);
 
-    if cond_exprs == ():
-      // Easy case, no conditional elements
-      code = (alloc_array(array_var, int32(|exprs|)));
-      for e @ i <- exprs:
-        eval_code, surr, unused_var = opt_eval_info(e, var_gen);
-        code = (code & eval_code | write_array(array_var, int32(i), surr));
-      ;
-      code = (code | mk_set(set_obj_var, array_var));
-      return (code, set_obj_var, ret_var_gen);
-    ;
-
-    // Evaluation of all conditions
-    cond_vars = ();
-    conds_code = ();
-    for c @ i <- cond_exprs:
-      eval_code, surr_expr, var_gen = opt_eval_info(c.cond, var_gen);
-      if not surr_expr :: <bool_obj(BoolVar)>:
-        surr_var, var_gen = next_bool_var(var_gen);
-        eval_code = store_result(eval_code, surr_expr, surr_var);
-      else
-        surr_var = untag(surr_expr);
-      ;
-      conds_code = conds_code & eval_code;
-      cond_vars = (cond_vars | surr_var);
-    ;
-
-    // Computation of final array size
-    size_idx_var, unused_var = next_int32_var(var_gen);
-    len_expr = foldr(nonempty((bool_to_bit(v) : v <- cond_vars)), add32);
+    // Evaluating of conditions and final array size
     min_size = int32(|exprs|);
-    len_expr = add32(min_size, len_expr) if min_size != 0;
-    conds_code = (conds_code | set_ivar32(size_idx_var, len_expr));
+    conds = (e.cond : e <- cond_exprs);
+    conds_code, cond_vars, size_idx_var, var_gen = conds_eval_info(conds, min_size, var_gen);
 
     // Allocation of destination array
-    code = (alloc_array(array_var, size_idx_var));
+    size_expr = if cond_exprs == () then min_size else size_idx_var;
+    code = (alloc_array(elts_var, size_expr));
 
     // Non-conditional elements
     for e @ i <- exprs:
       eval_code, surr, unused_var = opt_eval_info(e, var_gen);
-      code = (code & eval_code | write_array(array_var, int32(i), surr));
+      code = (code & eval_code | write_array(elts_var, int32(i), surr));
     ;
 
-    if |cond_exprs| != 1:
+    if |cond_exprs| == 1:
+      // Just one conditional element, no need to have an index variable
+      elt_code, surr, unused_var = opt_eval_info(only(cond_exprs).expr, var_gen);
+      elt_code = (elt_code | write_array(elts_var, min_size, surr));
+      code = (code | do_if(cond_vars(0), elt_code));
+
+    elif |cond_exprs| > 1:
       // More than one conditional element, we need to keep track of the next array slot
       for e @ i <- cond_exprs:
         cond = cond_vars(i);
         elt_code, surr, unused_var = opt_eval_info(e.expr, var_gen);
+        elt_code = (elt_code | write_array(elts_var, if i == 0 then min_size else size_idx_var, surr));
         is_last = i == |cond_exprs| - 1;
         if i == 0:
-          write_instr = write_array(array_var, int32(|exprs|), surr);
-          elt_code = (elt_code | write_instr, set_ivar32(size_idx_var, int32(|exprs|+1)));
-          elt_instr = branch(cond, elt_code, (set_ivar32(size_idx_var, int32(|exprs|))));
+          elt_code = (elt_code | set_ivar32(size_idx_var, int32(min_size + 1)));
+          elt_instr = branch(cond, elt_code, (set_ivar32(size_idx_var, min_size)));
         else
-          write_instr = write_array(array_var, size_idx_var, surr);
-          elt_code = (elt_code | write_instr, increment(size_idx_var));
+          elt_code = (elt_code | increment(size_idx_var)) if not is_last;
           elt_instr = do_if(cond, elt_code);
         ;
         code = (code | elt_instr);
       ;
-
-    else
-      // Just one conditional element, no need to have an index variable
-      cond = cond_vars(0);
-      eval_code, surr, unused_var = opt_eval_info(only(cond_exprs).expr, var_gen);
-      code = (code | do_if(cond, (eval_code | write_array(array_var, int32(|exprs|), surr))));
     ;
 
     // Creation of the set object
-    code = (code | mk_set(set_obj_var, array_var));
+    code = (code | mk_set(set_obj_var, elts_var));
 
     // Checking for the empty sequence/set case, if all expression are conditional
     code = (branch(is_eq(size_idx_var, 0), (set_var(set_obj_var, empty_rel)), code)) if min_size == 0;
 
     return (conds_code & code, set_obj_var, ret_var_gen);
+  }
+
+
+  (Instr*, ObjExpr, VarGen) map_expr_opt_eval_info([+(key: Expr, value: Expr, cond: Expr?)] entries, VarGen init_var_gen) {
+    // Checking if the expression is actually a record,
+    // and if so building a record object instead
+    if not (e <- entries : e.cond?):
+      ord_entries = isort(entries);
+      keys_types = (subexpr_type(e.key) : e <- ord_entries);
+      if not (t <~ keys_types : not is_symb_singl_type(t)):
+        labels = (only_symb(t) : t <- keys_types);
+        if duplicates(labels) == []:
+          return record_opt_eval_info(labels, (e.value : e <- ord_entries), init_var_gen);
+        ;
+      ;
+    ;
+
+    // Map object and array variables.
+    map_obj_var, ret_var_gen = next_obj_var(init_var_gen);
+    keys_var, var_gen = next_array_var(ret_var_gen, :object);
+    values_var, var_gen = next_array_var(var_gen, :object);
+
+    // Separating conditional entries from unconditional ones
+    plain_entries = isort([e : e <- entries, not e.cond?]);
+    cond_entries = isort([e : e <- entries, e.cond?]);
+
+    // Evaluating of conditions and final array size
+    min_size = int32(|plain_entries|);
+    conds = (e.cond : e <- cond_entries);
+    conds_code, cond_vars, size_idx_var, var_gen = conds_eval_info(conds, min_size, var_gen);
+
+    // Allocation of destination arrays
+    size_expr = if cond_entries == () then min_size else size_idx_var;
+    code = (alloc_array(keys_var, size_expr), alloc_array(values_var, size_expr));
+
+    // Non-conditional elements
+    for e @ i <- plain_entries:
+      code = code & write_entry_code(e.key, e.value, keys_var, values_var, int32(i), var_gen);
+    ;
+
+    if |cond_entries| == 1:
+      // Just one conditional entry, no need to have an index variable
+      entry = only(cond_entries);
+      entry_code = write_entry_code(entry.key, entry.value, keys_var, values_var, min_size, var_gen);
+      code = (code | do_if(cond_vars(0), entry_code));
+
+    elif |cond_entries| > 1:
+      // More than one conditional element, we need to keep track of the next array slot
+      for e @ i <- cond_entries:
+        cond = cond_vars(i);
+        idx = if i == 0 then min_size else size_idx_var;
+        entry_code = write_entry_code(e.key, e.value, keys_var, values_var, idx, var_gen);
+        is_last = i == |cond_entries| - 1;
+        if i == 0:
+          entry_code = (entry_code | set_ivar32(size_idx_var, int32(min_size+1)));
+          entry_instr = branch(cond, entry_code, (set_ivar32(size_idx_var, min_size)));
+        else
+          entry_code = (entry_code | increment(size_idx_var)) if not is_last;
+          entry_instr = do_if(cond, entry_code);
+        ;
+        code = (code | entry_instr);
+      ;
+    ;
+
+    // Creation of the map object
+    code = (code | mk_map(map_obj_var, keys_var, values_var));
+
+    // Checking for the empty sequence/set case, if all expression are conditional
+    code = (branch(is_eq(size_idx_var, 0), (set_var(map_obj_var, empty_rel)), code)) if min_size == 0;
+
+    return (conds_code & code, map_obj_var, ret_var_gen);
+
+
+    Instr* write_entry_code(Expr key, Expr value, ArrayVar keys, ArrayVar values, Int32Expr idx, VarGen var_gen) {
+      eval_code, surr, unused_var = opt_eval_info(key, var_gen);
+      key_code = (eval_code | write_array(keys, idx, surr));
+      eval_code, surr, unused_var = opt_eval_info(value, var_gen);
+      value_code = (eval_code | write_array(values, idx, surr));
+      return key_code & value_code;
+    }
   }
 
 
@@ -889,6 +905,37 @@ implicit program           : Program,
       fdiv  = div_floats(args(0), args(1)),
       fexp  = exp_floats(args(0), args(1)),
       fsqrt = square_root(args(0));
+  }
+
+  ////////////////////////////////////////////////////////////////////////////////
+  ////////////////////////////////////////////////////////////////////////////////
+
+  (Instr*, BoolVar+, Int32Var, VarGen) conds_eval_info(Expr* conds, Int32 min_size, VarGen init_var_gen) {
+    // Evaluation of all conditions
+    var_gen = init_var_gen;
+    cond_vars = ();
+    code = ();
+    for c @ i <- conds:
+      eval_code, surr_expr, var_gen = opt_eval_info(c, var_gen);
+      if not surr_expr :: <bool_obj(BoolVar)>:
+        surr_var, var_gen = next_bool_var(var_gen);
+        eval_code = store_result(eval_code, surr_expr, surr_var);
+      else
+        surr_var = untag(surr_expr);
+      ;
+      code = code & eval_code;
+      cond_vars = (cond_vars | surr_var);
+    ;
+
+    // Integer variable for both size and cursor
+    size_var, var_gen = next_int32_var(var_gen);
+
+    // Computation of final array size
+    len_expr = foldr(nonempty((bool_to_bit(v) : v <- cond_vars)), add32);
+    len_expr = add32(min_size, len_expr) if min_size != 0;
+    code = (code | set_ivar32(size_var, len_expr));
+
+    return (code, nonempty(cond_vars), size_var, var_gen);
   }
 }
 
