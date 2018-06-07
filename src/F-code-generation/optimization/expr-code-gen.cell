@@ -84,7 +84,7 @@ implicit program           : Program,
     seq_tail_expr()     = undefined,
     set_expr(ses?)      = set_expr_opt_eval_info(ses, var_gen),
     map_expr(es?)       = map_expr_opt_eval_info(es, var_gen),
-    // bin_rel_expr(es?)   = undefined,
+    bin_rel_expr(es?)   = bin_rel_expr_opt_eval_info(es, var_gen),
     // tern_rel_expr(es?)  = undefined,
     tag_obj_expr()      = tag_obj_expr_opt_eval_info(expr, var_gen),
     fn_call()           = fn_call_opt_eval_info(expr, var_gen),
@@ -697,7 +697,7 @@ implicit program           : Program,
   }
 
 
-  (Instr*, ObjExpr, VarGen) map_expr_opt_eval_info([+(key: Expr, value: Expr, cond: Expr?)] entries, VarGen init_var_gen) {
+  (Instr*, ObjExpr, VarGen) map_expr_opt_eval_info([+(key: Expr, value: Expr, cond: Expr?)] entries, VarGen var_gen) {
     // Checking if the expression is actually a record,
     // and if so building a record object instead
     if not (e <- entries : e.cond?):
@@ -706,46 +706,60 @@ implicit program           : Program,
       if not (t <~ keys_types : not is_symb_singl_type(t)):
         labels = (only_symb(t) : t <- keys_types);
         if duplicates(labels) == []:
-          return record_opt_eval_info(labels, (e.value : e <- ord_entries), init_var_gen);
+          return record_opt_eval_info(labels, (e.value : e <- ord_entries), var_gen);
         ;
       ;
     ;
 
-    // Map object and array variables.
-    map_obj_var, ret_var_gen = next_obj_var(init_var_gen);
-    keys_var, var_gen = next_array_var(ret_var_gen, :object);
-    values_var, var_gen = next_array_var(var_gen, :object);
-
     // Separating conditional entries from unconditional ones
-    plain_entries = isort([e : e <- entries, not e.cond?]);
-    cond_entries = isort([e : e <- entries, e.cond?]);
+    uncond_entries = isort([(e.key, e.value) : e <- entries, not e.cond?]);
+    cond_entries = isort([(e.key, e.value, e.cond) : e <- entries, e.cond?]);
+
+    return bin_rel_expr_opt_eval_info(uncond_entries, cond_entries, true, var_gen);
+  }
+
+
+  (Instr*, ObjExpr, VarGen) bin_rel_expr_opt_eval_info([+(args: (Expr, Expr), cond: Expr?)] entries, VarGen var_gen) {
+    // Separating conditional entries from unconditional ones
+    uncond_entries = isort([e.args : e <- entries, not e.cond?]);
+    cond_entries = isort([(left(e.args), right(e.args), e.cond) : e <- entries, e.cond?]);
+
+    return bin_rel_expr_opt_eval_info(uncond_entries, cond_entries, false, var_gen);
+  }
+
+
+  (Instr*, ObjExpr, VarGen) bin_rel_expr_opt_eval_info((Expr, Expr)* uncond_entries, (Expr, Expr, Expr)* cond_entries, Bool is_map, VarGen init_var_gen) {
+    // Binary relation object and array variables.
+    bin_rel_obj_var, ret_var_gen = next_obj_var(init_var_gen);
+    col1_var, var_gen = next_array_var(ret_var_gen, :object);
+    col2_var, var_gen = next_array_var(var_gen, :object);
 
     // Evaluating of conditions and final array size
-    min_size = int32(|plain_entries|);
-    conds = (e.cond : e <- cond_entries);
+    min_size = int32(|uncond_entries|);
+    conds = (c : unused_var_1, unused_var_2, c <- cond_entries);
     conds_code, cond_vars, size_idx_var, var_gen = conds_eval_info(conds, min_size, var_gen);
 
     // Allocation of destination arrays
     size_expr = if cond_entries == () then min_size else size_idx_var;
-    code = (alloc_array(keys_var, size_expr), alloc_array(values_var, size_expr));
+    code = (alloc_array(col1_var, size_expr), alloc_array(col2_var, size_expr));
 
     // Non-conditional elements
-    for e @ i <- plain_entries:
-      code = code & write_entry_code(e.key, e.value, keys_var, values_var, int32(i), var_gen);
+    for a1, a2 @ i <- uncond_entries:
+      code = code & write_entry_code(a1, a2, col1_var, col2_var, int32(i), var_gen);
     ;
 
     if |cond_entries| == 1:
       // Just one conditional entry, no need to have an index variable
-      entry = only(cond_entries);
-      entry_code = write_entry_code(entry.key, entry.value, keys_var, values_var, min_size, var_gen);
+      arg1, arg2, unused_var = only(cond_entries);
+      entry_code = write_entry_code(arg1, arg2, col1_var, col2_var, min_size, var_gen);
       code = (code | do_if(cond_vars(0), entry_code));
 
     elif |cond_entries| > 1:
       // More than one conditional element, we need to keep track of the next array slot
-      for e @ i <- cond_entries:
+      for a1, a2, unused_var @ i <- cond_entries:
         cond = cond_vars(i);
         idx = if i == 0 then min_size else size_idx_var;
-        entry_code = write_entry_code(e.key, e.value, keys_var, values_var, idx, var_gen);
+        entry_code = write_entry_code(a1, a2, col1_var, col2_var, idx, var_gen);
         is_last = i == |cond_entries| - 1;
         if i == 0:
           entry_code = (entry_code | set_ivar32(size_idx_var, int32(min_size+1)));
@@ -759,18 +773,18 @@ implicit program           : Program,
     ;
 
     // Creation of the map object
-    code = (code | mk_map(map_obj_var, keys_var, values_var));
+    code = (code | mk_rel(bin_rel_obj_var, col1_var, col2_var, is_map));
 
     // Checking for the empty sequence/set case, if all expression are conditional
-    code = (branch(is_eq(size_idx_var, 0), (set_var(map_obj_var, empty_rel)), code)) if min_size == 0;
+    code = (branch(is_eq(size_idx_var, 0), (set_var(bin_rel_obj_var, empty_rel)), code)) if min_size == 0;
 
-    return (conds_code & code, map_obj_var, ret_var_gen);
+    return (conds_code & code, bin_rel_obj_var, ret_var_gen);
 
 
-    Instr* write_entry_code(Expr key, Expr value, ArrayVar keys, ArrayVar values, Int32Expr idx, VarGen var_gen) {
-      eval_code, surr, unused_var = opt_eval_info(key, var_gen);
+    Instr* write_entry_code(Expr arg1, Expr arg2, ArrayVar keys, ArrayVar values, Int32Expr idx, VarGen var_gen) {
+      eval_code, surr, unused_var = opt_eval_info(arg1, var_gen);
       key_code = (eval_code | write_array(keys, idx, surr));
-      eval_code, surr, unused_var = opt_eval_info(value, var_gen);
+      eval_code, surr, unused_var = opt_eval_info(arg2, var_gen);
       value_code = (eval_code | write_array(values, idx, surr));
       return key_code & value_code;
     }
