@@ -81,7 +81,7 @@ implicit program           : Program,
   (Instr*, ObjExpr, VarGen) opt_eval_info(RecExpr expr, VarGen var_gen) =
     seq_expr(ses?)      |
     tuple_expr(ses?)    = seq_expr_opt_eval_info(ses, var_gen),
-    seq_tail_expr()     = undefined,
+    seq_tail_expr()     = seq_tail_expr_opt_eval_info(expr.seq, expr.tail, var_gen),
     set_expr(ses?)      = set_expr_opt_eval_info(ses, var_gen),
     map_expr(es?)       = map_expr_opt_eval_info(es, var_gen),
     bin_rel_expr(es?)   = bin_rel_expr_opt_eval_info(es, var_gen),
@@ -116,6 +116,18 @@ implicit program           : Program,
     // tern_rel_comp()     = undefined,
     seq_comp()          = seq_comp_opt_eval_info(expr, var_gen),
     range_comp()        = range_comp_opt_eval_info(expr, var_gen);
+
+
+  (Instr*, ObjExpr, VarGen) seq_tail_expr_opt_eval_info(Expr seq, Expr+ tail, VarGen init_var_gen) {
+    res_var, ret_var_gen = next_obj_var(init_var_gen);
+    code, seq_surr, var_gen = opt_eval_info(seq, ret_var_gen);
+    for e @ i <- tail:
+      elt_code, elt_surr, unused_var = opt_eval_info(e, var_gen);
+      src_seq = if i == 0 then seq_surr else res_var;
+      code = (code & elt_code | append_to_seq(res_var, src_seq, elt_surr));
+    ;
+    return (code, res_var, ret_var_gen);
+  }
 
 
   (Instr*, ObjExpr, VarGen) membership_opt_eval_info(Expr obj, NeType type, VarGen init_var_gen) {
