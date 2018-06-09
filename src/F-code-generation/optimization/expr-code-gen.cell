@@ -92,8 +92,8 @@ implicit program           : Program,
     builtin_call()      = builtin_call_opt_eval_info(expr, var_gen),
     size_expr()         = size_expr_opt_eval_info(expr.coll, var_gen),
     unary_pseudo_call() = unary_pseudo_call_opt_eval_info(expr.target, expr.arg, var_gen),
-    rel_memb_test()     = undefined,
-    rel_lookup()        = undefined,
+    rel_memb_test()     = rel_memb_test_opt_eval_info(expr.rel, expr.args, var_gen),
+    rel_lookup()        = rel_lookup_opt_eval_info(expr, var_gen),
     // relvar_memb_test()  = undefined,
     // relvar_lookup()     = undefined,
     and_expr()          = and_expr_opt_eval_info(expr.left, expr.right, var_gen),
@@ -116,6 +116,99 @@ implicit program           : Program,
     // tern_rel_comp()     = undefined,
     seq_comp()          = seq_comp_opt_eval_info(expr, var_gen),
     range_comp()        = range_comp_opt_eval_info(expr, var_gen);
+
+
+  // rel_lookup(rel: Expr, set_args: Expr*, unknown_arg_idx: Nat);
+  (Instr*, ObjExpr, VarGen) rel_lookup_opt_eval_info(RelLookup expr, VarGen init_var_gen) {
+    // Physical representation of the result and variable that stores it
+    type = types(expr_id);
+    return ((terminate), never_used_lvar, init_var_gen) if type == empty_type;
+
+    repr = opt_repr(type);
+    res_var, ret_var_gen = next_var(repr, init_var_gen);
+
+    // Evaluation of all subexpressions
+    code, rel_surr, var_gen = opt_eval_info(expr.rel, ret_var_gen);
+    args_surrs = ();
+    for e <- expr.set_args:
+      arg_code, arg_surr, var_gen = opt_eval_info(e, var_gen);
+      code = code & arg_code;
+      args_surrs = (args_surrs | arg_surr);
+    ;
+
+    if args_surrs == ():
+      code = (code | check(is_eq(get_size(rel_surr), 1)), set_any_var(res_var, rand_elem(rel_surr)));
+
+    elif |args_surrs| == 1:
+      arg_surr = only(args_surrs);
+      if expr.unknown_arg_idx == 1:
+        code = (code | set_any_var(res_var, lookup(rel_surr, arg_surr)));
+      else
+        it_var, var_gen = next_bin_rel_it_var(var_gen);
+        code = (code |
+          get_iter(it_var, rel_surr, (nothing, just(arg_surr))),
+          check(neg(is_out_of_range(it_var))),
+          set_any_var(res_var, get_curr_arg(it_var, 0)),
+          move_forward(it_var),
+          check(is_out_of_range(it_var))
+        );
+      ;
+
+    else
+      it_var, var_gen = next_tern_rel_it_var(var_gen);
+      search_args = insert((just(a) : a <- args_surrs), expr.unknown_arg_idx, nothing);
+      fail if |search_args| != 3 or not expr.unknown_arg_idx :: <0..2>;
+      code = (code |
+        get_iter(it_var, rel_surr, search_args),
+        check(neg(is_out_of_range(it_var))),
+        set_any_var(res_var, get_curr_arg(it_var, expr.unknown_arg_idx)),
+        move_forward(it_var),
+        check(is_out_of_range(it_var))
+      );
+    ;
+
+    return (code, obj_expr(res_var), ret_var_gen);
+  }
+
+
+  (Instr*, ObjExpr, VarGen) rel_memb_test_opt_eval_info(Expr rel, Maybe[Expr]+ args, VarGen init_var_gen) {
+    args_surrs : Maybe[ObjExpr]*; ## WHY IS THIS NEEDED? IS THIS A BUG IN THE TYPECHECKER?
+
+    res_var, ret_var_gen = next_bool_var(init_var_gen);
+
+    code, rel_surr, var_gen = opt_eval_info(rel, ret_var_gen);
+
+    args_surrs = ();
+    for a <- args:
+      if a != nothing:
+        arg_code, arg_surr, var_gen = opt_eval_info(value(a), var_gen);
+        code = code & arg_code;
+        args_surrs = (args_surrs | just(arg_surr));
+      else
+        args_surrs = (args_surrs | nothing);
+      ;
+    ;
+
+    if not (a <~ args_surrs : a == nothing): ## THIS SHOULD NARROW DOWN THE TYPE OF args_surrs
+      search_instr = set_bvar(res_var, contains(rel_surr, nonempty((value_unsafe(a) : a <- args_surrs))));
+      code = (code | search_instr);
+
+    else
+      if |args_surrs| == 2:
+        it_var, var_gen = next_bin_rel_it_var(var_gen);
+        get_iter_instr = get_iter(it_var, rel_surr, args_surrs);
+
+      else
+        fail if |args_surrs| != 3;
+        it_var, var_gen = next_tern_rel_it_var(var_gen);
+        get_iter_instr = get_iter(it_var, rel_surr, args_surrs);
+      ;
+
+      code = (code | get_iter_instr, set_bvar(res_var, neg(is_out_of_range(it_var))));
+    ;
+
+    return (code, obj_expr(res_var), ret_var_gen);
+  }
 
 
   (Instr*, ObjExpr, VarGen) seq_tail_expr_opt_eval_info(Expr seq, Expr+ tail, VarGen init_var_gen) {
