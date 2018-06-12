@@ -490,6 +490,11 @@ T reduce(T+ xs, (T T -> T) f) {
 //   return res;
 // }
 
+[K -> V+] ord_group_by_key([K -> V]* maps) {
+  keys = [k : m <~ maps, k, unused_var <- m];
+  return [k -> nonempty((m(k, !!) : m <- maps, m(k, *))) : k <- keys];
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -510,9 +515,10 @@ Nat* partial_sums(Nat* xs) {
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
+## THIS IS NOT A FOLD, IT'S A REDUCE
 T fold(T+ seq, (T T -> T) f) = foldl(seq, f);
 
-
+## THIS IS NOT A FOLD, IT'S A REDUCE
 T foldl(T+ seq, (T T -> T) f) {
   res = seq(0);
   for i = 1..|seq|:
@@ -521,7 +527,7 @@ T foldl(T+ seq, (T T -> T) f) {
   return res;
 }
 
-
+## THIS IS NOT A FOLD, IT'S A REDUCE
 T foldr(T+ seq, (T T -> T) f) {
   rev_seq = reverse(seq);
   res = rev_seq(0);
@@ -531,6 +537,45 @@ T foldr(T+ seq, (T T -> T) f) {
   return res;
 }
 
+////////////////////////////////////////////////////////////////////////////////
+
+A fold(A a, [B] bs, (A B -> A) f) = foldl(a, isort(bs), f);
+
+
+A foldl(A a, B* bs, (A B -> A) f) {
+  res = a;
+  for b <- bs:
+    res = f(res, b);
+  ;
+  return res;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+(B*, C) mapl(A* xs, C seed, (A C -> (B, C)) next) {
+  ys = ();
+  state = seed;
+  for x <- xs:
+    y, state = next(x, state);
+    ys = (ys | y);
+  ;
+  return (ys, state);
+}
+
+
+// (Y*, S) mapli(X* xs, S seed, (X x, Nat i, S s -> (Y, S)) next)
+(B*, C) mapli(A* xs, C seed, (A Nat C -> (B, C)) next) {
+  ys = ();
+  state = seed;
+  for x @ i <- xs:
+    y, state = next(x, i, state);
+    ys = (ys | y);
+  ;
+  return (ys, state);
+}
+
+////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
 Int pow(Int b, Nat e) {

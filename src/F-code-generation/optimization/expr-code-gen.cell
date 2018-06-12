@@ -107,7 +107,7 @@ implicit program           : Program,
     // auto_method_call()  = undefined,
     // db_method_call()    = undefined,
     if_expr()           = if_expr_opt_eval_info(expr, var_gen),
-    match_expr()        = undefined,
+    match_expr()        = match_expr_opt_eval_info(expr, var_gen),
     do_expr()           = do_expr_opt_eval_code(expr, environments(expr_id), var_gen),
     // ex_qual()           = undefined,
     // set_comp()          = undefined,
@@ -116,6 +116,87 @@ implicit program           : Program,
     // tern_rel_comp()     = undefined,
     seq_comp()          = seq_comp_opt_eval_info(expr, var_gen),
     range_comp()        = range_comp_opt_eval_info(expr, var_gen);
+
+
+  // match_expr(exprs: Expr+, cases: (ptrns: Pattern+, expr: Expr)+);
+  (Instr*, ObjExpr, VarGen) match_expr_opt_eval_info(MatchExpr expr, VarGen init_var_gen) {
+    type = types(expr_id);
+    return ((terminate(true)), never_used_lvar, init_var_gen) if type == empty_type;
+    repr = opt_repr(type);
+    res_var, var_gen = next_var(repr, init_var_gen);
+    ret_var_gen = var_gen;
+
+    if |expr.exprs| == 1:
+      match_expr = only(expr.exprs);
+      match_expr_type = subexpr_type(match_expr);
+      match_expr_code, match_expr_surr, var_gen = opt_eval_info(match_expr, var_gen);
+
+      ptrns = (only_unsafe(c.ptrns) : c <- expr.cases);
+      fallthrough_type = foldl(type, ptrns, type_minus_pattern);
+      is_complete = fallthrough_type == empty_type;
+
+      cases = ({
+          ptrn = only_unsafe(c.ptrns);
+          ptrn_env = generate_env(ptrn, type);
+          surrs = [v -> low_level_var(opt_repr(t), v) : v, t <- ptrn_env, t != empty_type];
+          code, surr, unused_var = opt_eval_info(c.expr, var_gen);
+          return (ptrn, nonempty(store_result(code, surr, res_var)));
+        } : c <- expr.cases
+      );
+
+      match_code = single_ptrn_match_expr_opt_code(match_expr_surr, match_expr_type, cases, is_complete);
+      return (match_expr_code & match_code, obj_expr(res_var), ret_var_gen);
+
+    else
+      fail;
+    ;
+  }
+
+  //   Instr+ gen_switch_code(ExprEvalRes+ exprs, (ptrns: Pattern+, code: Instr+)+ cases) {
+  //     if |head(cases).ptrns| == 1:
+  //       return gen_single_ptrn_switch_code(only_unsafe(exprs), ((only_unsafe(c.ptrns), c.code) : c <- cases));
+  //     else
+  //       code = ();
+  //       for c <- cases:
+  //         case_code = gen_guarded_case_eval_code(exprs, c.ptrns, c.code);
+  //         code = code & case_code;
+  //       ;
+  //       return (execute_block((code | terminate)));
+  //     ;
+
+
+  //     Instr+ gen_guarded_case_eval_code(AtomicExpr* exprs, Pattern* ptrns, Instr+ code) {
+  //       assert |exprs| == |ptrns|;
+
+  //       return code if exprs == () or ptrns == (); // Shutting up the typechecker...
+
+  //       next_step_code = gen_guarded_case_eval_code(tail(exprs), tail(ptrns), code);
+  //       let loc_bound_vars=[], on_match_code=next_step_code, tag_vars=[]:
+  //         res = gen_ptrn_matching_code(head(ptrns), head(exprs), pseudotype_any);
+  //       ;
+  //       return nonempty(res);
+  //     }
+  //   }
+  // }
+
+  // Type match_expr_type(Expr+ exprs, (ptrns: Pattern+, expr: Expr)+ cases, [EnvVar -> Type] env) {
+  //   types = (case_expr_type(exprs, c.ptrns, c.expr, env) : c <- cases);
+  //   return union_superset(set(types));
+
+  //   Type case_expr_type(Expr+ exprs, Pattern+ ptrns, Expr expr, [EnvVar -> Type] env) {
+  //     case_expr_env = update_env(exprs, ptrns, env);
+  //     return expr_type(expr, case_expr_env);
+  //   }
+  // }
+
+  // Instr+ gen_eval_code_for_match_expr(Expr+ exprs, (ptrns: Pattern+, expr: Expr)+ cases, EvalDestVar res_var) {
+  //   info = gen_eval_info(exprs);
+  //   let next_var_gen = info.next_var_gen:
+  //     semicomp_cases = ((ptrns: c.ptrns, code: (gen_eval_code(c.expr, res_var) | exit_block)) : c <- cases);
+  //     switch_code = gen_switch_code(nonempty(info.exprs), semicomp_cases);
+  //   ;
+  //   return nonempty(info.eval_code & switch_code);
+  // }
 
 
   // rel_lookup(rel: Expr, set_args: Expr*, unknown_arg_idx: Nat);
@@ -1187,28 +1268,3 @@ Instr set_any_var(LocIntVar   var, ObjExpr expr) = set_ivar(var, get_int_val(exp
 Instr set_any_var(LocFloatVar var, ObjExpr expr) = set_fvar(var, float_value(expr));
 Instr set_any_var(WriteObjVar var, ObjExpr expr) = set_var(var, expr);
 Instr set_any_var(LocOptTagRecVar var, ObjExpr expr) = set_var(var, expr);
-
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-
-(B*, C) mapl(A* xs, C seed, (A C -> (B, C)) next) {
-  ys = ();
-  state = seed;
-  for x <- xs:
-    y, state = next(x, state);
-    ys = (ys | y);
-  ;
-  return (ys, state);
-}
-
-
-// (Y*, S) mapli(X* xs, S seed, (X x, Nat i, S s -> (Y, S)) next)
-(B*, C) mapli(A* xs, C seed, (A Nat C -> (B, C)) next) {
-  ys = ();
-  state = seed;
-  for x @ i <- xs:
-    y, state = next(x, i, state);
-    ys = (ys | y);
-  ;
-  return (ys, state);
-}
