@@ -99,32 +99,32 @@ implicit typedefs : [TypeName -> NeType] {
     Instr* symb_ptrns_opt_code(ObjExpr expr, Type type, (Pattern, Instr*)+ cases) {
       assert is_subset(type, atom_type);
 
-      cases_by_symb = ([s -> (rp, is) : s, rp <- nonempty_map(split_by_ptype(p))] : p, is <- cases);
-      if not (c <~ cases_by_symb : c(:symbols, *)):
-        cases_by_symb = ([only_symbol(s) -> p_is : s, p_is <- c] : c <- cases_by_symb);
-        return symb_ptrns_by_symb_opt_code(expr, type, cases_by_symb);
-      else
-        fail;
+      is_complete = not may_fall_through(type, (p : p, unused_var <- cases));
+      else_code = (terminate(is_complete));
+
+      destr_cases = ();
+      for p, is @ i <- cases:
+        ptrns_by_ptype = split_by_ptype(p);
+        if ptrns_by_ptype(:symbols, *):
+          else_code = (opt_ptrn_match_code(p, expr, type, (is | exit_block)) | terminate(true));
+          break;
+        ;
+        destr_case = [only_symbol(s) -> (rp, is) : s, rp <- nonempty_map(split_by_ptype(p))];
+        destr_cases = (destr_cases | destr_case);
       ;
-    }
 
-
-    Instr* symb_ptrns_by_symb_opt_code(ObjExpr expr, Type type, [+Symbol -> (Pattern, Instr*)]+ cases) {
-      cases_by_symb = ord_group_by_key(cases);
-
-      handled_type = union_type([symb_type(s) : s, unused_var <- cases_by_symb]);
-      is_complete = is_subset(type, handled_type);
+      return else_code if destr_cases == ();
 
       code_by_symb = [
         object(s) -> {
           case_type = symb_type(s);
           eval_code = join((opt_ptrn_match_code(p, expr, case_type, is) : p, is <- cs));
           return (eval_code | exit_block);
-        } : s, cs <- cases_by_symb
+        } : s, cs <- ord_group_by_key(destr_cases)
       ];
 
       code_by_symbs = [(ss, is) : is, ss <- reverse_map(code_by_symb)];
-      return opt_symb_switch(expr, code_by_symbs, (terminate(is_complete)));
+      return opt_symb_switch(expr, code_by_symbs, else_code);
     }
 
 
@@ -163,7 +163,9 @@ implicit typedefs : [TypeName -> NeType] {
 
 
     Instr* default_opt_code(PtrnMatchType ptrn_match_type, ObjExpr expr, Type type, (Pattern, Instr*)+ cases) {
-      fail;
+      code = join((opt_ptrn_match_code(p, expr, type, is) : p, is <- cases));
+      is_complete = not may_fall_through(type, (p : p, unused_var <- cases));
+      return (code | terminate(is_complete));
     }
 
     ////////////////////////////////////////////////////////////////////////////
@@ -178,20 +180,20 @@ implicit typedefs : [TypeName -> NeType] {
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-TagType equivalent_tag_type(TagPtrn ptrn) =
-  ptrn_symbol     = atom_type,
-  ptrn_symbol(s?) = symb_type(s),
-  ptrn_var()      = equivalent_tag_type(ptrn.ptrn);
-
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-
 implicit typedefs : [TypeName -> NeType] {
   Type intersection_superset(Type type, PtrnMatchType ptrn_match_type) =
     type_pattern_intersection_superset(type, as_pattern(ptrn_match_type));
 
   Bool may_overlap(Type type, PtrnMatchType ptrn_match_type) =
     intersection_superset(type, ptrn_match_type) != empty_type;
+
+  Bool is_subset(Type type, PtrnMatchType ptrn_match_type) =
+    is_subset(type, equivalent_type(ptrn_match_type));
+
+  Bool may_fall_through(Type type, Pattern* ptrns) {
+    fallthrough_type = foldl(type, ptrns, type_minus_pattern);
+    return fallthrough_type != empty_type;
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -247,3 +249,23 @@ Pattern as_pattern(PtrnMatchType) =
   ne_bin_rels   = ptrn_ne_bin_rel,
   ne_tern_rels  = ptrn_ne_tern_rel,
   tag_objs      = ptrn_tag_obj(ptrn_symbol, ptrn_any);
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+TagType equivalent_tag_type(TagPtrn ptrn) =
+  ptrn_symbol     = atom_type,
+  ptrn_symbol(s?) = symb_type(s),
+  ptrn_var()      = equivalent_tag_type(ptrn.ptrn);
+
+
+NeType equivalent_type(PtrnMatchType) =
+  symbols       = atom_type,
+  integers      = integer,
+  floats        = float_type,
+  seqs          = type_seq,
+  empty_rel     = empty_rel_type,
+  ne_sets       = type_ne_set,
+  ne_bin_rels   = type_ne_bin_rel,
+  ne_tern_rels  = type_ne_tern_rel,
+  tag_objs      = type_tagged_obj;
