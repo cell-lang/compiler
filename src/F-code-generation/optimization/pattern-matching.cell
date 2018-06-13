@@ -86,32 +86,41 @@ implicit typedefs : [TypeName -> NeType] {
 
 
     Instr* tag_objs_opt_code(ObjExpr expr, Type type, (Pattern, Instr*)+ cases) {
-      cases_by_tag : [<symbol(Symbol), symbols> -> (Pattern, Instr*)]+;
-      code_by_tag  : [SymbObj -> Instr+];
-
       cases_by_tag = ({
           rps = tag_ptypes_to_ptrn(p);
-          return [t -> (rp, is) : t, rp <- rps];
+          return [t -> (rp, is) : t, rp <- nonempty_map(rps)];
         } : p, is <- cases
       );
 
       if not (c <~ cases_by_tag : c(:symbols, *)):
-        // The any-tag pattern is not used here
-        code_by_tag = [
-          object(tag) -> {
-            case_type = restricted_untagged_objs_supertype(type, tag);
-            eval_code = join((opt_ptrn_match_code(p, expr, case_type, is) : p, is <- cs));
-            return (eval_code | exit_block);
-          } : t, cs <- ord_group_by_key(cases_by_tag),
-              tag = if t != :symbols then untag(t) else undefined
-        ];
-
-        code_by_tags = [(ss, is) : is, ss <- reverse_relation(code_by_tag)];
-        return opt_symb_switch(get_tag(expr), code_by_tags, (terminate));
+        simplified_cases_by_tag = (
+          [if t != :symbols then untag(t) else undefined -> p_is : t, p_is <- c]
+          : c <- cases_by_tag
+        );
+        return tag_objs_by_tag_opt_code(expr, type, simplified_cases_by_tag);
 
       else
         fail;
       ;
+    }
+
+
+    Instr* tag_objs_by_tag_opt_code(ObjExpr expr, Type type, [+Symbol -> (Pattern, Instr*)]+ cases) {
+      cases_by_tag = ord_group_by_key(cases);
+
+      handled_type = union_type([tag_obj_type(symb_type(t), type_any) : t, unused_var <- cases_by_tag]);
+      is_complete = is_subset(type, handled_type);
+
+      code_by_tag = [
+        object(t) -> {
+          case_type = restricted_untagged_objs_supertype(type, t);
+          eval_code = join((opt_ptrn_match_code(p, expr, case_type, is) : p, is <- cs));
+          return (eval_code | exit_block);
+        } : t, cs <- cases_by_tag
+      ];
+
+      code_by_tags = [(ss, is) : is, ss <- reverse_relation(code_by_tag)];
+      return opt_symb_switch(get_tag(expr), code_by_tags, (terminate(is_complete)));
     }
 
 
