@@ -165,7 +165,7 @@ implicit next_var_gen : VarGen {
     tag_obj_cases   = ((restrict(p, pseudotype_tag_objs),     c) : p, c <- cases, matches(p, pseudotype_tag_objs));
 
     if tag_obj_cases != ():
-      tag_ptypes_to_ptrn = ((tag_ptypes_to_ptrn(value_unsafe(p)), c) : p, c <- tag_obj_cases);
+      tag_ptypes_to_ptrn = ((split_by_tag_ptype(value_unsafe(p)), c) : p, c <- tag_obj_cases);
       cases_by_tag = [];
       any_tag_cases = ();
       for pt, code @ i <- tag_ptypes_to_ptrn:
@@ -189,7 +189,7 @@ implicit next_var_gen : VarGen {
         ;
       ;
 
-      subcases = [(as, is) : is, as <- reverse_relation(cases_by_tag)];
+      subcases = [(as, is) : is, as <- reverse_map(cases_by_tag)];
       code = opt_do_if(is_tagged_obj(expr), opt_symb_switch(get_tag(expr), subcases, any_tag_cases));
 
     else
@@ -299,7 +299,7 @@ BoolExpr if_subset(PseudoType ptype1, PseudoType ptype2, BoolExpr expr1, BoolExp
 ////////////////////////////////////////////////////////////////////////////////
 
 ## MAYBE THIS FUNCTION SHOULD BE MOVED TO THE PSEUDOTYPES FILE
-[<symbols, symbol(Atom)> -> Pattern] tag_ptypes_to_ptrn(Pattern ptrn) =
+[<symbols, symbol(Atom)> -> Pattern] split_by_tag_ptype(Pattern ptrn) =
   ptrn_tag_obj()  = { tag_ptrn = ptrn.tag;
                       return [ match (tag_ptrn)
                           ptrn_symbol             = :symbols,
@@ -308,5 +308,12 @@ BoolExpr if_subset(PseudoType ptype1, PseudoType ptype2, BoolExpr expr1, BoolExp
                         -> ptrn
                       ];
                     },
-  ptrn_var()      = [pt -> ptrn_var(ptrn.var, p) : pt, p <- tag_ptypes_to_ptrn(ptrn.ptrn)],
-  ptrn_union(ps?) = [pt -> ptrn_union(ps2) : pt, ps2 <- merge_values([tag_ptypes_to_ptrn(p) : p <- ps])];
+  ptrn_var()      = [pt -> ptrn_var(ptrn.var, p) : pt, p <- split_by_tag_ptype(ptrn.ptrn)],
+  ptrn_union(ps?) = [pt -> ptrn_union(ps2) : pt, ps2 <- merge_values([split_by_tag_ptype(p) : p <- ps])];
+
+
+[<symbols, symbol(Atom)> -> Pattern] split_by_ptype(Pattern ptrn) =
+  ptrn_symbol     = [:symbols -> ptrn],
+  ptrn_symbol(s?) = [:symbol(untag(s)) -> ptrn],
+  ptrn_var()      = [pt -> ptrn_var(ptrn.var, p) : pt, p <- split_by_ptype(ptrn.ptrn)],
+  ptrn_union(ps?) = [pt -> ptrn_union(ps2) : pt, ps2 <- merge_values([split_by_ptype(p) : p <- ps])];

@@ -20,6 +20,8 @@ implicit typedefs : [TypeName -> NeType] {
   Instr* opt_ptrn_tag_obj_match_code(TagPtrn tag_ptrn, Pattern obj_ptrn, ObjExpr expr, Type type, Instr* eval_code) {
     // Here we already know that the value of <expr> has to be a value tagged with a symbols
     // that matches <tag_ptrn>, so there's no need to check that.
+    assert is_subset(type, tag_obj_type(equivalent_tag_type(tag_ptrn), type_any));
+
     untag_value_type = untagged_objs_supertype(type);
     return opt_ptrn_match_code(obj_ptrn, get_inner_obj(expr), untag_value_type, eval_code);
   }
@@ -30,23 +32,37 @@ implicit typedefs : [TypeName -> NeType] {
   }
 
 
-  BoolExpr opt_ptrn_match_expr(Pattern ptrn, ObjExpr expr, Type type) =
-    ptrn_symbol(s?)               = is_eq(expr, s),
-    ptrn_integer(low_ints() t?)   = is_le(get_int_val(expr), t.max),
-    ptrn_integer(high_ints() t?)  = is_ge(get_int_val(expr), t.min),
-    ptrn_integer(int_range() t?)  = and(is_ge(get_int_val(expr), t.min), is_le(get_int_val(expr), max(t))),
-    ptrn_empty_seq                = is_eq(expr, empty_seq),
-    ptrn_ne_seq                   = is_ne_seq(expr),
-    ptrn_ne_map                   = is_ne_map(expr),
-    ptrn_empty_rel                |
-    ptrn_ne_set                   |
-    ptrn_ne_bin_rel               |
-    ptrn_ne_tern_rel              |
-    ptrn_symbol                   |
-    ptrn_integer(integer)         |
-    ptrn_float                    |
-    ptrn_any                      = true,
-    _                             = undefined;
+  BoolExpr opt_ptrn_match_expr(Pattern ptrn, ObjExpr expr, Type type) {
+    return true if type_minus_pattern(type, ptrn) == empty_type;
+
+    return match (ptrn)
+      ptrn_symbol                   = is_symb(expr),
+      ptrn_symbol(s?)               = is_eq(expr, s),
+      ptrn_integer(integer)         = is_int(expr),
+      ptrn_integer(t?)              = opt_int_ptrn_match_expr(t, expr, type),
+      ptrn_float                    = is_float(expr),
+      ptrn_empty_seq                = is_eq(expr, empty_seq),
+      ptrn_empty_rel                = is_eq(expr, empty_rel),
+      ptrn_ne_seq                   = is_ne_seq(expr),
+      ptrn_ne_map                   = is_ne_map(expr),
+      ptrn_ne_set                   = is_ne_set(expr),
+      ptrn_ne_bin_rel               = is_ne_bin_rel(expr),
+      ptrn_ne_tern_rel              = is_ne_tern_rel(expr),
+      ptrn_any                      = undefined,
+      _                             = undefined;
+
+
+    BoolExpr opt_int_ptrn_match_expr(IntType ptrn, ObjExpr expr, Type type) {
+      memb_expr = match (ptrn)
+        low_ints()  = is_le(get_int_val(expr), ptrn.max),
+        high_ints() = is_ge(get_int_val(expr), ptrn.min),
+        int_range() = and(is_ge(get_int_val(expr), ptrn.min), is_le(get_int_val(expr), max(ptrn))),
+        integer     = undefined;
+
+      memb_expr = and_then((is_int(expr), memb_expr)) if not is_subset(type, integer);
+      return memb_expr;
+    }
+  }
 
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////
@@ -74,30 +90,52 @@ implicit typedefs : [TypeName -> NeType] {
     Instr* opt_code(PtrnMatchType ptrn_match_type, ObjExpr expr, Type type, (Pattern, Instr*)+ cases) {
       restricted_type = intersection_superset(type, ptrn_match_type);
       return match (ptrn_match_type)
-        symbols   = symbols_opt_code(expr, restricted_type, cases),
-        tag_objs  = tag_objs_opt_code(expr, restricted_type, cases),
+        symbols   = symb_ptrns_opt_code(expr, restricted_type, cases),
+        tag_objs  = tag_objs_ptrns_opt_code(expr, restricted_type, cases),
         _         = default_opt_code(ptrn_match_type, expr, restricted_type, cases);
     }
 
 
-    Instr* symbols_opt_code(ObjExpr expr, Type type, (Pattern, Instr*)+ cases) {
-      fail;
+    Instr* symb_ptrns_opt_code(ObjExpr expr, Type type, (Pattern, Instr*)+ cases) {
+      assert is_subset(type, atom_type);
+
+      cases_by_symb = ([s -> (rp, is) : s, rp <- nonempty_map(split_by_ptype(p))] : p, is <- cases);
+      if not (c <~ cases_by_symb : c(:symbols, *)):
+        cases_by_symb = ([only_symbol(s) -> p_is : s, p_is <- c] : c <- cases_by_symb);
+        return symb_ptrns_by_symb_opt_code(expr, type, cases_by_symb);
+      else
+        fail;
+      ;
     }
 
 
-    Instr* tag_objs_opt_code(ObjExpr expr, Type type, (Pattern, Instr*)+ cases) {
-      cases_by_tag = ({
-          rps = tag_ptypes_to_ptrn(p);
-          return [t -> (rp, is) : t, rp <- nonempty_map(rps)];
-        } : p, is <- cases
-      );
+    Instr* symb_ptrns_by_symb_opt_code(ObjExpr expr, Type type, [+Symbol -> (Pattern, Instr*)]+ cases) {
+      cases_by_symb = ord_group_by_key(cases);
+
+      handled_type = union_type([symb_type(s) : s, unused_var <- cases_by_symb]);
+      is_complete = is_subset(type, handled_type);
+
+      code_by_symb = [
+        object(s) -> {
+          case_type = symb_type(s);
+          eval_code = join((opt_ptrn_match_code(p, expr, case_type, is) : p, is <- cs));
+          return (eval_code | exit_block);
+        } : s, cs <- cases_by_symb
+      ];
+
+      code_by_symbs = [(ss, is) : is, ss <- reverse_map(code_by_symb)];
+      return opt_symb_switch(expr, code_by_symbs, (terminate(is_complete)));
+    }
+
+
+    Instr* tag_objs_ptrns_opt_code(ObjExpr expr, Type type, (Pattern, Instr*)+ cases) {
+      assert is_subset(type, type_tagged_obj);
+
+      cases_by_tag = ([t -> (rp, is) : t, rp <- nonempty_map(split_by_tag_ptype(p))] : p, is <- cases);
 
       if not (c <~ cases_by_tag : c(:symbols, *)):
-        simplified_cases_by_tag = (
-          [if t != :symbols then untag(t) else undefined -> p_is : t, p_is <- c]
-          : c <- cases_by_tag
-        );
-        return tag_objs_by_tag_opt_code(expr, type, simplified_cases_by_tag);
+        simplified_cases_by_tag = ([only_symbol(t) -> p_is : t, p_is <- c] : c <- cases_by_tag);
+        return tag_objs_ptrns_by_tag_opt_code(expr, type, simplified_cases_by_tag);
 
       else
         fail;
@@ -105,7 +143,7 @@ implicit typedefs : [TypeName -> NeType] {
     }
 
 
-    Instr* tag_objs_by_tag_opt_code(ObjExpr expr, Type type, [+Symbol -> (Pattern, Instr*)]+ cases) {
+    Instr* tag_objs_ptrns_by_tag_opt_code(ObjExpr expr, Type type, [+Symbol -> (Pattern, Instr*)]+ cases) {
       cases_by_tag = ord_group_by_key(cases);
 
       handled_type = union_type([tag_obj_type(symb_type(t), type_any) : t, unused_var <- cases_by_tag]);
@@ -119,7 +157,7 @@ implicit typedefs : [TypeName -> NeType] {
         } : t, cs <- cases_by_tag
       ];
 
-      code_by_tags = [(ss, is) : is, ss <- reverse_relation(code_by_tag)];
+      code_by_tags = [(ss, is) : is, ss <- reverse_map(code_by_tag)];
       return opt_symb_switch(get_tag(expr), code_by_tags, (terminate(is_complete)));
     }
 
@@ -127,8 +165,23 @@ implicit typedefs : [TypeName -> NeType] {
     Instr* default_opt_code(PtrnMatchType ptrn_match_type, ObjExpr expr, Type type, (Pattern, Instr*)+ cases) {
       fail;
     }
+
+    ////////////////////////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////////
+
+    Symbol only_symbol(<symbols, symbol(Symbol)>) =
+      symbol(s?)  = s,
+      symbols     = undefined;
   }
 }
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+TagType equivalent_tag_type(TagPtrn ptrn) =
+  ptrn_symbol     = atom_type,
+  ptrn_symbol(s?) = symb_type(s),
+  ptrn_var()      = equivalent_tag_type(ptrn.ptrn);
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
