@@ -137,12 +137,15 @@ implicit program           : Program,
 
       cases = ({
           ptrn = only_unsafe(c.ptrns);
-          ptrn_env = generate_env(ptrn, type);
+          ptrn_env = generate_env(ptrn, match_expr_type);
           surrs = [v -> low_level_var(opt_repr(t), v) : v, t <- ptrn_env, t != empty_type];
           code, surr, unused_var = opt_eval_info(c.expr, var_gen);
-          return (ptrn, nonempty(store_result(code, surr, res_var)));
+          return (ptrn, (store_result(code, surr, res_var) | exit_block));
         } : c <- expr.cases
       );
+
+print "------------------------------------------";
+print cases;
 
       match_code = single_ptrn_match_expr_opt_code(match_expr_surr, match_expr_type, cases);
       return (match_expr_code & match_code, obj_expr(res_var), ret_var_gen);
