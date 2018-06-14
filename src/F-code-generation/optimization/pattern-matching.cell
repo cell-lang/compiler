@@ -28,7 +28,10 @@ implicit typedefs : [TypeName -> NeType] {
 
 
   Instr* opt_ptrn_union_match_code([+Pattern] ptrns, ObjExpr expr, Type type, Instr* eval_code) {
-    fail;
+    // vars = only([pattern_vars(p) : p <- ptrns]);
+    // if vars == []:
+
+    return join((opt_ptrn_match_code(p, expr, type, eval_code) : p <- isort(ptrns)));
   }
 
 
@@ -67,10 +70,13 @@ implicit typedefs : [TypeName -> NeType] {
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////
 
-  Instr* single_ptrn_match_expr_opt_code(ObjExpr expr, Type type, (Pattern, Instr*)+ cases) {
+  Instr* single_ptrn_match_expr_opt_code(ObjExpr expr, Type type, (Pattern, Instr+)+ cases) {
     cases_by_type = [pmt -> restrict_cases(cases, pmt) : pmt <- ptrn_match_types, may_overlap(type, pmt)];
     unhandled_types = [t : t, cs <- cases_by_type, cs == ()];
     handled_cases_by_type = [t -> cs : t, cs <- cases_by_type, cs != ()];
+
+print "****************************************";
+print handled_cases_by_type;
 
     code_by_type = [pmt -> opt_code(pmt, expr, type, cs) : pmt, cs <- handled_cases_by_type];
 
@@ -81,13 +87,13 @@ implicit typedefs : [TypeName -> NeType] {
     return (execute_block(code));
 
 
-    (Pattern, Instr*)* restrict_cases((Pattern, Instr*)+ cases, PtrnMatchType ptrn_match_type) {
+    (Pattern, Instr+)* restrict_cases((Pattern, Instr+)+ cases, PtrnMatchType ptrn_match_type) {
       ptype = class_ptype(ptrn_match_type);
       return ((value_unsafe(restrict(p, ptype)), c) : p, c <- cases, matches(p, ptype));
     }
 
 
-    Instr* opt_code(PtrnMatchType ptrn_match_type, ObjExpr expr, Type type, (Pattern, Instr*)+ cases) {
+    Instr* opt_code(PtrnMatchType ptrn_match_type, ObjExpr expr, Type type, (Pattern, Instr+)+ cases) {
       restricted_type = intersection_superset(type, ptrn_match_type);
       return match (ptrn_match_type)
         symbols   = symb_ptrns_opt_code(expr, restricted_type, cases),
@@ -96,7 +102,7 @@ implicit typedefs : [TypeName -> NeType] {
     }
 
 
-    Instr* symb_ptrns_opt_code(ObjExpr expr, Type type, (Pattern, Instr*)+ cases) {
+    Instr* symb_ptrns_opt_code(ObjExpr expr, Type type, (Pattern, Instr+)+ cases) {
       assert is_subset(type, atom_type);
 
       is_complete = not may_fall_through(type, (p : p, unused_var <- cases));
@@ -106,7 +112,7 @@ implicit typedefs : [TypeName -> NeType] {
       for p, is @ i <- cases:
         ptrns_by_ptype = split_by_ptype(p);
         if ptrns_by_ptype(:symbols, *):
-          else_code = (opt_ptrn_match_code(p, expr, type, (is | exit_block)) | terminate(true));
+          else_code = (opt_ptrn_match_code(p, expr, type, is) | terminate(true));
           break;
         ;
         destr_case = [only_symbol(s) -> (rp, is) : s, rp <- nonempty_map(split_by_ptype(p))];
@@ -118,51 +124,61 @@ implicit typedefs : [TypeName -> NeType] {
       code_by_symb = [
         object(s) -> {
           case_type = symb_type(s);
-          eval_code = join((opt_ptrn_match_code(p, expr, case_type, is) : p, is <- cs));
-          return (eval_code | exit_block);
-        } : s, cs <- ord_group_by_key(destr_cases)
+          return join((opt_ptrn_match_code(p, expr, case_type, is) : p, is <- cs));
+        } : s, cs <- zip_by_key(destr_cases)
       ];
 
-      code_by_symbs = [(ss, is) : is, ss <- reverse_map(code_by_symb)];
+      code_by_symbs = [(ss, nonempty(is)) : is, ss <- reverse_map(code_by_symb)];
       return opt_symb_switch(expr, code_by_symbs, else_code);
     }
 
 
-    Instr* tag_objs_ptrns_opt_code(ObjExpr expr, Type type, (Pattern, Instr*)+ cases) {
+    Instr* tag_objs_ptrns_opt_code(ObjExpr expr, Type type, (Pattern, Instr+)+ cases) {
       assert is_subset(type, type_tagged_obj);
 
-      cases_by_tag = ([t -> (rp, is) : t, rp <- nonempty_map(split_by_tag_ptype(p))] : p, is <- cases);
+      pre_type = type;
+      destr_cases = ();
 
-      if not (c <~ cases_by_tag : c(:symbols, *)):
-        simplified_cases_by_tag = ([only_symbol(t) -> p_is : t, p_is <- c] : c <- cases_by_tag);
-        return tag_objs_ptrns_by_tag_opt_code(expr, type, simplified_cases_by_tag);
+      for p, is @ i <- cases:
+        post_type = type_minus_pattern(pre_type, p);
+        split_ptrn = nonempty_map(split_by_tag_ptype(p));
 
-      else
-        fail;
+        if post_type == empty_type:
+          default_code = opt_ptrn_match_code(p, expr, pre_type, is);
+          return default_code if destr_cases == ();
+          return tag_objs_ptrns_by_tag_opt_code(expr, type, destr_cases, nonempty(default_code));
+        ;
+
+        if split_ptrn(:symbols, *):
+          fail;
+        ;
+
+        destr_case = [only_symbol(t) -> (rp, is) : t, rp <- split_ptrn];
+        destr_cases = (destr_cases | destr_case);
+        pre_type = post_type;
       ;
+
+      default_code = (terminate(pre_type == empty_type));
+      return tag_objs_ptrns_by_tag_opt_code(expr, type, nonempty(destr_cases), default_code);
     }
 
 
-    Instr* tag_objs_ptrns_by_tag_opt_code(ObjExpr expr, Type type, [+Symbol -> (Pattern, Instr*)]+ cases) {
-      cases_by_tag = ord_group_by_key(cases);
-
-      handled_type = union_type([tag_obj_type(symb_type(t), type_any) : t, unused_var <- cases_by_tag]);
-      is_complete = is_subset(type, handled_type);
+    Instr* tag_objs_ptrns_by_tag_opt_code(ObjExpr expr, Type type, [+Symbol -> (Pattern, Instr+)]+ cases, Instr+ default_code) {
+      cases_by_tag = zip_by_key(cases);
 
       code_by_tag = [
         object(t) -> {
           case_type = tag_obj_type(symb_type(t), restricted_untagged_objs_supertype(type, t));
-          eval_code = join((opt_ptrn_match_code(p, expr, case_type, is) : p, is <- cs));
-          return (eval_code | exit_block);
+          return join((opt_ptrn_match_code(p, expr, case_type, is) : p, is <- cs));
         } : t, cs <- cases_by_tag
       ];
 
-      code_by_tags = [(ss, is) : is, ss <- reverse_map(code_by_tag)];
-      return opt_symb_switch(get_tag(expr), code_by_tags, (terminate(is_complete)));
+      code_by_tags = [(ss, nonempty(is)) : is, ss <- reverse_map(code_by_tag)];
+      return opt_symb_switch(get_tag(expr), code_by_tags, default_code);
     }
 
 
-    Instr* default_opt_code(PtrnMatchType ptrn_match_type, ObjExpr expr, Type type, (Pattern, Instr*)+ cases) {
+    Instr* default_opt_code(PtrnMatchType ptrn_match_type, ObjExpr expr, Type type, (Pattern, Instr+)+ cases) {
       code = join((opt_ptrn_match_code(p, expr, type, is) : p, is <- cases));
       is_complete = not may_fall_through(type, (p : p, unused_var <- cases));
       return (code | terminate(is_complete));
