@@ -18,20 +18,88 @@ implicit typedefs : [TypeName -> NeType] {
 
 
   Instr* opt_ptrn_tag_obj_match_code(TagPtrn tag_ptrn, Pattern obj_ptrn, ObjExpr expr, Type type, Instr* eval_code) {
-    // Here we already know that the value of <expr> has to be a value tagged with a symbols
-    // that matches <tag_ptrn>, so there's no need to check that.
-    assert is_subset(type, tag_obj_type(equivalent_tag_type(tag_ptrn), type_any));
+    tag_type = equivalent_tag_type(tag_ptrn);
 
-    untag_value_type = untagged_objs_supertype(type);
-    return opt_ptrn_match_code(obj_ptrn, get_inner_obj(expr), untag_value_type, eval_code);
+    conds = (is_tagged_obj(expr) if not is_subset(type, type_tagged_obj));
+
+    if tag_type == atom_type:
+      obj_type = untagged_objs_supertype(type);
+
+    else
+      tag = untag(tag_type);
+      obj_type = restricted_untagged_objs_supertype(type, untag(tag));
+
+      restr_type = intersection_superset(type, :tag_objs);
+      needs_tag_check = not is_subset(restr_type, tag_obj_type(tag_type, type_any));
+      conds = (conds | are_eq(get_tag(expr), tag)) if needs_tag_check;
+    ;
+
+    code = opt_ptrn_match_code(obj_ptrn, get_inner_obj(expr), obj_type, eval_code);
+    code = opt_do_if(and_then(conds), code) if conds != ();
+
+    return code;
   }
 
 
   Instr* opt_ptrn_union_match_code([+Pattern] ptrns, ObjExpr expr, Type type, Instr* eval_code) {
-    // vars = only([pattern_vars(p) : p <- ptrns]);
-    // if vars == []:
+    fallthrough_type = fold(type, ptrns, type_minus_pattern);
+    return (eval_code | terminate(true)) if fallthrough_type == empty_type;
 
-    return join((opt_ptrn_match_code(p, expr, type, eval_code) : p <- isort(ptrns)));
+    ord_ptrns = isort(ptrns);
+    maybe_conds = (ptrn_maybe_expr(p, expr, type) : p <- ord_ptrns);
+    conds = (value(c) : c <- maybe_conds, c != nothing);
+    tought_cases = (i : c @ i <- maybe_conds, c == nothing);
+
+    easy_cases_code = if conds != () then opt_do_if(or(conds), eval_code) else ();
+    tought_cases_code = join((opt_ptrn_match_code(ord_ptrns(i), expr, type, eval_code) : i <- tought_cases));
+
+    return easy_cases_code & tought_cases_code;
+
+
+    Maybe[BoolExpr] ptrn_maybe_expr(Pattern ptrn, ObjExpr expr, Type type) =
+      ptrn_var()      |
+      ptrn_tuple()    |
+      ptrn_union()    = nothing,
+      ptrn_tag_obj()  = #(match (ptrn.tag)
+                            ptrn_symbol     = any_tag_ptrn_maybe_expr(ptrn.obj, expr, type),
+                            ptrn_symbol(t?) = tag_ptrn_maybe_expr(t, ptrn.obj, expr, type),
+                            ptrn_var()      = nothing
+                        ),
+      _               = just(opt_ptrn_match_expr(ptrn, expr, type));
+
+
+    Maybe[BoolExpr] any_tag_ptrn_maybe_expr(Pattern obj_ptrn, ObjExpr expr, Type type) {
+      obj_type = untagged_objs_supertype(type);
+
+      cond = ptrn_maybe_expr(obj_ptrn, get_inner_obj(expr), obj_type);
+      return cond if cond == nothing;
+      cond = value(cond);
+
+      if not is_subset(type, type_tagged_obj):
+        cond = and_then(is_tagged_obj(expr), cond);
+      ;
+
+      return just(cond);
+    }
+
+
+    Maybe[BoolExpr] tag_ptrn_maybe_expr(SymbObj tag, Pattern obj_ptrn, ObjExpr expr, Type type) {
+      obj_type = restricted_untagged_objs_supertype(type, untag(tag));
+
+      cond = ptrn_maybe_expr(obj_ptrn, get_inner_obj(expr), obj_type);
+      return cond if cond == nothing;
+      cond = value(cond);
+
+      if not is_subset(type, tag_obj_type(symb_type(tag), type_any)):
+        cond = and_then(are_eq(get_tag(expr), tag), cond);
+
+        if not is_subset(type, type_tagged_obj):
+          cond = and_then(is_tagged_obj(expr), cond);
+        ;
+      ;
+
+      return just(cond);
+    }
   }
 
 
@@ -75,16 +143,14 @@ implicit typedefs : [TypeName -> NeType] {
     unhandled_types = [t : t, cs <- cases_by_type, cs == ()];
     handled_cases_by_type = [t -> cs : t, cs <- cases_by_type, cs != ()];
 
-print "****************************************";
-print handled_cases_by_type;
-
     code_by_type = [pmt -> opt_code(pmt, expr, type, cs) : pmt, cs <- handled_cases_by_type];
 
-    code = (terminate(unhandled_types == [])); ## TODO: CHANGE THIS ONCE THE CODE HAS BEEN TESTED
+    code = (terminate if unhandled_types != []); ## TODO: CHANGE THIS ONCE THE CODE HAS BEEN TESTED
     for pmt <- isort(keys(code_by_type)):
       code = (branch(membership_check_expr(pmt, expr), code_by_type(pmt, !!), code));
     ;
-    return (execute_block(code));
+    code = (code | terminate(true)) if unhandled_types == [];
+    return (execute_block(nonempty(code)));
 
 
     (Pattern, Instr+)* restrict_cases((Pattern, Instr+)+ cases, PtrnMatchType ptrn_match_type) {
