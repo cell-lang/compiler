@@ -183,12 +183,16 @@ implicit typedefs : [TypeName -> NeType] {
 
 
   Type tag_obj_type_minus_pattern_tag_obj(TagObjType type, TagPtrn tag_ptrn, Pattern obj_ptrn) {
-    tag_type = type_minus_pattern(type.tag_type, tag_ptrn);
-    return empty_type if tag_type == empty_type;
-    fail if not tag_type :: TagType; ## BAD BAD BAD. CHEATING. NEEDS SUBSIGNATURES HERE...
-
     obj_type = type_minus_pattern(type.obj_type, obj_ptrn);
-    return tag_obj_type(tag_type, obj_type);
+
+    return match (type.tag_type, tag_ptrn)
+      _,              ptrn_var()        = tag_obj_type_minus_pattern_tag_obj(type, tag_ptrn.ptrn, obj_ptrn),
+
+      atom_type,      ptrn_symbol       = tag_obj_type(atom_type, obj_type),
+      atom_type,      ptrn_symbol()     = type,
+
+      symb_type(s?),  ptrn_symbol       = tag_obj_type(type.tag_type, obj_type),
+      symb_type(ts?), ptrn_symbol(ps?)  = if ts == ps then tag_obj_type(type.tag_type, obj_type) else type;
   }
 
   ////////////////////////////////////////////////////////////////////////////////
