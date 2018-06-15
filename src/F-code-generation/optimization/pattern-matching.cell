@@ -12,8 +12,26 @@ implicit typedefs : [TypeName -> NeType] {
   }
 
 
-  Instr* opt_ptrn_tuple_match_code(Pattern+ ptrn, ObjExpr expr, Type type, Instr* eval_code) {
-    fail;
+  Instr* opt_ptrn_tuple_match_code(Pattern+ ptrns, ObjExpr expr, Type type, Instr* eval_code) {
+    types = tuple_field_supertypes(type, |ptrns|);
+    ## HERE IS WOULD PROBABLY BE BETTER TO STORE THE ELEMENTS OF THE SEQUENCE
+    ## IN A VARIABLE, IF THE CORRESPONDING PATTERN IS NOT A TRIVIAL ONE
+    exprs = (at(expr, i) : i < |ptrns|);
+
+    code = eval_code;
+    for p, t, e <- reverse(zip(ptrns, types, exprs)):
+      code = opt_ptrn_match_code(p, e, t, code);
+    ;
+
+    is_seq = is_subset(type, type_seq);
+    is_right_size_if_seq = is_subset(intersection_superset(type, :seqs), type_tuple(|ptrns|));
+
+    conds = (
+      is_ne_seq(expr) if not is_seq,
+      are_eq(int_obj(get_size(expr)), int_obj(|ptrns|)) if not is_right_size_if_seq
+    );
+
+    return if conds != () then opt_do_if(and_then(conds), code) else code;
   }
 
 
