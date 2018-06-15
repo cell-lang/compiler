@@ -145,12 +145,12 @@ implicit typedefs : [TypeName -> NeType] {
 
     code_by_type = [pmt -> opt_code(pmt, expr, type, cs) : pmt, cs <- handled_cases_by_type];
 
-    code = (terminate if unhandled_types != []); ## TODO: CHANGE THIS ONCE THE CODE HAS BEEN TESTED
+    code = (terminate(unhandled_types == [])); ## TODO: CHANGE THIS ONCE THE CODE HAS BEEN TESTED
     for pmt <- isort(keys(code_by_type)):
-      code = (branch(membership_check_expr(pmt, expr), code_by_type(pmt, !!), code));
+      branch_code = opt_execute_block(code_by_type(pmt, !!));
+      code = (branch(membership_check_expr(pmt, expr), branch_code, code));
     ;
-    code = (code | terminate(true)) if unhandled_types == [];
-    return (execute_block(nonempty(code)));
+    return code;
 
 
     (Pattern, Instr+)* restrict_cases((Pattern, Instr+)+ cases, PtrnMatchType ptrn_match_type) {
