@@ -217,13 +217,13 @@ BoolExpr neg(BoolExpr e) =
   neg(ne?)  = ne,
   _         = :neg(e);
 
-BoolExpr and(BoolExpr+ es)                            = :and(es);
-BoolExpr or(BoolExpr+ es)                             = :or(es);
-BoolExpr and_then(BoolExpr+ es)                       = :and_then(es);
-BoolExpr or_else(BoolExpr+ es)                        = :or_else(es);
+BoolExpr and(BoolExpr+ es)      = if |es| != 1 then :and(es)      else only(es);
+BoolExpr or(BoolExpr+ es)       = if |es| != 1 then :or(es)       else only(es);
+BoolExpr and_then(BoolExpr+ es) = if |es| != 1 then :and_then(es) else only(es);
+BoolExpr or_else(BoolExpr+ es)  = if |es| != 1 then :or_else(es)  else only(es);
 
-BoolExpr and([+BoolExpr] es)                          = :and(rand_sort(es));
-BoolExpr or([+BoolExpr] es)                           = :or(rand_sort(es));
+BoolExpr and([+BoolExpr] es)  = and(rand_sort(es));
+BoolExpr or([+BoolExpr] es)   = or(rand_sort(es));
 
 RefObjExpr lookup_surrogate(AnyValueStoreId s, IntExpr e) = lookup_surrogate(store: s, surrogate: e);
 
@@ -355,10 +355,26 @@ Instr ret_val(AnyTypeExpr e) = :ret_val(e);
 
 Instr no_op = :no_op;
 
-Instr branch(BoolExpr c, Instr* t, Instr* f) =
-  if t != ()
-    then branch(cond: c, when_true: t, when_false: f)
-    else branch(cond: neg(c), when_true: nonempty(f), when_false: t);
+Instr branch(BoolExpr cond, Instr* body, Instr* neg_body) {
+  if body != ():
+    if |body| == 1:
+      branch_instr = match (only(body))
+        branch() i? = just(i),
+        _           = nothing;
+
+      if branch_instr != nothing:
+        branch_instr = value(branch_instr);
+        if branch_instr.when_false == neg_body:
+          return branch(and_then(cond, branch_instr.cond), branch_instr.when_true, neg_body);
+        ;
+      ;
+    ;
+    return branch(cond: cond, when_true: body, when_false: neg_body);
+
+  else
+    return branch(neg(cond), nonempty(neg_body), ());
+  ;
+}
 
 Instr branch_or_no_op(BoolExpr c, Instr* t, Instr* f) =
   if t == () and f == ()
@@ -379,7 +395,19 @@ Instr switch_on_nat(IntExpr e, Instr*+ cs) = switch_on_nat(value: e, cases: cs);
 
 Instr symb_switch(ObjExpr e, [+([+SymbObj], Instr+)] cs, Instr* eis) = symb_switch(value: e, cases: cs, else: eis);
 
-Instr* opt_symb_switch(ObjExpr e, [([+SymbObj], Instr+)] cs, Instr* eis) = if cs != [] then (symb_switch(e, cs, eis)) else eis;
+Instr* opt_symb_switch(ObjExpr expr, [([+SymbObj], Instr+)] cases, Instr* else_code) {
+  return else_code if cases == [];
+
+  if |cases| == 1:
+    symbs, code = only(cases);
+    if |symbs| < 3:
+      cond = or([are_eq(expr, s) : s <- symbs]);
+      return (branch(cond, code, else_code));
+    ;
+  ;
+
+  return (symb_switch(expr, cases, else_code));
+}
 
 Instr call_proc(AnyWriteVar v, ObjFnName n, AnyTypeExpr* as, BoundCls* cas) = call_proc(var: v, name: n, args: as, cls_args: cas);
 Instr call_proc(ObjFnName n, AnyTypeExpr* as, BoundCls* cas) = call_proc(name: n, args: as, cls_args: cas);
