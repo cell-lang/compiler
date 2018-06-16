@@ -471,11 +471,23 @@ T reduce(T+ xs, (T T -> T) f) {
 }
 
 
-[K -> [+T]]  group_by([T] set, (T -> K) f)                = merge_values([[f(e) -> e] : e <- set]);
-[K -> [+V]] group_by([T] set, (T -> K) kf, (T -> V) vf)   = merge_values([[kf(e) -> vf(e)] : e <- set]);
+[K -> [+T]] group_by([T] set, (T -> K) f)                = merge_values([[f(e) -> e] : e <- set]);
+[K -> [+V]] group_by([T] set, (T -> K) kf, (T -> V) vf)  = merge_values([[kf(e) -> vf(e)] : e <- set]);
 
-[K -> [+T]]  group_by(T* seq, (T -> K) f)                 = group_by(set(seq), f);
-[K -> [+V]] group_by(T* seq, (T -> K) kf, (T -> V) vf)    = group_by(set(seq), kf, vf);
+[K -> [+T]] group_by(T* seq, (T -> K) f)                 = group_by(set(seq), f);
+[K -> [+V]] group_by(T* seq, (T -> K) kf, (T -> V) vf)   = group_by(set(seq), kf, vf);
+
+////////////////////////////////////////////////////////////////////////////////
+
+[A -> [+B]] group_by_left_arg([A, B] rel) {
+  keys = [k : k, unused_var <- rel];
+  return [k -> nonempty([v : v <- rel(k, ?)]) : k <- keys];
+}
+
+[[+A] -> B] group_by_right_arg([A, B] rel) {
+  values = [v : unused_var, v <- rel];
+  return [nonempty([k : k <- rel(?, v)]) -> v : v <- values];
+}
 
 // [RT] map_pairs([T*] seq, (T, T -> Maybe[RT]) f)
 // {
@@ -510,6 +522,18 @@ Nat* partial_sums(Nat* xs) {
     sums = (sums | sum);
   ;
   return sums;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+T max_by(T+ xs, (T T -> Bool) lt) {
+  res = xs(0);
+  for i = 1 .. |xs|:
+    x = xs(i);
+    res = x if lt(res, x);
+  ;
+  return res;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

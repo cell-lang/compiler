@@ -42,7 +42,7 @@ implicit program           : Program,
   //////////////////////////////////////////////////////////////////////////////
 
   (Instr*, ObjExpr, VarGen) opt_eval_info(<undefined>, VarGen var_gen) {
-    return ((terminate), never_used_lvar, var_gen);
+    return ((terminate), :invalid_var, var_gen);
   }
 
 
@@ -121,7 +121,7 @@ implicit program           : Program,
   // match_expr(exprs: Expr+, cases: (ptrns: Pattern+, expr: Expr)+);
   (Instr*, ObjExpr, VarGen) match_expr_opt_eval_info(MatchExpr expr, VarGen init_var_gen) {
     type = types(expr_id);
-    return ((terminate(true)), never_used_lvar, init_var_gen) if type == empty_type;
+    return ((terminate(true)), :invalid_var, init_var_gen) if type == empty_type;
     repr = opt_repr(type);
     res_var, var_gen = next_var(repr, init_var_gen);
     ret_var_gen = var_gen;
@@ -138,9 +138,11 @@ implicit program           : Program,
       cases = ({
           ptrn = only_unsafe(c.ptrns);
           ptrn_env = generate_env(ptrn, match_expr_type);
-          surrs = [v -> low_level_var(opt_repr(t), v) : v, t <- ptrn_env, t != empty_type];
-          code, surr, unused_var = opt_eval_info(c.expr, var_gen);
-          return (ptrn, (store_result(code, surr, res_var) | exit_block));
+          vars_reprs = [v -> low_level_var(if t != empty_type then opt_repr(t) else :object, v) : v, t <- ptrn_env];
+          surrs = surrogates & [v -> obj_expr(pv) : v, pv <- vars_reprs];
+          code, surr, unused_var = opt_eval_info(c.expr, var_gen, surrogates = surrs);
+          code = (store_result(code, surr, res_var) | exit_block);
+          return (ptrn, code, vars_reprs);
         } : c <- expr.cases
       );
 
@@ -203,7 +205,7 @@ implicit program           : Program,
   (Instr*, ObjExpr, VarGen) rel_lookup_opt_eval_info(RelLookup expr, VarGen init_var_gen) {
     // Physical representation of the result and variable that stores it
     type = types(expr_id);
-    return ((terminate), never_used_lvar, init_var_gen) if type == empty_type;
+    return ((terminate), :invalid_var, init_var_gen) if type == empty_type;
 
     repr = opt_repr(type);
     res_var, ret_var_gen = next_var(repr, init_var_gen);
@@ -461,7 +463,7 @@ implicit program           : Program,
     // Calculating source type, and returning early if the type is trivial
     src_type = subexpr_type(expr.src_expr);
     if src_type == empty_type:
-      return ((terminate), never_used_lvar, init_var_gen);
+      return ((terminate), :invalid_var, init_var_gen);
     elif is_subset(src_type, empty_seq_type):
       return ((), empty_seq, init_var_gen);
     ;
@@ -617,7 +619,7 @@ implicit program           : Program,
 
   (Instr*, ObjExpr, VarGen) if_expr_opt_eval_info(IfExpr expr, VarGen init_var_gen) {
     type = types(expr_id);
-    return ((terminate), never_used_lvar, init_var_gen) if type == empty_type;
+    return ((terminate), :invalid_var, init_var_gen) if type == empty_type;
     repr = opt_repr(type);
 
     cond_eval_code, cond_surr, var_gen = opt_eval_info(expr.cond, init_var_gen);
@@ -690,7 +692,7 @@ implicit program           : Program,
 
   (Instr*, ObjExpr, VarGen) unary_pseudo_call_opt_eval_info(Expr target, Expr arg, VarGen init_var_gen) {
     target_type = subexpr_type(target);
-    return ((terminate), never_used_lvar, init_var_gen) if target_type == empty_type;
+    return ((terminate), :invalid_var, init_var_gen) if target_type == empty_type;
 
     coll_eval_code, coll_surr, var_gen = opt_eval_info(target, init_var_gen);
     arg_eval_code, arg_surr, var_gen = opt_eval_info(arg, var_gen);
@@ -733,7 +735,7 @@ implicit program           : Program,
     elts_type = union_superset(elts_types);
 
     // Unreachable expression
-    return ((terminate), never_used_lvar, init_var_gen) if elts_types(empty_type) or elts_type == empty_type;
+    return ((terminate), :invalid_var, init_var_gen) if elts_types(empty_type) or elts_type == empty_type;
 
     // Elements representation
     elt_repr = low_level_elt_repr(elts_type);
@@ -1181,7 +1183,12 @@ implicit program           : Program,
   ////////////////////////////////////////////////////////////////////////////////
   ////////////////////////////////////////////////////////////////////////////////
 
-  (Instr*, BoolVar+, Int32Var, VarGen) conds_eval_info(Expr* conds, Int32 min_size, VarGen init_var_gen) {
+  ## BAD BAD BAD: THIS IS A RIDICULOUS HACK
+  ((), (), Int32Var, VarGen) conds_eval_info((), Int32 min_size, VarGen init_var_gen) =
+    ((), (), ivar32(9223372036854775807), init_var_gen);
+
+
+  (Instr*, BoolVar+, Int32Var, VarGen) conds_eval_info(Expr+ conds, Int32 min_size, VarGen init_var_gen) {
     // Evaluation of all conditions
     var_gen = init_var_gen;
     cond_vars = ();

@@ -208,7 +208,7 @@ implicit program : Program, database : Database, options : CompOptions {
       update_body = update.body;
       return () if update_body == ();
       let context = database, var_subst_map = [], cls_var_subst_map = [], next_var_gen = blank_var_gen:
-        code = gen_code(update_body, never_used_lvar);
+        code = gen_code(update_body, :invalid_var);
       ;
       return ((set_var(v, fn_arg(i)) : unused_var, v @ i <- update.args) | execute_block(code));
     }
@@ -229,7 +229,7 @@ implicit program : Program, database : Database, options : CompOptions {
       handler_body = handler.body;
       return () if handler_body == ();
       let context = database, var_subst_map = [], cls_var_subst_map = [], next_var_gen = blank_var_gen:
-        code = gen_code(handler_body, never_used_lvar);
+        code = gen_code(handler_body, :invalid_var);
       ;
       return (set_var(var(:self), fn_arg(0)), execute_block(code));
     }
