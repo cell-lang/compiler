@@ -131,14 +131,10 @@ implicit program           : Program,
       match_expr_type = subexpr_type(match_expr);
       match_expr_code, match_expr_surr, var_gen = opt_eval_info(match_expr, var_gen);
 
-      ptrns = (only_unsafe(c.ptrns) : c <- expr.cases);
-      // fallthrough_type = foldl(type, ptrns, type_minus_pattern);
-      // is_complete = fallthrough_type == empty_type;
-
       cases = ({
           ptrn = only_unsafe(c.ptrns);
           ptrn_env = generate_env(ptrn, match_expr_type);
-          vars_reprs = [v -> low_level_var(if t != empty_type then opt_repr(t) else :object, v) : v, t <- ptrn_env];
+          vars_reprs = [v -> low_level_var(opt_repr(t), v) : v, t <- ptrn_env];
           surrs = surrogates & [v -> obj_expr(pv) : v, pv <- vars_reprs];
           code, surr, unused_var = opt_eval_info(c.expr, var_gen, surrogates = surrs);
           code = (store_result(code, surr, res_var) | exit_block);
@@ -150,55 +146,26 @@ implicit program           : Program,
       return (match_expr_code & match_code, obj_expr(res_var), ret_var_gen);
 
     else
-      fail;
+      exprs_types = (subexpr_type(e) : e <- expr.exprs);
+      exprs_eval_code, exprs_surrs, var_gen = opt_eval_info(expr.exprs, var_gen);
+
+      cases_code = ({
+          ptrns_env = merge((generate_env(p, exprs_types(i)) : p @ i <- c.ptrns));
+          vars_reprs = [v -> low_level_var(opt_repr(t), v) : v, t <- ptrns_env];
+          surrs = surrogates & [v -> obj_expr(pv) : v, pv <- vars_reprs];
+          code, surr, unused_var = opt_eval_info(c.expr, var_gen, surrogates = surrs);
+          code = (store_result(code, surr, res_var) | exit_block);
+          for p, t, s <- reverse(zip(c.ptrns, exprs_types, exprs_surrs)):
+            code = opt_ptrn_match_code(p, s, t, code, vars_reprs = vars_reprs);
+          ;
+          return code;
+        } : c <- expr.cases
+      );
+
+      code = (exprs_eval_code | execute_block((join(cases_code) | terminate)));
+      return (code, obj_expr(res_var), ret_var_gen);
     ;
   }
-
-  //   Instr+ gen_switch_code(ExprEvalRes+ exprs, (ptrns: Pattern+, code: Instr+)+ cases) {
-  //     if |head(cases).ptrns| == 1:
-  //       return gen_single_ptrn_switch_code(only_unsafe(exprs), ((only_unsafe(c.ptrns), c.code) : c <- cases));
-  //     else
-  //       code = ();
-  //       for c <- cases:
-  //         case_code = gen_guarded_case_eval_code(exprs, c.ptrns, c.code);
-  //         code = code & case_code;
-  //       ;
-  //       return (execute_block((code | terminate)));
-  //     ;
-
-
-  //     Instr+ gen_guarded_case_eval_code(AtomicExpr* exprs, Pattern* ptrns, Instr+ code) {
-  //       assert |exprs| == |ptrns|;
-
-  //       return code if exprs == () or ptrns == (); // Shutting up the typechecker...
-
-  //       next_step_code = gen_guarded_case_eval_code(tail(exprs), tail(ptrns), code);
-  //       let loc_bound_vars=[], on_match_code=next_step_code, tag_vars=[]:
-  //         res = gen_ptrn_matching_code(head(ptrns), head(exprs), pseudotype_any);
-  //       ;
-  //       return nonempty(res);
-  //     }
-  //   }
-  // }
-
-  // Type match_expr_type(Expr+ exprs, (ptrns: Pattern+, expr: Expr)+ cases, [EnvVar -> Type] env) {
-  //   types = (case_expr_type(exprs, c.ptrns, c.expr, env) : c <- cases);
-  //   return union_superset(set(types));
-
-  //   Type case_expr_type(Expr+ exprs, Pattern+ ptrns, Expr expr, [EnvVar -> Type] env) {
-  //     case_expr_env = update_env(exprs, ptrns, env);
-  //     return expr_type(expr, case_expr_env);
-  //   }
-  // }
-
-  // Instr+ gen_eval_code_for_match_expr(Expr+ exprs, (ptrns: Pattern+, expr: Expr)+ cases, EvalDestVar res_var) {
-  //   info = gen_eval_info(exprs);
-  //   let next_var_gen = info.next_var_gen:
-  //     semicomp_cases = ((ptrns: c.ptrns, code: (gen_eval_code(c.expr, res_var) | exit_block)) : c <- cases);
-  //     switch_code = gen_switch_code(nonempty(info.exprs), semicomp_cases);
-  //   ;
-  //   return nonempty(info.eval_code & switch_code);
-  // }
 
 
   // rel_lookup(rel: Expr, set_args: Expr*, unknown_arg_idx: Nat);
