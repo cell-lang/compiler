@@ -1,12 +1,15 @@
-type YieldValueAction     = yield_value_action(var: AnyLocVar, expr: Expr, instrs: Instr+);
+type YieldValueAction   = yield_value_action(var: AnyLocVar, expr: Expr, instrs: Instr+);
 
-type SetYieldAction       = set_yield_action(var: StdVar, src_set: Expr, next: YieldAction);
-type MatchYieldAction     = match_yield_action(ptrn: Pattern, expr: Expr, next: YieldAction);
-type LetYieldAction       = let_yield_action(var: StdVar, expr: Expr, next: YieldAction);
-type CondYieldAction      = cond_yield_action(cond: Expr, next: YieldAction);
+type SetYieldAction     = set_yield_action(var: StdVar, src_set: Expr, next: YieldAction);
+type MatchYieldAction   = match_yield_action(ptrn: Pattern, expr: Expr, next: YieldAction);
+type LetYieldAction     = let_yield_action(var: StdVar, expr: Expr, next: YieldAction);
+type CondYieldAction    = cond_yield_action(cond: Expr, next: YieldAction);
+type SeqYieldAction     = seq_yield_action(
+                            vars: Maybe[StdVar]+, idx_var: Maybe[StdVar], src_seq: Expr, next: YieldAction
+                          );
 
-type YieldAction          = YieldValueAction, SetYieldAction, MatchYieldAction,
-                            LetYieldAction, CondYieldAction;
+type YieldAction        = YieldValueAction, SetYieldAction, SeqYieldAction, MatchYieldAction,
+                          LetYieldAction, CondYieldAction;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -16,11 +19,12 @@ YieldValueAction yield_value_action(AnyLocVar v, Expr e, Instr+ is) =
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-YieldAction yield_action(Clause clause, YieldAction next) =
-  set_clause()      = set_yield_action(var: clause.var, src_set: clause.src, next: next),
-  and_clause()      = yield_action(clause.left, yield_action(clause.right, next)),
-  match_clause()    = match_yield_action(ptrn: clause.ptrn, expr: clause.expr, next: next),
-  asgnm_clause()    = let_yield_action(var: clause.var, expr: clause.expr, next: next),
+YieldAction yield_action(Clause cls, YieldAction next) =
+  set_clause()      = set_yield_action(var: cls.var, src_set: cls.src, next: next),
+  seq_clause()      = seq_yield_action(vars: cls.vars, idx_var: cls.idx_var, src_seq: cls.src, next: next),
+  and_clause()      = yield_action(cls.left, yield_action(cls.right, next)),
+  match_clause()    = match_yield_action(ptrn: cls.ptrn, expr: cls.expr, next: next),
+  asgnm_clause()    = let_yield_action(var: cls.var, expr: cls.expr, next: next),
   filter_clause(e?) = cond_yield_action(cond: e, next: next),
   _                 = undefined;
 
@@ -54,6 +58,7 @@ implicit program           : Program,
   Instr* yield_action_opt_code(YieldAction action, VarGen var_gen) =
     yield_value_action()      = yield_value_action_opt_code(action, var_gen),
     set_yield_action()        = set_yield_action_opt_code(action, var_gen),
+    seq_yield_action()        = seq_yield_action_opt_code(action, var_gen),
     match_yield_action()      = match_yield_action_opt_code(action, var_gen),
     let_yield_action()        = let_yield_action_opt_code(action, var_gen),
     cond_yield_action()       = cond_yield_action_opt_code(action, var_gen),
@@ -84,6 +89,82 @@ implicit program           : Program,
         move_forward(it_var)
       ))
     );
+  }
+
+
+  // seq_yield_action(vars: Maybe[StdVar]+, idx_var: Maybe[StdVar], src_seq: Expr, next: YieldAction)
+  Instr* seq_yield_action_opt_code(SeqYieldAction action, VarGen init_var_gen) {
+    // Calculating source type, and returning early if the type is trivial
+    src_type = subexpr_type(action.src_seq);
+    if src_type == empty_type:
+      return (terminate);
+    elif is_subset(src_type, empty_seq_type):
+      return ();
+    ;
+
+    // Types of elements of source and destination sequences
+    src_elt_type = seq_elem_supertype(src_type);
+    elt_type = subexpr_type(action.src_seq);
+    fail if src_elt_type == empty_type or elt_type == empty_type;
+
+    // Low-level representation of elements of source and destination sequences
+    src_repr = opt_repr(src_elt_type);
+
+    // Evaluation of source expression
+    eval_code, src_surr, var_gen = opt_eval_info(action.src_seq, init_var_gen);
+    fail if not src_surr :: <LocVar, StdVar>; ## MAYBE THIS COULD BE AVOIDED...
+
+    // Temporary buffer for source data
+    src_array_var, var_gen = next_array_var(var_gen, src_repr);
+
+    // Input sequence size variable
+    array_size_var, var_gen = next_int32_var(var_gen);
+    set_size_var = set_ivar32(array_size_var, get_size(src_surr));
+
+    vars = action.vars;
+    body = ();
+
+    if |vars| == 1:
+      var = value_unsafe(only(vars)); ## CHECK IF THIS IS ALWAYS VERIFIED...
+      it_var, var_gen = next_var_def(src_repr, var, var_gen);
+      surrs = surrogates & [var -> obj_expr(it_var)];
+
+    else
+      assert src_repr == :object;
+      vars_types = (restricted_seq_elem_supertype(src_type, singleton_type(i)) : i < |vars|);
+      fail if not vars_types :: NeType+;
+      reprs = (opt_repr(t) : t <- vars_types);
+      it_var, var_gen = next_obj_var(var_gen);
+      surrs = surrogates;
+      for mv @ i <- vars:
+        if mv != nothing:
+          v = value(mv);
+          phys_var, var_gen = next_var_def(reprs(i), v, var_gen);
+          surrs = surrs & [v -> obj_expr(phys_var)];
+          body = (body | set_any_var(v, at(it_var, i)));
+        ;
+      ;
+    ;
+
+    // Index variables
+    hidden_idx_var, var_gen = next_int32_var(var_gen);
+    surrs = surrs & [value(action.idx_var) -> int_obj(hidden_idx_var)] if action.idx_var != nothing;
+
+    // Evaluation of nested yield action
+    body = body & yield_action_opt_code(action.next, var_gen, surrogates = surrs);
+
+    // Looping over the source sequence
+    loop_instr = foreach(
+      seq:        src_surr,
+      src_array:  src_array_var,
+      // tmp_buffer: array_var,
+      count_var:  array_size_var,
+      idx_var:    hidden_idx_var,
+      it_var:     it_var,
+      body:       body
+    );
+
+    return (eval_code | set_size_var, loop_instr);
   }
 
 
