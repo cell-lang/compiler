@@ -1,9 +1,12 @@
 type YieldValueAction     = yield_value_action(var: AnyLocVar, expr: Expr, instrs: Instr+);
 
 type SetYieldAction       = set_yield_action(var: StdVar, src_set: Expr, next: YieldAction);
+type MatchYieldAction     = match_yield_action(ptrn: Pattern, expr: Expr, next: YieldAction);
+type LetYieldAction       = let_yield_action(var: StdVar, expr: Expr, next: YieldAction);
+type CondYieldAction      = cond_yield_action(cond: Expr, next: YieldAction);
 
-type YieldAnyValueAction  = YieldValueAction;
-type YieldAction          = YieldAnyValueAction, SetYieldAction;
+type YieldAction          = YieldValueAction, SetYieldAction, MatchYieldAction,
+                            LetYieldAction, CondYieldAction;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -13,9 +16,25 @@ YieldValueAction yield_value_action(AnyLocVar v, Expr e, Instr+ is) =
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-YieldAction yield_action(Clause clause, YieldValueAction final_action) =
-  set_clause()    = set_yield_action(var: clause.var, src_set: clause.src, next: final_action),
-  _               = undefined;
+YieldAction yield_action(Clause clause, YieldAction next) =
+  set_clause()      = set_yield_action(var: clause.var, src_set: clause.src, next: next),
+  and_clause()      = yield_action(clause.left, yield_action(clause.right, next)),
+  match_clause()    = match_yield_action(ptrn: clause.ptrn, expr: clause.expr, next: next),
+  asgnm_clause()    = let_yield_action(var: clause.var, expr: clause.expr, next: next),
+  filter_clause(e?) = cond_yield_action(cond: e, next: next),
+  _                 = undefined;
+
+
+// type SetClause    = set_clause(var: StdVar, src: Expr);
+// type RelClause    = rel_clause(vars: StdVar+, src: Expr, args: Maybe[Expr]+);
+// type RelvarClause = relvar_clause(vars: StdVar+, rel_var: AnyRelVar, args: Maybe[Expr]+);
+// type SeqClause    = seq_clause(vars: Maybe[StdVar]+, idx_var: Maybe[StdVar], src: Expr);
+// type AndClause    = and_clause(left: Clause, right: Clause);
+// type OrClause     = or_clause(left: Clause, right: Clause);
+// type MatchClause  = match_clause(ptrn: Pattern, expr: Expr);
+// type AsgnmClause  = asgnm_clause(var: StdVar, expr: Expr);
+// type FilterClause = filter_clause(Expr);
+
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -30,12 +49,14 @@ implicit program           : Program,
          environments      : [EnvVar -> Type]+,
          surrogates        : [SurrExpr -> ObjExpr],
          expr_id           : Nat,
-         options           : CompOptions
-{
+         options           : CompOptions {
 
   Instr* yield_action_opt_code(YieldAction action, VarGen var_gen) =
     yield_value_action()      = yield_value_action_opt_code(action, var_gen),
     set_yield_action()        = set_yield_action_opt_code(action, var_gen),
+    match_yield_action()      = match_yield_action_opt_code(action, var_gen),
+    let_yield_action()        = let_yield_action_opt_code(action, var_gen),
+    cond_yield_action()       = cond_yield_action_opt_code(action, var_gen),
     _                         = undefined;
 
 
@@ -63,5 +84,40 @@ implicit program           : Program,
         move_forward(it_var)
       ))
     );
+  }
+
+
+  // match_yield_action(ptrn: Pattern, expr: Expr, next: YieldAction)
+  Instr* match_yield_action_opt_code(MatchYieldAction action, VarGen init_var_gen) {
+    eval_code, expr_surr, var_gen = opt_eval_info(action.expr, init_var_gen);
+    expr_type = subexpr_type(action.expr);
+
+    ptrn_env = generate_env(action.ptrn, expr_type);
+    vars_reprs = [v -> low_level_var(opt_repr(t), v) : v, t <- ptrn_env];
+    surrs = surrogates & [v -> obj_expr(pv) : v, pv <- vars_reprs];
+
+    let surrogates = surrs, vars_reprs = vars_reprs:
+      nested_code = yield_action_opt_code(action.next, var_gen);
+      code = opt_ptrn_match_code(action.ptrn, expr_surr, expr_type, nested_code);
+    ;
+
+    return eval_code & code;
+  }
+
+
+  // let_yield_action(var: StdVar, expr: Expr, next: YieldAction);
+  Instr* let_yield_action_opt_code(LetYieldAction action, VarGen init_var_gen) {
+    eval_code, surr, var_gen = opt_eval_info(action.expr, init_var_gen);
+    eval_code = store_result(eval_code, surr, action.var);
+    nested_code = yield_action_opt_code(action.next, var_gen);
+    return eval_code & nested_code;
+  }
+
+
+  // cond_yield_action(cond: Expr, next: YieldAction);
+  Instr* cond_yield_action_opt_code(CondYieldAction action, VarGen init_var_gen) {
+    eval_code, cond_surr, var_gen = opt_eval_info(action.cond, init_var_gen);
+    nested_code = yield_action_opt_code(action.next, var_gen);
+    return (eval_code | do_if(bool_value(cond_surr), nested_code));
   }
 }
