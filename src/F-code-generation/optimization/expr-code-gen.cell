@@ -110,12 +110,27 @@ implicit program           : Program,
     match_expr()        = match_expr_opt_eval_info(expr, var_gen),
     do_expr()           = do_expr_opt_eval_code(expr, environments(expr_id), var_gen),
     // ex_qual()           = undefined,
-    // set_comp()          = undefined,
+    set_comp()          = set_comp_opt_eval_info(expr.expr, expr.source, var_gen),
     // map_comp()          = undefined,
     // bin_rel_comp()      = undefined,
     // tern_rel_comp()     = undefined,
     seq_comp()          = seq_comp_opt_eval_info(expr, var_gen),
     range_comp()        = range_comp_opt_eval_info(expr, var_gen);
+
+
+  // set_comp(expr: Expr, source: Clause);
+  (Instr*, ObjExpr, VarGen) set_comp_opt_eval_info(Expr expr, Clause source, VarGen init_var_gen) {
+    res_var,  ret_var_gen = next_obj_var(init_var_gen);
+    elt_var,  var_gen     = next_obj_var(ret_var_gen);
+    strm_var, var_gen     = next_stream_var(var_gen);
+
+    bottom_action = yield_value_action(elt_var, expr, (append(strm_var, elt_var)));
+    action = yield_action(source, bottom_action);
+    code = yield_action_opt_code(action, var_gen);
+
+    code = (init_stream(strm_var)) & code & (mk_set(res_var, strm_var));
+    return (code, res_var, ret_var_gen);
+  }
 
 
   // match_expr(exprs: Expr+, cases: (ptrns: Pattern+, expr: Expr)+);

@@ -1,0 +1,67 @@
+type YieldValueAction     = yield_value_action(var: AnyLocVar, expr: Expr, instrs: Instr+);
+
+type SetYieldAction       = set_yield_action(var: StdVar, src_set: Expr, next: YieldAction);
+
+type YieldAnyValueAction  = YieldValueAction;
+type YieldAction          = YieldAnyValueAction, SetYieldAction;
+
+////////////////////////////////////////////////////////////////////////////////
+
+YieldValueAction yield_value_action(AnyLocVar v, Expr e, Instr+ is) =
+  yield_value_action(var: v, expr: e, instrs: is);
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+YieldAction yield_action(Clause clause, YieldValueAction final_action) =
+  set_clause()    = set_yield_action(var: clause.var, src_set: clause.src, next: final_action),
+  _               = undefined;
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+implicit program           : Program,
+         typedefs          : [TypeName -> NeType],
+         context           : Context,
+         var_subst_map     : [StdVar -> CaptVar],
+         cls_var_subst_map : [ClsVar -> CaptClsVar],
+         cluster           : Expr+,
+         types             : Type+,
+         environments      : [EnvVar -> Type]+,
+         surrogates        : [SurrExpr -> ObjExpr],
+         expr_id           : Nat,
+         options           : CompOptions
+{
+
+  Instr* yield_action_opt_code(YieldAction action, VarGen var_gen) =
+    yield_value_action()      = yield_value_action_opt_code(action, var_gen),
+    set_yield_action()        = set_yield_action_opt_code(action, var_gen),
+    _                         = undefined;
+
+
+  // yield_value_action(var: LocVar, expr: Expr, instrs: Instr+)
+  Instr* yield_value_action_opt_code(YieldValueAction action, VarGen var_gen) {
+    code, surr, unused_var = opt_eval_info(action.expr, var_gen);
+    code = store_result(code, surr, action.var);
+    return code & action.instrs;
+  }
+
+
+  // set_yield_action(var: StdVar, src_set: Expr, next: YieldAction)
+  Instr* set_yield_action_opt_code(SetYieldAction action, VarGen init_var_gen) {
+    src_eval_code, src_surr, var_gen = opt_eval_info(action.src_set, init_var_gen);
+    it_var, var_gen = next_set_it_var(var_gen);
+
+    nested_code = yield_action_opt_code(action.next, var_gen);
+
+    return src_eval_code & (
+      get_iter(it_var, src_surr),
+      repeat((
+        break_if(is_out_of_range(it_var)),
+        set_var(action.var, get_curr_obj(it_var))
+        ) & nested_code & (
+        move_forward(it_var)
+      ))
+    );
+  }
+}
