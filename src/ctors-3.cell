@@ -320,6 +320,12 @@ Instr get_iter(BinRelItVar v, AtomicExpr r, (Maybe[AtomicExpr], Maybe[AtomicExpr
 Instr get_iter(TernRelItVar v, AtomicExpr r, (Maybe[AtomicExpr], Maybe[AtomicExpr], Maybe[AtomicExpr]) as) =
   get_tern_rel_iter(var: v, src: r, args: as);
 
+Instr get_any_rel_iter(BinRelItVar v, AtomicExpr r, Maybe[AtomicExpr]* as) =
+  get_iter(v, r, if |as| == 2 then as else undefined);
+
+Instr get_any_rel_iter(TernRelItVar v, AtomicExpr r, Maybe[AtomicExpr]* as) =
+  get_iter(v, r, if |as| == 3 then as else undefined);
+
 Instr move_forward(ItVar v) = :move_forward(v);
 
 Instr set_var(<WriteObjVar, ImplArg> v, ObjExpr e)  = set_var(var: v, value: e);
@@ -614,9 +620,9 @@ Instr check(BoolExpr e) = do_if_not(e, terminate);
 
 Instr check_is_bool(ObjExpr e) = check(is_bool(e));
 
-Instr get_curr_obj(WriteObjVar v, <SetItVar, SeqItVar> it)    = set_var(v, get_curr_obj(it));
-Instr get_curr_arg(WriteObjVar v, BinRelItVar  it, <0..1> a)  = set_var(v, get_curr_arg(it, a));
-Instr get_curr_arg(WriteObjVar v, TernRelItVar it, <0..2> a)  = set_var(v, get_curr_arg(it, a));
+Instr get_curr_obj(WriteObjVar v, <SetItVar, SeqItVar> it) = set_var(v, get_curr_obj(it));
+Instr get_curr_arg(WriteObjVar v, BinRelItVar  it, Nat a)  = set_var(v, get_curr_arg(it, if a :: <0..1> then a else undefined));
+Instr get_curr_arg(WriteObjVar v, TernRelItVar it, Nat a)  = set_var(v, get_curr_arg(it, if a :: <0..2> then a else undefined));
 
 Instr maybe_op(Instr instr, Bool cond) = if cond then instr else no_op;
 

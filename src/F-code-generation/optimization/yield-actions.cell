@@ -1,17 +1,22 @@
 type YieldValueAction   = yield_value_action(var: AnyLocVar, expr: Expr, instrs: Instr+);
 
 type SetYieldAction     = set_yield_action(var: StdVar, src_set: Expr, next: YieldAction);
-type MatchYieldAction   = match_yield_action(ptrn: Pattern, expr: Expr, next: YieldAction);
-type LetYieldAction     = let_yield_action(var: StdVar, expr: Expr, next: YieldAction);
-type CondYieldAction    = cond_yield_action(cond: Expr, next: YieldAction);
+type RelYieldAction     = rel_yield_action(
+                            vars: StdVar+, src_rel: Expr, args: Maybe[Expr]+, next: YieldAction
+                          );
+
 type SeqYieldAction     = seq_yield_action(
                             vars: Maybe[StdVar]+, idx_var: Maybe[StdVar], src_seq: Expr, next: YieldAction
                           );
 
+type MatchYieldAction   = match_yield_action(ptrn: Pattern, expr: Expr, next: YieldAction);
+type LetYieldAction     = let_yield_action(var: StdVar, expr: Expr, next: YieldAction);
+type CondYieldAction    = cond_yield_action(cond: Expr, next: YieldAction);
+
 type YieldActions       = yield_actions(YieldAction+);
 
-type YieldAction        = YieldValueAction, SetYieldAction, SeqYieldAction, MatchYieldAction,
-                          LetYieldAction, CondYieldAction, YieldActions;
+type YieldAction        = YieldValueAction, SetYieldAction, RelYieldAction, SeqYieldAction,
+                          MatchYieldAction, LetYieldAction, CondYieldAction, YieldActions;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -26,25 +31,14 @@ YieldAction yield_actions(YieldAction+ actions) =
 
 YieldAction yield_action(Clause cls, YieldAction next) =
   set_clause()      = set_yield_action(var: cls.var, src_set: cls.src, next: next),
+  rel_clause()      = rel_yield_action(vars: cls.vars, src_rel: cls.src, args: cls.args, next: next),
+  relvar_clause()   = undefined, // relvar_clause(vars: StdVar+, rel_var: AnyRelVar, args: Maybe[Expr]+)
   seq_clause()      = seq_yield_action(vars: cls.vars, idx_var: cls.idx_var, src_seq: cls.src, next: next),
   and_clause()      = yield_action(cls.left, yield_action(cls.right, next)),
   or_clause()       = yield_actions((yield_action(cls.left, next), yield_action(cls.right, next))),
   match_clause()    = match_yield_action(ptrn: cls.ptrn, expr: cls.expr, next: next),
   asgnm_clause()    = let_yield_action(var: cls.var, expr: cls.expr, next: next),
-  filter_clause(e?) = cond_yield_action(cond: e, next: next),
-  _                 = undefined;
-
-
-// type SetClause    = set_clause(var: StdVar, src: Expr);
-  // type RelClause    = rel_clause(vars: StdVar+, src: Expr, args: Maybe[Expr]+);
-  // type RelvarClause = relvar_clause(vars: StdVar+, rel_var: AnyRelVar, args: Maybe[Expr]+);
-// type SeqClause    = seq_clause(vars: Maybe[StdVar]+, idx_var: Maybe[StdVar], src: Expr);
-// type AndClause    = and_clause(left: Clause, right: Clause);
-// type OrClause     = or_clause(left: Clause, right: Clause);
-// type MatchClause  = match_clause(ptrn: Pattern, expr: Expr);
-// type AsgnmClause  = asgnm_clause(var: StdVar, expr: Expr);
-// type FilterClause = filter_clause(Expr);
-
+  filter_clause(e?) = cond_yield_action(cond: e, next: next);
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -62,14 +56,50 @@ implicit program           : Program,
          options           : CompOptions {
 
   Instr* yield_action_opt_code(YieldAction action, VarGen var_gen) =
-    yield_value_action()      = yield_value_action_opt_code(action, var_gen),
-    set_yield_action()        = set_yield_action_opt_code(action, var_gen),
-    seq_yield_action()        = seq_yield_action_opt_code(action, var_gen),
-    match_yield_action()      = match_yield_action_opt_code(action, var_gen),
-    let_yield_action()        = let_yield_action_opt_code(action, var_gen),
-    cond_yield_action()       = cond_yield_action_opt_code(action, var_gen),
-    yield_actions(as?)        = join((yield_action_opt_code(a, var_gen) : a <- as)),
-    _                         = undefined;
+    yield_value_action()    = yield_value_action_opt_code(action, var_gen),
+    set_yield_action()      = set_yield_action_opt_code(action, var_gen),
+    rel_yield_action()      = rel_yield_action_opt_code(action, var_gen),
+    seq_yield_action()      = seq_yield_action_opt_code(action, var_gen),
+    match_yield_action()    = match_yield_action_opt_code(action, var_gen),
+    let_yield_action()      = let_yield_action_opt_code(action, var_gen),
+    cond_yield_action()     = cond_yield_action_opt_code(action, var_gen),
+    yield_actions(as?)      = join((yield_action_opt_code(a, var_gen) : a <- as));
+
+
+  // rel_yield_action(vars: StdVar+, src_rel: Expr, args: Maybe[Expr]+, next: YieldAction)
+  Instr* rel_yield_action_opt_code(RelYieldAction action, VarGen init_var_gen) {
+    args_surrs : Maybe[ObjExpr]*;
+
+    code, src_surr, var_gen = opt_eval_info(action.src_rel, init_var_gen);
+    if |action.args| == 2:
+      it_var, var_gen = next_bin_rel_it_var(var_gen);
+    else
+      assert |action.args| == 3;
+      it_var, var_gen = next_tern_rel_it_var(var_gen);
+    ;
+
+    args_surrs = ();
+    for a <- action.args:
+      if a != nothing:
+        arg_code, arg_surr, var_gen = opt_eval_info(value(a), var_gen);
+        code = code & arg_code;
+        args_surrs = (args_surrs | just(arg_surr));
+      else
+        args_surrs = (args_surrs | nothing);
+      ;
+    ;
+    code = (code | get_any_rel_iter(it_var, src_surr, args_surrs));
+
+    body = (break_if(is_out_of_range(it_var)));
+
+    vars_idxs = (i : a @ i <- action.args, a == nothing);
+    body = body & (get_curr_arg(v, it_var, vars_idxs(i)) : v @ i <- action.vars);
+
+    body = body & yield_action_opt_code(action.next, var_gen);
+    body = (body | move_forward(it_var));
+
+    return (code | repeat(body));
+  }
 
 
   // yield_value_action(var: LocVar, expr: Expr, instrs: Instr+)
