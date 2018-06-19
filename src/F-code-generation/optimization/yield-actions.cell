@@ -8,13 +8,18 @@ type SeqYieldAction     = seq_yield_action(
                             vars: Maybe[StdVar]+, idx_var: Maybe[StdVar], src_seq: Expr, next: YieldAction
                           );
 
+type YieldActions       = yield_actions(YieldAction+);
+
 type YieldAction        = YieldValueAction, SetYieldAction, SeqYieldAction, MatchYieldAction,
-                          LetYieldAction, CondYieldAction;
+                          LetYieldAction, CondYieldAction, YieldActions;
 
 ////////////////////////////////////////////////////////////////////////////////
 
 YieldValueAction yield_value_action(AnyLocVar v, Expr e, Instr+ is) =
   yield_value_action(var: v, expr: e, instrs: is);
+
+YieldAction yield_actions(YieldAction+ actions) =
+  if |actions| != 1 then :yield_actions(actions) else only(actions);
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -23,6 +28,7 @@ YieldAction yield_action(Clause cls, YieldAction next) =
   set_clause()      = set_yield_action(var: cls.var, src_set: cls.src, next: next),
   seq_clause()      = seq_yield_action(vars: cls.vars, idx_var: cls.idx_var, src_seq: cls.src, next: next),
   and_clause()      = yield_action(cls.left, yield_action(cls.right, next)),
+  or_clause()       = yield_actions((yield_action(cls.left, next), yield_action(cls.right, next))),
   match_clause()    = match_yield_action(ptrn: cls.ptrn, expr: cls.expr, next: next),
   asgnm_clause()    = let_yield_action(var: cls.var, expr: cls.expr, next: next),
   filter_clause(e?) = cond_yield_action(cond: e, next: next),
@@ -34,7 +40,7 @@ YieldAction yield_action(Clause cls, YieldAction next) =
   // type RelvarClause = relvar_clause(vars: StdVar+, rel_var: AnyRelVar, args: Maybe[Expr]+);
 // type SeqClause    = seq_clause(vars: Maybe[StdVar]+, idx_var: Maybe[StdVar], src: Expr);
 // type AndClause    = and_clause(left: Clause, right: Clause);
-  // type OrClause     = or_clause(left: Clause, right: Clause);
+// type OrClause     = or_clause(left: Clause, right: Clause);
 // type MatchClause  = match_clause(ptrn: Pattern, expr: Expr);
 // type AsgnmClause  = asgnm_clause(var: StdVar, expr: Expr);
 // type FilterClause = filter_clause(Expr);
@@ -62,6 +68,7 @@ implicit program           : Program,
     match_yield_action()      = match_yield_action_opt_code(action, var_gen),
     let_yield_action()        = let_yield_action_opt_code(action, var_gen),
     cond_yield_action()       = cond_yield_action_opt_code(action, var_gen),
+    yield_actions(as?)        = join((yield_action_opt_code(a, var_gen) : a <- as)),
     _                         = undefined;
 
 
