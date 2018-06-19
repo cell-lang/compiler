@@ -30,11 +30,11 @@ YieldAction yield_action(Clause cls, YieldAction next) =
 
 
 // type SetClause    = set_clause(var: StdVar, src: Expr);
-// type RelClause    = rel_clause(vars: StdVar+, src: Expr, args: Maybe[Expr]+);
-// type RelvarClause = relvar_clause(vars: StdVar+, rel_var: AnyRelVar, args: Maybe[Expr]+);
+  // type RelClause    = rel_clause(vars: StdVar+, src: Expr, args: Maybe[Expr]+);
+  // type RelvarClause = relvar_clause(vars: StdVar+, rel_var: AnyRelVar, args: Maybe[Expr]+);
 // type SeqClause    = seq_clause(vars: Maybe[StdVar]+, idx_var: Maybe[StdVar], src: Expr);
 // type AndClause    = and_clause(left: Clause, right: Clause);
-// type OrClause     = or_clause(left: Clause, right: Clause);
+  // type OrClause     = or_clause(left: Clause, right: Clause);
 // type MatchClause  = match_clause(ptrn: Pattern, expr: Expr);
 // type AsgnmClause  = asgnm_clause(var: StdVar, expr: Expr);
 // type FilterClause = filter_clause(Expr);
@@ -126,22 +126,21 @@ implicit program           : Program,
 
     if |vars| == 1:
       var = value_unsafe(only(vars)); ## CHECK IF THIS IS ALWAYS VERIFIED...
-      it_var, var_gen = next_var_def(src_repr, var, var_gen);
-      surrs = surrogates & [var -> obj_expr(it_var)];
+      it_var = low_level_var(src_repr, var);
+      surrs = surrogates & [var -> obj_expr(it_var) if it_var != var];
 
     else
       assert src_repr == :object;
-      vars_types = (restricted_seq_elem_supertype(src_type, singleton_type(i)) : i < |vars|);
-      fail if not vars_types :: NeType+;
+      vars_types = (restricted_seq_elem_supertype(src_elt_type, singleton_type(i)) : i < |vars|);
       reprs = (opt_repr(t) : t <- vars_types);
       it_var, var_gen = next_obj_var(var_gen);
       surrs = surrogates;
       for mv @ i <- vars:
         if mv != nothing:
           v = value(mv);
-          phys_var, var_gen = next_var_def(reprs(i), v, var_gen);
-          surrs = surrs & [v -> obj_expr(phys_var)];
-          body = (body | set_any_var(v, at(it_var, i)));
+          phys_var = low_level_var(reprs(i), v);
+          surrs = surrs & [v -> obj_expr(phys_var) if v != phys_var];
+          body = (body | set_any_var(phys_var, at(it_var, i)));
         ;
       ;
     ;
@@ -188,9 +187,12 @@ implicit program           : Program,
 
   // let_yield_action(var: StdVar, expr: Expr, next: YieldAction);
   Instr* let_yield_action_opt_code(LetYieldAction action, VarGen init_var_gen) {
+    repr = opt_repr(subexpr_type(action.expr));
+    phys_var = low_level_var(repr, action.var);
     eval_code, surr, var_gen = opt_eval_info(action.expr, init_var_gen);
-    eval_code = store_result(eval_code, surr, action.var);
-    nested_code = yield_action_opt_code(action.next, var_gen);
+    eval_code = store_result(eval_code, surr, phys_var);
+    surrs = surrogates & [action.var -> obj_expr(phys_var) if action.var != phys_var];
+    nested_code = yield_action_opt_code(action.next, var_gen, surrogates = surrs);
     return eval_code & nested_code;
   }
 
