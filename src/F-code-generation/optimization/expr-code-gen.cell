@@ -483,7 +483,9 @@ implicit program           : Program,
 
     else
       assert src_repr == :object;
-      vars_types = (restricted_seq_elem_supertype(src_elt_type, singleton_type(i)) : i < |vars|);
+      vars_types = tuple_field_supertypes(src_elt_type, |vars|);
+      ## REMOVE WHEN DONE
+      assert vars_types == (restricted_seq_elem_supertype(src_elt_type, singleton_type(i)) : i < |vars|);
       reprs = (opt_repr(t) : t <- vars_types);
       phys_vars = (low_level_var(reprs(i), v) : v @ i <- vars);
       surrs = surrogates & [v -> obj_expr(pv) : v @ i <~ vars, pv = phys_vars(i), v != pv];
@@ -1235,18 +1237,6 @@ type AnyLocVar = LocBoolVar, LocIntVar, LocFloatVar, LocOptTagRecVar, LocVar, St
 
 (LocOptTagRecVar, VarGen) next_var(OptTagRecRepr repr, VarGen gen) =
   next_opt_tag_rec_var(gen, repr.tag, repr.index);
-
-
-## FIND BETTER NAME
-(AnyLocVar, VarGen) next_var_def(LowLevelRepr repr, StdVar var, VarGen var_gen) =
-  bool      |
-  int       |
-  float     = next_var(repr, var_gen),
-  symbol    |
-  object    = (var, var_gen);
-
-(LocOptTagRecVar, VarGen) next_var_def(OptTagRecRepr repr, StdVar var, VarGen var_gen) =
-  next_var(repr, var_gen);
 
 
 Instr set_any_var(LocBoolVar  var, ObjExpr expr) = set_bvar(var, bool_value(expr));

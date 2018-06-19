@@ -190,9 +190,8 @@ implicit program           : Program,
       assert repr == :object;
       types = tuple_field_supertypes(type, |vars|);
       assert types == (restricted_seq_elem_supertype(type, singleton_type(i)) : i < |vars|);
-      fail if not types :: NeType+;
       reprs = (opt_repr(t) : t <- types);
-      phys_vars, var_gen = mapli(vars, var_gen, next_var_def(reprs($b), $a, $c));
+      phys_vars = (low_level_var(reprs(i), v) : v @ i <- vars);
       code = code & (set_any_var(v, at(surr, i)) : v @ i <- phys_vars);
       surrs = remove_keys(surrogates, set(vars));
       surrs = surrs & [v -> obj_expr(pv) : v @ i <~ vars, pv = phys_vars(i), v != pv];
@@ -325,21 +324,21 @@ implicit program           : Program,
     if |vars| == 1:
       // Simple case, no destructuring of the elements of the source sequence
       var = only(vars);
-      physical_var, var_gen = next_var_def(elt_repr, var, var_gen);
-      local_surrs = [var -> obj_expr(physical_var)];
-      it_var = physical_var;
+      it_var = low_level_var(elt_repr, var);
+      local_surrs = [var -> obj_expr(it_var) if var != it_var];
       body_code_setup = ();
 
     else
       // Elements of source sequence need to be destructured
       assert elt_repr == :object;
-      vars_types = (restricted_seq_elem_supertype(seq_type, singleton_type(i)) : i < |vars|);
-      fail if not vars_types :: NeType+;
+      vars_types = tuple_field_supertypes(seq_type, |vars|);
+      ## REMOVE WHEN DONE
+      assert vars_types == (restricted_seq_elem_supertype(seq_type, singleton_type(i)) : i < |vars|);
       reprs = (opt_repr(t) : t <- vars_types);
-      physical_vars, var_gen = mapli(vars, var_gen, next_var_def(reprs($b), $a, $c));
-      local_surrs = [v -> obj_expr(physical_vars(i)) : v @ i <~ vars];
+      phys_vars = (low_level_var(reprs(i), v) : v @ i <- vars);
+      local_surrs = [v -> obj_expr(pv) : v @ i <~ vars, pv = phys_vars(i), v != pv];
       it_var, var_gen = next_obj_var(var_gen);
-      body_code_setup = (set_any_var(v, at(it_var, i)) : v @ i <- physical_vars);
+      body_code_setup = (set_any_var(v, at(it_var, i)) : v @ i <- phys_vars);
     ;
 
     // Index variables
