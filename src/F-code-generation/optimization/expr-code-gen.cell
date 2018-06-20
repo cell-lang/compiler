@@ -26,7 +26,9 @@ implicit program           : Program,
   }
 
 
-  (Instr*, ObjExpr*, VarGen) opt_eval_info(Expr* exprs, VarGen init_var_gen) {
+  (Instr*, ObjExpr*, VarGen) opt_eval_info((), VarGen var_gen) = ((), (), var_gen);
+
+  (Instr*, ObjExpr+, VarGen) opt_eval_info(Expr+ exprs, VarGen init_var_gen) {
     var_gen = init_var_gen;
     code = ();
     surrs = ();
@@ -35,7 +37,7 @@ implicit program           : Program,
       code = code & expr_code;
       surrs = (surrs | surr);
     ;
-    return (code, surrs, var_gen);
+    return (code, nonempty(surrs), var_gen);
   }
 
   //////////////////////////////////////////////////////////////////////////////
@@ -88,7 +90,7 @@ implicit program           : Program,
     tern_rel_expr(es?)  = tern_rel_expr_opt_eval_info(es, var_gen),
     tag_obj_expr()      = tag_obj_expr_opt_eval_info(expr, var_gen),
     fn_call()           = fn_call_opt_eval_info(expr, var_gen),
-    cls_call()          = undefined,
+    cls_call()          = cls_call_opt_eval_info(expr.name, expr.args, var_gen),
     builtin_call()      = builtin_call_opt_eval_info(expr, var_gen),
     size_expr()         = size_expr_opt_eval_info(expr.coll, var_gen),
     unary_pseudo_call() = unary_pseudo_call_opt_eval_info(expr.target, expr.arg, var_gen),
@@ -1078,10 +1080,9 @@ implicit program           : Program,
   }
 
 
+  // fn_call(fn_id: FnFamilyId, args: Expr*, cls_args: AnyClsExpr*, impl_args: [ImplArg -> Expr])
   (Instr*, ObjExpr, VarGen) fn_call_opt_eval_info(FnCallExpr expr, VarGen init_var_gen) {
-    // fn_call(fn_id: FnFamilyId, args: AnyExpr*, impl_args: [ImplArg -> Expr])
     assert expr.impl_args == [];
-    fail if not expr.args :: Expr* or not expr.impl_args :: [ImplArg -> ExprRef];
 
     // Actual arguments information
     args_types = (subexpr_type(a) : a <- expr.args);
@@ -1097,6 +1098,8 @@ implicit program           : Program,
 
     // Return value variable. Once the call returns the arguments
     // are not needed anymore, so we can reuse the variables
+    ## COULD THIS CAUSE TROUBLE WITH REFERENCE COUNTING?
+    ## IF THE RESULT VARIABLE IS ALSO ONE OF THE ARGUMENTS?
     res_var, var_gen = next_var(low_level_sign.ret_value, init_var_gen);
 
     // Evaluation code for the call only
@@ -1104,6 +1107,16 @@ implicit program           : Program,
     eval_code = (args_eval_code | call_proc(res_var, fn_id, low_level_args, cls_args));
 
     return (eval_code, obj_expr(res_var), var_gen);
+  }
+
+
+  // cls_call(name: ClsVar, args: Expr+)
+  (Instr*, ObjExpr, VarGen) cls_call_opt_eval_info(ClsVar name, Expr+ args, VarGen init_var_gen) {
+    res_var, ret_var_gen = next_obj_var(init_var_gen);
+    eval_code, surrs, var_gen = opt_eval_info(args, ret_var_gen);
+    final_name = lookup(cls_var_subst_map, name, name);
+    code = (eval_code | call_cls(res_var, final_name, surrs));
+    return (code, res_var, ret_var_gen);
   }
 
 
