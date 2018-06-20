@@ -132,51 +132,51 @@ implicit program           : Program,
 
   // set_comp(expr: Expr, source: Clause);
   (Instr*, ObjExpr, VarGen) set_comp_opt_eval_info(Expr expr, Clause source, VarGen init_var_gen) {
-    res_var,  ret_var_gen = next_obj_var(init_var_gen);
-    elt_var,  var_gen     = next_obj_var(ret_var_gen);
-    strm_var, var_gen     = next_stream_var(var_gen);
-
-    bottom_action = yield_value_action(elt_var, expr, (append(strm_var, elt_var)));
-    action = yield_action(source, bottom_action);
-    code = yield_action_opt_code(action, var_gen);
-
-    code = (init_stream(strm_var)) & code & (mk_set(res_var, strm_var));
-    return (code, res_var, ret_var_gen);
+    res_var, var_gen = next_obj_var(init_var_gen);
+    code, strms = rel_comp_partial_eval_info((expr), source, var_gen);
+    return ((code | mk_set(res_var, only_unsafe(strms))), res_var, var_gen);
   }
 
 
   // map_comp(key_expr: Expr, value_expr: Expr, source: Clause)
   (Instr*, ObjExpr, VarGen) map_comp_opt_eval_info(MapCompExpr expr, VarGen init_var_gen) {
-    res_var,    ret_var_gen = next_obj_var(init_var_gen);
-    key_var,        var_gen = next_obj_var(ret_var_gen);
-    value_var,      var_gen = next_obj_var(var_gen);
-    key_strm_var,   var_gen = next_stream_var(var_gen);
-    value_strm_var, var_gen = next_stream_var(var_gen);
-
-    bottom_action = yield_actions((
-      yield_value_action(key_var, expr.key_expr, (append(key_strm_var, key_var))),
-      yield_value_action(value_var, expr.value_expr, (append(value_strm_var, value_var)))
-    ));
-    action = yield_action(expr.source, bottom_action);
-    nested_code = yield_action_opt_code(action, var_gen);
-
-    init_code = (init_stream(key_strm_var), init_stream(value_strm_var));
-    mk_map_instr = mk_map(res_var, key_strm_var, value_strm_var);
-    code = (init_code & nested_code | mk_map_instr);
-
-    return (code, res_var, ret_var_gen);
+    res_var, var_gen = next_obj_var(init_var_gen);
+    code, strms = rel_comp_partial_eval_info((expr.key_expr, expr.value_expr), expr.source, var_gen);
+    assert |strms| == 2;
+    return ((code | mk_map(res_var, strms(0), strms(1))), res_var, var_gen);
   }
 
 
   // bin_rel_comp(exprs: (Expr, Expr), source: Clause)
   (Instr*, ObjExpr, VarGen) bin_rel_comp_opt_eval_info(BinRelCompExpr expr, VarGen init_var_gen) {
-    fail;
+    res_var, var_gen = next_obj_var(init_var_gen);
+    code, strms = rel_comp_partial_eval_info(expr.exprs, expr.source, var_gen);
+    assert |strms| == 2;
+    return ((code | mk_rel(res_var, strms(0), strms(1))), res_var, var_gen);
   }
 
 
   // tern_rel_comp(exprs: (Expr, Expr, Expr), source: Clause)
   (Instr*, ObjExpr, VarGen) tern_rel_comp_opt_eval_info(TernRelCompExpr expr, VarGen init_var_gen) {
-    fail;
+    res_var, var_gen = next_obj_var(init_var_gen);
+    code, strms = rel_comp_partial_eval_info(expr.exprs, expr.source, var_gen);
+    assert |strms| == 3;
+    return ((code | mk_rel(res_var, strms(0), strms(1), strms(2))), res_var, var_gen);
+  }
+
+
+  (Instr*, StreamVar*) rel_comp_partial_eval_info(Expr+ exprs, Clause source, VarGen init_var_gen) {
+    arg_vars,  var_gen = next_obj_vars(init_var_gen, |exprs|);
+    strm_vars, var_gen = next_stream_vars(var_gen, |exprs|);
+
+    args_info = nonempty(zip(exprs, arg_vars, strm_vars));
+
+    bottom_action = yield_actions((yield_value_action(v, e, (append(sv, v))) : e, v, sv <- args_info));
+    action = yield_action(source, bottom_action);
+    nested_code = yield_action_opt_code(action, var_gen);
+
+    code = (init_stream(v) : v <- strm_vars) & nested_code;
+    return (code, strm_vars);
   }
 
 
