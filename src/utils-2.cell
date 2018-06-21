@@ -1,4 +1,12 @@
-Type replace_type_vars(Type type, [TypeVar -> Type] substitutions) = replace_type_vars_computed(type, substitutions[$]);
+Type replace_type_vars(Type type, [TypeVar -> Type] substitutions) =
+  replace_type_vars_computed(type, substitutions[$]);
+
+
+ClsType replace_type_vars(ClsType type, [TypeVar -> NeType] substitutions) =
+  cls_type(
+    (nonempty_type(replace_type_vars(t, substitutions)) : t <- type.in_types),
+    nonempty_type(replace_type_vars(type.out_type, substitutions))
+  );
 
 
 ## BAD: FIND DECENT NAME, OR EVEN BETTER, REMOVE THE RESTRICTIONS ABOUT CLOSURE PARAMETERS FOR FUNCTIONS WITH SAME NAME AND ARITY

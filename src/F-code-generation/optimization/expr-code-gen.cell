@@ -1082,31 +1082,39 @@ implicit program           : Program,
 
   // fn_call(fn_id: FnFamilyId, args: Expr*, cls_args: AnyClsExpr*, impl_args: [ImplArg -> Expr])
   (Instr*, ObjExpr, VarGen) fn_call_opt_eval_info(FnCallExpr expr, VarGen init_var_gen) {
-    assert expr.impl_args == [];
-
-    // Actual arguments information
+    // Actual arguments' types
     args_types = (subexpr_type(a) : a <- expr.args);
 
-    // Evaluation of the arguments
-    args_eval_code, args_surrs, unused_var = opt_eval_info(expr.args, init_var_gen);
+    // Actual types of closure arguments
+    cls_types = inst_cls_types(expr.fn_id, args_types, expr.cls_args, environments(expr_id), typed_vars = []);
 
-    // Signature of the target function
+    // Low-level signature of the target function
     fn_id, low_level_sign = low_level_sign(expr.fn_id, args_types);
+
+    // Result variable and returned variable generator
+    res_var, ret_var_gen = next_var(low_level_sign.ret_value, init_var_gen);
+
+    // Dealing with implicit arguments
+    ord_impl_args = isort(keys(expr.impl_args));
+    backup_vars, var_gen = next_obj_vars(ret_var_gen, |ord_impl_args|);
+    tear_down_code = (set_var(a, backup_vars(i)) : a @ i <- ord_impl_args);
+    set_up_code = join(({
+        eval_code, surr, unused_var = opt_eval_info(expr.impl_args(a, !!), var_gen);
+        return (eval_code | set_var(backup_vars(i), a), set_var(a, surr));
+      } : a @ i <- ord_impl_args
+    ));
+
+    // Evaluation of the arguments
+    args_eval_code, args_surrs, unused_var = opt_eval_info(expr.args, var_gen);
 
     // Low-level actual arguments
     low_level_args = (low_level_expr(low_level_sign.args(i), s) : s @ i <- args_surrs);
 
-    // Return value variable. Once the call returns the arguments
-    // are not needed anymore, so we can reuse the variables
-    ## COULD THIS CAUSE TROUBLE WITH REFERENCE COUNTING?
-    ## IF THE RESULT VARIABLE IS ALSO ONE OF THE ARGUMENTS?
-    res_var, var_gen = next_var(low_level_sign.ret_value, init_var_gen);
-
     // Evaluation code for the call only
-    cls_args = (compiled_closure(a, next_var_gen = init_var_gen) : a <- expr.cls_args);
+    cls_args = (opt_comp_cls(a, t) : a, t <- zip(expr.cls_args, cls_types));
     eval_code = (args_eval_code | call_proc(res_var, fn_id, low_level_args, cls_args));
 
-    return (eval_code, obj_expr(res_var), var_gen);
+    return (set_up_code & eval_code & tear_down_code, obj_expr(res_var), ret_var_gen);
   }
 
 
@@ -1255,6 +1263,48 @@ implicit program           : Program,
     code = (code | set_ivar32(size_var, len_expr));
 
     return (code, nonempty(cond_vars), size_var, var_gen);
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+implicit program           : Program,
+         typedefs          : [TypeName -> NeType],
+         context           : Context,
+         var_subst_map     : [StdVar -> CaptVar],
+         cls_var_subst_map : [ClsVar -> CaptClsVar],
+         // typed_vars        : [StdVar -> NeType],
+         // surrogates        : [SurrExpr -> ObjExpr],
+         options           : CompOptions {
+
+  BoundCls opt_comp_cls(AnyClsExpr expr, ClsType type) =
+    cls_var()   = lookup(cls_var_subst_map, expr, expr),
+    fn_ptr(fn?) = opt_comp_cls(arity(expr), fn_call(fn, (fn_arg(i) : i < arity(expr)), ()), type),
+    cls_expr()  = opt_comp_cls(expr.arity, expr.expr, type);
+
+
+  BoundCls opt_comp_cls(NzNat arity, Expr expr, ClsType type) {
+    loc_vars = set((fn_arg(i) : i < arity));
+    ext_vars = isort(extern_vars(expr) - loc_vars);
+    fail if not ext_vars :: StdVar*;
+
+    cls_vars = isort(cls_vars(expr));
+
+    subst_map     = [v -> capt_var(i)     : v @ i <~ ext_vars];
+    cls_subst_map = [v -> capt_cls_var(i) : v @ i <~ cls_vars];
+
+    capt_vars     = (lookup(var_subst_map, v, v)     : v <- ext_vars);
+    capt_cls_vars = (lookup(cls_var_subst_map, v, v) : v <- cls_vars);
+
+    env = [fn_arg(i) -> type.in_types(i) : i <- range(arity)];
+
+    let var_subst_map = subst_map, cls_var_subst_map = cls_subst_map, surrogates = [], typed_vars = []:
+      eval_code, surr, unused_var = opt_eval_code(expr, env, blank_var_gen);
+    ;
+    body = (eval_code | ret_val(surr));
+
+    return bound_cls(cls_def(arity, body), capt_vars, capt_cls_vars);
   }
 }
 

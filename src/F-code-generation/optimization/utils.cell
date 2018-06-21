@@ -1,0 +1,43 @@
+implicit program : Program, typedefs : [TypeName -> NeType], context : Context, typed_vars : [StdVar -> NeType] {
+  ClsType* inst_cls_types(FnFamilyId fn_id, Type* args_types, AnyClsExpr* cls_args, [EnvVar -> Type] env) {
+    unused_var_1, signature = restricted_signature(fn_id, args_types);
+    type_vars_insts = instantiate_type_vars(args_types, signature.args, cls_args, signature.cls_args, env);
+    ## NOT AT ALL SURE WHETHER THIS IS TRUE AND WHAT TO DO IF IT ISN'T
+    assert type_vars_insts :: [TypeVar -> NeType];
+    fail if not type_vars_insts :: [TypeVar -> NeType];
+    return (replace_type_vars(t, type_vars_insts) : t <- signature.cls_args);
+  }
+}
+
+
+implicit program : Program, typedefs : [TypeName -> NeType] {
+  (FnId, FnType) restricted_signature(FnFamilyId fn_id, Type* args_types) {
+    signs = signatures_info_by_family_id(fn_id, !!);
+    for id, s <- signs:
+      return (id, s) if not (t @ i <~ args_types : not is_subset(t, replace_type_vars_with_type_any(s.args(i))));
+    ;
+
+    aggr_signs = aggr_signs_by_fn_family_id(fn_id, !!);
+    for s <- aggr_signs:
+      return (fn_id, s) if not (t @ i <~ args_types : not is_subset(t, replace_type_vars_with_type_any(s.args(i))));
+    ;
+
+    assert false;
+    fail;
+
+
+    [FnFamilyId -> FnType*] aggr_signs_by_fn_family_id = [
+      fam_id -> isort(aggr_signs)
+        : fam_id, info <- signatures_info_by_family_id,
+          signs = [sign : fn_id, sign <~ info],
+          aggr_signs = aggregate_signatures(signs) - signs
+    ];
+
+
+    [FnFamilyId -> (FnId, FnType)+] signatures_info_by_family_id {
+      sgn_info = [family_id(fn.id), (fn.id, signature(fn)) : fn <- program.fndefs];
+      family_ids = [id : id, unused_var <- sgn_info];
+      return [id -> nonempty(isort([info : info <- sgn_info(id, ?)])) : id <- family_ids];
+    }
+  }
+}
