@@ -136,7 +136,7 @@ implicit program : Program, context : Context, var_subst_map : [StdVar -> CaptVa
 
 
   BoundCls compiled_closure(ClsExpr expr) {
-    loc_vs = seq_union(([value(v) if v != nothing, fn_arg(i)] : v @ i <- expr.args));
+    loc_vs = set((fn_arg(i) : i < expr.arity));
     ext_vs = rand_sort(extern_vars(expr.expr) - loc_vs);
     assert ext_vs :: StdVar*;
     fail if not ext_vs :: StdVar*;
@@ -153,8 +153,8 @@ implicit program : Program, context : Context, var_subst_map : [StdVar -> CaptVa
     let var_subst_map = subst_map, cls_var_subst_map = cls_subst_map:
       eval_code = gen_eval_code(expr.expr, fn_res_var, next_var_gen = var_gen);
     ;
-    cls_body = (set_var(value(v), fn_arg(i)) : v @ i <- expr.args, v != nothing) & eval_code & (ret_val(fn_res_var));
+    cls_body = (eval_code | ret_val(fn_res_var));
 
-    return bound_cls(cls_def(nz_nat(|expr.args|), nonempty(cls_body)), capt_vars, capt_cls_vars);
+    return bound_cls(cls_def(expr.arity, cls_body), capt_vars, capt_cls_vars);
   }
 }

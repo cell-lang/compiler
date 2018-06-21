@@ -69,7 +69,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
 
   [TypeCheckingError] typecheck(ClsExpr expr, Type+ arg_types, Type ret_type, [EnvVar -> Type] env) {
-    delta_env = merge(([fn_arg(i) -> t, value(v) -> t if v != nothing] : v, t @ i <- zip(expr.args, arg_types)));
+    delta_env = merge(([fn_arg(i) -> t] : t @ i <- arg_types));
     new_env = update(env, delta_env);
     return typecheck(expr.expr, ret_type, new_env); ## BAD: HERE I SHOULD PROVIDE MORE INFORMATION
   }
