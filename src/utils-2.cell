@@ -377,7 +377,7 @@ Bool is_pattern_any(Pattern ptrn) =
 [Var] extern_vars(Expr expr) {
   return [expr] if expr :: Var;
   return match (expr)
-    fn_call()       = union([any_expr_extern_vars(e) : e <- set(expr.args) & values(expr.impl_args)]),
+    fn_call()       = union([extern_vars(e) : e <- set(expr.args) & set(expr.cls_args) & values(expr.impl_args)]),
     ex_qual()       = comp_extern_vars((expr.cond), expr.source),
     set_comp()      = comp_extern_vars((expr.expr), expr.source),
     map_comp()      = comp_extern_vars((expr.key_expr, expr.value_expr), expr.source),
@@ -425,9 +425,7 @@ Bool is_pattern_any(Pattern ptrn) =
 
 ///////////////////////////////////////////////////////////////////////////////
 
-[Var] any_expr_extern_vars(Expr expr) = extern_vars(expr);
-
-[Var] any_expr_extern_vars(AnyClsExpr expr) =
+[Var] extern_vars(AnyClsExpr expr) =
   cls_var()   = [],
   fn_ptr()    = [],
   cls_expr()  = { new_vars = set((fn_arg(i) : i < expr.arity));
