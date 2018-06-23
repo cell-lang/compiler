@@ -1,9 +1,9 @@
 type CompOptions = options(debug_mode: Bool, ignore_assertions: Bool);
 
 
-implicit program : Program, options : CompOptions {
+implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptions {
   CompiledPrg compiled_program {
-    memb_test_preds = [memb_test_pred(t, memb_test_preds_map, schema_and_typedefs) : t, unused_var <- memb_test_preds_map];
+    memb_test_preds = [memb_test_pred(t, memb_test_preds_map) : t, unused_var <- memb_test_preds_map];
     fndefs          = [gen_fn_code(fd) : fd <- program.fndefs];
     proc_defs       = [gen_proc_code(pd) : pd <- program.proc_defs];
     react_blocks    = [gen_auto_code(automaton=a) : a <- program.auto_defs];
@@ -34,7 +34,6 @@ implicit program : Program, options : CompOptions {
         procedure.body,
         [a.var -> a.type : a <~ procedure.args],
         var_gen,
-        typedefs          = program.typedefs,
         context           = procedure,
         var_subst_map     = [],
         cls_var_subst_map = [],
@@ -85,11 +84,7 @@ implicit program : Program, options : CompOptions {
     // args_info = (just(v) : v, unused_var <- func.args) & (nothing : i < |func.cls_args|);
     // body = (push_call_info(func.id, args_info)) & body & (pop_call_info, ret_val(fn_res_var));
 
-    args = ({
-        repr = opt_repr(t, typedefs=program.typedefs);
-        return low_level_arg(v, repr);
-      } : v, t <- func.args
-    );
+    args = (low_level_arg(v, opt_repr(t)) : v, t <- func.args);
     args_surrs = [v -> obj_expr(args(i)) : v, unused_var @ i <~ func.args];
 
     cls_args = (cls(v, arity(t)) : v, t <- func.cls_args);
@@ -98,13 +93,13 @@ implicit program : Program, options : CompOptions {
 
     env = [v -> t : v, t <~ func.args] & [v -> t : v, t <- func.impl_args];
 
-    let typedefs = program.typedefs, context = func, surrogates = args_surrs:
+    let context = func, surrogates = args_surrs:
       let var_subst_map = [], cls_var_subst_map = [], typed_vars = []:
         opt_code, ret_val_surr, unused_var = opt_eval_code(func.expr, env, blank_var_gen);
       ;
     ;
 
-    ret_val_repr = opt_repr(func.res_type, typedefs = program.typedefs);
+    ret_val_repr = opt_repr(func.res_type);
     ret_val_instr = ret_val(low_level_expr(ret_val_repr, ret_val_surr));
 
     return obj_proc_def(
@@ -162,9 +157,7 @@ implicit program : Program, options : CompOptions {
 
     disp_args = choose_disp_args(((t : unused_var, t <- nonempty(fn.args)) : fn <- rand_sort(fns)), program.typedefs);
 
-    let typedefs = program.typedefs: ## SETTING THIS ARGUMENT HERE MAY CAUSE PERFORMANCE PROBLEMS...
-      low_level_signs = [fn.id -> low_level_sign(fn) : fn <- fns];
-    ;
+    low_level_signs = [fn.id -> low_level_sign(fn) : fn <- fns];
     aggr_sign = aggr_sign([s : unused_var, s <- low_level_signs]);
 
     args = (low_level_arg(fn_arg(i), r) : r @ i <- aggr_sign.args);
@@ -234,7 +227,7 @@ implicit program : Program, options : CompOptions {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-implicit program : Program {
+implicit program : Program, typedefs : [TypeName -> NeType] {
   [NeType] runtime_checked_root_types =
     [low_level_repr_type(r) : unused_var, rs <- optimized_tagged_records, r <~ rs] &
     union([retrieve_types(fd.expr) : fd <- program.fndefs]) &

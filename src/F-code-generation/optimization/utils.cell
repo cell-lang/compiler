@@ -1,16 +1,49 @@
 implicit program : Program, typedefs : [TypeName -> NeType], context : Context, typed_vars : [StdVar -> NeType] {
   ClsType* inst_cls_types(FnFamilyId fn_id, Type* args_types, AnyClsExpr* cls_args, [EnvVar -> Type] env) {
+    return () if cls_args == ();
+
     unused_var_1, signature = restricted_signature(fn_id, args_types);
     type_vars_insts = instantiate_type_vars(args_types, signature.args, cls_args, signature.cls_args, env);
-    ## NOT AT ALL SURE WHETHER THIS IS TRUE AND WHAT TO DO IF IT ISN'T
-    assert type_vars_insts :: [TypeVar -> NeType];
-    fail if not type_vars_insts :: [TypeVar -> NeType];
+
+    // ## NOT AT ALL SURE WHETHER THIS IS TRUE AND WHAT TO DO IF IT ISN'T
+    // assert type_vars_insts :: [TypeVar -> NeType];
+    // fail if not type_vars_insts :: [TypeVar -> NeType];
+
+    // fn_type(
+    //   args: (
+    //     union_type([
+    //       empty_rel_type,
+    //       ne_set_type(elem_type: type_var(t)),
+    //       ne_bin_rel_type(signatures: [(type_var(a), type_var(b))]),
+    //       ne_tern_rel_type(signatures: [(type_var(a), type_var(b), type_var(c))])
+    //     ])
+    //   ),
+    //   constrs: [],
+    //   cls_args: (),
+    //   ret_type:
+    //     union_type([
+    //       empty_seq_type,
+    //       ne_seq_type(elem_type: type_var(t)),
+    //       ne_seq_type(elem_type: tuple_type(type_var(a), type_var(b))),
+    //       ne_seq_type(elem_type: tuple_type(type_var(a), type_var(b), type_var(c)))
+    //     ]),
+    //   impl_args: []
+    // )
+
+    ## HERE I'M NOT AT ALL SURE I'VE GOT THIS RIGHT. A MERGED SIGNATURE, LIKE THE
+    ## ABOVE ONE (THAT COMES FROM isort()) WILL CONTAIN REDUNDANT TYPE VARIABLES
+    ## THAT WILL BE INSTANTIATED TO THE EMPTY TYPE BUT THAT SHOULD NOT MATTER,
+    ## BECAUSE EVEN AFTER REMOVING ALL THE UNMATCHED TYPE VARIABLES THERE SHOULD
+    ## BE ENOUGH OF THE PARAMETRIC TYPE LEFT TO ACTUALLY AVOID BINDING THE TYPES
+    ## IN THE SIGNATURE TO AN EMPTY TYPE
+    type_vars_insts = [v -> t : v, t <- type_vars_insts, t != empty_type];
+
     return (replace_type_vars(t, type_vars_insts) : t <- signature.cls_args);
   }
 }
 
 
-implicit program : Program, typedefs : [TypeName -> NeType] {
+implicit program : Program, typedefs : [TypeName -> NeType], context : Context {
   (FnId, FnType) restricted_signature(FnFamilyId fn_id, Type* args_types) {
     signs = signatures_info_by_family_id(fn_id, !!);
     for id, s <- signs:
@@ -22,6 +55,15 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
       return (fn_id, s) if not (t @ i <~ args_types : not is_subset(t, replace_type_vars_with_type_any(s.args(i))));
     ;
 
+    if constraints(fn_id, *):
+      prot_sngs = constraints[fn_id];
+      for s <- isort(prot_sngs):
+        return (fn_id, cls_to_fn_type(s)) if not (t @ i <~ args_types : not is_subset(t, s.in_types(i)));
+      ;
+    ;
+
+    signatures_info_by_family_id_copy = signatures_info_by_family_id;
+    aggr_signs_by_fn_family_id_copy = aggr_signs_by_fn_family_id;
     assert false;
     fail;
 

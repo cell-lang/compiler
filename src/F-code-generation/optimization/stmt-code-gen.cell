@@ -130,7 +130,9 @@ implicit program           : Program,
 
     tear_down_code = reverse((set_var(v, backup_vars(i)) : v, unused_var @ i <- ord_asgnms));
 
-    body_env = env; ## BUG BUG BUG: THIS IS PROBABLY WRONG
+    env_delta = [a -> expr_type(e, env) : a, e <- asgnms];
+    body_env = update(env, env_delta);
+
     body_code, surrs, break_surrs, var_gen = stmts_opt_code(body, body_env, var_gen);
     assert break_surrs == []; ## SEE COMMENT AT THE BEGINNING OF THIS FUNCTION
 
@@ -189,6 +191,7 @@ implicit program           : Program,
     else
       assert repr == :object;
       types = tuple_field_supertypes(type, |vars|);
+      ## REMOVE WHEN DONE
       assert types == (restricted_seq_elem_supertype(type, singleton_type(i)) : i < |vars|);
       reprs = (opt_repr(t) : t <- types);
       phys_vars = (low_level_var(reprs(i), v) : v @ i <- vars);
@@ -315,7 +318,11 @@ implicit program           : Program,
 
     // Evaluation of input expression
     entry_code, seq_surr, var_gen = opt_eval_code(stmt.values, env, init_var_gen);
-    fail if not seq_surr :: <LocVar, StdVar>; ## MAYBE THIS COULD BE AVOIDED...
+    if not seq_surr :: <LocVar, StdVar>:
+      seq_var, var_gen = next_obj_var(var_gen);
+      entry_code = (entry_code | set_var(seq_var, seq_surr));
+      seq_surr = seq_var;
+    ;
 
     // Temporary buffer for source data
     src_array_var, var_gen = next_array_var(var_gen, elt_repr);
@@ -331,9 +338,9 @@ implicit program           : Program,
     else
       // Elements of source sequence need to be destructured
       assert elt_repr == :object;
-      vars_types = tuple_field_supertypes(seq_type, |vars|);
+      vars_types = tuple_field_supertypes(elt_type, |vars|);
       ## REMOVE WHEN DONE
-      assert vars_types == (restricted_seq_elem_supertype(seq_type, singleton_type(i)) : i < |vars|);
+      assert vars_types == (restricted_seq_elem_supertype(elt_type, singleton_type(i)) : i < |vars|);
       reprs = (opt_repr(t) : t <- vars_types);
       phys_vars = (low_level_var(reprs(i), v) : v @ i <- vars);
       local_surrs = [v -> obj_expr(pv) : v @ i <~ vars, pv = phys_vars(i), v != pv];

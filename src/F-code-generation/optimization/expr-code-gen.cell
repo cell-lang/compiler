@@ -400,9 +400,13 @@ implicit program           : Program,
           repr_type = low_level_repr_type(repr);
           if is_subset(obj_type, repr_type):
             // The tagged value has an optimized representation
-            assert not may_need_conv;
+            // assert not may_need_conv; ## SEE COMMENT BELOW
             return opt_rec_eval_info(tag, obj_expr, repr, repr_idx, init_var_gen);
           elif not are_ptype_disjoint(obj_type, repr_type):
+            ## THIS DOESN'T MAKE MUCH SENSE. obj_type AND repr_type ARE NEVER
+            ## GOING TO BE PTYPE DISJOINT, BECAUSE THEY ARE BOTH RECORDS
+            ## WE NEED A BETTER CHECK, FOR EXAMPLE WE COULD SEE IF
+            ## THEIR SET OF FIELDS ARE COMPATIBLE
             may_need_conv = true;
           ;
         ;
@@ -509,7 +513,11 @@ implicit program           : Program,
 
     // Evaluation of source expression
     eval_code, src_surr, var_gen = opt_eval_info(expr.src_expr, var_gen);
-    fail if not src_surr :: <LocVar, StdVar>; ## MAYBE THIS COULD BE AVOIDED...
+    if not src_surr :: <LocVar, StdVar>:
+      src_var, var_gen = next_obj_var(var_gen);
+      eval_code = (eval_code | set_var(src_var, src_surr));
+      src_surr = src_var;
+    ;
 
     // Temporary buffer for source data
     src_array_var, var_gen = next_array_var(var_gen, src_repr);
@@ -1193,7 +1201,12 @@ implicit program           : Program,
       float     = float_obj(int_to_float(get_int_val(args(0)))),
       symb      = to_symb(args(0)),
       tag       = get_tag(args(0)),
-      untag     = get_inner_obj(args(0));
+      untag     = get_inner_obj(args(0)),
+
+      rand_nat  = int_obj(rand_nat(args(0))),
+      rand_elem = rand_elem(args(0)),
+      counter   = int_obj(unique_nat),
+      ticks     = int_obj(ticks);
 
 
 
@@ -1353,9 +1366,6 @@ Instr+ store_result(Instr* code, ObjExpr surr_expr, AnyLocVar res_var) {
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
-
-type AnyLocVar = LocBoolVar, LocIntVar, LocFloatVar, LocOptTagRecVar, LocVar, StdVar;
-
 
 (AnyLocVar, VarGen) next_var(LowLevelRepr repr, VarGen gen) =
   bool    = next_bool_var(gen),

@@ -142,6 +142,7 @@ implicit program           : Program,
     // Types of elements of source and destination sequences
     src_elt_type = seq_elem_supertype(src_type);
     elt_type = subexpr_type(action.src_seq);
+    assert src_elt_type != empty_type and elt_type != empty_type;
     fail if src_elt_type == empty_type or elt_type == empty_type;
 
     // Low-level representation of elements of source and destination sequences
@@ -149,7 +150,11 @@ implicit program           : Program,
 
     // Evaluation of source expression
     eval_code, src_surr, var_gen = opt_eval_info(action.src_seq, init_var_gen);
-    fail if not src_surr :: <LocVar, StdVar>; ## MAYBE THIS COULD BE AVOIDED...
+    if not src_surr :: <LocVar, StdVar>:
+      src_var, var_gen = next_obj_var(var_gen);
+      eval_code = (eval_code | set_var(src_var, src_surr));
+      src_surr = src_var;
+    ;
 
     // Temporary buffer for source data
     src_array_var, var_gen = next_array_var(var_gen, src_repr);
@@ -162,9 +167,17 @@ implicit program           : Program,
     body = ();
 
     if |vars| == 1:
-      var = value_unsafe(only(vars)); ## CHECK IF THIS IS ALWAYS VERIFIED...
-      it_var = low_level_var(src_repr, var);
-      surrs = surrogates & [var -> obj_expr(it_var) if it_var != var];
+      var = only(vars); ## CHECK IF THIS IS ALWAYS VERIFIED...
+      if var != nothing:
+        var = value(var);
+        it_var = low_level_var(src_repr, var);
+        surrs = surrogates & [var -> obj_expr(it_var) if it_var != var];
+      else
+        ## THIS IS UNNECESSARY, BECAUSE THE VALUE IS NOT BEING USED,
+        ## BUT SINCE IT'S SUCH A MARGINAL USE CASE...
+        it_var, var_gen = next_obj_var(var_gen);
+        surrs = surrogates;
+      ;
 
     else
       assert src_repr == :object;

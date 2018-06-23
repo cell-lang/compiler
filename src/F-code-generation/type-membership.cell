@@ -1,12 +1,14 @@
-BoolProcDef memb_test_pred(NeType type, [NeType -> MembTestPredId] memb_test_preds, [TypeName -> NeType] typedefs) {
-  res_var, var_gen = next_bool_var(blank_var_gen);
-  exp_type = match (type)
-    type_ref(ts?) = expand_type_ref(ts, typedefs),
-    _             = type;
-  let typedefs = typedefs, memb_test_preds = memb_test_preds, next_var_gen = var_gen:
-    code = gen_type_checking_code(exp_type, fn_arg(0), res_var);
-  ;
-  return bool_proc_def(memb_test_preds[type], 1, nonempty(code & (ret_val(res_var))));
+implicit typedefs : [TypeName -> NeType] {
+  BoolProcDef memb_test_pred(NeType type, [NeType -> MembTestPredId] memb_test_preds) {
+    res_var, var_gen = next_bool_var(blank_var_gen);
+    exp_type = match (type)
+      type_ref(ts?) = expand_type_ref(ts, typedefs),
+      _             = type;
+    let memb_test_preds = memb_test_preds, next_var_gen = var_gen:
+      code = gen_type_checking_code(exp_type, fn_arg(0), res_var);
+    ;
+    return bool_proc_def(memb_test_preds[type], 1, nonempty(code & (ret_val(res_var))));
+  }
 }
 
 
