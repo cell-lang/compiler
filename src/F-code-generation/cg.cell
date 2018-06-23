@@ -145,8 +145,6 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
     assert |[|fn.args| : fn <- fns]| == 1; // All functions have the same arity
     assert |an_elem(fns).args| > 0;
 
-    l0 = lvar(0);
-
     count = |fns|;
 
     rand_fn         = an_elem(fns);
@@ -198,7 +196,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
 
     if cases != ():
       switch_code = gen_switch_code((fn_arg(i) : i <- disp_args), cases, next_var_gen = blank_var_gen);
-      code = (switch_code | ret_val(lvar(0)));
+      code = (switch_code | ret_val(aggr_ret_var));
     else
       code = (terminate);
     ;
@@ -285,7 +283,7 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-ObjProcArg low_level_arg(<StdVar, FnArg> var, <LowLevelRepr, OptTagRecRepr> repr) {
+ObjProcArg low_level_arg(<StdVar, FnArg> var, AnyLowLevelRepr repr) {
   id = untag(var);
   return match (repr)
     bool                = bool_arg(id),

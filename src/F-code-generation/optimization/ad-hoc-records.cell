@@ -11,9 +11,19 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
     return [s -> isort(rs) : s, ts <- recs_by_tag, rs = optimized_reprs(ts), rs != []];
   }
 
+
   [Symbol -> NeType+] optimized_tagged_records_types = [
     s -> (low_level_repr_type(r) : r <- rs) : s, rs <- optimized_tagged_records
   ];
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  NeType any_low_level_repr_type(LowLevelRepr repr) = low_level_repr_type(repr);
+
+  TagObjType any_low_level_repr_type(OptTagRecRepr repr) {
+    rec_type = optimized_tagged_records_types(repr.tag, !!)(repr.index);
+    return tag_obj_type(symb_type(repr.tag), rec_type);
+  }
 }
 
 

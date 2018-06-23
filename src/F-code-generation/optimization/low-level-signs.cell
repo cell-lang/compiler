@@ -56,12 +56,12 @@ Bool overlap(LowLevelRepr r1, LowLevelRepr r2) {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-LowLevelRepr aggr_repr(LowLevelRepr repr1, LowLevelRepr repr2) =
+AnyLowLevelRepr aggr_repr(AnyLowLevelRepr repr1, AnyLowLevelRepr repr2) =
   bool,   symbol  = :symbol,
   symbol, bool    = :symbol,
   _,      _       = if repr1 == repr2 then repr1 else :object;
 
-LowLevelRepr aggr_repr([+LowLevelRepr] reprs) = reduce(reprs, aggr_repr);
+AnyLowLevelRepr aggr_repr([+AnyLowLevelRepr] reprs) = reduce(reprs, aggr_repr);
 
 
 LowLevelSign aggr_sign([+LowLevelSign] signs) {
@@ -120,18 +120,11 @@ implicit typedefs : [TypeName -> NeType] {
     ;
     return :object;
   }
-
-
-  LowLevelSign low_level_sign(Function fn) =
-    low_level_sign(
-      args:       (low_level_repr(t) : unused_var, t <- fn.args),
-      ret_value:  low_level_repr(fn.res_type)
-    );
 }
 
 
 implicit program : Program, typedefs : [TypeName -> NeType] {
-  <LowLevelRepr, OptTagRecRepr> opt_repr(NeType type) {
+  AnyLowLevelRepr opt_repr(NeType type) {
     for r <- atomic_low_level_reprs:
       return r if is_subset(type, low_level_repr_type(r));
     ;
@@ -157,9 +150,16 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
 ////////////////////////////////////////////////////////////////////////////////
 
 implicit program : Program, typedefs : [TypeName -> NeType] {
+  LowLevelSign low_level_sign(Function fn) =
+    low_level_sign(
+      args:       (opt_repr(t) : unused_var, t <- fn.args),
+      ret_value:  opt_repr(fn.res_type)
+    );
+
+
   (FnId, LowLevelSign) low_level_sign(FnFamilyId fn_id, Type* args_types) {
     for id, s <- signatures_info_by_family_id(fn_id, !!):
-      return (id, s) if not (t @ i <~ args_types : not is_subset(t, low_level_repr_type(s.args(i))));
+      return (id, s) if not (t @ i <~ args_types : not is_subset(t, any_low_level_repr_type(s.args(i))));
     ;
     return (fn_id, aggr_sign_by_fn_family_id(fn_id, !!));
 
