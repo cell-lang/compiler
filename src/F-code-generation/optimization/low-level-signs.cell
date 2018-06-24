@@ -158,24 +158,24 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
 
 
   (FnId, LowLevelSign) low_level_sign(FnFamilyId fn_id, Type* args_types) {
-    for id, s <- signatures_info_by_family_id(fn_id, !!):
-      return (id, s) if not (t @ i <~ args_types : not is_subset(t, any_low_level_repr_type(s.args(i))));
+    for id, s, ts <- signatures_info_by_family_id(fn_id, !!):
+      return (id, s) if not (t @ i <~ args_types : not is_subset(t, ts(i)));
     ;
     return (fn_id, aggr_sign_by_fn_family_id(fn_id, !!));
 
 
     [FnFamilyId -> LowLevelSign] aggr_sign_by_fn_family_id =
-      [id -> aggr_sign([s : unused_var, s <~ info]) : id, info <- signatures_info_by_family_id];
+      [id -> aggr_sign([s : unused_var_1, s, unused_var_2 <~ info]) : id, info <- signatures_info_by_family_id];
 
 
-    [FnFamilyId -> (FnId, LowLevelSign)+] signatures_info_by_family_id {
+    [FnFamilyId -> (FnId, LowLevelSign, NeType*)+] signatures_info_by_family_id {
       family_ids = [id : id, unused_var <- signature_info];
       return [id -> nonempty(isort([info : info <- signature_info(id, ?)])) : id <- family_ids];
     }
 
 
-    [FnFamilyId, (FnId, LowLevelSign)] signature_info =
-      [family_id(fn.id), (fn.id, low_level_sign(fn)) : fn <- program.fndefs];
+    [FnFamilyId, (FnId, LowLevelSign, NeType*)] signature_info =
+      [family_id(fn.id), (fn.id, low_level_sign(fn), (t : unused_var, t <- fn.args)) : fn <- program.fndefs];
   }
 }
 
