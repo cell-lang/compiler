@@ -319,10 +319,22 @@ Bool is_param_type(FnType type) = (t <~ type.args : is_param_type(t)) or is_para
 ////////////////////////////////////////////////////////////////////////////////
 
 [StdVar] pattern_vars(Pattern ptrn) =
+  ptrn_symbol       |
+  ptrn_float        |
+  ptrn_empty_seq    |
+  ptrn_empty_rel    |
+  ptrn_ne_seq       |
+  ptrn_ne_set       |
+  ptrn_ne_map       |
+  ptrn_ne_bin_rel   |
+  ptrn_ne_tern_rel  |
+  ptrn_any          |
+  ptrn_symbol()     |
+  ptrn_integer()    = [],
+  ptrn_tuple(ps?)   = union([pattern_vars(p) : p <~ ps]),
   ptrn_tag_obj()    = pattern_vars(ptrn.tag) & pattern_vars(ptrn.obj),
   ptrn_var()        = [ptrn.var] & pattern_vars(ptrn.ptrn),
-  ptrn_union(ps?)   = union([pattern_vars(p) : p <- ps]), ## SINCE PATTERNS IN A UNION ARE SUPPOSED TO DEFINE THE SAME SET OF VARIABLES, IT SHOULD BE FINE TO JUST PICK ONE ELEMENT OF THE UNION AND RETURN ITS VARIABLES
-  _                 = [];
+  ptrn_union(ps?)   = only([pattern_vars(p) : p <- ps]);
 
 
 ## BUG BUG BUG: THIS IS INCOMPLETE, A PATTERN UNION COULD BE A PATTERN "ANY" TOO
@@ -343,12 +355,8 @@ Bool is_pattern_any(Pattern ptrn) =
 ## DECIDE EXACTLY WHAT VARIABLES ARE INCLUDED, AND WHAT ONES ARE NOT. AND REVISIT ALL USAGES OF THESE
 ## FUNCTIONS.
 
-[StdVar] new_vars(Pattern ptrn) =
-  ptrn_var()      = new_vars(ptrn.ptrn) & [ptrn.var],
-  ptrn_tuple(ps?) = seq_union((new_vars(p) : p <- ps)),
-  ptrn_tag_obj()  = new_vars(ptrn.tag) & new_vars(ptrn.obj),
-  ptrn_union(ps?) = intersection([new_vars(p) : p <- ps]),
-  _               = [];
+[StdVar] new_vars(Pattern ptrn) = pattern_vars(ptrn);
+
 
 [StdVar] new_vars(Clause cls) =
   set_clause()      = [cls.var],

@@ -53,7 +53,12 @@ implicit typedefs : [TypeName -> NeType], vars_reprs : [StdVar -> AnyLocVar] {
       conds = (conds | are_eq(get_tag(expr), tag)) if needs_tag_check;
     ;
 
-    code = opt_ptrn_match_code(obj_ptrn, get_inner_obj(expr), obj_type, eval_code);
+    code = match (tag_ptrn)
+      ptrn_symbol   |
+      ptrn_symbol() = (),
+      ptrn_var()    = (set_var(tag_ptrn.var, get_tag(expr)));
+
+    code = code & opt_ptrn_match_code(obj_ptrn, get_inner_obj(expr), obj_type, eval_code);
     code = opt_do_if(and_then(conds), code) if conds != ();
 
     return code;
@@ -61,8 +66,10 @@ implicit typedefs : [TypeName -> NeType], vars_reprs : [StdVar -> AnyLocVar] {
 
 
   Instr* opt_ptrn_union_match_code([+Pattern] ptrns, ObjExpr expr, Type type, Instr* eval_code) {
-    fallthrough_type = fold(type, ptrns, type_minus_pattern);
-    return (eval_code | terminate(true)) if fallthrough_type == empty_type;
+    if only([pattern_vars(p) : p <- ptrns]) == []:
+      fallthrough_type = fold(type, ptrns, type_minus_pattern);
+      return (eval_code | terminate(true)) if fallthrough_type == empty_type;
+    ;
 
     ord_ptrns = isort(ptrns);
     maybe_conds = (ptrn_maybe_expr(p, expr, type) : p <- ord_ptrns);
@@ -171,7 +178,7 @@ implicit typedefs : [TypeName -> NeType] {
     code_by_types = group_by_right_arg(code_by_type);
     ord_code_by_types = sort_bin_rel(code_by_types, |$a| > |$c|);
 
-    if is_complete:
+    if is_complete and |ord_code_by_types| > 1:
       types, code = ord_code_by_types(0);
       ord_code_by_types = drop(ord_code_by_types, 1);
       code = opt_execute_block(code);
@@ -182,13 +189,14 @@ implicit typedefs : [TypeName -> NeType] {
       ;
 
     else
-      code = (terminate);
+      code = (terminate(is_complete));
     ;
 
     for ts, c <- ord_code_by_types:
       branch_code = opt_execute_block(c);
       code = (branch(or([membership_check_expr(t, expr) : t <- ts]), branch_code, code));
     ;
+
     return code;
 
 
@@ -200,10 +208,12 @@ implicit typedefs : [TypeName -> NeType] {
 
     Instr* opt_code(PtrnMatchType ptrn_match_type, ObjExpr expr, Type type, (Pattern, Instr+, [StdVar -> AnyLocVar])+ cases) {
       restricted_type = intersection_superset(type, ptrn_match_type);
-      return match (ptrn_match_type)
+      code = match (ptrn_match_type)
         symbols   = symb_ptrns_opt_code(expr, restricted_type, cases),
         tag_objs  = tag_objs_ptrns_opt_code(expr, restricted_type, cases),
         _         = default_opt_code(ptrn_match_type, expr, restricted_type, cases);
+      is_complete = not may_fall_through(type, (p : p, unused_var_1, unused_var_2 <- cases));
+      return (code | terminate(is_complete));
     }
 
 
