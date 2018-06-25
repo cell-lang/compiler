@@ -8,7 +8,7 @@ type SynType        = SynLeafType, SynTypeRef, SynTypeVar, SynNeSeqType, SynNeSe
                       SynNeMapType, SynRecordType, SynNeBinRelType, SynNeTernRelType,
                       SynTupleType, SynTagObjType, SynUnionType;
 
-type SynTypeVar     = type_var(Atom);
+type SynTypeVar     = type_var(Symbol);
 
 type SynLeafType    = LeafType, syn_int_range(min: Int, max: Int);
 type SynTypeRef     = type_ref(SynTypeSymbol);
@@ -57,7 +57,7 @@ type SynExpr  = undefined, LeafObj, FloatLit, FnArg, ConstOrVar, ClsPar, PrevVar
                 SynDoExpr, SynLetExpr,
                 OutputIsDefExpr, OutputIsSetExpr;
 
-type ConstOrVar       = const_or_var(Atom);
+type ConstOrVar       = const_or_var(Symbol);
 
 type ClsPar           = cls_par(Nat);
 
@@ -69,7 +69,7 @@ type SynTernRelExpr   = tern_rel_expr(SynTernRelEntry+);
 
 type SynTagObjExpr    = tag_obj_expr(tag: SynExpr, obj: SynExpr);
 
-type SynImplArgsCall  = impl_args_call(name: Atom, args: SynExpr*, impl_args: (ImplArg, SynExpr)+);
+type SynImplArgsCall  = impl_args_call(name: Symbol, args: SynExpr*, impl_args: (ImplArg, SynExpr)+);
 type SynUnaryOpCall   = unary_op_call(op: UnaryOperator, expr: SynExpr);
 type SynBinaryOpCall  = binary_op_call(op: BinaryOperator, left_arg: SynExpr, right_arg: SynExpr);
 type SynBuiltInCall   = builtin_call(name: BuiltIn, args: SynExpr+);
@@ -79,7 +79,7 @@ type SynSizeExpr      = size_expr(coll: SynExpr);
 type SynCallLookalike = call_lookalike(target: SynExpr, args: SynExpr+);
 
 type SynRelMembTest   = rel_memb_test(target: SynExpr, args: Maybe[SynExpr]+);
-type SynRelLookup     = rel_lookup(target: Atom+, args: Maybe[SynExpr]+);
+type SynRelLookup     = rel_lookup(target: Symbol+, args: Maybe[SynExpr]+);
 
 type SynBoolExpr      = and(left: SynExpr, right: SynExpr),
                         or(left: SynExpr, right: SynExpr),
@@ -91,8 +91,8 @@ type SynCmpExpr       = eq(left: SynExpr, right: SynExpr),
 type SynMembExpr      = membership(obj: SynExpr, type: SynType);
 type SynCastExpr      = cast_expr(expr: SynExpr, type: SynType);
 
-type SynAccExpr       = accessor(expr: SynExpr, field: Atom);
-type SynAccTestExpr   = accessor_test(expr: SynExpr, field: Atom);
+type SynAccExpr       = accessor(expr: SynExpr, field: Symbol);
+type SynAccTestExpr   = accessor_test(expr: SynExpr, field: Symbol);
 
 type SynExQualExpr    = ex_qual(source: SynClause+, cond: SynExpr);
 
@@ -106,7 +106,7 @@ type SynRCExpr        = range_comp(expr: SynExpr, var: StdVar, bound_expr: SynEx
 type SynIfExpr        = if_expr(branches: (cond: SynExpr, expr: SynExpr)+, else: SynExpr);
 type SynTryExpr       = match_expr(exprs: SynExpr+, cases: SynCase+);
 
-type SynDoExpr        = do_expr(body: SynStmt+, typed_vars: (Atom, SynType)*);
+type SynDoExpr        = do_expr(body: SynStmt+, typed_vars: (Symbol, SynType)*);
 
 type SynLetExpr       = let_expr(expr: SynExpr, stmts: SynAsgnStmt+);
 
@@ -139,14 +139,14 @@ type SynPtrn    = ptrn_symbol,
                   ptrn_union(SynPtrn+);
 
 type SynClause  = iter_clause(vars: StdVar+, src: <SynExpr, SynProj>),
-                  seq_clause(vars: Maybe[Atom]+, idx_var: Maybe[Atom], src: SynExpr),
+                  seq_clause(vars: Maybe[Symbol]+, idx_var: Maybe[Symbol], src: SynExpr),
                   and_clause(SynClause+),
                   or_clause(SynClause+),
                   match_clause(ptrn: SynPtrn, expr: SynExpr),
                   asgnm_clause(var: StdVar, expr: SynExpr),
                   filter_clause(cond: SynExpr);
 
-type SynProj    = syn_proj(target: Atom+, args: Maybe[SynExpr]+);
+type SynProj    = syn_proj(target: Symbol+, args: Maybe[SynExpr]+);
 
 type SynCase    = case(patterns: SynPtrn+, expr: SynExpr);
 
@@ -166,24 +166,24 @@ type SynAssertStmt    = assert_stmt(cond: SynExpr, file: String, line: NzNat, te
 type SynPrintStmt     = print_stmt(SynExpr);
 type SynSeqUpdateStmt = seq_update_stmt(obj: StdVar, idx: SynExpr, value: SynExpr);
 
-type SynAtomicUpdateStmt  = send_msg_stmt(var: Atom, msg: SynExpr),
-                            try_update_stmt(name: Atom, args: SynExpr*),
-                            set_memb_var_stmt(var: Atom, value: SynExpr),
-                            delete_stmt(entries: (var: Atom, args: Maybe[SynExpr]+)+),
-                            insert_stmt(entries: (var: Atom, args: SynExpr+)+, force: Bool);
+type SynAtomicUpdateStmt  = send_msg_stmt(var: Symbol, msg: SynExpr),
+                            try_update_stmt(name: Symbol, args: SynExpr*),
+                            set_memb_var_stmt(var: Symbol, value: SynExpr),
+                            delete_stmt(entries: (var: Symbol, args: Maybe[SynExpr]+)+),
+                            insert_stmt(entries: (var: Symbol, args: SynExpr+)+, force: Bool);
 
 type SynAtomicProcStmt  = SynNoValRetStmt, SynProcCallStmt;
 
 type SynNoValRetStmt  = return_stmt;
 type SynProcCallStmt  = proc_call_stmt(res_var: StdVar?, proc_name: ProcSymbol, args: SynExpr*);
 
-type SynCtrlStmt  = set_input_ctrl_stmt(var: Atom, input: Atom, value: SynExpr),
-                    clear_input_ctrl_stmt(var: Atom, input: Atom),
-                    set_elapsed_time_ctrl_stmt(var: Atom, time: SynExpr),
-                    apply_ctrl_stmt(auto_var: Atom, res_var: Atom),
-                    send_msg_ctrl_stmt(res_var: Atom, db_var: Atom, msg: SynExpr),
-                    read_state_ctrl_stmt(res_var: Atom, db_var: Atom),
-                    restore_state_ctrl_stmt(res_var: Atom, db_var: Atom, state: SynExpr);
+type SynCtrlStmt  = set_input_ctrl_stmt(var: Symbol, input: Symbol, value: SynExpr),
+                    clear_input_ctrl_stmt(var: Symbol, input: Symbol),
+                    set_elapsed_time_ctrl_stmt(var: Symbol, time: SynExpr),
+                    apply_ctrl_stmt(auto_var: Symbol, res_var: Symbol),
+                    send_msg_ctrl_stmt(res_var: Symbol, db_var: Symbol, msg: SynExpr),
+                    read_state_ctrl_stmt(res_var: Symbol, db_var: Symbol),
+                    restore_state_ctrl_stmt(res_var: Symbol, db_var: Symbol, state: SynExpr);
 
 
 type SynCompStmt[T] = SynIfStmt[T], SynLoopStmt[T], SynInfLoopStmt[T], SynForStmt[T], SynLetStmt[T];
@@ -209,18 +209,18 @@ type SynFnDef       = syn_fn_def(
                         res_type:   SynType,
                         expr:       SynExpr,
                         local_fns:  SynFnDef*,
-                        typevars:   [[+TypeVar -> Atom]]
+                        typevars:   [[+TypeVar -> Symbol]]
                       );
 
-type SynObjArg  = obj_arg(type: SynType, name: Atom?);
-type SynClsArg  = cls_arg(type: SynClsType, name: Atom);
+type SynObjArg  = obj_arg(type: SynType, name: Symbol?);
+type SynClsArg  = cls_arg(type: SynClsType, name: Symbol);
 type SynArg     = SynObjArg, SynClsArg;
 
 type SynProcDef   = syn_proc_def(
                       name:             ProcSymbol,
                       args:             (var: StdVar, type: SynType)*,
                       res_type:         Maybe[SynType],
-                      auto_or_db_vars:  (var: Atom, args: Atom*, type: Atom)*,
+                      auto_or_db_vars:  (var: Symbol, args: Symbol*, type: Symbol)*,
                       body:             SynStmt*
                     );
 
@@ -228,72 +228,72 @@ type ImplArgDecl  = impl_arg_decl(name: ImplArg, type: SynType);
 
 type ImplBlock    = impl_block(args: ImplArgDecl+, fn_defs: SynFnDef+);
 
-type ProtDecl     = prot_decl(types: Atom+, methods: (FnSymbol, SynType+, SynType)+);
+type ProtDecl     = prot_decl(types: Symbol+, methods: (FnSymbol, SynType+, SynType)+);
 
-type TypeVarDecl  = typevar_decl(type_vars: Atom+, prot_types: Atom++);
+type TypeVarDecl  = typevar_decl(type_vars: Symbol+, prot_types: Symbol++);
 
 ////////////////////////////////////////////////////////////////////////////////
 
-type InputDecl      = input_decl(name: Atom, type: SynType, discrete: Bool);
-type OutputDecl     = output_decl(name: Atom, type: SynType, discrete: Bool);
-type StateVarDecl   = state_var_decl(name: Atom, type: SynType, init_value: SynExpr);
-type ConstDecl      = const_decl(name: Atom, type: SynType?, value: SynExpr);
+type InputDecl      = input_decl(name: Symbol, type: SynType, discrete: Bool);
+type OutputDecl     = output_decl(name: Symbol, type: SynType, discrete: Bool);
+type StateVarDecl   = state_var_decl(name: Symbol, type: SynType, init_value: SynExpr);
+type ConstDecl      = const_decl(name: Symbol, type: SynType?, value: SynExpr);
 
-type PlainRuleDecl   = plain_rule_decl(name: Atom, expr: SynExpr, discrete: Bool);
-type WhenRuleDecl    = when_rule_decl(name: Atom, expr: SynExpr, cond: SynExpr, discrete: Bool);
-type CondRuleDecl    = cond_rule_decl(name: Atom, expr: SynExpr, cond: SynExpr, discrete: Bool);
-type ForeachRuleDecl = foreach_rule_decl(name: Atom, value: SynExpr, signals: (Atom, Bool)+, cond: SynExpr?, discrete: Bool);
+type PlainRuleDecl   = plain_rule_decl(name: Symbol, expr: SynExpr, discrete: Bool);
+type WhenRuleDecl    = when_rule_decl(name: Symbol, expr: SynExpr, cond: SynExpr, discrete: Bool);
+type CondRuleDecl    = cond_rule_decl(name: Symbol, expr: SynExpr, cond: SynExpr, discrete: Bool);
+type ForeachRuleDecl = foreach_rule_decl(name: Symbol, value: SynExpr, signals: (Symbol, Bool)+, cond: SynExpr?, discrete: Bool);
 
-type TimeRuleDecl = true_for_rule_decl(name: Atom, cond: SynExpr, time_expr: TimeExpr),
-                    unchanged_for_rule_decl(name: Atom, cond: SynExpr, time_expr: TimeExpr),
+type TimeRuleDecl = true_for_rule_decl(name: Symbol, cond: SynExpr, time_expr: TimeExpr),
+                    unchanged_for_rule_decl(name: Symbol, cond: SynExpr, time_expr: TimeExpr),
                     inactive_for_rule_decl(
-                      name:             Atom,
-                      signals:          Atom+,
+                      name:             Symbol,
+                      signals:          Symbol+,
                       time_expr:        TimeExpr,
                       starts_at_time_0: Bool
                     );
 
-type NestedAutoDecl = nested_auto_decl(name: Atom, auto_name: Atom, pos_args: SynExpr*, args: (Atom, SynExpr)*);
+type NestedAutoDecl = nested_auto_decl(name: Symbol, auto_name: Symbol, pos_args: SynExpr*, args: (Symbol, SynExpr)*);
 
 type MsgSendDecl    = msg_send_decl(
-                        target:   Atom,
+                        target:   Symbol,
                         message:  SynExpr,
                         cond:     Maybe[SynExpr],
-                        signals:  Atom*
+                        signals:  Symbol*
                       );
 
 type RuleDecl       = PlainRuleDecl, WhenRuleDecl, CondRuleDecl, ForeachRuleDecl, TimeRuleDecl, NestedAutoDecl, MsgSendDecl;
 
 type AutoMethodDef  = auto_method_def(
-                        target:     Atom,
-                        name:       Atom,
+                        target:     Symbol,
+                        name:       Symbol,
                         args:       (SynType, StdVar)*,
                         ret_type:   SynType,
                         expr:       SynExpr
                       );
 
 type DBMethodDef    = db_method_def(
-                        name:     Atom,
-                        args:     (SynType, Atom)*,
+                        name:     Symbol,
+                        args:     (SynType, Symbol)*,
                         ret_type: SynType,
                         expr:     SynExpr
                       );
 
-type UsingBlock     = using_block(target: Atom, decls: <DBMethodDef, UpdateDef>*);
+type UsingBlock     = using_block(target: Symbol, decls: <DBMethodDef, UpdateDef>*);
 
 type UpdateDef      = update_def(
-                        name:   Atom,
+                        name:   Symbol,
                         args:   (SynType, StdVar)*,
                         body:   SynStmt*
                       );
 
-type HandlerDef     = handler_def(target: Atom, type: SynType, body: SynStmt*);
+type HandlerDef     = handler_def(target: Symbol, type: SynType, body: SynStmt*);
 
 type ReactAutoDef   = react_auto_def(
-                        name:       Atom,
-                        pos_inputs: Atom*,
-                        def_output: Atom?,
-                        parent:     Atom?,
+                        name:       Symbol,
+                        pos_inputs: Symbol*,
+                        def_output: Symbol?,
+                        parent:     Symbol?,
                         inputs:     InputDecl*,
                         outputs:    OutputDecl*,
                         state_vars: StateVarDecl*,
@@ -303,22 +303,22 @@ type ReactAutoDef   = react_auto_def(
                       );
 
 type RelVarsDecl    = relvars_decl(
-                        name:       Atom,
+                        name:       Symbol,
                         col_types:  SynType+,
                         keys:       Nat+*,
                         attributes: AttrRelVar*
                       );
 
-type AttrRelVar     = attr_relvar(name: Atom, type: SynType, cardinality: AttrCard);
+type AttrRelVar     = attr_relvar(name: Symbol, type: SynType, cardinality: AttrCard);
 type AttrCard       = attr_card(required: Bool, multiple: Bool);
 
-type NestedDBDecl   = nested_db_decl(name: Atom, type: Atom);
+type NestedDBDecl   = nested_db_decl(name: Symbol, type: Symbol);
 
 type SchemaItemDecl = StateVarDecl, RelVarsDecl, NestedDBDecl;
 
 type SchemaDef      = schema_def(
-                        name:   Atom,
-                        links:  Atom*,
+                        name:   Symbol,
+                        links:  Symbol*,
                         decls:  SchemaItemDecl*
                       );
 

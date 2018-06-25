@@ -18,8 +18,8 @@ type ElemVar          = evar(id: Nat, idx: <Nat, IntVar, add(val1: IntVar, val2:
 
 type CaptVar          = capt_var(Nat);
 
-type PendingStateVar  = pending_state_var(Atom);
-type PendingInputVar  = pending_input_var(Atom);
+type PendingStateVar  = pending_state_var(Symbol);
+type PendingInputVar  = pending_input_var(Symbol);
 
 type ReadOnlyObjVar = FnArg, CaptVar;
 type WriteObjVar    = RWObjVar, ElemVar;
@@ -42,16 +42,16 @@ type VecVar         = vvar(id: Nat, size: NzNat);
 type MembBoolVar    = nested_db_spent(NestedDBVar),
                       cond_value_var(Nat),
                       cond_is_def_var(Nat),
-                      watched_signal_up_to_date_var(Atom),
+                      watched_signal_up_to_date_var(Symbol),
                       up_to_date_var(BlockNodeId),
                       is_new;
 
-type MembIntVar     = update_source_var(Atom),
-                      null_locks_count_var(Atom),
+type MembIntVar     = update_source_var(Symbol),
+                      null_locks_count_var(Symbol),
                       update_count_var(Nat),
                       nodes_to_update_var(level: Nat, index: <Nat, IntVar>),
-                      next_trigger_time_var(Atom),
-                      curr_time_slot_var(Atom),
+                      next_trigger_time_var(Symbol),
+                      curr_time_slot_var(Symbol),
                       time_triggers_count_var,
                       trigger_times_heap_var(<0..0>),
                       time_varying_cond_ids_heap_var(<0..0>),
@@ -60,9 +60,9 @@ type MembIntVar     = update_source_var(Atom),
                       changed_outputs_count,
                       nested_auto_int_var(auto_var: NestedAutoVar, memb_var: MembIntVar);
 
-type MembObjVar     = watched_signal_value_var(Atom);
+type MembObjVar     = watched_signal_value_var(Symbol);
 
-type IntConst       = time_slot_length(automaton: AutoSymbol, expr_id: Atom, time_slot: IntExpr);
+type IntConst       = time_slot_length(automaton: AutoSymbol, expr_id: Symbol, time_slot: IntExpr);
 
 type MembIntVectVar = nodes_to_update_vect_var(level: Nat, size: NzNat), ## BAD: <size> SHOULD BE OF TYPE <3..*>
                       changed_outputs(size: NzNat);
@@ -120,7 +120,7 @@ type AnyLocVar      = LocBoolVar, LocIntVar, LocFloatVar, LocOptTagRecVar, LocVa
 
 ////////////////////////////////////////////////////////////////////////////////
 
-type MembTestPredId = memb_test(<Atom, Nat, (Atom, <Atom, Nat>)>);
+type MembTestPredId = memb_test(<Symbol, Nat, (Symbol, <Symbol, Nat>)>);
 
 type ConvFnId       = any_tag_rec_conv, tag_rec_conv(Symbol), tag_rec_repr_conv(Symbol, Nat);
 
@@ -328,8 +328,8 @@ type BasicInstr     = init_stream(StreamVar),
                       auto_pre_init(var: AnyAutoVar, type: AutoSymbol),
                       auto_cleanup(var: AnyAutoVar, type: AutoSymbol),
 
-                      set_input(var: AnyAutoVar, type: AutoSymbol, input: Atom, value: AtomicExpr),
-                      clear_input(var: AnyAutoVar?, type: AutoSymbol, input: Atom),
+                      set_input(var: AnyAutoVar, type: AutoSymbol, input: Symbol, value: AtomicExpr),
+                      clear_input(var: AnyAutoVar?, type: AutoSymbol, input: Symbol),
 
                       auto_init(var: AnyAutoVar?, type: AutoSymbol),
                       // auto_update(var: AnyAutoVar?, type: AutoSymbol),
@@ -433,12 +433,12 @@ type BoolProcDef    = bool_proc_def(
 
 type ProcDef        = ObjProcDef, BoolProcDef;
 
-type ConstBlockData = time_slots_len(expr_id: Atom, lengths: Nat+);
+type ConstBlockData = time_slots_len(expr_id: Symbol, lengths: Nat+);
 
-type StdBlockNodeId         = std_block_node_id(Atom);
+type StdBlockNodeId         = std_block_node_id(Symbol);
 type CondNodeId             = cond_node_id(Nat);
-type NestedAutoNodeId       = nested_auto_node_id(Atom);
-type NestedAutoInputNodeId  = nested_auto_input_id(auto: Atom, input: Atom);
+type NestedAutoNodeId       = nested_auto_node_id(Symbol);
+type NestedAutoInputNodeId  = nested_auto_input_id(auto: Symbol, input: Symbol);
 
 type BlockNodeId    = StdBlockNodeId, CondNodeId, NestedAutoNodeId, NestedAutoInputNodeId;
 
@@ -461,11 +461,11 @@ type CompiledMethod = compiled_method(
 
 type ReactBlock = react_block(
                     name:                 AutoSymbol,
-                    ord_inputs:           Atom*,
-                    ord_outputs:          Atom*,
-                    input_memb_preds:     [Atom -> MembTestPredId],
-                    inputs:               [Atom -> (type: NeType, discrete: Bool)],
-                    outputs:              [Atom -> (type: NeType, discrete: Bool)],
+                    ord_inputs:           Symbol*,
+                    ord_outputs:          Symbol*,
+                    input_memb_preds:     [Symbol -> MembTestPredId],
+                    inputs:               [Symbol -> (type: NeType, discrete: Bool)],
+                    outputs:              [Symbol -> (type: NeType, discrete: Bool)],
                     memb_vars:            [<SignalVar, MembObjVar, PendingInputVar, MembIntVar, MembIntVectVar, MembBoolVar>],
                     nested_auto_vars:     [NestedAutoVar -> AutoSymbol],
                     nested_static_blocks: [NestedDBVar -> DBSymbol],

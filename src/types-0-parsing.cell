@@ -41,17 +41,17 @@ type AmberSymb  = left(ParType),
                   double_greater;
 
 type PlainToken = AmberSymb,
-                  lowercase_id(Atom),
-                  mixedcase_id(Atom),
-                  uppercase_id(Atom),
-                  qualified_symbol(Atom),
+                  lowercase_id(Symbol),
+                  mixedcase_id(Symbol),
+                  uppercase_id(Symbol),
+                  qualified_symbol(Symbol),
                   Int,
                   FloatLit,
                   String,
                   operator(Operator),
                   builtin(BuiltIn),
                   qual_var(Nat),
-                  pref_lowercase_id(Atom),
+                  pref_lowercase_id(Symbol),
                   nanoseconds(NzNat);
 
 type AnnotatedToken = annotated_token(token: PlainToken, line: NzNat, col: NzNat, length: NzNat, index: Nat);
@@ -72,7 +72,7 @@ type TokenMatchingRule  = AmberSymb,
                           qual_var,
                           pref_lowercase_id,
                           time_span,
-                          keyword(Atom);
+                          keyword(Symbol);
 
 type ParsingRule  = empty_rule,
                     atomic_rule(TokenMatchingRule),
@@ -81,12 +81,12 @@ type ParsingRule  = empty_rule,
                     rep_rule(rule: ParsingRule, min_count: Nat, separator: ParsingRule, save_sep: Bool),
                     rule_choice(RuleAltern+),
                     rule_neg(ParsingRule),
-                    rule_ref(Atom); ## MAKE IT MORE SPECIFIC
+                    rule_ref(Symbol); ## MAKE IT MORE SPECIFIC
 
-type RuleAltern   = (name: Atom?, rule: ParsingRule); ## I DON'T REALLY LIKE EITHER WAY TO DEFINE THIS TYPE
+type RuleAltern   = (name: Symbol?, rule: ParsingRule); ## I DON'T REALLY LIKE EITHER WAY TO DEFINE THIS TYPE
 
 type RuleMatch    = null_match,
                     atomic_rule_match(AnnotatedToken),
                     rule_seq_match(RuleMatch+),
                     rep_rule_match(RuleMatch*),
-                    rule_choice_match(name: Atom, match: RuleMatch);
+                    rule_choice_match(name: Symbol, match: RuleMatch);
