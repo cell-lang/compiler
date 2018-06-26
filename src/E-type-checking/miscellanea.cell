@@ -45,6 +45,7 @@ implicit typedefs : [TypeName -> NeType] {
 
   [TypeVar -> Type] type_var_instantiations_for_subset(Type* actual_types, Type* formal_types) {
     type_vars = seq_union((retrieve_type_vars(t, typedefs) : t <- formal_types));
+    return [] if type_vars == []; ## SEE IF THIS MAKES ANY PERFORMANCE DIFFERENCE
     conds = merge_value_sets([subset_conds(at, ft) : at, ft <~ zip(actual_types, formal_types)]);
     return [v -> union_superset(lookup(conds, v, [])) : v <- type_vars];
   }
