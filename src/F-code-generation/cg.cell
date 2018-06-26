@@ -49,7 +49,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
     body = body & rand_sort([auto_cleanup(v, t) : v, t <- procedure.auto_vars]);
     body = body & rand_sort([cleanup_db(v, info.type) : v, info <- procedure.db_vars]);
 
-    debug_entry_instr = push_call_info(procedure.id, (just(a.var) : a @ i <- procedure.args));
+    debug_entry_instr = push_call_info(procedure.id, (a.var : a <- procedure.args));
 
     val = if procedure.res_type != nothing then res_var else object(:void); ## BAD: HERE I'M CHEATING...
     body = (debug_entry_instr if options.debug_mode) & body & (pop_call_info if options.debug_mode, ret_val(val));
@@ -72,18 +72,6 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
 
 
   ObjProcDef gen_fn_code(Function func) {
-    // fn_res_var, var_gen = next_obj_var(blank_var_gen);
-    // tmp_bvar,   var_gen = next_bool_var(var_gen);
-
-    // // Evaluating the expression
-    // let context=func, var_subst_map = [], cls_var_subst_map = [], next_var_gen=var_gen:
-    //   body = gen_eval_code(func.expr, fn_res_var);
-    // ;
-
-    // // Adding push_call_info/pop_call_info and return
-    // args_info = (just(v) : v, unused_var <- func.args) & (nothing : i < |func.cls_args|);
-    // body = (push_call_info(func.id, args_info)) & body & (pop_call_info, ret_val(fn_res_var));
-
     args = (low_level_arg(v, opt_repr(t)) : v, t <- func.args);
     args_surrs = [v -> obj_expr(args(i)) : v, unused_var @ i <~ func.args];
 
@@ -95,12 +83,17 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
 
     let context = func, surrogates = args_surrs:
       let var_subst_map = [], cls_var_subst_map = [], typed_vars = []:
-        opt_code, ret_val_surr, unused_var = opt_eval_code(func.expr, env, blank_var_gen);
+        body, ret_val_surr, unused_var_2 = opt_eval_code(func.expr, env, blank_var_gen);
       ;
     ;
 
     ret_val_repr = opt_repr(func.res_type);
     ret_val_instr = ret_val(low_level_expr(ret_val_repr, ret_val_surr));
+
+    // Adding push_call_info/pop_call_info debug mode instructions
+    if options.debug_mode:
+      body = (push_call_info(func.id, (obj_expr(v) : v <- args))) & body & (pop_call_info);
+    ;
 
     return obj_proc_def(
       name:           func.id,
@@ -111,7 +104,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
       type:           signature(func),
       loc_auto_vars:  [],
       loc_db_vars:    [],
-      body:           (opt_code | ret_val_instr),
+      body:           (body | ret_val_instr),
       cached:         cached
     );
 
