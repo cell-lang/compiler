@@ -156,10 +156,26 @@ implicit typedefs : [TypeName -> NeType], inst_type_vars : Bool {
 
   //////////////////////////////////////////////////////////////////////////////
 
+  SubsetCond type_symbs_shallow_subset_conds(TypeSymbol subtype, TypeSymbol supertype) {
+    if subtype :: ParTypeSymbol and supertype :: ParTypeSymbol:
+      ## ONE OF THE TWO CHECKS HERE IS REDUNDANT, AS THE GENERIC LOGIC SHOULD BE
+      ## ABLE TO HANDLE THE CASE WHERE ONLY ONE OF THE TWO TYPE SYMBOLS IS PARAMETRIC
+      if (t <~ subtype.params : is_param_type(t)) or (t <~ supertype.params : is_param_type(t)):
+        return subset_if(subtype, type_ref(supertype));
+    ; ;
+    return if subtype != supertype then subset_if(subtype, type_ref(supertype)) else [];
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+
   SubsetCond type_ref_shallow_subset_conds(TypeRef subtype, NeType supertype) =
     match (supertype)
-      union_type(ts?)  = if not ts(subtype) then subset_if(type_symb(subtype), supertype) else [],
-      _                = if subtype != supertype then subset_if(type_symb(subtype), supertype) else [];
+      ## OPTIMIZATION: IF THE SUBTYPE IS NOT PARAMETRIC OR WE'RE NOT IN
+      ## TYPE VARIABLES INSTANTIATION MODE, WE CAN FIRST CHECK IF IT'S
+      ## AN ELEMENT IN THE SUPERTYPE TYPE UNION
+      union_type(ts?)  = subset_if(type_symb(subtype), supertype),
+      type_ref(ts?)    = type_symbs_shallow_subset_conds(type_symb(subtype), ts),
+      _                = subset_if(type_symb(subtype), supertype);
 
 
   SubsetCond ne_seq_type_shallow_subset_conds(NeSeqType subtype, NeType supertype) =
