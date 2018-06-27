@@ -553,21 +553,38 @@ implicit program           : Program,
     hidden_idx_var, var_gen = next_int32_var(var_gen);
     surrs = surrs & [expr.idx_var -> int_obj(hidden_idx_var)] if expr.idx_var?;
 
-    // Evaluation of destination element expression
-    elt_eval_code, elt_surr, var_gen = opt_eval_info(expr.expr, var_gen, surrogates = surrs);
-
     // Finalizing loop body
     if expr.sel_expr?:
-      target_idx_var, var_gen = next_int32_var(var_gen);
+      // Generating and initializing the write cursor
+      next_free_slot_idx_var, var_gen = next_int32_var(var_gen);
+      loop_init_code = (set_ivar32(next_free_slot_idx_var, 0));
+
+      // Evaluation of filter condition
       cond_eval_code, cond_surr, var_gen = opt_eval_info(expr.sel_expr, var_gen, surrogates = surrs);
-      cond_code = (elt_eval_code | write_array(array_var, target_idx_var, elt_surr), increment(target_idx_var));
+
+      // Evaluation of result element expression
+      elt_eval_code, elt_surr, var_gen = opt_eval_info(expr.expr, var_gen, surrogates = surrs);
+
+      // Loop body
+      write_array_instr = write_array(array_var, next_free_slot_idx_var, elt_surr);
+      incr_idx_instr = increment(next_free_slot_idx_var);
+      cond_code = (elt_eval_code | write_array_instr, incr_idx_instr);
       body_code = (body_code & cond_eval_code | do_if(bool_value(cond_surr), cond_code));
-      loop_init_code = (set_ivar32(target_idx_var, 0));
-      mk_seq_instr = mk_seq(res_var, array_var, target_idx_var);
+
+      // Sequence creation
+      mk_seq_instr = mk_seq(res_var, array_var, next_free_slot_idx_var);
 
     else
-      body_code = (body_code & elt_eval_code | write_array(array_var, hidden_idx_var, elt_surr));
+      // Nothing to initialize
       loop_init_code = ();
+
+      // Evaluation of the expression that yields a new element
+      elt_eval_code, elt_surr, var_gen = opt_eval_info(expr.expr, var_gen, surrogates = surrs);
+
+      // Loop body
+      body_code = (body_code & elt_eval_code | write_array(array_var, hidden_idx_var, elt_surr));
+
+      // Sequence creation
       mk_seq_instr = mk_seq(res_var, array_var);
     ;
 
