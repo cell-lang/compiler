@@ -5,20 +5,16 @@
 type EnvVar   = StdVar, FnArg, ImplArg, SignalVar;
 
 
-[<Function, Database, Method, Update, Handler, Automaton, Procedure> -> [+TypeCheckingError]] typecheck(Program prg) {
-  let program = prg:
-    let typedefs = schema_and_typedefs:
-      fn_errs = [fd -> es : fd <- prg.fndefs, es = typecheck_function(fd), es != []];
-      db_errs = merge([typecheck_database(db) : db <- prg.data_bases]);
-      ra_errs = merge([typecheck_automaton(auto) : auto <- prg.auto_defs]);
-      proc_errs = [proc -> es : proc <- prg.proc_defs, es = typecheck_procedure(proc), es != []];
-    ;
-  ;
-  return fn_errs & db_errs & ra_errs & proc_errs;
-}
-
-
 implicit program : Program, typedefs : [TypeName -> NeType] {
+  [<Function, Database, Method, Update, Handler, Automaton, Procedure> -> [+TypeCheckingError]] typechecking_errors {
+    fn_errs = [fd -> es : fd <- program.fndefs, es = typecheck_function(fd), es != []];
+    db_errs = merge([typecheck_database(db) : db <- program.data_bases]);
+    ra_errs = merge([typecheck_automaton(auto) : auto <- program.auto_defs]);
+    proc_errs = [proc -> es : proc <- program.proc_defs, es = typecheck_procedure(proc), es != []];
+    return fn_errs & db_errs & ra_errs & proc_errs;
+  }
+
+
   [TypeCheckingError] typecheck_function(Function func) {
     args = func.args;
     obj_vars = [v -> t : v, t <~ args] & [v -> t : v, t <- func.impl_args];

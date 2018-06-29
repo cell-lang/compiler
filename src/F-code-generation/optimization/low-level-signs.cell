@@ -126,22 +126,97 @@ implicit typedefs : [TypeName -> NeType] {
 implicit program : Program, typedefs : [TypeName -> NeType] {
   AnyLowLevelRepr opt_repr(NeType type) {
     for r <- atomic_low_level_reprs:
-      return r if is_subset(type, low_level_repr_type(r));
+      return r if is_subset_wrapper_1(type, low_level_repr_type(r));
     ;
 
-    ## PERFORMANCE HERE IS PROBABLY HORRIFYING. FIX
-    for tag <- isort(keys(optimized_tagged_records)):
-      if is_subset(type, tag_obj_type(symb_type(tag), type_any)):
-        untagged_type = untagged_objs_supertype(type);
-        for repr @ i <- optimized_tagged_records(tag, !!):
-          rec_type = low_level_repr_type(repr);
-          return opt_tag_rec_repr(tag, i) if is_subset(untagged_type, rec_type);
+    // if is_subset(type, type_tagged_obj):
+    //   tag_type = tag_supertype(type);
+    //   if is_symb_singl_type(tag_type):
+    //     tag = untag(only_symb(tag_type));
+    //     if optimized_tagged_records(tag, *):
+    //       untagged_type = untagged_objs_supertype(type);
+    //       for r @ i <- optimized_tagged_records(tag, !!):
+    //         rec_type = low_level_repr_type(r);
+    //         return opt_tag_rec_repr(tag, i) if is_subset(untagged_type, rec_type);
+    //       ;
+    //     ;
+    //   ;
+    // ;
+
+    // ## PERFORMANCE HERE IS PROBABLY HORRIFYING. FIX
+    // for tag <- isort(keys(optimized_tagged_records)):
+    //   if is_subset(type, tag_obj_type(symb_type(tag), type_any)):
+    //     untagged_type = untagged_objs_supertype(type);
+    //     for repr @ i <- optimized_tagged_records(tag, !!):
+    //       rec_type = low_level_repr_type(repr);
+    //       return opt_tag_rec_repr(tag, i) if is_subset(untagged_type, rec_type);
+    //     ;
+    //   ;
+    // ;
+
+    res = try_mono_tag_type(type);
+    if res != nothing:
+      tag, obj_type = value(res);
+      if optimized_tagged_records(tag, *):
+        for r @ i <- optimized_tagged_records(tag, !!):
+          rec_type = low_level_repr_type(r);
+          return opt_tag_rec_repr(tag, i) if is_subset_wrapper_2(obj_type, rec_type);
         ;
       ;
     ;
 
     return :object;
+
+
+    Bool is_subset_wrapper_1(NeType subset, NeType superset) = is_subset(subset, superset);
+    Bool is_subset_wrapper_2(NeType subset, NeType superset) = is_subset(subset, superset);
+
+
+    Maybe[(Symbol, NeType)] try_mono_tag_type(NeType type) =
+      tag_obj_type()  = try_mono_tag_type(type.tag_type, type.obj_type),
+      union_type(ts?) = try_mono_tag_type(isort(ts)),
+      type_ref(ts?)   = try_mono_tag_type(nonempty_type(expand_type_ref(ts, typedefs))),
+      _               = nothing;
+
+
+    Maybe[(Symbol, NeType)] try_mono_tag_type(TagType tag_type, NeType obj_type) =
+      symb_type(s?)   = just((untag(s), obj_type)),
+      atom_type       = nothing;
+
+
+    Maybe[(Symbol, NeType)] try_mono_tag_type(NeType+ types) {
+      only_tag = nothing;
+      obj_types = ();
+      for t <- types:
+        res = try_mono_tag_type(t);
+        return nothing if res == nothing;
+        tag, obj_type = value(res);
+        if only_tag == nothing:
+          only_tag = just(tag);
+        elif only_tag != just(tag):
+          return nothing;
+        ;
+        obj_types = (obj_types | obj_type);
+      ;
+      return just((value_unsafe(only_tag), ne_union_superset(nonempty(set(obj_types)))));
+    }
   }
+
+
+// type SymbType           = symb_type(SymbObj);
+// type TagType            = SymbType, atom_type;
+// type TagObjType         = tag_obj_type(tag_type: TagType, obj_type: NeType);
+
+
+
+  // Type untagged_objs_supertype(Type type) =
+  //   tag_obj_type()    = type.obj_type,
+  //   union_type(ts?)   = union_superset([untagged_objs_supertype(t) : t <- ts]),
+  //   type_var()        = type_any,
+  //   type_ref(ts?)     = untagged_objs_supertype(expand_type_ref(ts, typedefs)),
+  //   _                 = empty_type;
+
+  // }
 
 
   LowLevelRepr opt_repr(<empty_type>) = :object;

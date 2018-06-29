@@ -22,6 +22,17 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
 
   //////////////////////////////////////////////////////////////////////////////
 
+  AnyLowLevelRepr fn_arg_low_level_repr(NeType arg_type) {
+    return reprs(arg_type, !!);
+
+    [NeType -> AnyLowLevelRepr] reprs {
+      args_types = [t : f <- program.fndefs, unused_var, t <~ f.args];
+      return [t -> opt_repr(replace_type_vars_with_type_any(t)) : t <- args_types];
+    }
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+
   ObjProcDef gen_proc_code(Procedure procedure) {
     res_var, var_gen = next_obj_var(blank_var_gen);
 
@@ -72,7 +83,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
 
 
   ObjProcDef gen_fn_code(Function func) {
-    args = (low_level_arg(v, opt_repr(t)) : v, t <- func.args);
+    args = (low_level_arg(v, fn_arg_low_level_repr(t)) : v, t <- func.args);
     args_surrs = [v -> obj_expr(args(i)) : v, unused_var @ i <~ func.args];
 
     cls_args = (cls(v, arity(t)) : v, t <- func.cls_args);
