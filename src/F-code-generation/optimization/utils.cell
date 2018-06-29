@@ -66,20 +66,22 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context {
     aggr_signs_by_fn_family_id_copy = aggr_signs_by_fn_family_id;
     assert false;
     fail;
+  }
+}
 
 
-    [FnFamilyId -> FnType*] aggr_signs_by_fn_family_id = [
-      fam_id -> isort(aggr_signs)
-        : fam_id, info <- signatures_info_by_family_id,
-          signs = [sign : fn_id, sign <~ info],
-          aggr_signs = aggregate_signatures(signs) - signs
-    ];
+implicit program : Program, typedefs : [TypeName -> NeType] {
+  [FnFamilyId -> FnType*] aggr_signs_by_fn_family_id = [
+    fam_id -> isort(aggr_signs)
+      : fam_id, info <- signatures_info_by_family_id,
+        signs = [sign : fn_id, sign <~ info],
+        aggr_signs = aggregate_signatures(signs) - signs
+  ];
 
 
-    [FnFamilyId -> (FnId, FnType)+] signatures_info_by_family_id {
-      sgn_info = [family_id(fn.id), (fn.id, signature(fn)) : fn <- program.fndefs];
-      family_ids = [id : id, unused_var <- sgn_info];
-      return [id -> nonempty(isort([info : info <- sgn_info(id, ?)])) : id <- family_ids];
-    }
+  [FnFamilyId -> (FnId, FnType)+] signatures_info_by_family_id {
+    sgn_info = [family_id(fn.id), (fn.id, signature(fn)) : fn <- program.fndefs];
+    family_ids = [id : id, unused_var <- sgn_info];
+    return [id -> nonempty(isort([info : info <- sgn_info(id, ?)])) : id <- family_ids];
   }
 }
