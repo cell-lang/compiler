@@ -14,8 +14,8 @@ implicit program           : Program,
     exprs_cluster = exprs_cluster(expr);
     rec_exprs = reconstruct_all(exprs_cluster);
 
-    cltr_size = |exprs_cluster|;
-    envs = (if i == 0 then env else [] : i < cltr_size);
+    size = |exprs_cluster|;
+    envs = (if i == 0 then env else [] : i < size);
 
     let rec_exprs = rec_exprs:
       for e @ i <- exprs_cluster:
@@ -35,19 +35,36 @@ implicit program           : Program,
     //   return true;
     // };
 
-    types = (expr_type(e, envs(i)) : e @ i <- rec_exprs);
+    // ref_types = (expr_type(e, envs(i)) : e @ i <- rec_exprs);
 
-    let cluster = exprs_cluster, types = types, environments = envs, expr_id = 0:
-      eval_code, surr, var_gen = opt_eval_info(exprs_cluster(0), init_var_gen);
+    types = ();
+    for i < size:
+      ri = size - i - 1;
+      type = expr_type_ex(exprs_cluster(ri), envs(ri), get_type($, types, size, i, ri));
+      // assert type == ref_types(ri);
+      types = (types | type);
     ;
-
-    return (eval_code, surr, var_gen);
-
-
+    types = nonempty(reverse(types));
+    // assert types == ref_types;
 
 
-    // return ((terminate), int_obj(|types|), init_var_gen);
+    // let cluster = exprs_cluster, types = types, environments = envs, expr_id = 0:
+    //   eval_code, surr, var_gen = opt_eval_info(exprs_cluster(0), init_var_gen);
+    // ;
+
+    // return (eval_code, surr, var_gen);
+
+
+    return ((terminate), int_obj(|types|), init_var_gen);
     // return ((terminate), int_obj(0), init_var_gen);
+
+
+    Type get_type(Expr expr, Type* types, Nat size, Nat i, Int ri) {
+      idx = match (expr) expr_ref(id?) = id;
+      rev_idx = size - idx - 1;
+      // assert rev_idx >= 0 and rev_idx < |types|;
+      return types(rev_idx);
+    }
   }
 
 
