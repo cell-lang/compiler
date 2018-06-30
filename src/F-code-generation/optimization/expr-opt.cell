@@ -62,33 +62,6 @@ implicit program           : Program,
     ;
     return (code, surrs, var_gen);
   }
-
-
-
-  // match_expr(exprs: Expr+, cases: (ptrns: Pattern+, expr: Expr)+);
-  (Instr*, ObjExpr, VarGen) single_match_expr_opt_eval_code(MatchExpr expr, AnyLowLevelRepr repr, [EnvVar -> Type] env, VarGen init_var_gen) {
-    res_var, var_gen = next_var(repr, init_var_gen);
-    ret_var_gen = var_gen;
-
-    match_expr = only_unsafe(expr.exprs);
-    match_expr_type = expr_type(match_expr, env);
-    match_expr_code, match_expr_surr, var_gen = opt_eval_code(match_expr, env, var_gen);
-
-    cases = ({
-        ptrn = only_unsafe(c.ptrns);
-        ptrn_env = generate_env(ptrn, match_expr_type);
-        vars_reprs = [v -> low_level_var(opt_repr(t), v) : v, t <- ptrn_env];
-        surrs = surrogates & [v -> obj_expr(pv) : v, pv <- vars_reprs];
-        case_env = update_env(match_expr, ptrn, env);
-        code, surr, unused_var = opt_eval_code(c.expr, case_env, var_gen, surrogates = surrs);
-        code = (store_result(code, surr, res_var) | exit_block);
-        return (ptrn, code, vars_reprs);
-      } : c <- expr.cases
-    );
-
-    match_code = single_ptrn_match_expr_opt_code(match_expr_surr, match_expr_type, cases);
-    return (match_expr_code & match_code, obj_expr(res_var), ret_var_gen);
-  }
 }
 
 
