@@ -1,49 +1,22 @@
 implicit program : Program, typedefs : [TypeName -> NeType], context : Context, typed_vars : [StdVar -> NeType] {
 
-  Type expr_type(Expr expr, [EnvVar -> Type] env) = expr_type_ex(expr, env, undefined_ext_type);
-
-  ([EnvVar -> Type], [EnvVar -> Type]) refine_env(Expr cond, [EnvVar -> Type] env) =
-    refine_env_ex(cond, env, undefined_ext_type);
-
-  [TypeVar -> Type] instantiate_type_vars(Type* actual_types, Type* formal_types, AnyClsExpr* cls_args, ClsType* cls_types, [EnvVar -> Type] env) =
-    instantiate_type_vars(actual_types, formal_types, cls_args, cls_types, env, undefined_ext_type);
-
-  Bool will_dispatch_to(FnType signature, Expr* args, [EnvVar -> Type] env) =
-    will_dispatch_to(signature, args, env, undefined_ext_type);
-
-  Bool will_dispatch_to(ClsType signature, Expr+ args, [EnvVar -> Type] env) =
-    will_dispatch_to(signature, args, env, undefined_ext_type);
-
-  Type get_return_type(AnyClsExpr expr, ClsType type, [TypeVar -> Type] type_var_insts, [EnvVar -> Type] env) =
-    get_return_type(expr, type, type_var_insts, env, undefined_ext_type);
-
-  IterTree full_iter_tree(Clause cls, [EnvVar -> Type] env) = full_iter_tree(cls, env, undefined_ext_type);
-
-  [EnvVar -> Type] update_env(Statement* stmts, [EnvVar -> Type] env) = update_env_ex(stmts, env, undefined_ext_type);
-
-  [EnvVar -> Type] update_env(Statement stmt, [EnvVar -> Type] env) = update_env_ex(stmt, env, undefined_ext_type);
-
-  [EnvVar -> Type] update_env(Expr+ exprs, Pattern+ ptrns, [EnvVar -> Type] env) =
-    update_env_ex(exprs, ptrns, env, undefined_ext_type);
-
-  [EnvVar -> Type] update_env(Expr expr, Pattern ptrn, [EnvVar -> Type] env) =
-    update_env_ex(expr, ptrn, env, undefined_ext_type);
-
-  [EnvVar -> Type] generate_env(Clause cls, [EnvVar -> Type] env) = generate_env_ex(cls, env, undefined_ext_type);
-
-
-  Type undefined_ext_type(Expr) = undefined;
-
-  //////////////////////////////////////////////////////////////////////////////
-  //////////////////////////////////////////////////////////////////////////////
+  Type expr_type(CondExpr expr, [EnvVar -> Type] env) = expr_type(expr.expr, left(refine_env(expr.cond, env)));
 
 
   // I assume that the expression typechecks
-  Type expr_type_ex(Expr expr, [EnvVar -> Type] env, (Expr -> Type) ext_type) =
+  Type expr_type(Expr expr, [EnvVar -> Type] env) =
     undefined             = empty_type,
     object(<+>)           = symb_type(expr),
     object(<*..*> n?)     = int_range(min: n, size: 1),
     float_lit()           = float_type,
+    seq_expr(ses?)        = seq_expr_type(set(ses), env),
+    tuple_expr(es?)       = tuple_type((expr_type(e, env) : e <- es)),
+    seq_tail_expr()       = seq_tail_expr_type(expr.seq, expr.tail, env),
+    set_expr(ses?)        = set_expr_type(ses, env),
+    map_expr(es?)         = map_expr_type(es, env),
+    bin_rel_expr(es?)     = bin_rel_expr_type(es, env),
+    tern_rel_expr(es?)    = tern_rel_expr_type(es, env),
+    tag_obj_expr()        = tag_obj_expr_type(expr.tag, expr.obj, env),
     var()                 |
     fn_arg()              |
     impl_arg()            |
@@ -52,50 +25,37 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     memb_var()            = memb_var_type(expr),
     qual_memb_var()       = qual_memb_var_type(expr),
     qual_signal_var()     = qual_signal_var_type(expr),
-    expr_ref()            = ext_type(expr),
-    seq_expr(ses?)        = seq_expr_type(set(ses), env, ext_type),
-    tuple_expr(es?)       = tuple_type((expr_type_ex(e, env, ext_type) : e <- es)),
-    seq_tail_expr()       = seq_tail_expr_type(expr.seq, expr.tail, env, ext_type),
-    set_expr(ses?)        = set_expr_type(ses, env, ext_type),
-    map_expr(es?)         = map_expr_type(es, env, ext_type),
-    bin_rel_expr(es?)     = bin_rel_expr_type(es, env, ext_type),
-    tern_rel_expr(es?)    = tern_rel_expr_type(es, env, ext_type),
-    tag_obj_expr()        = tag_obj_expr_type(expr.tag, expr.obj, env, ext_type),
-    fn_call()             = fn_call_expr_type(expr.fn_id, expr.args, expr.cls_args, expr.impl_args, env, ext_type),
+    fn_call()             = fn_call_expr_type(expr.fn_id, expr.args, expr.cls_args, expr.impl_args, env),
     cls_call()            = closures[cast_cls_var(expr.name)].out_type,
-    builtin_call()        = builtin_call_expr_type(expr.name, expr.args, env, ext_type),
-    size_expr()           = size_expr_type(expr.coll, env, ext_type),
-    unary_pseudo_call()   = unary_pseudo_call_expr_type(expr.target, expr.arg, env, ext_type),
+    builtin_call()        = builtin_call_expr_type(expr.name, expr.args, env),
+    size_expr()           = size_expr_type(expr.coll, env),
+    unary_pseudo_call()   = unary_pseudo_call_expr_type(expr.target, expr.arg, env),
     rel_memb_test()       = type_bool,
-    rel_lookup()          = rel_lookup_expr_type(expr, env, ext_type),
+    rel_lookup()          = rel_lookup_expr_type(expr, env),
     relvar_memb_test()    = type_bool,
-    relvar_lookup()       = relvar_lookup_expr_type(expr, env, ext_type),
-    and_expr()            = and_expr_type(expr.left, expr.right, env, ext_type),
-    or_expr()             = or_expr_type(expr.left, expr.right, env, ext_type),
-    not_expr(e?)          = not_expr_type(e, env, ext_type),
-    eq()                  = eq_expr_type(expr.left, expr.right, env, ext_type),
-    membership()          = memb_expr_type(expr.obj, expr.type, env, ext_type),
+    relvar_lookup()       = relvar_lookup_expr_type(expr, env),
+    and_expr()            = and_expr_type(expr.left, expr.right, env),
+    or_expr()             = or_expr_type(expr.left, expr.right, env),
+    not_expr(e?)          = not_expr_type(e, env),
+    eq()                  = eq_expr_type(expr.left, expr.right, env),
+    membership()          = memb_expr_type(expr.obj, expr.type, env),
     cast_expr()           = expr.type,
-    accessor()            = accessor_expr_type(expr.expr, expr.field, env, ext_type),
+    accessor()            = accessor_expr_type(expr.expr, expr.field, env),
     accessor_test()       = type_bool,
-    auto_method_call()    = auto_method_call_expr_type(expr, env, ext_type),
-    db_method_call()      = db_method_call_expr_type(expr, env, ext_type),
-    if_expr()             = if_expr_type(expr.cond, expr.then, expr.else, env, ext_type),
-    match_expr()          = match_expr_type(expr.exprs, expr.cases, env, ext_type),
-    do_expr()             = return_type(expr.body, env, ext_type, typed_vars=expr.typed_vars),
+    auto_method_call()    = auto_method_call_expr_type(expr, env),
+    db_method_call()      = db_method_call_expr_type(expr, env),
+    if_expr()             = if_expr_type(expr.cond, expr.then, expr.else, env),
+    match_expr()          = match_expr_type(expr.exprs, expr.cases, env),
+    do_expr()             = return_type(expr.body, env, typed_vars=expr.typed_vars),
     ex_qual()             = type_bool,
-    set_comp()            = set_comp_expr_type(expr.expr, expr.source, env, ext_type),
-    map_comp()            = map_comp_expr_type(expr.key_expr, expr.value_expr, expr.source, env, ext_type),
-    bin_rel_comp()        = bin_rel_comp_expr_type(expr.exprs, expr.source, env, ext_type),
-    tern_rel_comp()       = tern_rel_comp_expr_type(expr.exprs, expr.source, env, ext_type),
-    seq_comp()            = seq_comp_expr_type(expr, env, ext_type),
-    range_comp()          = range_comp_expr_type(expr, env, ext_type),
+    set_comp()            = set_comp_expr_type(expr.expr, expr.source, env),
+    map_comp()            = map_comp_expr_type(expr.key_expr, expr.value_expr, expr.source, env),
+    bin_rel_comp()        = bin_rel_comp_expr_type(expr.exprs, expr.source, env),
+    tern_rel_comp()       = tern_rel_comp_expr_type(expr.exprs, expr.source, env),
+    seq_comp()            = seq_comp_expr_type(expr, env),
+    range_comp()          = range_comp_expr_type(expr, env),
     output_is_def()       = type_bool,
     output_is_set()       = type_bool;
-
-
-  Type expr_type_ex(CondExpr expr, [EnvVar -> Type] env, (Expr -> Type) ext_type) =
-    expr_type_ex(expr.expr, left(refine_env_ex(expr.cond, env, ext_type)), ext_type);
 
 
   Type memb_var_type(MembVar var) = match (context)
@@ -124,9 +84,9 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   }
 
 
-  Type rel_lookup_expr_type(RelLookup expr, [EnvVar -> Type] env, (Expr -> Type) ext_type) {
-    rel_type = expr_type_ex(expr.rel, env, ext_type);
-    args_types = (expr_type_ex(a, env, ext_type) : a <- expr.set_args);
+  Type rel_lookup_expr_type(RelLookup expr, [EnvVar -> Type] env) {
+    rel_type = expr_type(expr.rel, env);
+    args_types = (expr_type(a, env) : a <- expr.set_args);
     if args_types == ():
       return set_elem_supertype(rel_type);
     elif |args_types| == 1 and expr.unknown_arg_idx :: <0..1>:
@@ -139,8 +99,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   }
 
 
-  Type relvar_lookup_expr_type(RelVarLookup expr, [EnvVar -> Type] env, (Expr -> Type) ext_type) {
-    set_args_types = (expr_type_ex(a, env, ext_type) : a <- expr.set_args);
+  Type relvar_lookup_expr_type(RelVarLookup expr, [EnvVar -> Type] env) {
+    set_args_types = (expr_type(a, env) : a <- expr.set_args);
     sgns = relvar_signatures(expr.rel_var);
     target_idx = expr.unknown_arg_idx;
     ret_types = [
@@ -152,8 +112,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   }
 
 
-  Type memb_expr_type(Expr obj, NeType type, [EnvVar -> Type] env, (Expr -> Type) ext_type) {
-    actual_type = expr_type_ex(obj, env, ext_type);
+  Type memb_expr_type(Expr obj, NeType type, [EnvVar -> Type] env) {
+    actual_type = expr_type(obj, env);
     return if actual_type == empty_type
         then empty_type
       elif is_subset(actual_type, type)
@@ -165,13 +125,13 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   }
 
 
-  Type and_expr_type(Expr expr1, Expr expr2, [EnvVar -> Type] env, (Expr -> Type) ext_type) {
-    type1 = expr_type_ex(expr1, env, ext_type);
+  Type and_expr_type(Expr expr1, Expr expr2, [EnvVar -> Type] env) {
+    type1 = expr_type(expr1, env);
     return type1 if type1 == empty_type or is_eq(type1, type_false);
     assert type_contains_obj(type1, true);
 
-    new_env, unused_var = refine_env_ex(expr1, env, ext_type);
-    type2 = expr_type_ex(expr2, new_env, ext_type);
+    new_env, unused_var = refine_env(expr1, env);
+    type2 = expr_type(expr2, new_env);
     assert type2 != empty_type;
 
     can_be_true  = type_contains_obj(type2, true);
@@ -180,13 +140,13 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   }
 
 
-  Type or_expr_type(Expr expr1, Expr expr2, [EnvVar -> Type] env, (Expr -> Type) ext_type) {
-    type1 = expr_type_ex(expr1, env, ext_type);
+  Type or_expr_type(Expr expr1, Expr expr2, [EnvVar -> Type] env) {
+    type1 = expr_type(expr1, env);
     return type1 if type1 == empty_type or is_eq(type1, type_true);
     assert type_contains_obj(type1, false);
 
-    unused_var, new_env = refine_env_ex(expr1, env, ext_type);
-    type2 = expr_type_ex(expr2, new_env, ext_type);
+    unused_var, new_env = refine_env(expr1, env);
+    type2 = expr_type(expr2, new_env);
     assert type2 != empty_type;
 
     can_be_true  = type_contains_obj(type1, true) or type_contains_obj(type2, true);
@@ -195,8 +155,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   }
 
 
-  Type not_expr_type(Expr expr, [EnvVar -> Type] env, (Expr -> Type) ext_type) {
-    type = expr_type_ex(expr, env, ext_type);
+  Type not_expr_type(Expr expr, [EnvVar -> Type] env) {
+    type = expr_type(expr, env);
     return union_type([
       type_false if type_contains_obj(type, true),
       type_true  if type_contains_obj(type, false)
@@ -204,9 +164,9 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   }
 
 
-  Type eq_expr_type(Expr expr1, Expr expr2, [EnvVar -> Type] env, (Expr -> Type) ext_type) {
-    type1 = expr_type_ex(expr1, env, ext_type);
-    type2 = expr_type_ex(expr2, env, ext_type);
+  Type eq_expr_type(Expr expr1, Expr expr2, [EnvVar -> Type] env) {
+    type1 = expr_type(expr1, env);
+    type2 = expr_type(expr2, env);
     return if type1 == empty_type or type2 == empty_type
         then empty_type
       elif are_ptype_disjoint(type1, type2)
@@ -221,30 +181,30 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   }
 
 
-  Type set_expr_type([SubExpr] subexprs, [EnvVar -> Type] env, (Expr -> Type) ext_type) {
-    actual_elem_type = union_superset([expr_type_ex(se, env, ext_type) : se <- subexprs]);
+  Type set_expr_type([SubExpr] subexprs, [EnvVar -> Type] env) {
+    actual_elem_type = union_superset([expr_type(se, env) : se <- subexprs]);
     nonempty = (se <- subexprs : not is_cond_expr(se));
     return type_set(actual_elem_type, nonempty);
   }
 
 
-  Type seq_expr_type([SubExpr] subexprs, [EnvVar -> Type] env, (Expr -> Type) ext_type) {
-    actual_elem_type = union_superset([expr_type_ex(se, env, ext_type) : se <- subexprs]);
+  Type seq_expr_type([SubExpr] subexprs, [EnvVar -> Type] env) {
+    actual_elem_type = union_superset([expr_type(se, env) : se <- subexprs]);
     nonempty = (se <- subexprs : not is_cond_expr(se));
     return type_seq(actual_elem_type, nonempty);
   }
 
 
-  Type seq_tail_expr_type(Expr seq, Expr+ tail, [EnvVar -> Type] env, (Expr -> Type) ext_type) {
-    head_elem_type = seq_elem_supertype(expr_type_ex(seq, env, ext_type));
-    tail_elem_types = (expr_type_ex(e, env, ext_type) : e <- tail);
+  Type seq_tail_expr_type(Expr seq, Expr+ tail, [EnvVar -> Type] env) {
+    head_elem_type = seq_elem_supertype(expr_type(seq, env));
+    tail_elem_types = (expr_type(e, env) : e <- tail);
     final_elem_type = union_superset([head_elem_type] & set(tail_elem_types));
     return ne_seq_type(final_elem_type);
   }
 
 
-  Type map_expr_type([(key: Expr, value: Expr, cond: Expr?)] raw_entries, [EnvVar -> Type] env, (Expr -> Type) ext_type) {
-    entries = [entry_info(e, env, ext_type) : e <- raw_entries];
+  Type map_expr_type([(key: Expr, value: Expr, cond: Expr?)] raw_entries, [EnvVar -> Type] env) {
+    entries = [entry_info(e, env) : e <- raw_entries];
     is_record = not (e <- entries : not is_symb_singl_type(e.key_type));
 
     if is_record:
@@ -261,21 +221,21 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     ;
 
 
-    (key_type: Type, value_type: Type, optional: Bool) entry_info((key: Expr, value: Expr, cond: Expr?) entry, [EnvVar -> Type] env, (Expr -> Type) ext_type) {
-      new_env = if entry.cond? then left(refine_env_ex(entry.cond, env, ext_type)) else env;
+    (key_type: Type, value_type: Type, optional: Bool) entry_info((key: Expr, value: Expr, cond: Expr?) entry, [EnvVar -> Type] env) {
+      new_env = if entry.cond? then left(refine_env(entry.cond, env)) else env;
       return (
-        key_type:   expr_type_ex(entry.key, new_env, ext_type),
-        value_type: expr_type_ex(entry.value, new_env, ext_type),
+        key_type:   expr_type(entry.key, new_env),
+        value_type: expr_type(entry.value, new_env),
         optional:   entry.cond?
       );
     }
   }
 
 
-  Type bin_rel_expr_type([(args: (Expr, Expr), cond: Expr?)] raw_entries, [EnvVar -> Type] env, (Expr -> Type) ext_type) {
+  Type bin_rel_expr_type([(args: (Expr, Expr), cond: Expr?)] raw_entries, [EnvVar -> Type] env) {
     entries = [{
-        new_env = if e.cond? then left(refine_env_ex(e.cond, env, ext_type)) else env;
-        return (types: (expr_type_ex(a, new_env, ext_type) : a <- e.args), optional: e.cond?);
+        new_env = if e.cond? then left(refine_env(e.cond, env)) else env;
+        return (types: (expr_type(a, new_env) : a <- e.args), optional: e.cond?);
       } : e <- raw_entries
     ];
     rel_sgns = [(t0, t1) : e <- entries, (t0?, t1?) ?= e.types, t0 != empty_type, t1 != empty_type];
@@ -285,10 +245,10 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   }
 
 
-  Type tern_rel_expr_type([(args: (Expr, Expr, Expr), cond: Expr?)] raw_entries, [EnvVar -> Type] env, (Expr -> Type) ext_type) {
+  Type tern_rel_expr_type([(args: (Expr, Expr, Expr), cond: Expr?)] raw_entries, [EnvVar -> Type] env) {
     entries = [{
-        new_env = if e.cond? then left(refine_env_ex(e.cond, env, ext_type)) else env;
-        return (types: (expr_type_ex(a, new_env, ext_type) : a <- e.args), optional: e.cond?);
+        new_env = if e.cond? then left(refine_env(e.cond, env)) else env;
+        return (types: (expr_type(a, new_env) : a <- e.args), optional: e.cond?);
       } : e <- raw_entries
     ];
     rel_sgns = [
@@ -301,21 +261,21 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   }
 
 
-  Type tag_obj_expr_type(Expr tag_expr, Expr obj_expr, [EnvVar -> Type] env, (Expr -> Type) ext_type) {
-    tag_types = disassemble_tag_type(expr_type_ex(tag_expr, env, ext_type));
-    obj_type = expr_type_ex(obj_expr, env, ext_type);
+  Type tag_obj_expr_type(Expr tag_expr, Expr obj_expr, [EnvVar -> Type] env) {
+    tag_types = disassemble_tag_type(expr_type(tag_expr, env));
+    obj_type = expr_type(obj_expr, env);
     return union_type([tag_obj_type(t, obj_type) : t <- tag_types]);
   }
 
 
-  Type builtin_call_expr_type(BuiltIn name, Expr+ args, [EnvVar -> Type] env, (Expr -> Type) ext_type) =
-    untag = untagged_objs_supertype(expr_type_ex(args(0), env, ext_type)),
-    tag   = tag_supertype(expr_type_ex(args(0), env, ext_type)),
-    _     = fn_call_type(builtin_to_fn_type(builtin_signature(name)), args, (), [], env, ext_type);
+  Type builtin_call_expr_type(BuiltIn name, Expr+ args, [EnvVar -> Type] env) =
+    untag = untagged_objs_supertype(expr_type(args(0), env)),
+    tag   = tag_supertype(expr_type(args(0), env)),
+    _     = fn_call_type(builtin_to_fn_type(builtin_signature(name)), args, (), [], env);
 
 
-  Type size_expr_type(Expr coll_expr, [EnvVar -> Type] env, (Expr -> Type) ext_type) {
-    coll_type = expr_type_ex(coll_expr, env, ext_type);
+  Type size_expr_type(Expr coll_expr, [EnvVar -> Type] env) {
+    coll_type = expr_type(coll_expr, env);
     return empty_type if coll_type == empty_type;
 
     return singleton_type(0) if is_subset(coll_type, empty_seq_type) or is_subset(coll_type, empty_rel_type);
@@ -331,13 +291,13 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   }
 
 
-  Type unary_pseudo_call_expr_type(Expr target, Expr arg, [EnvVar -> Type] env, (Expr -> Type) ext_type) {
-    target_type = expr_type_ex(target, env, ext_type);
+  Type unary_pseudo_call_expr_type(Expr target, Expr arg, [EnvVar -> Type] env) {
+    target_type = expr_type(target, env);
 
     return empty_type if target_type == empty_type;
     return type_bool  if is_subset(target_type, type_set);
 
-    arg_type = expr_type_ex(arg, env, ext_type);
+    arg_type = expr_type(arg, env);
 
     if is_subset(target_type, atom_type):
       if is_eq(target_type, atom_type):
@@ -353,14 +313,14 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   }
 
 
-  Type accessor_expr_type(Expr target, SymbObj field, [EnvVar -> Type] env, (Expr -> Type) ext_type) {
-    target_type = expr_type_ex(target, env, ext_type);
+  Type accessor_expr_type(Expr target, SymbObj field, [EnvVar -> Type] env) {
+    target_type = expr_type(target, env);
     return if target_type != empty_type then mandatory_field_type(target_type, field) else empty_type;
   }
 
 
-  Type auto_method_call_expr_type(AutoMethodCall expr, [EnvVar -> Type] env, (Expr -> Type) ext_type) {
-    args_types = (expr_type_ex(a, env, ext_type) : a <- expr.args);
+  Type auto_method_call_expr_type(AutoMethodCall expr, [EnvVar -> Type] env) {
+    args_types = (expr_type(a, env) : a <- expr.args);
     auto_type = if expr.var? then var_type(expr.var) else this_auto_symbol;
     sgn_set = method_signatures(auto_type, expr.name, |args_types|);
     types = [
@@ -371,8 +331,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   }
 
 
-  Type db_method_call_expr_type(DBMethodCall expr, [EnvVar -> Type] env, (Expr -> Type) ext_type) {
-    args_types = (expr_type_ex(a, env, ext_type) : a <- expr.args);
+  Type db_method_call_expr_type(DBMethodCall expr, [EnvVar -> Type] env) {
+    args_types = (expr_type(a, env) : a <- expr.args);
     db_type = if expr.var? then var_type(expr.var) else this_db_symbol;
     sgn_set = method_signatures(db_type, expr.name, |args_types|);
     types = [
@@ -383,57 +343,57 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   }
 
 
-  Type if_expr_type(Expr cond, Expr then_expr, Expr else_expr, [EnvVar -> Type] env, (Expr -> Type) ext_type) {
-    cond_type = expr_type_ex(cond, env, ext_type);
-    env_when_true, env_when_false = refine_env_ex(cond, env, ext_type);
+  Type if_expr_type(Expr cond, Expr then_expr, Expr else_expr, [EnvVar -> Type] env) {
+    cond_type = expr_type(cond, env);
+    env_when_true, env_when_false = refine_env(cond, env);
     res_type = union_superset([
-      expr_type_ex(then_expr, env_when_true,  ext_type) if type_contains_obj(cond_type, true),
-      expr_type_ex(else_expr, env_when_false, ext_type) if type_contains_obj(cond_type, false)
+      expr_type(then_expr, env_when_true)  if type_contains_obj(cond_type, true),
+      expr_type(else_expr, env_when_false) if type_contains_obj(cond_type, false)
     ]);
     return res_type;
   }
 
 
-  Type match_expr_type(Expr+ exprs, (ptrns: Pattern+, expr: Expr)+ cases, [EnvVar -> Type] env, (Expr -> Type) ext_type) {
-    types = (case_expr_type(exprs, c.ptrns, c.expr, env, ext_type) : c <- cases);
+  Type match_expr_type(Expr+ exprs, (ptrns: Pattern+, expr: Expr)+ cases, [EnvVar -> Type] env) {
+    types = (case_expr_type(exprs, c.ptrns, c.expr, env) : c <- cases);
     return union_superset(set(types));
 
 
-    Type case_expr_type(Expr+ exprs, Pattern+ ptrns, Expr expr, [EnvVar -> Type] env, (Expr -> Type) ext_type) {
-      case_expr_env = update_env_ex(exprs, ptrns, env, ext_type);
-      return expr_type_ex(expr, case_expr_env, ext_type);
+    Type case_expr_type(Expr+ exprs, Pattern+ ptrns, Expr expr, [EnvVar -> Type] env) {
+      case_expr_env = update_env(exprs, ptrns, env);
+      return expr_type(expr, case_expr_env);
     }
   }
 
 
-  Type set_comp_expr_type(Expr expr, Clause source, [EnvVar -> Type] env, (Expr -> Type) ext_type) {
-    iter_tree = full_iter_tree(source, env, ext_type);
-    return set_comp_type(iter_tree, expr, ext_type);
+  Type set_comp_expr_type(Expr expr, Clause source, [EnvVar -> Type] env) {
+    iter_tree = full_iter_tree(source, env);
+    return set_comp_type(iter_tree, expr);
   }
 
 
-  Type map_comp_expr_type(Expr key_expr, Expr value_expr, Clause source, [EnvVar -> Type] env, (Expr -> Type) ext_type) {
-    iter_tree = full_iter_tree(source, env, ext_type);
-    return map_comp_type(iter_tree, key_expr, value_expr, ext_type);
+  Type map_comp_expr_type(Expr key_expr, Expr value_expr, Clause source, [EnvVar -> Type] env) {
+    iter_tree = full_iter_tree(source, env);
+    return map_comp_type(iter_tree, key_expr, value_expr);
   }
 
 
-  Type bin_rel_comp_expr_type((Expr, Expr) exprs, Clause source, [EnvVar -> Type] env, (Expr -> Type) ext_type) {
-    iter_tree = full_iter_tree(source, env, ext_type);
+  Type bin_rel_comp_expr_type((Expr, Expr) exprs, Clause source, [EnvVar -> Type] env) {
+    iter_tree = full_iter_tree(source, env);
     expr1, expr2 = exprs;
-    return bin_rel_comp_type(iter_tree, expr1, expr2, ext_type);
+    return bin_rel_comp_type(iter_tree, expr1, expr2);
   }
 
 
-  Type tern_rel_comp_expr_type((Expr, Expr, Expr) exprs, Clause source, [EnvVar -> Type] env, (Expr -> Type) ext_type) {
-    iter_tree = full_iter_tree(source, env, ext_type);
+  Type tern_rel_comp_expr_type((Expr, Expr, Expr) exprs, Clause source, [EnvVar -> Type] env) {
+    iter_tree = full_iter_tree(source, env);
     expr0, expr1, expr2 = exprs;
-    return tern_rel_comp_type(iter_tree, expr0, expr1, expr2, ext_type);
+    return tern_rel_comp_type(iter_tree, expr0, expr1, expr2);
   }
 
 
-  Type seq_comp_expr_type(SeqCompExpr expr, [EnvVar -> Type] env, (Expr -> Type) ext_type) {
-    src_type = expr_type_ex(expr.src_expr, env, ext_type);
+  Type seq_comp_expr_type(SeqCompExpr expr, [EnvVar -> Type] env) {
+    src_type = expr_type(expr.src_expr, env);
     return empty_type if src_type == empty_type;
     return empty_seq_type if is_subset(src_type, empty_seq_type);
 
@@ -445,7 +405,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
               env_delta = asgnm_env_updates(expr.vars, field_type);
               env_delta = env_delta & [expr.idx_var -> int_range(i, i)] if expr.idx_var?;
               new_env = update(env, env_delta);
-              return expr_type_ex(expr.expr, new_env, ext_type);
+              return expr_type(expr.expr, new_env);
             } : field_type @ i <- src_tuple_types
           ) : src_tuple_types <- src_tuple_types_set
         ];
@@ -458,20 +418,20 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
     env_delta = asgnm_env_updates(expr.vars, src_elem_type) & [expr.idx_var -> type_nat if expr.idx_var?];
     new_env = update(env, env_delta);
-    new_env, unused_var = refine_env_ex(expr.sel_expr, new_env, ext_type) if expr.sel_expr?;
+    new_env, unused_var = refine_env(expr.sel_expr, new_env) if expr.sel_expr?;
 
-    elem_type = expr_type_ex(expr.expr, new_env, ext_type);
+    elem_type = expr_type(expr.expr, new_env);
     nonempty = not (type_contains_obj(src_type, ()) or expr.sel_expr?);
     return type_seq(elem_type, nonempty);
   }
 
 
-  Type range_comp_expr_type(RangeCompExpr expr, [EnvVar -> Type] env, (Expr -> Type) ext_type) {
-    bound_expr_type = expr_type_ex(expr.bound_expr, env, ext_type);
+  Type range_comp_expr_type(RangeCompExpr expr, [EnvVar -> Type] env) {
+    bound_expr_type = expr_type(expr.bound_expr, env);
     ## BAD: HERE WE COULD TAKE ADVANTAGE OF THE KNOWLEDGE ON THE TYPE OF THE UPPER BOUND
     new_env = update(env, [expr.var -> type_nat]);
-    new_env, unused_var = refine_env_ex(expr.sel_expr, new_env, ext_type) if expr.sel_expr?;
-    elem_type = expr_type_ex(expr.expr, new_env, ext_type);
+    new_env, unused_var = refine_env(expr.sel_expr, new_env) if expr.sel_expr?;
+    elem_type = expr_type(expr.expr, new_env);
     nonempty = not expr.sel_expr? and is_subset(bound_expr_type, if expr.inclusive then type_nat else type_nz_nat);
     return type_seq(elem_type, nonempty);
   }
@@ -479,21 +439,21 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////
 
-  Bool will_dispatch_to(FnType signature, Expr* args, [EnvVar -> Type] env, (Expr -> Type) ext_type) =
+  Bool will_dispatch_to(FnType signature, Expr* args, [EnvVar -> Type] env) =
     not (
       e, t <~ zip(args, signature.args)
-      : not is_subset(expr_type_ex(e, env, ext_type), replace_type_vars_with_type_any(t))
+      : not is_subset(expr_type(e, env), replace_type_vars_with_type_any(t))
     );
 
 
-  Bool will_dispatch_to(ClsType signature, Expr+ args, [EnvVar -> Type] env, (Expr -> Type) ext_type) =
-    not (a, t <~ zip(args, signature.in_types) : not is_subset(expr_type_ex(a, env, ext_type), t));
+  Bool will_dispatch_to(ClsType signature, Expr+ args, [EnvVar -> Type] env) =
+    not (a, t <~ zip(args, signature.in_types) : not is_subset(expr_type(a, env), t));
 
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////
 
-  ([EnvVar -> Type], [EnvVar -> Type]) refine_env_ex(Expr cond, [EnvVar -> Type] env, (Expr -> Type) ext_type) {
-    type = expr_type_ex(cond, env, ext_type);
+  ([EnvVar -> Type], [EnvVar -> Type]) refine_env(Expr cond, [EnvVar -> Type] env) {
+    type = expr_type(cond, env);
 
     if type == empty_type:
       // The expression if unreachable, so both branches are unreachable as well
@@ -512,11 +472,11 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     // Here both branches can be executed
     return match (cond)
       membership()    = refine_membership_env(cond.obj, cond.type, env),
-      eq()            = refine_eq_env(cond.left, cond.right, env, ext_type),
-      not_expr(e?)    = refine_not_env(e, env, ext_type),
-      accessor_test() = refine_accessor_test_env(cond.expr, cond.field, env, ext_type),
-      and_expr()      = refine_and_env(cond.left, cond.right, env, ext_type),
-      or_expr()       = refine_or_env(cond.left, cond.right, env, ext_type),
+      eq()            = refine_eq_env(cond.left, cond.right, env),
+      not_expr(e?)    = refine_not_env(e, env),
+      accessor_test() = refine_accessor_test_env(cond.expr, cond.field, env),
+      and_expr()      = refine_and_env(cond.left, cond.right, env),
+      or_expr()       = refine_or_env(cond.left, cond.right, env),
       fn_call()       = refine_fn_call_env(cond, env),
       _               = (env, env);
   }
@@ -590,28 +550,28 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   }
 
 
-  ([EnvVar -> Type], [EnvVar -> Type]) refine_eq_env(Expr left, Expr right, [EnvVar -> Type] env, (Expr -> Type) ext_type) {
+  ([EnvVar -> Type], [EnvVar -> Type]) refine_eq_env(Expr left, Expr right, [EnvVar -> Type] env) {
     env_delta_eq, env_delta_not_eq =
       if left :: EnvVar
-        then refine(left, right, env, ext_type)
+        then refine(left, right, env)
       elif right :: EnvVar
-        then refine(right, left, env, ext_type)
+        then refine(right, left, env)
       elif left :: VarField
-        then refine(left.expr, left.field, right, env, ext_type)
+        then refine(left.expr, left.field, right, env)
       elif right :: VarField
-        then refine(right.expr, right.field, left, env, ext_type)
+        then refine(right.expr, right.field, left, env)
       elif left :: <size_expr(coll: <EnvVar, VarField>)> and right :: <object(Nat)>
-        then refine(left.coll, bare_obj(right), env, ext_type)
+        then refine(left.coll, bare_obj(right), env)
       elif right :: <size_expr(coll: <EnvVar, VarField>)> and left :: <object(Nat)>
-        then refine(right.coll, bare_obj(left), env, ext_type)
+        then refine(right.coll, bare_obj(left), env)
       else
         ([], []);
 
     return (update(env, env_delta_eq), update(env, env_delta_not_eq));
 
 
-    ([EnvVar -> Type], [EnvVar -> Type]) refine(EnvVar var, Nat size, [EnvVar -> Type] env, (Expr -> Type) ext_type) {
-      return refine_eq_env(var, seq_expr(()), env, ext_type) if size == 0;
+    ([EnvVar -> Type], [EnvVar -> Type]) refine(EnvVar var, Nat size, [EnvVar -> Type] env) {
+      return refine_eq_env(var, seq_expr(()), env) if size == 0;
       var_type = env[var];
       return (env, env) if size > 32 or not is_subset(var_type, type_seq);
       var_type_if_true = tuple_type(tuple_field_supertypes(var_type, size));
@@ -620,12 +580,12 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     }
 
 
-    ([EnvVar -> Type], [EnvVar -> Type]) refine(VarField expr, Nat size, [EnvVar -> Type] env, (Expr -> Type) ext_type) {
-      return refine_eq_env(expr, seq_expr(()), env, ext_type) if size == 0;
+    ([EnvVar -> Type], [EnvVar -> Type]) refine(VarField expr, Nat size, [EnvVar -> Type] env) {
+      return refine_eq_env(expr, seq_expr(()), env) if size == 0;
       var = expr.expr;
       field = expr.field;
       var_type = env[var];
-      field_type = accessor_expr_type(var, field, env, ext_type);
+      field_type = accessor_expr_type(var, field, env);
       return (env, env) if size > 32 or var_type == empty_type or not is_subset(field_type, type_seq);
       field_type_if_true = tuple_type(tuple_field_supertypes(field_type, size));
       return (unreachable_env(env), env) if field_type_if_true == empty_type;
@@ -635,18 +595,18 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     }
 
 
-    ([EnvVar -> Type], [EnvVar -> Type]) refine(EnvVar var, Expr expr, [EnvVar -> Type] env, (Expr -> Type) ext_type) {
+    ([EnvVar -> Type], [EnvVar -> Type]) refine(EnvVar var, Expr expr, [EnvVar -> Type] env) {
       vars = var_group(var);
-      eq_type, not_eq_type = eq_refine(env[var], expr_type_ex(expr, env, ext_type));
+      eq_type, not_eq_type = eq_refine(env[var], expr_type(expr, env));
       return ([v -> eq_type : v <- vars], [v -> not_eq_type : v <- vars]);
     }
 
 
-    ([EnvVar -> Type], [EnvVar -> Type]) refine(EnvVar var, SymbObj field, Expr expr, [EnvVar -> Type] env, (Expr -> Type) ext_type) {
+    ([EnvVar -> Type], [EnvVar -> Type]) refine(EnvVar var, SymbObj field, Expr expr, [EnvVar -> Type] env) {
       var_type = env[var];
       vars = var_group(var);
-      field_type = accessor_expr_type(var, field, env, ext_type);
-      field_type_eq, field_type_not_eq = eq_refine(field_type, expr_type_ex(expr, env, ext_type));
+      field_type = accessor_expr_type(var, field, env);
+      field_type_eq, field_type_not_eq = eq_refine(field_type, expr_type(expr, env));
       return ([], []) if var_type == empty_type or field_type_eq == empty_type or field_type_not_eq == empty_type;
       var_type_eq = update_mandatory_field_type(var_type, field, field_type_eq);
       var_type_not_eq = update_mandatory_field_type(var_type, field, field_type_not_eq);
@@ -668,14 +628,14 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   }
 
 
-  ([EnvVar -> Type], [EnvVar -> Type]) refine_not_env(Expr expr, [EnvVar -> Type] env, (Expr -> Type) ext_type) {
-    env_false, env_true = refine_env_ex(expr, env, ext_type);
+  ([EnvVar -> Type], [EnvVar -> Type]) refine_not_env(Expr expr, [EnvVar -> Type] env) {
+    env_false, env_true = refine_env(expr, env);
     return (env_true, env_false);
   }
 
 
-  ([EnvVar -> Type], [EnvVar -> Type]) refine_accessor_test_env(Expr expr, SymbObj field, [EnvVar -> Type] env, (Expr -> Type) ext_type) {
-    expr_type = expr_type_ex(expr, env, ext_type);
+  ([EnvVar -> Type], [EnvVar -> Type]) refine_accessor_test_env(Expr expr, SymbObj field, [EnvVar -> Type] env) {
+    expr_type = expr_type(expr, env);
     if expr_type == empty_type:
       unreachable_env = unreachable_env(env);
       return (unreachable_env, unreachable_env);
@@ -731,38 +691,39 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   }
 
 
-  ([EnvVar -> Type], [EnvVar -> Type]) refine_and_env(Expr left, Expr right, [EnvVar -> Type] env, (Expr -> Type) ext_type) {
-    left_true_env, left_false_env = refine_env_ex(left, env, ext_type);
-    right_true_env, right_false_env = refine_env_ex(right, left_true_env, ext_type);
+  ([EnvVar -> Type], [EnvVar -> Type]) refine_and_env(Expr left, Expr right, [EnvVar -> Type] env) {
+    left_true_env, left_false_env = refine_env(left, env);
+    right_true_env, right_false_env = refine_env(right, left_true_env);
     return (right_true_env, merge_envs(left_false_env, right_false_env));
   }
 
 
-  ([EnvVar -> Type], [EnvVar -> Type]) refine_or_env(Expr left, Expr right, [EnvVar -> Type] env, (Expr -> Type) ext_type) {
-    left_true_env, left_false_env = refine_env_ex(left, env, ext_type);
-    right_true_env, right_false_env = refine_env_ex(right, left_false_env, ext_type);
+  ([EnvVar -> Type], [EnvVar -> Type]) refine_or_env(Expr left, Expr right, [EnvVar -> Type] env) {
+    left_true_env, left_false_env = refine_env(left, env);
+    right_true_env, right_false_env = refine_env(right, left_false_env);
     return (merge_envs(left_true_env, right_true_env), right_false_env);
   }
 
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////
 
-  [EnvVar -> Type] generate_env_ex(Clause cls, [EnvVar -> Type] env, (Expr -> Type) ext_type) =
-    set_clause()        = env & [cls.var -> set_elem_supertype(expr_type_ex(cls.src, env, ext_type))],
-    rel_clause()        = gen_rel_clause_env(cls.vars, cls.src, cls.args, env, ext_type),
+  [EnvVar -> Type] generate_env(Clause cls, [EnvVar -> Type] env) =
+    set_clause()        = env & [cls.var -> set_elem_supertype(expr_type(cls.src, env))],
+    rel_clause()        = gen_rel_clause_env(cls.vars, cls.src, cls.args, env),
     relvar_clause()     = gen_relvar_clause_env(cls.vars, cls.rel_var, cls.args, env),
-    seq_clause()        = gen_seq_clause_env(cls.vars, cls.idx_var, cls.src, env, ext_type),
-    and_clause()        = { new_env = generate_env_ex(cls.left, env, ext_type);
-                            return generate_env_ex(cls.right, new_env, ext_type);
+    seq_clause()        = gen_seq_clause_env(cls.vars, cls.idx_var, cls.src, env),
+    and_clause()        = { new_env = generate_env(cls.left, env);
+                            return generate_env(cls.right, new_env);
                           },
-    or_clause()         = merge_envs(generate_env_ex(cls.left, env, ext_type), generate_env_ex(cls.right, env, ext_type)),
-    match_clause()      = update_env_ex(cls.expr, cls.ptrn, env, ext_type),
-    asgnm_clause()      = env & [cls.var -> expr_type_ex(cls.expr, env, ext_type)],
-    filter_clause(e?)   = left(refine_env_ex(e, env, ext_type));
+    or_clause()         = merge_envs(generate_env(cls.left, env), generate_env(cls.right, env)),
+    // match_clause()      = environment & generate_env(cls.ptrn, expr_type(cls.expr)),
+    match_clause()      = update_env(cls.expr, cls.ptrn, env),
+    asgnm_clause()      = env & [cls.var -> expr_type(cls.expr, env)],
+    filter_clause(e?)   = left(refine_env(e, env));
 
 
-  [EnvVar -> Type] gen_seq_clause_env(Maybe[StdVar]+ vars, Maybe[StdVar] idx_var, Expr src, [EnvVar -> Type] env, (Expr -> Type) ext_type) {
-    src_expr_type = expr_type_ex(src, env, ext_type);
+  [EnvVar -> Type] gen_seq_clause_env(Maybe[StdVar]+ vars, Maybe[StdVar] idx_var, Expr src, [EnvVar -> Type] env) {
+    src_expr_type = expr_type(src, env);
     elem_type = seq_elem_supertype(src_expr_type);
 
     nvars = nz_nat(|vars|);
@@ -779,11 +740,11 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   }
 
 
-  [EnvVar -> Type] gen_rel_clause_env(StdVar+ vars, Expr src, Maybe[Expr]+ args, [EnvVar -> Type] env, (Expr -> Type) ext_type) {
+  [EnvVar -> Type] gen_rel_clause_env(StdVar+ vars, Expr src, Maybe[Expr]+ args, [EnvVar -> Type] env) {
     assert |args| == 2 or |args| == 3;
     assert |vars| == count(args, $ == nothing);
 
-    src_expr_type = expr_type_ex(src, env, ext_type);
+    src_expr_type = expr_type(src, env);
     rel_arity = |args|;
     args_types = if rel_arity == 2
       then bin_rel_args_supertypes(src_expr_type)
@@ -840,9 +801,9 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////
 
-  Type fn_call_type(FnType signature, Expr* args, ClsExpr* cls_args, [ImplArg -> Expr] impl_args, [EnvVar -> Type] env, (Expr -> Type) ext_type) { ## DO I NEED THE THIRD PARAMETER?
-    actual_types = (expr_type_ex(e, env, ext_type) : e <- args);
-    type_var_insts = instantiate_type_vars(actual_types, signature.args, cls_args, signature.cls_args, env, ext_type);
+  Type fn_call_type(FnType signature, Expr* args, ClsExpr* cls_args, [ImplArg -> Expr] impl_args, [EnvVar -> Type] env) { ## DO I NEED THE THIRD PARAMETER?
+    actual_types = (expr_type(e, env) : e <- args);
+    type_var_insts = instantiate_type_vars(actual_types, signature.args, cls_args, signature.cls_args, env);
     return replace_type_vars(signature.ret_type, type_var_insts);
   }
 
@@ -855,7 +816,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   //   for e, t <- zip(args, args_types):
   //     assert is_expr(e) == is_type(t);
   //     if is_expr(e) and is_type(t):
-  //       actual_types = (actual_types | expr_type_ex(e, env));
+  //       actual_types = (actual_types | expr_type(e, env));
   //       formal_types = (formal_types | t);
   //     elif is_cls_expr(e) and is_cls_type(t):
   //       cls_args = (cls_args | e);
@@ -867,7 +828,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   // }
 
 
-  [TypeVar -> Type] instantiate_type_vars(Type* actual_types, Type* formal_types, AnyClsExpr* cls_args, ClsType* cls_types, [EnvVar -> Type] env, (Expr -> Type) ext_type) {
+  [TypeVar -> Type] instantiate_type_vars(Type* actual_types, Type* formal_types, AnyClsExpr* cls_args, ClsType* cls_types, [EnvVar -> Type] env) {
     assert |actual_types| == |formal_types|;
     assert |cls_args| == |cls_types|;
     type_var_insts = type_var_instantiations_for_subset(actual_types, formal_types);
@@ -875,7 +836,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
       new_type_pairs = ();
       for t @ i <- cls_types:
         rwr_cls = rewrite_cls_expr(cls_args(i));
-        actual_ret_type = get_return_type(rwr_cls, t, type_var_insts, env, ext_type);
+        actual_ret_type = get_return_type(rwr_cls, t, type_var_insts, env);
         assert is_subset(actual_ret_type, replace_type_vars_with_type_any(t.out_type));
         new_type_pairs = (new_type_pairs | (actual_ret_type, t.out_type));
       ;
@@ -887,12 +848,12 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   }
 
 
-  Type get_return_type(AnyClsExpr expr, ClsType type, [TypeVar -> Type] type_var_insts, [EnvVar -> Type] env, (Expr -> Type) ext_type) =
+  Type get_return_type(AnyClsExpr expr, ClsType type, [TypeVar -> Type] type_var_insts, [EnvVar -> Type] env) =
     cls_var()   = closures[expr].out_type,
     fn_ptr()    = undefined,
     cls_expr()  = { inst_formal_par_types = (replace_type_vars(t, type_var_insts) : t <- type.in_types);
                     new_env = get_updated_env(env, (nothing : i < expr.arity), inst_formal_par_types);
-                    return expr_type_ex(expr.expr, new_env, ext_type);
+                    return expr_type(expr.expr, new_env);
                   };
 
   //////////////////////////////////////////////////////////////////////////////
@@ -945,22 +906,22 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////
 
-  [EnvVar -> Type] update_env_ex(Expr+ exprs, Pattern+ ptrns, [EnvVar -> Type] env, (Expr -> Type) ext_type) {
+  [EnvVar -> Type] update_env(Expr+ exprs, Pattern+ ptrns, [EnvVar -> Type] env) {
     assert |exprs| == |ptrns|;
     new_env = env;
     for expr, ptrn <- zip(exprs, ptrns):
-      new_env = update_env_ex(expr, ptrn, new_env, ext_type);
+      new_env = update_env(expr, ptrn, new_env);
     ;
     return new_env;
   }
 
 
-  [EnvVar -> Type] update_env_ex(Expr expr, Pattern ptrn, [EnvVar -> Type] env, (Expr -> Type) ext_type) {
+  [EnvVar -> Type] update_env(Expr expr, Pattern ptrn, [EnvVar -> Type] env) {
     new_env = env;
 
-    type = expr_type_ex(expr, env, ext_type);
+    type = expr_type(expr, env);
     ## THE EMPTY TYPE SHOULD NOT BE TREATED AS A SPECIAL CASE HERE.
-    ## AM I SURE generate_env_ex(Pattern, Type) CANNOT ACCEPT THE EMPTY TYPE?
+    ## AM I SURE generate_env(Pattern, Type) CANNOT ACCEPT THE EMPTY TYPE?
     return new_env & [v -> empty_type : v <- pattern_vars(ptrn)] if type == empty_type;
 
     if expr :: EnvVar:
@@ -969,7 +930,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
       new_env = update(new_env, [v -> refined_type : v <- var_group(expr)]);
 
     elif expr :: VarField:
-      var_type = expr_type_ex(expr.expr, env, ext_type);
+      var_type = expr_type(expr.expr, env);
       refined_field_type = type_pattern_intersection_superset(type, ptrn);
       fail if var_type == empty_type or refined_field_type == empty_type;
       refined_type = update_mandatory_field_type(var_type, expr.field, refined_field_type);
@@ -988,24 +949,24 @@ type IterTree = never, once([EnvVar -> Type]), repeated(IterTree), any([+IterTre
 
 implicit program : Program, typedefs : [TypeName -> NeType], context : Context, typed_vars : [StdVar -> NeType] {
 
-  IterTree full_iter_tree(Clause cls, [EnvVar -> Type] env, (Expr -> Type) ext_type) = iter_tree(cls, env, ext_type, :once($));
+  IterTree full_iter_tree(Clause cls, [EnvVar -> Type] env) = iter_tree(cls, env, :once($));
 
 
-  IterTree iter_tree(Clause cls, [EnvVar -> Type] env, (Expr -> Type) ext_type, ([EnvVar -> Type] -> IterTree) tail) =
-    set_clause()      = set_clause_iter_tree(cls.var, cls.src, env, ext_type, tail),
-    rel_clause()      = rel_clause_iter_tree(cls.vars, cls.src, cls.args, env, ext_type, tail),
-    relvar_clause()   = relvar_clause_iter_tree(cls.vars, cls.rel_var, cls.args, env, ext_type, tail),
-    seq_clause()      = seq_clause_iter_tree(cls.vars, cls.idx_var, cls.src, env, ext_type, tail),
-    and_clause()      = iter_tree(cls.left, env, ext_type, iter_tree(cls.right, $, ext_type, tail)),
-    or_clause()       = :all(iter_tree(cls.left, env, ext_type, tail), iter_tree(cls.right, env, ext_type, tail)),
-    match_clause()    = :any([:never, tail(update_env_ex(cls.expr, cls.ptrn, env, ext_type))]), ## THE never CAN BE ELIMINATED IF THE MATCH NEVER FAILS
-    asgnm_clause()    = tail(env & [cls.var -> expr_type_ex(cls.expr, env, ext_type)]),
-    filter_clause(e?) = filter_clause_iter_tree(e, env, ext_type, tail);
+  IterTree iter_tree(Clause cls, [EnvVar -> Type] env, ([EnvVar -> Type] -> IterTree) tail) =
+    set_clause()      = set_clause_iter_tree(cls.var, cls.src, env, tail),
+    rel_clause()      = rel_clause_iter_tree(cls.vars, cls.src, cls.args, env, tail),
+    relvar_clause()   = relvar_clause_iter_tree(cls.vars, cls.rel_var, cls.args, env, tail),
+    seq_clause()      = seq_clause_iter_tree(cls.vars, cls.idx_var, cls.src, env, tail),
+    and_clause()      = iter_tree(cls.left, env, iter_tree(cls.right, $, tail)),
+    or_clause()       = :all(iter_tree(cls.left, env, tail), iter_tree(cls.right, env, tail)),
+    match_clause()    = :any([:never, tail(update_env(cls.expr, cls.ptrn, env))]), ## THE never CAN BE ELIMINATED IF THE MATCH NEVER FAILS
+    asgnm_clause()    = tail(env & [cls.var -> expr_type(cls.expr, env)]),
+    filter_clause(e?) = filter_clause_iter_tree(e, env, tail);
 
 
-  IterTree filter_clause_iter_tree(Expr cond, [EnvVar -> Type] env, (Expr -> Type) ext_type, ([EnvVar -> Type] -> IterTree) tail) {
-    type = expr_type_ex(cond, env, ext_type);
-    iter_tree_when_true = tail(left(refine_env_ex(cond, env, ext_type)));
+  IterTree filter_clause_iter_tree(Expr cond, [EnvVar -> Type] env, ([EnvVar -> Type] -> IterTree) tail) {
+    type = expr_type(cond, env);
+    iter_tree_when_true = tail(left(refine_env(cond, env)));
     return if is_subset(type, type_true)
         then iter_tree_when_true
       elif is_subset(type, type_false)
@@ -1015,8 +976,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   }
 
 
-  IterTree set_clause_iter_tree(StdVar var, Expr src, [EnvVar -> Type] env, (Expr -> Type) ext_type, ([EnvVar -> Type] -> IterTree) tail) {
-    src_type = expr_type_ex(src, env, ext_type);
+  IterTree set_clause_iter_tree(StdVar var, Expr src, [EnvVar -> Type] env, ([EnvVar -> Type] -> IterTree) tail) {
+    src_type = expr_type(src, env);
     elem_type = set_elem_supertype(src_type);
     return :never if elem_type == empty_type;
     new_env = env & [var -> elem_type];
@@ -1026,8 +987,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   }
 
 
-  IterTree seq_clause_iter_tree(Maybe[StdVar]+ vars, Maybe[StdVar] idx_var, Expr src, [EnvVar -> Type] env, (Expr -> Type) ext_type, ([EnvVar -> Type] -> IterTree) tail) {
-    src_type = expr_type_ex(src, env, ext_type);
+  IterTree seq_clause_iter_tree(Maybe[StdVar]+ vars, Maybe[StdVar] idx_var, Expr src, [EnvVar -> Type] env, ([EnvVar -> Type] -> IterTree) tail) {
+    src_type = expr_type(src, env);
     elem_type = seq_elem_supertype(src_type);
     return :never if elem_type == empty_type;
     nvars = nz_nat(|vars|);
@@ -1046,11 +1007,11 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   }
 
 
-  IterTree rel_clause_iter_tree(StdVar+ vars, Expr src, Maybe[Expr]+ args, [EnvVar -> Type] env, (Expr -> Type) ext_type, ([EnvVar -> Type] -> IterTree) tail) {
+  IterTree rel_clause_iter_tree(StdVar+ vars, Expr src, Maybe[Expr]+ args, [EnvVar -> Type] env, ([EnvVar -> Type] -> IterTree) tail) {
     assert |args| == 2 or |args| == 3;
     assert |vars| == count(args, $ == nothing);
 
-    src_type = expr_type_ex(src, env, ext_type);
+    src_type = expr_type(src, env);
 
     idxs = packed_seq_idxs((a == nothing : a <- args));
     maybe_vars = (if a == nothing then just(vars(idxs[i])) else nothing : a @ i <- args);
@@ -1093,10 +1054,10 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     empty_type          = :never;
 
 
-  IterTree relvar_clause_iter_tree(StdVar+ vars, AnyRelVar rel_var, Maybe[Expr]+ args, [EnvVar -> Type] env, (Expr -> Type) ext_type, ([EnvVar -> Type] -> IterTree) tail) {
+  IterTree relvar_clause_iter_tree(StdVar+ vars, AnyRelVar rel_var, Maybe[Expr]+ args, [EnvVar -> Type] env, ([EnvVar -> Type] -> IterTree) tail) {
     sgns = relvar_signatures(rel_var);
     // keys = relvar_keys(rel_var); ## MAKE USE OF KEY INFORMATION
-    args_types = (apply(a, expr_type_ex($, env, ext_type)) : a <- args);
+    args_types = (apply(a, expr_type($, env)) : a <- args);
     vars_idxs = packed_seq_idxs((a == nothing : a <- args));
     iter_trees = [{
         env_delta = [vars(vars_idxs[i]) -> s(i) : a @ i <~ args, a == nothing];
@@ -1110,33 +1071,33 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////
 
-  SetType set_comp_type(IterTree tree, Expr expr, (Expr -> Type) ext_type) =
+  SetType set_comp_type(IterTree tree, Expr expr) =
     never         = empty_rel_type,
-    once(e?)      = once_set_comp_type(e, expr, ext_type),
-    repeated(t?)  = set_comp_type(t, expr, ext_type),
-    any(ts?)      = set_comp_union_type([set_comp_type(t, expr, ext_type) : t <- ts]),
-    all(ts?)      = fold((set_comp_type(t, expr, ext_type) : t <- ts), set_both);
+    once(e?)      = once_set_comp_type(e, expr),
+    repeated(t?)  = set_comp_type(t, expr),
+    any(ts?)      = set_comp_union_type([set_comp_type(t, expr) : t <- ts]),
+    all(ts?)      = fold((set_comp_type(t, expr) : t <- ts), set_both);
 
 
-  SetType once_set_comp_type([EnvVar -> Type] env, Expr expr, (Expr -> Type) ext_type) {
-    type = expr_type_ex(expr, env, ext_type);
+  SetType once_set_comp_type([EnvVar -> Type] env, Expr expr) {
+    type = expr_type(expr, env);
     return if type != empty_type then ne_set_type(type) else empty_rel_type;
   }
 
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////
 
-  MapCompType map_comp_type(IterTree tree, Expr expr1, Expr expr2, (Expr -> Type) ext_type) =
+  MapCompType map_comp_type(IterTree tree, Expr expr1, Expr expr2) =
     never           = empty_rel_type,
-    once(e?)        = once_map_comp_type(e, expr1, expr2, ext_type),
-    repeated(t?)    = map_comp_type(t, expr1, expr2, ext_type),
-    any(ts?)        = map_comp_union_type([map_comp_type(t, expr1, expr2, ext_type) : t <- ts]),
-    all(ts?)        = fold((map_comp_type(t, expr1, expr2, ext_type) : t <- ts), map_both);
+    once(e?)        = once_map_comp_type(e, expr1, expr2),
+    repeated(t?)    = map_comp_type(t, expr1, expr2),
+    any(ts?)        = map_comp_union_type([map_comp_type(t, expr1, expr2) : t <- ts]),
+    all(ts?)        = fold((map_comp_type(t, expr1, expr2) : t <- ts), map_both);
 
 
-  MapCompType once_map_comp_type([EnvVar -> Type] env, Expr expr1, Expr expr2, (Expr -> Type) ext_type) {
-    type1 = expr_type_ex(expr1, env, ext_type);
-    type2 = expr_type_ex(expr2, env, ext_type);
+  MapCompType once_map_comp_type([EnvVar -> Type] env, Expr expr1, Expr expr2) {
+    type1 = expr_type(expr1, env);
+    type2 = expr_type(expr2, env);
 
     ## HANDLE THIS CASE...
     return empty_rel_type if type1 == empty_type or type2 == empty_type;
@@ -1152,17 +1113,17 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////
 
-  BinRelCompType bin_rel_comp_type(IterTree tree, Expr expr1, Expr expr2, (Expr -> Type) ext_type) =
+  BinRelCompType bin_rel_comp_type(IterTree tree, Expr expr1, Expr expr2) =
     never         = empty_rel_type,
-    once(e?)      = once_bin_rel_comp_type(e, expr1, expr2, ext_type),
-    repeated(t?)  = repeated_bin_rel_comp_type(bin_rel_comp_type(t, expr1, expr2, ext_type)),
-    any(ts?)      = bin_rel_comp_union_type([bin_rel_comp_type(t, expr1, expr2, ext_type) : t <- ts]),
-    all(ts?)      = fold((bin_rel_comp_type(t, expr1, expr2, ext_type) : t <- ts), bin_rel_both);
+    once(e?)      = once_bin_rel_comp_type(e, expr1, expr2),
+    repeated(t?)  = repeated_bin_rel_comp_type(bin_rel_comp_type(t, expr1, expr2)),
+    any(ts?)      = bin_rel_comp_union_type([bin_rel_comp_type(t, expr1, expr2) : t <- ts]),
+    all(ts?)      = fold((bin_rel_comp_type(t, expr1, expr2) : t <- ts), bin_rel_both);
 
 
-  BinRelCompType once_bin_rel_comp_type([EnvVar -> Type] env, Expr expr1, Expr expr2, (Expr -> Type) ext_type) {
-    type1 = expr_type_ex(expr1, env, ext_type);
-    type2 = expr_type_ex(expr2, env, ext_type);
+  BinRelCompType once_bin_rel_comp_type([EnvVar -> Type] env, Expr expr1, Expr expr2) {
+    type1 = expr_type(expr1, env);
+    type2 = expr_type(expr2, env);
 
     ## HANDLE THIS CASE
     return empty_rel_type if type1 == empty_type or type2 == empty_type;
@@ -1173,18 +1134,18 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////
 
-  TernRelCompType tern_rel_comp_type(IterTree tree, Expr expr0, Expr expr1, Expr expr2, (Expr -> Type) ext_type) =
+  TernRelCompType tern_rel_comp_type(IterTree tree, Expr expr0, Expr expr1, Expr expr2) =
     never         = empty_rel_type,
-    once(e?)      = once_tern_rel_comp_type(e, expr0, expr1, expr2, ext_type),
-    repeated(t?)  = repeated_tern_rel_comp_type(tern_rel_comp_type(t, expr0, expr1, expr2, ext_type)),
-    any(ts?)      = tern_rel_comp_union_type([tern_rel_comp_type(t, expr0, expr1, expr2, ext_type) : t <- ts]),
-    all(ts?)      = fold((tern_rel_comp_type(t, expr0, expr1, expr2, ext_type) : t <- ts), tern_rel_both);
+    once(e?)      = once_tern_rel_comp_type(e, expr0, expr1, expr2),
+    repeated(t?)  = repeated_tern_rel_comp_type(tern_rel_comp_type(t, expr0, expr1, expr2)),
+    any(ts?)      = tern_rel_comp_union_type([tern_rel_comp_type(t, expr0, expr1, expr2) : t <- ts]),
+    all(ts?)      = fold((tern_rel_comp_type(t, expr0, expr1, expr2) : t <- ts), tern_rel_both);
 
 
-  TernRelCompType once_tern_rel_comp_type([EnvVar -> Type] env, Expr expr0, Expr expr1, Expr expr2, (Expr -> Type) ext_type) {
-    type0 = expr_type_ex(expr0, env, ext_type);
-    type1 = expr_type_ex(expr1, env, ext_type);
-    type2 = expr_type_ex(expr2, env, ext_type);
+  TernRelCompType once_tern_rel_comp_type([EnvVar -> Type] env, Expr expr0, Expr expr1, Expr expr2) {
+    type0 = expr_type(expr0, env);
+    type1 = expr_type(expr1, env);
+    type2 = expr_type(expr2, env);
 
     ## HANDLE THIS CASE
     return empty_rel_type if type0 == empty_type or type1 == empty_type or type2 == empty_type;
@@ -1425,25 +1386,25 @@ TernRelCompType tern_rel_both(TernRelCompType type1, TernRelCompType type2) =
 
 implicit program : Program, typedefs : [TypeName -> NeType], context : Context, typed_vars : [StdVar -> NeType] {
 
-  Type return_type(Statement* stmts, [EnvVar -> Type] env, (Expr -> Type) ext_type) {
+  Type return_type(Statement* stmts, [EnvVar -> Type] env) {
     curr_env = env;
     ret_types = [];
     for s <- stmts:
-      ret_type = return_type(s, curr_env, ext_type);
+      ret_type = return_type(s, curr_env);
       ret_types = ret_types & [ret_type];
-      curr_env = update_env_ex(s, curr_env, ext_type);
+      curr_env = update_env(s, curr_env);
     ;
     return union_superset(ret_types);
   }
 
 
-  Type return_type(Statement stmt, [EnvVar -> Type] env, (Expr -> Type) ext_type) =
-    return_stmt(e?)     = expr_type_ex(e, env, ext_type),
-    if_stmt()           = if_stmt_return_type(stmt.cond, stmt.body, stmt.else, env, ext_type),
-    loop_stmt(ss?)      = loop_stmt_return_type(ss, env, ext_type),
-    foreach_stmt()      = foreach_stmt_return_type(stmt.vars, if stmt.idx_var? then just(stmt.idx_var) else nothing, stmt.values, stmt.body, env, ext_type),
-    for_stmt()          = for_stmt_return_type(if stmt.var? then just(stmt.var) else nothing, stmt.start_val, stmt.end_val, stmt.end_val_incl, stmt.body, env, ext_type),
-    let_stmt()          = let_stmt_return_type(stmt.asgnms, stmt.body, env, ext_type),
+  Type return_type(Statement stmt, [EnvVar -> Type] env) =
+    return_stmt(e?)     = expr_type(e, env),
+    if_stmt()           = if_stmt_return_type(stmt.cond, stmt.body, stmt.else, env),
+    loop_stmt(ss?)      = loop_stmt_return_type(ss, env),
+    foreach_stmt()      = foreach_stmt_return_type(stmt.vars, if stmt.idx_var? then just(stmt.idx_var) else nothing, stmt.values, stmt.body, env),
+    for_stmt()          = for_stmt_return_type(if stmt.var? then just(stmt.var) else nothing, stmt.start_val, stmt.end_val, stmt.end_val_incl, stmt.body, env),
+    let_stmt()          = let_stmt_return_type(stmt.asgnms, stmt.body, env),
     assignment_stmt()   |
     break_stmt          |
     fail_stmt()         |
@@ -1452,57 +1413,57 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     seq_update_stmt()   = empty_type;
 
 
-  Type if_stmt_return_type(Expr cond, Statement+ body, Statement* else_body, [EnvVar -> Type] env, (Expr -> Type) ext_type) {
-    if_true_env, if_false_env = refine_env_ex(cond, env, ext_type);
-    true_ret_type = return_type(body, if_true_env, ext_type);
-    false_ret_type = return_type(else_body, if_false_env, ext_type);
+  Type if_stmt_return_type(Expr cond, Statement+ body, Statement* else_body, [EnvVar -> Type] env) {
+    if_true_env, if_false_env = refine_env(cond, env);
+    true_ret_type = return_type(body, if_true_env);
+    false_ret_type = return_type(else_body, if_false_env);
     return union_superset(true_ret_type, false_ret_type);
   }
 
 
-  Type loop_stmt_return_type(Statement+ body, [EnvVar -> Type] env, (Expr -> Type) ext_type) {
+  Type loop_stmt_return_type(Statement+ body, [EnvVar -> Type] env) {
     env_0 = env;
-    env_1 = update_env_ex(body, env_0, ext_type);
-    ret_type_0 = return_type(body, env_0, ext_type);
-    ret_type_1 = return_type(body, env_1, ext_type);
+    env_1 = update_env(body, env_0);
+    ret_type_0 = return_type(body, env_0);
+    ret_type_1 = return_type(body, env_1);
     return union_superset(ret_type_0, ret_type_1);
   }
 
 
-  Type foreach_stmt_return_type(StdVar+ vars, Maybe[StdVar] maybe_idx_var, Expr values, Statement+ body, [EnvVar -> Type] env, (Expr -> Type) ext_type) {
-    elem_type = seq_elem_supertype(expr_type_ex(values, env, ext_type));
+  Type foreach_stmt_return_type(StdVar+ vars, Maybe[StdVar] maybe_idx_var, Expr values, Statement+ body, [EnvVar -> Type] env) {
+    elem_type = seq_elem_supertype(expr_type(values, env));
     assert elem_type != empty_type;
     env_delta = asgnm_env_updates(vars, elem_type) & [value(maybe_idx_var) -> type_nat if maybe_idx_var != nothing];
     env_0 = update(env, env_delta);
-    env_1 = update_env_ex(body, env_0, ext_type);
-    ret_type_0 = return_type(body, env_0, ext_type);
-    ret_type_1 = return_type(body, env_1, ext_type);
+    env_1 = update_env(body, env_0);
+    ret_type_0 = return_type(body, env_0);
+    ret_type_1 = return_type(body, env_1);
     return union_superset(ret_type_0, ret_type_1);
   }
 
 
-  Type for_stmt_return_type(Maybe[StdVar] maybe_var, Expr start_val, Expr end_val, Bool end_val_incl, Statement+ body, [EnvVar -> Type] env, (Expr -> Type) ext_type) {
+  Type for_stmt_return_type(Maybe[StdVar] maybe_var, Expr start_val, Expr end_val, Bool end_val_incl, Statement+ body, [EnvVar -> Type] env) {
     env_0 = env & [value(maybe_var) -> type_nat if maybe_var != nothing];
-    env_1 = update_env_ex(body, env_0, ext_type);
-    ret_type_0 = return_type(body, env_0, ext_type);
-    ret_type_1 = return_type(body, env_1, ext_type);
+    env_1 = update_env(body, env_0);
+    ret_type_0 = return_type(body, env_0);
+    ret_type_1 = return_type(body, env_1);
     return union_superset(ret_type_0, ret_type_1);
   }
 
 
-  Type let_stmt_return_type([ImplArg -> Expr] asgnms, Statement+ body, [EnvVar -> Type] env, (Expr -> Type) ext_type) {
-    env_delta = [v -> expr_type_ex(e, env, ext_type) : v, e <- asgnms];
+  Type let_stmt_return_type([ImplArg -> Expr] asgnms, Statement+ body, [EnvVar -> Type] env) {
+    env_delta = [v -> expr_type(e, env) : v, e <- asgnms];
     new_env = update(env, env_delta);
-    return return_type(body, new_env, ext_type);
+    return return_type(body, new_env);
   }
 
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////
 
-  [EnvVar -> Type] update_env_ex(Statement* stmts, [EnvVar -> Type] env, (Expr -> Type) ext_type) {
+  [EnvVar -> Type] update_env(Statement* stmts, [EnvVar -> Type] env) {
     curr_env = env;
     for s <- stmts:
-      curr_env = update_env_ex(s, curr_env, ext_type);
+      curr_env = update_env(s, curr_env);
     ;
     assert may_fall_through(stmts) or curr_env :: [Var -> <empty_type>];
     return curr_env;
@@ -1510,15 +1471,15 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
 
   // Returns the empty map when the statement cannot fall through
-  [EnvVar -> Type] update_env_ex(Statement stmt, [EnvVar -> Type] env, (Expr -> Type) ext_type) =
-    assignment_stmt()   = assignment_stmt_update_env(stmt.vars, stmt.value, env, ext_type),
-    seq_update_stmt()   = seq_update_stmt_update_env(stmt.seq_var, stmt.idx, stmt.value, env, ext_type),
+  [EnvVar -> Type] update_env(Statement stmt, [EnvVar -> Type] env) =
+    assignment_stmt()   = assignment_stmt_update_env(stmt.vars, stmt.value, env),
+    seq_update_stmt()   = seq_update_stmt_update_env(stmt.seq_var, stmt.idx, stmt.value, env),
     return_stmt(e?)     = unreachable_env(env),
-    if_stmt()           = if_stmt_update_env(stmt.cond, stmt.body, stmt.else, env, ext_type),
-    loop_stmt(ss?)      = loop_stmt_update_env(ss, env, ext_type),
-    foreach_stmt()      = foreach_stmt_update_env(stmt.vars, if stmt.idx_var? then just(stmt.idx_var) else nothing, stmt.values, stmt.body, env, ext_type),
-    for_stmt()          = for_stmt_update_env(if stmt.var? then just(stmt.var) else nothing, stmt.start_val, stmt.end_val, stmt.end_val_incl, stmt.body, env, ext_type),
-    let_stmt()          = let_stmt_update_env(stmt.asgnms, stmt.body, env, ext_type),
+    if_stmt()           = if_stmt_update_env(stmt.cond, stmt.body, stmt.else, env),
+    loop_stmt(ss?)      = loop_stmt_update_env(ss, env),
+    foreach_stmt()      = foreach_stmt_update_env(stmt.vars, if stmt.idx_var? then just(stmt.idx_var) else nothing, stmt.values, stmt.body, env),
+    for_stmt()          = for_stmt_update_env(if stmt.var? then just(stmt.var) else nothing, stmt.start_val, stmt.end_val, stmt.end_val_incl, stmt.body, env),
+    let_stmt()          = let_stmt_update_env(stmt.asgnms, stmt.body, env),
     break_stmt          = unreachable_env(env),
     fail_stmt()         = unreachable_env(env),
     assert_stmt()       |
@@ -1550,9 +1511,9 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   }
 
 
-  [EnvVar -> Type] seq_update_stmt_update_env(StdVar seq_var, Expr idx, Expr value, [EnvVar -> Type] env, (Expr -> Type) ext_type) {
+  [EnvVar -> Type] seq_update_stmt_update_env(StdVar seq_var, Expr idx, Expr value, [EnvVar -> Type] env) {
     return env if typed_vars(seq_var, *);
-    new_type = updated_type(env[seq_var], expr_type_ex(value, env, ext_type));
+    new_type = updated_type(env[seq_var], expr_type(value, env));
     return update(env, seq_var, new_type);
 
 
@@ -1567,17 +1528,17 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   }
 
 
-  [EnvVar -> Type] assignment_stmt_update_env(StdVar+ vars, Expr value, [EnvVar -> Type] env, (Expr -> Type) ext_type) {
-    inferred_env_delta = asgnm_env_updates(vars, expr_type_ex(value, env, ext_type));
+  [EnvVar -> Type] assignment_stmt_update_env(StdVar+ vars, Expr value, [EnvVar -> Type] env) {
+    inferred_env_delta = asgnm_env_updates(vars, expr_type(value, env));
     corrected_env_delta = [v -> lookup(typed_vars, v, t) : v, t <- inferred_env_delta];
     return update(env, corrected_env_delta);
   }
 
 
-  [EnvVar -> Type] if_stmt_update_env(Expr cond, Statement+ body, Statement* else_body, [EnvVar -> Type] env, (Expr -> Type) ext_type) {
-    if_true_env, if_false_env = refine_env_ex(cond, env, ext_type);
-    res_env_true = update_env_ex(body, if_true_env, ext_type);
-    res_env_false = update_env_ex(else_body, if_false_env, ext_type);
+  [EnvVar -> Type] if_stmt_update_env(Expr cond, Statement+ body, Statement* else_body, [EnvVar -> Type] env) {
+    if_true_env, if_false_env = refine_env(cond, env);
+    res_env_true = update_env(body, if_true_env);
+    res_env_false = update_env(else_body, if_false_env);
 
     if may_fall_through(body):
       if may_fall_through(else_body):
@@ -1595,15 +1556,15 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   }
 
 
-  [EnvVar -> Type] loop_stmt_update_env(Statement+ body, [EnvVar -> Type] env, (Expr -> Type) ext_type) {
+  [EnvVar -> Type] loop_stmt_update_env(Statement+ body, [EnvVar -> Type] env) {
     return unreachable_env(env) if not may_fall_through(body);
-    env_post = update_env_ex(body, env, ext_type);
-    return merge_envs([env, env_post, break_env(body, env, ext_type), break_env(body, env_post, ext_type)]);
+    env_post = update_env(body, env);
+    return merge_envs([env, env_post, break_env(body, env), break_env(body, env_post)]);
   }
 
 
-  [EnvVar -> Type] foreach_stmt_update_env(StdVar+ vars, Maybe[StdVar] maybe_idx_var, Expr values, Statement+ body, [EnvVar -> Type] env, (Expr -> Type) ext_type) {
-    elem_type = seq_elem_supertype(expr_type_ex(values, env, ext_type));
+  [EnvVar -> Type] foreach_stmt_update_env(StdVar+ vars, Maybe[StdVar] maybe_idx_var, Expr values, Statement+ body, [EnvVar -> Type] env) {
+    elem_type = seq_elem_supertype(expr_type(values, env));
     // assert elem_type != empty_type;
     loop_vars = set(vars) & [value(maybe_idx_var) if maybe_idx_var != nothing];
     assert disjoint(keys(env), loop_vars);
@@ -1615,24 +1576,24 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
       non_idx_typed_loop_vars = merge(([v -> t] : v, t <- zip(vars, field_types)));
     ;
     env_0 = env & non_idx_typed_loop_vars & [value(maybe_idx_var) -> type_nat if maybe_idx_var != nothing];
-    env_1 = update_env_ex(body, env_0, ext_type);
-    return merge_envs([env, remove_keys(env_1, loop_vars), break_env(body, env_0, ext_type), break_env(body, env_1, ext_type)]);
+    env_1 = update_env(body, env_0);
+    return merge_envs([env, remove_keys(env_1, loop_vars), break_env(body, env_0), break_env(body, env_1)]);
   }
 
 
-  [EnvVar -> Type] for_stmt_update_env(Maybe[StdVar] maybe_var, Expr start_val, Expr end_val, Bool end_val_incl, Statement+ body, [EnvVar -> Type] env, (Expr -> Type) ext_type) {
-    var_type = loop_var_type(expr_type_ex(start_val, env, ext_type), expr_type_ex(end_val, env, ext_type), end_val_incl);
+  [EnvVar -> Type] for_stmt_update_env(Maybe[StdVar] maybe_var, Expr start_val, Expr end_val, Bool end_val_incl, Statement+ body, [EnvVar -> Type] env) {
+    var_type = loop_var_type(expr_type(start_val, env), expr_type(end_val, env), end_val_incl);
     env_0 = env & [value(maybe_var) -> var_type if maybe_var != nothing];
-    env_1 = update_env_ex(body, env_0, ext_type);
-    return merge_envs([env, env_1, break_env(body, env_0, ext_type), break_env(body, env_1, ext_type)]);
+    env_1 = update_env(body, env_0);
+    return merge_envs([env, env_1, break_env(body, env_0), break_env(body, env_1)]);
   }
 
 
-  [EnvVar -> Type] let_stmt_update_env([ImplArg -> Expr] asgnms, Statement+ body, [EnvVar -> Type] env, (Expr -> Type) ext_type) {
+  [EnvVar -> Type] let_stmt_update_env([ImplArg -> Expr] asgnms, Statement+ body, [EnvVar -> Type] env) {
     return unreachable_env(env) if not may_fall_through(body); ## SEE COMMENT FOR loop_stmt() ABOVE
-    env_delta = [v -> expr_type_ex(e, env, ext_type) : v, e <- asgnms];
+    env_delta = [v -> expr_type(e, env) : v, e <- asgnms];
     body_env = update(env, env_delta);
-    end_body_env = update_env_ex(body, body_env, ext_type);
+    end_body_env = update_env(body, body_env);
     return [v -> if asgnms(v, *) then env(v, !!) else t : v, t <- end_body_env, not asgnms(v, *) or env(v, *)];
   }
 
@@ -1647,37 +1608,37 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
   // Returning the empty type environment when the statement(s) cannot break the enclosing loop
 
-  [EnvVar -> Type] break_env(Statement* stmts, [EnvVar -> Type] env, (Expr -> Type) ext_type) {
+  [EnvVar -> Type] break_env(Statement* stmts, [EnvVar -> Type] env) {
     env_through = env;
     env_break = unreachable_env(env);
     for s <- stmts:
-      env_break = merge_envs(env_break, break_env(s, env_through, ext_type));
-      env_through = update_env_ex(s, env_through, ext_type);
+      env_break = merge_envs(env_break, break_env(s, env_through));
+      env_through = update_env(s, env_through);
       break if not may_fall_through(s);
     ;
     return env_break;
   }
 
 
-  [EnvVar -> Type] break_env(Statement stmt, [EnvVar -> Type] env, (Expr -> Type) ext_type) =
+  [EnvVar -> Type] break_env(Statement stmt, [EnvVar -> Type] env) =
     break_stmt    = env,
-    if_stmt()     = if_stmt_break_env(stmt.cond, stmt.body, stmt.else, env, ext_type),
-    let_stmt()    = let_stmt_break_env(stmt.asgnms, stmt.body, env, ext_type),
+    if_stmt()     = if_stmt_break_env(stmt.cond, stmt.body, stmt.else, env),
+    let_stmt()    = let_stmt_break_env(stmt.asgnms, stmt.body, env),
     _             = unreachable_env(env);
 
 
-  [EnvVar -> Type] if_stmt_break_env(Expr cond, Statement+ body, Statement* else_body, [EnvVar -> Type] env, (Expr -> Type) ext_type) {
-    env_true, env_false = refine_env_ex(cond, env, ext_type);
-    break_env_true = break_env(body, env_true, ext_type);
-    break_env_false = break_env(else_body, env_false, ext_type);
+  [EnvVar -> Type] if_stmt_break_env(Expr cond, Statement+ body, Statement* else_body, [EnvVar -> Type] env) {
+    env_true, env_false = refine_env(cond, env);
+    break_env_true = break_env(body, env_true);
+    break_env_false = break_env(else_body, env_false);
     return merge_envs(break_env_true, break_env_false);
   }
 
 
-  [EnvVar -> Type] let_stmt_break_env([ImplArg -> Expr] asgnms, Statement+ body, [EnvVar -> Type] env, (Expr -> Type) ext_type) {
-    env_delta = [v -> expr_type_ex(e, env, ext_type) : v, e <- asgnms];
+  [EnvVar -> Type] let_stmt_break_env([ImplArg -> Expr] asgnms, Statement+ body, [EnvVar -> Type] env) {
+    env_delta = [v -> expr_type(e, env) : v, e <- asgnms];
     new_env = update(env, env_delta);
-    return break_env(body, new_env, ext_type);
+    return break_env(body, new_env);
   }
 }
 
