@@ -92,13 +92,16 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
 
     env = [v -> t : v, t <~ func.args] & [v -> t : v, t <- func.impl_args];
 
+    ret_val_repr = opt_repr(func.res_type);
+
     let context = func, surrogates = args_surrs:
       let var_subst_map = [], cls_var_subst_map = [], typed_vars = []:
-        body, ret_val_surr, unused_var_2 = opt_eval_code(func.expr, env, blank_var_gen);
+        body, ret_val_surr, unused_var_2 = match (func.expr)
+          do_expr() = do_expr_opt_eval_code(func.expr, ret_val_repr, env, blank_var_gen),
+          _         = opt_eval_code(func.expr, env, blank_var_gen);
       ;
     ;
 
-    ret_val_repr = opt_repr(func.res_type);
     ret_val_instr = ret_val(low_level_expr(ret_val_repr, ret_val_surr));
 
     // Adding push_call_info/pop_call_info debug mode instructions

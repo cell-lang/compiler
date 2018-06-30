@@ -9,6 +9,11 @@ implicit program           : Program,
   (Instr*, ObjExpr, VarGen) do_expr_opt_eval_code(DoExpr expr, [EnvVar -> Type] init_env, VarGen init_var_gen) {
     type = expr_type(expr, init_env, typed_vars = []); ## NOT SURE ABOUT typed_vars HERE
     repr = if type != empty_type then opt_repr(type) else :object;
+    return do_expr_opt_eval_code(expr, repr, init_env, init_var_gen);
+  }
+
+
+  (Instr*, ObjExpr, VarGen) do_expr_opt_eval_code(DoExpr expr, AnyLowLevelRepr repr, [EnvVar -> Type] init_env, VarGen init_var_gen) {
     var, ret_var_gen = next_var(repr, init_var_gen);
     let typed_vars = expr.typed_vars, exp_break_surrs = nothing, result_var = var:
       code, unused_var_1, unused_var_2, unused_var_3 = stmts_opt_code(expr.body, init_env, ret_var_gen);
