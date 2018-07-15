@@ -32,7 +32,7 @@ type TypeCheckingError =
   unexpected_actual_type(actual_type: Type, expected_type: Type),
   invalid_cls_param_type(actual_type: ClsType, exp_arg_types: Type+, exp_ret_type: Type),
   invalid_rel_arg_type(idx: Nat, actual_type: Type, expected_type: Type),
-  loop_did_not_converge(iteractions: NzNat),
+  loop_did_not_converge(iteractions: NzNat, history: [+EnvVar -> Type+]),
   ptrn_cannot_match_type(pattern: Pattern, type: Type),
   invalid_main_arg_type(type: Type),
   invalid_main_ret_type(type: Type),
@@ -136,7 +136,7 @@ TypeCheckingError invalid_cls_param_type(ClsType at, Type+ eat, Type ert) =
 
 TypeCheckingError invalid_rel_arg_type(Nat i, Type at, Type et) = invalid_rel_arg_type(idx: i, actual_type: at, expected_type: et);
 
-TypeCheckingError loop_did_not_converge(NzNat nis) = loop_did_not_converge(iteractions: nis);
+TypeCheckingError loop_did_not_converge(NzNat n, [+EnvVar -> Type+] h) = loop_did_not_converge(iteractions: n, history: h);
 
 TypeCheckingError ptrn_cannot_match_type(Pattern p, Type t) = add_anchor_if_needed(ptrn_cannot_match_type(pattern: p, type: t), p);
 
@@ -279,7 +279,7 @@ String* create_error_msg(TypeCheckingError err) =
                                           "  Actual type: " & user_repr(err.actual_type),
                                           "  Expected type: " & cls_type_user_repr(err.exp_arg_types, err.exp_ret_type)
                                         ),
-  loop_did_not_converge()             = ("Cannot infer types of variables updated in loop"),
+  loop_did_not_converge()             = loop_did_not_converge_err_msg(err.iteractions, err.history),
   ptrn_cannot_match_type()            = ("Pattern cannot match type: " & user_repr(err.pattern)),
   invalid_main_arg_type()             = ( "The argument of Main() must be of type String*",
                                           "Actual type: " & user_repr(err.type)
@@ -393,6 +393,18 @@ String* invalid_args_types_err_msg(FnFamilyId fn_name, FnType signature, [+(Nat,
   return errs;
 }
 
+
+String* loop_did_not_converge_err_msg(NzNat iteractions, [+EnvVar -> Type+] history) {
+  msg = ();
+  for v, ts @ i <- isort(history):
+    msg = (msg | "") if i > 0;
+    msg = (msg | "Cannot infer type of variable updated inside a loop: " & user_repr(v));
+    msg = msg & ("  " & user_repr(t) : t <- ts);
+  ;
+  return msg;
+}
+
+////////////////////////////////////////////////////////////////////////////////
 
 String* create_annotated_error_msg(TypeCheckingError error, Any anchor) {
   err_msg = create_error_msg(error);
