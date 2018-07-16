@@ -100,6 +100,14 @@ implicit typedefs : [TypeName -> NeType], inst_type_vars : Bool {
     return [] if subtype == empty_type;
     return not_a_subset if supertype == empty_type;
 
+    // if not is_param_type(subtype) or not inst_type_vars:
+    if not inst_type_vars:
+      is_subtype = match (supertype)
+        union_type(ts?) = (t <- ts : t == subtype),
+        _               = subtype == supertype;
+      return [] if is_subtype;
+    ;
+
     return match (supertype)
       type_var()    = if inst_type_vars then subset_when(supertype, subtype) elif subtype == supertype then [] else not_a_subset,
       type_ref()    = type_ref_supertype_shallow_subset_conds(subtype, supertype),
@@ -168,14 +176,22 @@ implicit typedefs : [TypeName -> NeType], inst_type_vars : Bool {
 
   //////////////////////////////////////////////////////////////////////////////
 
-  SubsetCond type_ref_shallow_subset_conds(TypeRef subtype, NeType supertype) =
-    match (supertype)
-      ## OPTIMIZATION: IF THE SUBTYPE IS NOT PARAMETRIC OR WE'RE NOT IN
-      ## TYPE VARIABLES INSTANTIATION MODE, WE CAN FIRST CHECK IF IT'S
-      ## AN ELEMENT IN THE SUPERTYPE TYPE UNION
-      union_type(ts?)  = subset_if(type_symb(subtype), supertype),
+  SubsetCond type_ref_shallow_subset_conds(TypeRef subtype, NeType supertype) {
+    // Optimization: is the subtype is not parametric or if we're not
+    // in type variables instantiation mode, we can finish here if the
+    // subtype and the supertype are identical, or if the supertype
+    // is a union and one of its elements is identical to the subtype
+    if not is_param_type(subtype) or not inst_type_vars:
+      is_subtype = match (supertype)
+        union_type(ts?) = (t <- ts : t == subtype),
+        _               = subtype == supertype;
+      return [] if is_subtype;
+    ;
+
+    return match (supertype)
       type_ref(ts?)    = type_symbs_shallow_subset_conds(type_symb(subtype), ts),
       _                = subset_if(type_symb(subtype), supertype);
+  }
 
 
   SubsetCond ne_seq_type_shallow_subset_conds(NeSeqType subtype, NeType supertype) =
