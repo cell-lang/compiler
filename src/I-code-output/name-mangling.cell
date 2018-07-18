@@ -27,7 +27,7 @@
 
 ////////////////////////////////////////////////////////////////////////////////
 
-String symb_idx_name(Atom symb) = _str_(symb) & "_A";
+String symb_idx_name(Atom symb) = _print_(symb) & "_A";
 
 String symb_idx_name(SymbObj symb) =
   object(a?)  = symb_idx_name(a);
@@ -65,7 +65,7 @@ String to_c_var_name(TableItVar v) {
 }
 
 String to_c_var_name(AnyClsVar v) =
-  cls_var(<+> a?)     = _str_(a) & "_C",
+  cls_var(<+> a?)     = _print_(a) & "_C",
   cls_var(<*..*> n?)  = "cls_" & printed(n),
   capt_cls_var(n?)    = "captured_cls[" & printed(n) & "]";
 
@@ -86,20 +86,20 @@ String to_c_var_name(<ObjVar, PendingInputVar> var, Bool add_prefix) {
     else "";
 
   return match (var)
-    var(<+> a?)                   = _str_(a) & "_V",
+    var(<+> a?)                   = _print_(a) & "_V",
     fn_arg(<*..*> n?)             = "a" & printed(n),
-    impl_arg(<+> a?)              = prefix & _str_(a) & "_V",
+    impl_arg(<+> a?)              = prefix & _print_(a) & "_V",
     capt_var(<*..*> n?)           = "captured["  & printed(n) & "]",
-    memb_var(<+> a?)              = prefix & _str_(a) & "_M",
-    signal_var(a?)                = prefix & _str_(a) & "_S",
+    memb_var(<+> a?)              = prefix & _print_(a) & "_M",
+    signal_var(a?)                = prefix & _print_(a) & "_S",
     qual_signal_var()             = to_c_var_name(var.auto_var, true) & "." & to_c_var_name(var.memb_var, false),
     qual_memb_var()               = to_c_var_name(var.db_var, true) & "." & to_c_var_name(var.memb_var, false),
-    watched_signal_value_var(a?)  = prefix & _str_(a) & "_Sw",
+    watched_signal_value_var(a?)  = prefix & _print_(a) & "_Sw",
     prev_var_value(v?)            = prefix & ad_hoc_var_name(v) & "d",
-    pending_state_var(a?)         = prefix & _str_(a) & "_Mp",
+    pending_state_var(a?)         = prefix & _print_(a) & "_Mp",
     lvar(<*..*> n?)               = "l" & printed(n),
     evar()                        = "vec_" & printed(var.id) & "[" & to_c_idx_expr(var.idx) & "]",
-    pending_input_var(<+> a?)     = prefix & _str_(a) & "_Sp";
+    pending_input_var(<+> a?)     = prefix & _print_(a) & "_Sp";
 
 
   String ad_hoc_var_name(SignalVar var)     = to_c_var_decl_name(var);
@@ -121,11 +121,11 @@ String to_c_var_name(BoolVar var, Bool add_prefix) {
     nested_db_spent(v?)                           = prefix & to_c_var_decl_name(v) & "s",
     cond_value_var(n?)                            = prefix & "cond_" & printed(n),
     cond_is_def_var(n?)                           = prefix & "cond_def_" & printed(n),
-    watched_signal_up_to_date_var(a?)             = prefix & _str_(a) & "_Uw",
-    up_to_date_var(std_block_node_id(a?))         = prefix & _str_(a) & "_U",
+    watched_signal_up_to_date_var(a?)             = prefix & _print_(a) & "_Uw",
+    up_to_date_var(std_block_node_id(a?))         = prefix & _print_(a) & "_U",
     up_to_date_var(cond_node_id(n?))              = prefix & "cond_up_to_date_" & printed(n),
-    up_to_date_var(nested_auto_node_id(a?))       = prefix & _str_(a) & "_Ua",
-    up_to_date_var(nested_auto_input_id() id?)    = prefix & _str_(id.auto) & "_Ua_" & _str_(id.input),
+    up_to_date_var(nested_auto_node_id(a?))       = prefix & _print_(a) & "_Ua",
+    up_to_date_var(nested_auto_input_id() id?)    = prefix & _print_(id.auto) & "_Ua_" & _print_(id.input),
     is_new                                        = prefix & "is_new",
     qual_bool_var()     = to_c_var_name(var.auto_var, add_prefix) & "." & to_c_var_name(var.memb_var, false);
 }
@@ -143,12 +143,12 @@ String to_c_var_name(IntVar v, Bool add_prefix) {
     curr_time                           = "curr_time",
     update_time                         = "update_time",
     update_expr_index                   = "update_expr_index",
-    update_source_var(a?)               = prefix & _str_(a) & "_V_update_source",
-    null_locks_count_var(a?)            = prefix & _str_(a) & "_V_null_locks_count",
+    update_source_var(a?)               = prefix & _print_(a) & "_V_update_source",
+    null_locks_count_var(a?)            = prefix & _print_(a) & "_V_null_locks_count",
     update_count_var(l?)                = prefix & "update_count_" & printed(l),
     nodes_to_update_var()               = prefix & "nodes_to_update_" & printed(v.level) & "[" & to_c_idx_expr(v.index) & "]",
-    next_trigger_time_var(a?)           = prefix & _str_(a) & "_V_next_trigger_time",
-    curr_time_slot_var(a?)              = prefix & _str_(a) & "_V_curr_time_slot",
+    next_trigger_time_var(a?)           = prefix & _print_(a) & "_V_next_trigger_time",
+    curr_time_slot_var(a?)              = prefix & _print_(a) & "_V_curr_time_slot",
     time_triggers_count_var             = prefix & "time_triggers_count",
     trigger_times_heap_var(i?)          = prefix & "trigger_times_heap[" & printed(i) & "]",
     time_varying_cond_ids_heap_var(i?)  = prefix & "time_varying_cond_ids_heap[" & printed(i) & "]",
@@ -162,19 +162,19 @@ String to_c_var_name(IntVar v, Bool add_prefix) {
 
 
 String to_c_var_name(AnyAutoVar v, Bool add_prefix) =
-  loc_auto_var(a?)    = _str_(a) & "_R",
-  nested_auto_var(a?) = #(if add_prefix then "self->" else "") & _str_(a) & "_R";
+  loc_auto_var(a?)    = _print_(a) & "_R",
+  nested_auto_var(a?) = #(if add_prefix then "self->" else "") & _print_(a) & "_R";
 
 
 String to_c_var_name(AnyDBVar v, Bool add_prefix) =
-  loc_db_var(a?)    = _str_(a) & "_T",
-  nested_db_var(a?) = #(if add_prefix then "self->" else "") & _str_(a) & "_T",
+  loc_db_var(a?)    = _print_(a) & "_T",
+  nested_db_var(a?) = #(if add_prefix then "self->" else "") & _print_(a) & "_T",
   linked_db_var(n?) = "(*" & #(if add_prefix then "self->" else "") & "linked_auto_" & printed(n) & ")",
   qual_db_var()     = to_c_var_name(v.outer, add_prefix) & "." & to_c_var_name(v.inner, false);
 
 
 String to_c_var_name(AnyRelVar v, Bool add_prefix) =
-  rel_var(a?)     = #(if add_prefix then "self->" else "") & _str_(a) & "_B",
+  rel_var(a?)     = #(if add_prefix then "self->" else "") & _print_(a) & "_B",
   qual_rel_var()  = to_c_var_name(v.db_var, add_prefix) & "." & to_c_var_name(v.rel_var, false);
 
 
@@ -195,7 +195,7 @@ String to_c_idx_expr(<add(val1: IntVar, val2: Nat)> e)  = to_c_var_ref_name(e.va
 ////////////////////////////////////////////////////////////////////////////////
 
 String pending_updates_var_decl_name(RelVar rel_var) =
-  rel_var(a?) = _str_(a) & "_Bp";
+  rel_var(a?) = _print_(a) & "_Bp";
 
 String pending_updates_var_ref_name(RelVar rel_var) = "self_aux->" & pending_updates_var_decl_name(rel_var);
 
@@ -253,7 +253,7 @@ String to_c_memo_var_name(FnId id) =
 ////////////////////////////////////////////////////////////////////////////////
 
 String to_c_time_slots_table_name(AutoSymbol auto_name, Atom table_id) =
-  to_c_name(auto_name) & "_" & _str_(table_id) & "_Bt";
+  to_c_name(auto_name) & "_" & _print_(table_id) & "_Bt";
 
 
 String var_c_type(ObjVar)           = "OBJ";
@@ -287,14 +287,14 @@ String aux_struct_c_name(<AutoSymbol, DBSymbol> symb) = to_c_name(symb) & "x";
 
 String to_c_name(MethodId meth_id) {
   id_str = if meth_id.id? then uppercase_encoding(meth_id.id) else "";
-  return _str_(bare_id(meth_id.symbol)) & "_M" & printed(meth_id.arity) & id_str;
+  return _print_(bare_id(meth_id.symbol)) & "_M" & printed(meth_id.arity) & id_str;
 }
 
 String to_c_name(UpdateId id) =
   main_handler    = "msg_handler",
   handler_id(n?)  = "msg_handler_" & uppercase_encoding(n),
   update_id()     = { id_str = if id.id? then uppercase_encoding(id.id) else "";
-                      return _str_(bare_id(id.symbol)) & "_U" & printed(id.arity) & id_str;
+                      return _print_(bare_id(id.symbol)) & "_U" & printed(id.arity) & id_str;
                     };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -327,16 +327,16 @@ String clear_timer_method_name  (AutoSymbol auto_type) = to_c_name(auto_type) & 
 String update_name(DBSymbol db, UpdateId id) = to_c_name(db) & "_" & to_c_name(id);
 String user_def_method_name(<AutoSymbol, DBSymbol> type, MethodId method) = to_c_name(type) & "_" & to_c_name(method);
 
-String input_set_method_name(AutoSymbol auto, Atom input)   = to_c_name(auto) & "_" & _str_(input) & "_S_set";
+String input_set_method_name(AutoSymbol auto, Atom input)   = to_c_name(auto) & "_" & _print_(input) & "_S_set";
 
 String node_update_method_name(AutoSymbol auto_type,  BlockNodeId node_id) = node_specific_method_name_prefix(node_id, auto_type) & "_update";
 String queue_update_method_name(AutoSymbol auto_type, BlockNodeId node_id) = node_specific_method_name_prefix(node_id, auto_type) & "_invalidate";
 
 String node_specific_method_name_prefix(BlockNodeId id, AutoSymbol auto) =
-  std_block_node_id(a?)   = to_c_name(auto) & "_" & _str_(a) & "_N",
+  std_block_node_id(a?)   = to_c_name(auto) & "_" & _print_(a) & "_N",
   cond_node_id(n?)        = to_c_name(auto) & "_cond_node_" & printed(n),
-  nested_auto_node_id(a?) = to_c_name(auto) & "_" & _str_(a) & "_Na",
-  nested_auto_input_id()  = to_c_name(auto) & "_" & _str_(id.auto) & "_Na_" & _str_(id.input);
+  nested_auto_node_id(a?) = to_c_name(auto) & "_" & _print_(a) & "_Na",
+  nested_auto_input_id()  = to_c_name(auto) & "_" & _print_(id.auto) & "_Na_" & _print_(id.input);
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -352,12 +352,12 @@ String to_c_fn_name(FnId id) =
   nested_fn_id()    = to_c_fn_name(id.outer) & "_" & to_c_fn_name(id.inner);
 
 String to_c_fn_symb_name(FnSymbol fn_symb, Nat arity) =
-  fn_symbol(symb?)    = _str_(symb) & "_F" & printed(arity),
-  op_symbol(op?)      = _str_(op);
+  fn_symbol(symb?)    = _print_(symb) & "_F" & printed(arity),
+  op_symbol(op?)      = _print_(op);
 
 String to_c_fn_symb_name(FnSymbol fn_symb) =
-  fn_symbol(symb?)    = _str_(symb),
-  op_symbol(op?)      = _str_(op);
+  fn_symbol(symb?)    = _print_(symb),
+  op_symbol(op?)      = _print_(op);
 
 
 String to_c_fn_name(MembTestPredId) =

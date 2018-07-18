@@ -25,7 +25,13 @@ LexerError lexer_error(NzNat line, NzNat col) = lexer_error(line: line, col: col
 
 ////////////////////////////////////////////////////////////////////////////////
 
-Symbol symb(Nat* bytes) = _symb_(string(bytes)); ## THIS DOESN'T BELONG HERE
+Symbol symb(Nat* bytes) {
+  res = _parse_(string(bytes));
+  fail if failed(res);
+  value = result(res);
+  fail if not value :: Symbol;
+  return value;
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -172,7 +178,7 @@ ParseTokenResult read_integer_float_or_time(Nat* bytes, Nat offset) {
         time_unit = match (get_result(res).token) lowercase_id(a?) = a;
         if time_unit_scales(time_unit, *):
           nanosecs = nz_nat(value * time_unit_scales[time_unit]);
-          return success(token_line_info(nanoseconds(nanosecs), offset, nz_nat(len + length(_str_(time_unit)))));
+          return success(token_line_info(nanoseconds(nanosecs), offset, nz_nat(len + length(_print_(time_unit)))));
         ;
       ;
     ;
