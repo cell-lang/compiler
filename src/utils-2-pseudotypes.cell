@@ -202,3 +202,24 @@ PseudoType pseudotype(Type type, [TypeName -> Type] typedefs) =
                                symb_type(object(a?)) = pseudotype_tag_obj(a)
                           ),
   union_type(ts?)       = pseudotype_union([pt : t <- ts, pt = pseudotype(t, typedefs), pt :: NePseudoType]);
+
+////////////////////////////////////////////////////////////////////////////////
+
+[<symbols, symbol(Atom)> -> Pattern] split_by_tag_ptype(Pattern ptrn) =
+  ptrn_tag_obj()  = { tag_ptrn = ptrn.tag;
+                      return [ match (tag_ptrn)
+                          ptrn_symbol             = :symbols,
+                          ptrn_symbol(object(a?)) = :symbol(a),
+                          ptrn_var()              = {assert tag_ptrn.ptrn == ptrn_symbol; return :symbols;}
+                        -> ptrn
+                      ];
+                    },
+  ptrn_var()      = [pt -> ptrn_var(ptrn.var, p) : pt, p <- split_by_tag_ptype(ptrn.ptrn)],
+  ptrn_union(ps?) = [pt -> ptrn_union(ps2) : pt, ps2 <- merge_values([split_by_tag_ptype(p) : p <- ps])];
+
+
+[<symbols, symbol(Atom)> -> Pattern] split_by_ptype(Pattern ptrn) =
+  ptrn_symbol     = [:symbols -> ptrn],
+  ptrn_symbol(s?) = [:symbol(untag(s)) -> ptrn],
+  ptrn_var()      = [pt -> ptrn_var(ptrn.var, p) : pt, p <- split_by_ptype(ptrn.ptrn)],
+  ptrn_union(ps?) = [pt -> ptrn_union(ps2) : pt, ps2 <- merge_values([split_by_ptype(p) : p <- ps])];

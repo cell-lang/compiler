@@ -1,64 +1,23 @@
-implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automaton, next_var_gen : VarGen, options : CompOptions {
-  ## BAD BAD BAD: THIS IS BASICALLY A COPY OF gen_eval_info(), THE ONLY DIFFERENCE
-  ## BEING THAT IT CALLS gen_safe_eval_info() INSTEAD OF gen_eval_info()
-  EvalInfo gen_safe_eval_info(Expr expr, LocVar var) =
-    if expr :: LeafObj
-      then (eval_code: (), expr: expr, var_used: false)
-    elif expr :: Var
-      then (eval_code: (), expr: expr, var_used: false)
-    else
-      (eval_code: gen_safe_eval_code(expr, var), expr: var, var_used: true);
+implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automaton, options : CompOptions {
+  Instr+ safe_eval_code(Expr expr, <SignalVar, LocVar> target_var, VarGen var_gen) =
+    and_expr()    = and_expr_safe_eval_code(expr, target_var, var_gen),
+    or_expr()     = or_expr_safe_eval_code(expr, target_var, var_gen),
+    _             = default_safe_eval_code(expr, target_var, var_gen);
 
 
-  ## BAD BAD BAD: THIS IS BASICALLY A COPY OF gen_eval_info(), THE ONLY DIFFERENCE
-  ## BEING THAT IT CALLS gen_safe_eval_info() INSTEAD OF gen_eval_info()
-  ExEvalInfo gen_safe_eval_info(Expr expr) {
-    var, var_gen = next_obj_var(next_var_gen);
-    info = gen_safe_eval_info(expr, var, next_var_gen=var_gen); ## BUG? BUG? BUG?
-    var_gen = if info.var_used then var_gen else next_var_gen;
-    ## BAD BAD BAD: SHOULD BE SOMETHING LIKE:
-    ## return (info | next_var_gen: if info.var_used then next_var_gen else var_gen)
-    return (eval_code: info.eval_code, expr: info.expr, var_used: info.var_used, next_var_gen: var_gen);
-  }
+  Instr+ and_expr_safe_eval_code(AndExpr expr, <SignalVar, LocVar> target_var, VarGen var_gen) {
+    left_tmp_var, next_var_gen = next_obj_var(var_gen);
+    right_tmp_var, next_var_gen = next_obj_var(next_var_gen);
 
-  ## BAD BAD BAD: THIS IS BASICALLY A COPY OF gen_eval_info(), THE ONLY DIFFERENCE
-  ## BEING THAT IT CALLS gen_safe_eval_info() INSTEAD OF gen_eval_info()
-  MultEvalInfo gen_safe_eval_info(Expr* exprs) {
-    eval_code = ();
-    res_exprs = ();
-    var_gen   = next_var_gen;
+    left_eval_code = safe_eval_code(expr.left, left_tmp_var, next_var_gen);
+    right_eval_code = safe_eval_code(expr.right, right_tmp_var, next_var_gen);
 
-    for e <- exprs:
-      info = gen_safe_eval_info(e, next_var_gen=var_gen);
-      eval_code = eval_code & info.eval_code;
-      res_exprs = (res_exprs | info.expr);
-      var_gen   = info.next_var_gen;
-    ;
-
-    return (eval_code: eval_code, exprs: res_exprs, next_var_gen: var_gen);
-  }
-
-  //////////////////////////////////////////////////////////////////////////////
-
-  Instr+ gen_safe_eval_code(Expr expr, <SignalVar, LocVar> res_var) =
-    and_expr()    = gen_safe_eval_code_for_and_expr(expr.left, expr.right, res_var),
-    or_expr()     = gen_safe_eval_code_for_or_expr(expr.left, expr.right, res_var),
-    _             = gen_default_safe_eval_code(expr, res_var);
-
-
-  Instr+ gen_safe_eval_code_for_and_expr(Expr left_expr, Expr right_expr, <SignalVar, LocVar> res_var) {
-    left_tmp_var, var_gen = next_obj_var(next_var_gen);
-    right_tmp_var, var_gen = next_obj_var(var_gen);
-    let next_var_gen = var_gen:
-      left_eval_code = gen_safe_eval_code(left_expr, left_tmp_var);
-      right_eval_code = gen_safe_eval_code(right_expr, right_tmp_var);
-    ;
     // If the left term is false, there's no need to compute the right value
-    if_false_code = (set_var(res_var, obj_false));
+    if_false_code = (set_var(target_var, obj_false));
     // If the left term is true, the right one decides the final value
-    if_true_code = (set_var(res_var, right_tmp_var));
+    if_true_code = (set_var(target_var, right_tmp_var));
     // If the left term is undefined, then we need to check the value of the right term
-    if_undef_code = (branch(is_false(right_tmp_var), (set_var(res_var, obj_false)), (make_var_undef(res_var))));
+    if_undef_code = (branch(is_false(right_tmp_var), (set_var(target_var, obj_false)), (make_var_undef(target_var))));
     // true + undefined cases, they both require the evaluation of the right term
     if_not_false_code = (right_eval_code | branch(is_true(left_tmp_var), if_true_code, if_undef_code));
     // Putting it all together
@@ -66,19 +25,19 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
   }
 
 
-  Instr+ gen_safe_eval_code_for_or_expr(Expr left_expr, Expr right_expr, <SignalVar, LocVar> res_var) {
-    left_tmp_var, var_gen = next_obj_var(next_var_gen);
-    right_tmp_var, var_gen = next_obj_var(var_gen);
-    let next_var_gen = var_gen:
-      left_eval_code = gen_safe_eval_code(left_expr, left_tmp_var);
-      right_eval_code = gen_safe_eval_code(right_expr, right_tmp_var);
-    ;
+  Instr+ or_expr_safe_eval_code(OrExpr expr, <SignalVar, LocVar> target_var, VarGen var_gen) {
+    left_tmp_var, next_var_gen = next_obj_var(var_gen);
+    right_tmp_var, next_var_gen = next_obj_var(next_var_gen);
+
+    left_eval_code = safe_eval_code(expr.left, left_tmp_var, next_var_gen);
+    right_eval_code = safe_eval_code(expr.right, right_tmp_var, next_var_gen);
+
     // If the left term is true, there's no need to compute the right value
-    if_true_code = (set_var(res_var, obj_true));
+    if_true_code = (set_var(target_var, obj_true));
     // If the left term is false, the right one decides the final value
-    if_false_code = (set_var(res_var, right_tmp_var));
+    if_false_code = (set_var(target_var, right_tmp_var));
     // If the left term is undefined, then we need to check the value of the right term
-    if_undef_code = (branch(is_true(right_tmp_var), (set_var(res_var, obj_true)), (make_var_undef(res_var))));
+    if_undef_code = (branch(is_true(right_tmp_var), (set_var(target_var, obj_true)), (make_var_undef(target_var))));
     // false + undefined cases, they both require the evaluation of the right term
     if_not_true_code = (right_eval_code | branch(is_false(left_tmp_var), if_false_code, if_undef_code));
     // Putting it all together
@@ -86,14 +45,15 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
   }
 
 
-  Instr+ gen_default_safe_eval_code(Expr expr, <SignalVar, LocVar> res_var) {
-    let context = automaton, var_subst_map = [], cls_var_subst_map = []:
-      eval_code = gen_eval_code(expr, res_var);
+  Instr+ default_safe_eval_code(Expr expr, <SignalVar, LocVar> target_var, VarGen var_gen) {
+    let context = automaton, var_subst_map = [], cls_var_subst_map = [], typed_vars = [], surrogates = []:
+      eval_code, expr_surr, unused_var = opt_eval_code(expr, react_auto_env, var_gen);
+      eval_code = (eval_code | set_var(target_var, expr_surr));
     ;
-    vars_to_safeguard = non_nullable_vars(expr);
+    vars_to_safeguard = vars_that_may_be_null(expr);
     if vars_to_safeguard != []:
       cond = and((is_not_null(v) : v <- rand_sort(vars_to_safeguard)));
-      eval_code = (branch(cond, eval_code, (make_var_undef(res_var))));
+      eval_code = (branch(cond, eval_code, (make_var_undef(target_var))));
     ;
     return eval_code;
   }
@@ -147,7 +107,7 @@ IntConst time_slot_length(CyclicTimeExpr time_expr, AutoSymbol auto_name, Atom e
 ////////////////////////////////////////////////////////////////////////////////
 
 ## THIS FUNCTION HAS A REALLY STRANGE NAME. SHOULDN'T IT BE THE OPPOSITE?
-[<SignalVar, PrevVarValue>] non_nullable_vars(Expr expr) {
+[<SignalVar, PrevVarValue>] vars_that_may_be_null(Expr expr) {
   ## BUG BUG BUG: THIS IS WRONG. VARIABLES IN is-def EXPRESSIONS SHOULD NOT BE COUNTED HERE
   vs = extern_vars(expr);
   return [v : v <- vs, v :: <SignalVar, PrevVarValue>];

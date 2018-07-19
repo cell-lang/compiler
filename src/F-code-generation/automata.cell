@@ -401,12 +401,10 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
     dep_map = [a -> [cast_signal_var(v) : v <- extern_vars(p.value)] : a, p <- automaton.params];
     assert not (s, ts <- dep_map, t <- ts : not in(t, param_ids));
     sorted_params = topological_sort(dep_map);
-    let next_var_gen = blank_var_gen:
-      params_init_code = (
-        (gen_safe_eval_code(automaton.params[p].value, p) : p <- rand_sort(ps))
-        : ps <- sorted_params
-      );
-    ;
+    params_init_code = (
+      (safe_eval_code(automaton.params[p].value, p, blank_var_gen) : p <- rand_sort(ps))
+      : ps <- sorted_params
+    );
     return join((join(cfs) : cfs <- params_init_code));
   }
 }

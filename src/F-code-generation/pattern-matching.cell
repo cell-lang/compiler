@@ -295,25 +295,3 @@ BoolExpr if_subset(PseudoType ptype, PseudoType ptype_bounds, BoolExpr expr) =
 
 BoolExpr if_subset(PseudoType ptype1, PseudoType ptype2, BoolExpr expr1, BoolExpr expr2) =
   if is_subset(ptype1, ptype2) then expr2 else and_then(expr1, expr2);
-
-////////////////////////////////////////////////////////////////////////////////
-
-## MAYBE THIS FUNCTION SHOULD BE MOVED TO THE PSEUDOTYPES FILE
-[<symbols, symbol(Atom)> -> Pattern] split_by_tag_ptype(Pattern ptrn) =
-  ptrn_tag_obj()  = { tag_ptrn = ptrn.tag;
-                      return [ match (tag_ptrn)
-                          ptrn_symbol             = :symbols,
-                          ptrn_symbol(object(a?)) = :symbol(a),
-                          ptrn_var()              = {assert tag_ptrn.ptrn == ptrn_symbol; return :symbols;}
-                        -> ptrn
-                      ];
-                    },
-  ptrn_var()      = [pt -> ptrn_var(ptrn.var, p) : pt, p <- split_by_tag_ptype(ptrn.ptrn)],
-  ptrn_union(ps?) = [pt -> ptrn_union(ps2) : pt, ps2 <- merge_values([split_by_tag_ptype(p) : p <- ps])];
-
-
-[<symbols, symbol(Atom)> -> Pattern] split_by_ptype(Pattern ptrn) =
-  ptrn_symbol     = [:symbols -> ptrn],
-  ptrn_symbol(s?) = [:symbol(untag(s)) -> ptrn],
-  ptrn_var()      = [pt -> ptrn_var(ptrn.var, p) : pt, p <- split_by_ptype(ptrn.ptrn)],
-  ptrn_union(ps?) = [pt -> ptrn_union(ps2) : pt, ps2 <- merge_values([split_by_ptype(p) : p <- ps])];
