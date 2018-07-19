@@ -33,8 +33,12 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
     nested_dbs = database.nested_dbs;
 
     vars_pre_init_code = rand_sort([init_memb_var(v, :blank) : v, unused_var <- state_vars]);
-    let context = database, var_subst_map = [], cls_var_subst_map = [], next_var_gen = blank_var_gen:
-      vars_init_code = join(rand_sort([gen_eval_code(d.init_value, v) : v, d <- state_vars]));
+    let context = database, var_subst_map = [], cls_var_subst_map = [], typed_vars = [], surrogates = []:
+      vars_init_code = join(({
+          eval_code, surr, unused_var = opt_eval_code(d.init_value, [], blank_var_gen);
+          return (eval_code, set_var(v, surr));
+        } : v, d <- isort(state_vars)
+      ));
     ;
     nested_dbs_init_code = rand_sort([init_db(v, (), t) : v, t <- nested_dbs]);
 
@@ -175,14 +179,11 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 
 
     Instr* gen_code(Method method) {
-      res_var, var_gen = next_obj_var(blank_var_gen);
-      args_code = (set_var(value(v), fn_arg(i)) : unused_var, v @ i <- method.args, v != nothing);
-      let context = database, var_subst_map = [], cls_var_subst_map = [], next_var_gen = var_gen:
-        body_code = gen_eval_code(method.expr, res_var);
+      env = [if a != nothing then value(a) else fn_arg(i) -> t : t, a @ i <~ method.args];
+      let context = database, var_subst_map = [], cls_var_subst_map = [], typed_vars = [], surrogates = []:
+        eval_code, surr, unused_var = opt_eval_code(method.expr, env, blank_var_gen);
       ;
-      // entry_code = [push_call_info(fndef.name, fn_arg(i)) : p @ i <- fndef.params])];
-      // exit_code = [pop_call_info];
-      return (args_code & body_code | ret_val(res_var));
+      return (eval_code | ret_val(surr));
     }
   }
 
@@ -205,12 +206,22 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 
     Instr* gen_update_code(Update update) {
       // Compiling the body of the update
-      update_body = update.body;
-      return () if update_body == ();
-      let context = database, var_subst_map = [], cls_var_subst_map = [], next_var_gen = blank_var_gen:
-        code = gen_code(update_body, :invalid_var);
-      ;
-      return ((set_var(v, fn_arg(i)) : unused_var, v @ i <- update.args) | execute_block(code));
+      return () if update.body == ();
+
+      code, unused_var_1, unused_var_2, unused_var_3 = stmts_opt_code(
+        update.body,
+        [v -> t : t, v <~ update.args],
+        blank_var_gen,
+        context           = database,
+        var_subst_map     = [],
+        cls_var_subst_map = [],
+        typed_vars        = [],
+        surrogates        = [],
+        exp_break_surrs   = nothing,
+        result_var        = :invalid_var
+      );
+
+      return (execute_block(code));
     }
   }
 
@@ -226,12 +237,22 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 
     Instr* gen_handler_code(Handler handler) {
       // Compiling the body of the handler
-      handler_body = handler.body;
-      return () if handler_body == ();
-      let context = database, var_subst_map = [], cls_var_subst_map = [], next_var_gen = blank_var_gen:
-        code = gen_code(handler_body, :invalid_var);
-      ;
-      return (set_var(var(:self), fn_arg(0)), execute_block(code));
+      return () if handler.body == ();
+
+      code, unused_var_1, unused_var_2, unused_var_3 = stmts_opt_code(
+        handler.body,
+        [var(:self) -> handler.type],
+        blank_var_gen,
+        context           = database,
+        var_subst_map     = [],
+        cls_var_subst_map = [],
+        typed_vars        = [],
+        surrogates        = [],
+        exp_break_surrs   = nothing,
+        result_var        = :invalid_var
+      );
+
+      return (execute_block(code));
     }
   }
 }

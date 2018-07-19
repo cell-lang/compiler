@@ -128,14 +128,11 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
 
 
     Instr* gen_code(Method method) {
-      res_var, var_gen = next_obj_var(blank_var_gen);
-      args_code = (set_var(value(v), fn_arg(i)) : unused_var, v @ i <- method.args, v != nothing);
-      let context = automaton, var_subst_map = [], cls_var_subst_map = [], next_var_gen = var_gen:
-        body_code = gen_eval_code(method.expr, res_var);
+      args_env = [if a != nothing then value(a) else fn_arg(i) -> t : t, a @ i <~ method.args];
+      let context = automaton, var_subst_map = [], cls_var_subst_map = [], typed_vars = [], surrogates = []:
+        eval_code, surr, unused_var = opt_eval_code(method.expr, args_env & react_auto_env, blank_var_gen);
       ;
-      // entry_code = [push_call_info(fndef.name, fn_arg(i)) : p @ i <- fndef.params])];
-      // exit_code = [pop_call_info];
-      return (args_code & body_code | ret_val(res_var));
+      return (eval_code | ret_val(surr));
     }
   }
 
