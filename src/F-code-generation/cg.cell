@@ -170,20 +170,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
 
     aggr_ret_var, unused_var_1 = next_var(aggr_sign.ret_value, blank_var_gen);
 
-    ## HERE WE SHOULD LEAVE THE FUNCTION WITH THE MOST EXPENSIVE CHECKING LAST
-    ## SO THAT IT CAN BE MATCHED BY THE CHEAP "ANY" PATTERN.
-    cases = join(({
-      if i < count-1:
-        ptrns = ();
-        for j <- disp_args:
-          pt = pseudotype(right(fn.args(j)), program.typedefs);
-          // return () if pt == :pseudotype([]); ## THIS SHOULD ACTUALLY WORK
-          return () if not pt :: NePseudoType;
-          ptrns = (ptrns | pseudotype_pattern(pt));
-        ;
-      else
-        ptrns = (ptrn_any : unused_var_2 <- disp_args);
-      ;
+    cases = [{
+      types = (right(fn.args(i)) : i <- disp_args);
 
       sign = low_level_signs(fn.id, !!);
       call_args = (low_level_expr(r, obj_expr(args(j))) : r @ j <- sign.args);
@@ -194,19 +182,15 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
 
       code = (
         call_proc(ret_var, fn.id, call_args, call_cls_args),
+        ## THESE TWO INSTRUCTIONS SHOULD BE MERGED
         set_any_var(aggr_ret_var, obj_expr(ret_var)) if ret_var != aggr_ret_var,
-        exit_block
+        ret_val(aggr_ret_var)
       );
 
-      return ((ptrns: nonempty(ptrns), code: code));
-    } : fn @ i <- rand_sort(fns)));
+      return (types, code);
+    } : fn <- fns];
 
-    if cases != ():
-      switch_code = gen_switch_code((fn_arg(i) : i <- disp_args), cases, next_var_gen = blank_var_gen);
-      code = (switch_code | ret_val(aggr_ret_var));
-    else
-      code = (terminate);
-    ;
+    code = dynamic_dispatch_code((fn_arg(i) : i <- disp_args), cases);
 
     ## IMPLICIT ARGUMENTS AND CONSTRAINTS ARE MISSING
     ## IT PROBABLY DOESN'T MATTER
@@ -284,6 +268,46 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
         _                           = (next_id, nat(next_id + 1));
       return (memb_test(outer_id, inner_id), new_next_id);
     }
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+implicit typedefs : [TypeName -> NeType] {
+  Instr+ dynamic_dispatch_code(ObjExpr+ disp_args, [+(NeType+, Instr+)] cases) {
+    if |disp_args| == 1:
+      disp_arg = only(disp_args);
+      disp_arg_type = ne_union_superset([only_unsafe(left(c)) : c <- cases]);
+
+      ptrn_cases = ({
+        ptype = pseudotype(only_unsafe(ts), typedefs);
+        fail if not ptype :: NePseudoType;
+        ptrn = pseudotype_pattern(ptype);
+        return (ptrn, is, []);
+      } : ts, is <- isort(cases));
+
+      return nonempty(single_ptrn_match_expr_opt_code(disp_arg, disp_arg_type, ptrn_cases));
+
+    else
+      disp_args_types = (ne_union_superset([ts(i) : c <- cases, ts = left(c)]) : i < |disp_args|);
+
+      cases_code = ({
+        ptypes = (pseudotype(t, typedefs) : t <- ts);
+        fail if not ptypes :: NePseudoType+;
+        ptrns = (pseudotype_pattern(pt) : pt <- ptypes);
+        code = is;
+        for p, t, s <- reverse(zip(ptrns, disp_args_types, disp_args)):
+          ## FOR THE LAST CASE, WE WOULDN'T EVEN NEED ANY CHECKS
+          ## IT WOULD ALSO BE BETTER TO LEAVE THE MOST EXPENSIVE CASE
+          ## TO CHECK LAST
+          code = opt_ptrn_match_code(p, s, t, code, vars_reprs = []);
+        ;
+        return code;
+      } : ts, is <- isort(cases));
+
+      return (join(cases_code) | terminate(true));
+    ;
   }
 }
 

@@ -414,41 +414,35 @@ Instr* gen_dispatch_auto_method_body(AutoSymbol auto_type, Method+ methods, [Typ
   assert |[|m.args| : m <~ methods]| == 1;  // All methods have the same arity
   assert |head(methods).args| > 0;          // No-argument methods cannot be polymorphic
 
-  l0 = lvar(0);
+  fail;
 
-  count = |methods|;
+  // l0 = lvar(0);
 
-  a_method  = head(methods);
-  name      = a_method.name;
-  arity     = |a_method.args|;
+  // count = |methods|;
 
-  disp_args = choose_disp_args(((t : t, unused_var <- nonempty(m.args)) : m <- methods), typedefs);
+  // a_method  = head(methods);
+  // name      = a_method.name;
+  // arity     = |a_method.args|;
 
-  cases = join(({
-    if i < count-1:
-      ptrns = ();
-      for j <- disp_args:
-        pt = pseudotype(left(m.args(j)), typedefs);
-        // return () if pt == :pseudotype([]); ## THIS SHOULD ACTUALLY WORK
-        return () if not pt :: NePseudoType;
-        ptrns = (ptrns | pseudotype_pattern(pt));
-      ;
-    else
-      ptrns = (ptrn_any : unused_var <- disp_args);
-    ;
-    code = (
-      invoke_auto_method(
-        l0,
-        auto_type,
-        method_id(name, arity, i),
-        (fn_arg(j) : j < arity)
-      ),
-      exit_block
-    );
-    return ((ptrns: nonempty(ptrns), code: code));
-  } : m @ i <- methods));
-  return (terminate) if cases == ();
+  // disp_args = choose_disp_args(((t : t, unused_var <- nonempty(m.args)) : m <- methods), typedefs);
 
-  code = gen_switch_code((fn_arg(i) : i <- disp_args), cases, next_var_gen = blank_var_gen);
-  return (code | ret_val(l0));
+  // cases = ({
+  //   ptypes = (pseudotype(right(m.args(j)), typedefs) : j <- disp_args);
+
+  //   code = (
+  //     invoke_auto_method(
+  //       l0,
+  //       auto_type,
+  //       method_id(name, arity, i),
+  //       (fn_arg(j) : j < arity)
+  //     ),
+  //     exit_block
+  //   );
+  //   return (ptypes, code);
+  // } : m @ i <- methods);
+
+  // return (terminate) if cases == ();
+
+  // code = dynamic_dispatch_code((fn_arg(i) : i <- disp_args), cases, typedefs);
+  // return (code | ret_val(l0));
 }
