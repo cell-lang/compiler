@@ -63,13 +63,17 @@ implicit program           : Program,
   }
 
 
+  // output_is_def(var: LocAutoVar, output: Symbol)
   (Instr*, ObjExpr, VarGen) opt_eval_info(OutputIsDefExpr expr, VarGen var_gen) {
-    fail;
+    var = qual_signal_var(expr.var, signal_var(expr.output));
+    return ((), bool_obj(is_not_null(var)), var_gen);
   }
 
 
+  // output_is_set(var: LocAutoVar, output: Symbol)
   (Instr*, ObjExpr, VarGen) opt_eval_info(OutputIsSetExpr expr, VarGen var_gen) {
-    fail;
+    var = qual_signal_var(expr.var, signal_var(expr.output));
+    return ((do_if(is_null(var), terminate)), bool_obj(is_not_blank(var)), var_gen);
   }
 
 
@@ -105,7 +109,7 @@ implicit program           : Program,
     // cast_expr()         = undefined,
     accessor()          = accessor_opt_eval_info(expr.expr, expr.field, var_gen),
     accessor_test()     = accessor_test_opt_eval_info(expr.expr, expr.field, var_gen),
-    // auto_method_call()  = undefined,
+    auto_method_call()  = auto_method_call_opt_eval_info(expr, var_gen),
     // db_method_call()    = undefined,
     if_expr()           = if_expr_opt_eval_info(expr, var_gen),
     match_expr()        = match_expr_opt_eval_info(expr, var_gen),
@@ -119,6 +123,22 @@ implicit program           : Program,
     range_comp()        = range_comp_opt_eval_info(expr, var_gen);
 
 
+  // auto_method_call(var: AnyAutoVar?, name: MethodSymbol, args: Expr*)
+  (Instr*, ObjExpr, VarGen) auto_method_call_opt_eval_info(AutoMethodCall expr, VarGen init_var_gen) {
+    code, args_surrs, var_gen = opt_eval_info(expr.args, init_var_gen);
+    res_var, var_gen = next_obj_var(init_var_gen);
+    invoke_method_instr = invoke_auto_method(
+      res_var:    res_var,
+      auto_var:   expr.var if expr.var?,
+      type:       if expr.var? then var_type(expr.var) else this_auto_symbol,
+      method_id:  method_id(expr.name, |expr.args|),
+      args:       args_surrs
+    );
+    code = (code | invoke_method_instr);
+    return (code, res_var, var_gen);
+  }
+
+
   // ex_qual(source: Clause, cond: Expr)
   (Instr*, ObjExpr, VarGen) ex_qual_opt_eval_info(Clause source, Expr cond, VarGen init_var_gen) {
     res_var, var_gen = next_bool_var(init_var_gen);
@@ -130,6 +150,7 @@ implicit program           : Program,
     code = (set_bvar(res_var, false), execute_block(nonempty(code)));
     return (code, obj_expr(res_var), var_gen);
   }
+
 
   // set_comp(expr: Expr, source: Clause);
   (Instr*, ObjExpr, VarGen) set_comp_opt_eval_info(Expr expr, Clause source, VarGen init_var_gen) {

@@ -159,11 +159,13 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
       sorted_methods = rand_sort(methods);
       comp_methods = merge(([method_id(m.name, arity, i) -> compiled(m)] : m @ i <- sorted_methods));
 
-      disp_method_args_types = (ne_union_superset([left(m.args(i)) : m <- methods]) : i < arity);
-      disp_method_args_memb_preds = [(memb_test_preds_map[t] : t, unused_var <- m.args) : m <- methods];
-      disp_method_ret_type = ne_union_superset([m.ret_type : m <- methods]);
-      disp_method_code = gen_db_dispatch_method_body(database.name, sorted_methods, program.typedefs);
-      disp_method = compiled_method(disp_method_args_types, disp_method_args_memb_preds, disp_method_ret_type, disp_method_code);
+      disp_method = compiled_method(
+        (nothing : i < arity),
+        (ne_union_superset([left(m.args(i)) : m <- methods]) : i < arity),
+        [(memb_test_preds_map[t] : t, unused_var <- m.args) : m <- methods],
+        ne_union_superset([m.ret_type : m <- methods]),
+        gen_db_dispatch_method_body(database.name, sorted_methods, program.typedefs)
+      );
 
       return comp_methods & [method_id(name, arity) -> disp_method];
     }
@@ -171,6 +173,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 
     CompiledMethod compiled(Method method) =
       compiled_method(
+        (v : unused_var, v <- method.args),
         (t : t, unused_var <- method.args),
         [(memb_test_preds_map[t] : t, unused_var <- method.args)],
         method.ret_type,

@@ -71,8 +71,95 @@ implicit program           : Program,
     for_stmt()                = for_stmt_opt_code(stmt, env, var_gen),
     foreach_stmt()            = foreach_stmt_opt_code(stmt, env, var_gen),
     return_stmt               = ((exit_block), just(surrogates), [], var_gen),
-    proc_call_stmt()          = proc_call_stmt_opt_code(stmt, env, var_gen);
+    proc_call_stmt()          = proc_call_stmt_opt_code(stmt, env, var_gen),
 
+    send_msg_stmt()               = undefined,
+    try_update_stmt()             = undefined,
+    set_memb_var_stmt()           = undefined,
+    delete_stmt()                 = undefined,
+    insert_stmt()                 = undefined,
+
+    set_input_ctrl_stmt()         = set_input_ctrl_stmt_opt_code(stmt.var, stmt.input, stmt.value, env, var_gen),
+    clear_input_ctrl_stmt()       = clear_input_ctrl_stmt_opt_code(stmt.var, stmt.input, env, var_gen),
+    set_elapsed_time_ctrl_stmt()  = set_elapsed_time_ctrl_stmt_opt_code(stmt.var, stmt.time, env, var_gen),
+    apply_ctrl_stmt()             = apply_ctrl_stmt_opt_code(stmt.auto_var, stmt.res_var, env, var_gen),
+
+    send_msg_ctrl_stmt()          = undefined,
+
+    read_state_ctrl_stmt()        = read_state_ctrl_stmt_opt_code(stmt.res_var, stmt.auto_var, env, var_gen),
+    restore_state_ctrl_stmt()     = restore_state_ctrl_stmt_opt_code(stmt.res_var, stmt.auto_var, stmt.state, env, var_gen);
+
+
+
+  StmtCompInfo read_state_ctrl_stmt_opt_code(StdVar res_var, LocDBVar db_var, [EnvVar -> Type] env, VarGen init_var_gen) {
+    fail;
+  }
+
+
+  StmtCompInfo restore_state_ctrl_stmt_opt_code(StdVar res_var, LocDBVar db_var, Expr state, [EnvVar -> Type] env, VarGen init_var_gen) {
+    fail;
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////
+
+  StmtCompInfo read_state_ctrl_stmt_opt_code(StdVar res_var, LocAutoVar auto_var, [EnvVar -> Type] env, VarGen init_var_gen) {
+    tmp_var, unused_var = next_obj_var(init_var_gen);
+    code = (
+      branch(
+        state_is_def(auto_var, var_type(auto_var)),
+        ( copy_persistent_state(tmp_var, auto_var, var_type(auto_var)),
+          mk_tagged_obj(res_var, object(:maybe), tmp_var)
+        ),
+        (set_var(res_var, object(:nothing)))
+      )
+    );
+    return (code, just(surrogates), [], init_var_gen);
+  }
+
+
+  StmtCompInfo restore_state_ctrl_stmt_opt_code(StdVar res_var, LocAutoVar auto_var, Expr state, [EnvVar -> Type] env, VarGen init_var_gen) {
+    eval_code, surr, var_gen = opt_eval_code(state, env, init_var_gen);
+    ## ADD AN ERROR MESSAGE HERE, AT LEAST IN DEBUG MODE
+    check_instr = do_if_not(qual_bool_var(auto_var, is_new), terminate);
+    set_state_instr = set_persistent_state(auto_var, surr, var_type(auto_var));
+    code = (check_instr) & eval_code & (set_state_instr);
+    return (code, just(surrogates), [], init_var_gen);
+  }
+
+
+  StmtCompInfo set_input_ctrl_stmt_opt_code(LocAutoVar var, Symbol input, Expr value, [EnvVar -> Type] env, VarGen init_var_gen) {
+    code, surr, var_gen = opt_eval_code(value, env, init_var_gen);
+    auto_type = var_type(var);
+    code = (code | set_input(var, auto_type, input, surr));
+    return (code, just(surrogates), [], var_gen);
+  }
+
+
+  StmtCompInfo clear_input_ctrl_stmt_opt_code(LocAutoVar var, Symbol input, [EnvVar -> Type] env, VarGen init_var_gen) {
+    auto_type = var_type(var);
+    return ((clear_input(var, auto_type, input)), just(surrogates), [], init_var_gen);
+  }
+
+
+  StmtCompInfo set_elapsed_time_ctrl_stmt_opt_code(LocAutoVar var, Expr time, [EnvVar -> Type] env, VarGen init_var_gen) {
+    code, surr, var_gen = opt_eval_code(time, env, init_var_gen);
+    code = (code | set_ivar(elapsed_time(var), get_int_val(surr)));
+    return (code, just(surrogates), [], var_gen);
+  }
+
+
+  StmtCompInfo apply_ctrl_stmt_opt_code(LocAutoVar auto_var, StdVar res_var, [EnvVar -> Type] env, VarGen init_var_gen) {
+    auto_type = var_type(auto_var);
+    bvar = low_level_bvar(res_var);
+    res_value = if is_time_sensitive(auto_type) then are_eq(int_obj(elapsed_time(auto_var)), int_obj(0)) else true;
+    code = (auto_apply(auto_var, auto_type), set_bvar(bvar, res_value));
+    surrs = update(surrogates, res_var, bool_obj(bvar));
+    return (code, just(surrs), [], init_var_gen);
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////
 
   StmtCompInfo seq_update_stmt_opt_code(SeqUpdateStmt stmt, [EnvVar -> Type] env, VarGen init_var_gen) {
     idx_eval_code, idx_surr, var_gen = opt_eval_code(stmt.idx, env, init_var_gen);

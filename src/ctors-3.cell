@@ -528,9 +528,10 @@ Table table(ValueStoreId+ vs, [[+Nat]] ks, NeType+ ts, Nat+ p) {
   return table(value_stores: vs, keys: ks, col_types: ts, applied_perm: p);
 }
 
-CompiledMethod compiled_method(NeType* ats, [+MembTestPredId*] mps, NeType rt, Instr* c) {
+CompiledMethod compiled_method(Maybe[StdVar]* as, NeType* ats, [+MembTestPredId*] mps, NeType rt, Instr* c) {
+  assert |as| == |ats|;
   assert not (ps <- mps : |ps| != |ats|);
-  return compiled_method(args_types: ats, args_memb_preds: mps, ret_type: rt, code: c);
+  return compiled_method(args_vars: as, args_types: ats, args_memb_preds: mps, ret_type: rt, code: c);
 }
 
 ////////////////////////////// Derived expressions /////////////////////////////

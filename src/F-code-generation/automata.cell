@@ -108,11 +108,13 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
       sorted_methods = rand_sort(methods);
       comp_methods = merge(([method_id(m.name, arity, i) -> compiled(m)] : m @ i <- sorted_methods));
 
-      disp_method_args_types = (ne_union_superset([left(m.args(i)) : m <- methods]) : i < arity);
-      disp_method_args_memb_preds = [(memb_test_preds_map[t] : t, unused_var <- m.args) : m <- methods];
-      disp_method_ret_type = ne_union_superset([m.ret_type : m <- methods]);
-      disp_method_code = gen_dispatch_auto_method_body(automaton.name, sorted_methods, program.typedefs);
-      disp_method = compiled_method(disp_method_args_types, disp_method_args_memb_preds, disp_method_ret_type, disp_method_code);
+      disp_method = compiled_method(
+        (nothing : i < arity),
+        (ne_union_superset([left(m.args(i)) : m <- methods]) : i < arity),
+        [(memb_test_preds_map[t] : t, unused_var <- m.args) : m <- methods],
+        ne_union_superset([m.ret_type : m <- methods]),
+        gen_dispatch_auto_method_body(automaton.name, sorted_methods)
+      );
 
       return comp_methods & [method_id(name, arity) -> disp_method];
     }
@@ -120,6 +122,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
 
     CompiledMethod compiled(Method method) =
       compiled_method(
+        (v : unused_var, v <- method.args),
         (t : t, unused_var <- method.args),
         [(memb_test_preds_map[t] : t, unused_var <- method.args)],
         method.ret_type,
@@ -408,41 +411,31 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
 
 ////////////////////////////////////////////////////////////////////////////////
 
-Instr* gen_dispatch_auto_method_body(AutoSymbol auto_type, Method+ methods, [TypeName -> Type] typedefs) {
-  assert |methods| > 1;                     // There must be more than one method
-  assert |[m.name : m <~ methods]| == 1;    // All methods must have the same name
-  assert |[|m.args| : m <~ methods]| == 1;  // All methods have the same arity
-  assert |head(methods).args| > 0;          // No-argument methods cannot be polymorphic
+implicit typedefs : [TypeName -> NeType] {
+  Instr* gen_dispatch_auto_method_body(AutoSymbol auto_type, Method+ methods) {
+    assert |methods| > 1;                     // There must be more than one method
+    assert |[m.name : m <~ methods]| == 1;    // All methods must have the same name
+    assert |[|m.args| : m <~ methods]| == 1;  // All methods have the same arity
+    assert |head(methods).args| > 0;          // No-argument methods cannot be polymorphic
 
-  fail;
+    l0 = lvar(0);
 
-  // l0 = lvar(0);
+    count = |methods|;
 
-  // count = |methods|;
+    a_method  = head(methods);
+    name      = a_method.name;
+    arity     = |a_method.args|;
 
-  // a_method  = head(methods);
-  // name      = a_method.name;
-  // arity     = |a_method.args|;
+    disp_args = choose_disp_args(((t : t, unused_var <- nonempty(m.args)) : m <- methods), typedefs);
 
-  // disp_args = choose_disp_args(((t : t, unused_var <- nonempty(m.args)) : m <- methods), typedefs);
+    cases = [{
+      types = (left(m.args(j)) : j <- disp_args);
+      invoke_method_instr = invoke_auto_method(l0, auto_type, method_id(name, arity, i), (fn_arg(j) : j < arity));
+      code = (invoke_method_instr, ret_val(l0));
+      return (types, code);
+    } : m @ i <~ methods];
 
-  // cases = ({
-  //   ptypes = (pseudotype(right(m.args(j)), typedefs) : j <- disp_args);
-
-  //   code = (
-  //     invoke_auto_method(
-  //       l0,
-  //       auto_type,
-  //       method_id(name, arity, i),
-  //       (fn_arg(j) : j < arity)
-  //     ),
-  //     exit_block
-  //   );
-  //   return (ptypes, code);
-  // } : m @ i <- methods);
-
-  // return (terminate) if cases == ();
-
-  // code = dynamic_dispatch_code((fn_arg(i) : i <- disp_args), cases, typedefs);
-  // return (code | ret_val(l0));
+    code = dynamic_dispatch_code((fn_arg(i) : i <- disp_args), cases);
+    return (code | ret_val(l0));
+  }
 }
