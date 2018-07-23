@@ -827,9 +827,11 @@ implicit program           : Program,
     if is_subset(elts_type, integer) and not (e <~ elts : is_cond_expr(e)):
       if not (t <- elts_types : t == empty_type or not is_singleton(t)):
         int_seq = (only_integer(t) : t <- ord_elts_types);
-        seq_id = int_seqs_ids[int_seq];
-        code = (build_const_int_seq(seq_var, seq_id));
-        return (code, seq_var, ret_var_gen);
+        if int_seqs_ids(int_seq, *):
+          seq_id = int_seqs_ids(int_seq, !!);
+          code = (build_const_int_seq(seq_var, seq_id));
+          return (code, seq_var, ret_var_gen);
+        ;
       ;
     ;
 
