@@ -282,13 +282,16 @@ type AtomicUpdateStmt = send_msg_stmt(target: NestedDBVar, msg: Expr),
 
 type ProcCallStmt   = proc_call_stmt(res_var: StdVar?, proc_name: ProcSymbol, args: Expr*);
 
-type CtrlStmt = set_input_ctrl_stmt(var: LocAutoVar, input: Symbol, value: Expr),
-                clear_input_ctrl_stmt(var: LocAutoVar, input: Symbol),
-                set_elapsed_time_ctrl_stmt(var: LocAutoVar, time: Expr),
-                apply_ctrl_stmt(auto_var: LocAutoVar, res_var: StdVar),
-                send_msg_ctrl_stmt(res_var: StdVar, db_var: LocDBVar, msg: Expr),
-                read_state_ctrl_stmt(res_var: StdVar, auto_var: <LocAutoVar, LocDBVar>),
-                restore_state_ctrl_stmt(res_var: StdVar, auto_var: <LocAutoVar, LocDBVar>, state: Expr);
+type SetInputCtrlStmt       = set_input_ctrl_stmt(var: LocAutoVar, input: Symbol, value: Expr);
+type ClearInputCtrlStmt     = clear_input_ctrl_stmt(var: LocAutoVar, input: Symbol);
+type SetElapsedTimeCtrlStmt = set_elapsed_time_ctrl_stmt(var: LocAutoVar, time: Expr);
+type ApplyCtrlStmt          = apply_ctrl_stmt(auto_var: LocAutoVar, res_var: StdVar);
+type SendMsgCtrlStmt        = send_msg_ctrl_stmt(res_var: StdVar, db_var: LocDBVar, msg: Expr);
+type ReadStateCtrlStmt      = read_state_ctrl_stmt(res_var: StdVar, auto_var: <LocAutoVar, LocDBVar>);
+type RestoreStateCtrlStmt   = restore_state_ctrl_stmt(res_var: StdVar, auto_var: <LocAutoVar, LocDBVar>, state: Expr);
+
+type CtrlStmt = SetInputCtrlStmt, ClearInputCtrlStmt, SetElapsedTimeCtrlStmt, ApplyCtrlStmt,
+                SendMsgCtrlStmt, ReadStateCtrlStmt, RestoreStateCtrlStmt;
 
 type JumpStmt = return_stmt(Expr), break_stmt, return_stmt;
 

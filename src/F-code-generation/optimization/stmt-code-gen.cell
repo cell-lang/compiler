@@ -87,7 +87,7 @@ implicit program           : Program,
     send_msg_ctrl_stmt()          = undefined,
 
     read_state_ctrl_stmt()        = read_state_ctrl_stmt_opt_code(stmt.res_var, stmt.auto_var, env, var_gen),
-    restore_state_ctrl_stmt()     = restore_state_ctrl_stmt_opt_code(stmt.res_var, stmt.auto_var, stmt.state, env, var_gen);
+    restore_state_ctrl_stmt()     = restore_state_ctrl_stmt_opt_code(stmt.res_var, stmt.auto_var, stmt.state, fetch(stmt), env, var_gen);
 
 
 
@@ -96,7 +96,7 @@ implicit program           : Program,
   }
 
 
-  StmtCompInfo restore_state_ctrl_stmt_opt_code(StdVar res_var, LocDBVar db_var, Expr state, [EnvVar -> Type] env, VarGen init_var_gen) {
+  StmtCompInfo restore_state_ctrl_stmt_opt_code(StdVar res_var, LocDBVar db_var, Expr state, Maybe[Any] stmt_loc, [EnvVar -> Type] env, VarGen init_var_gen) {
     fail;
   }
 
@@ -118,10 +118,19 @@ implicit program           : Program,
   }
 
 
-  StmtCompInfo restore_state_ctrl_stmt_opt_code(StdVar res_var, LocAutoVar auto_var, Expr state, [EnvVar -> Type] env, VarGen init_var_gen) {
+  StmtCompInfo restore_state_ctrl_stmt_opt_code(StdVar res_var, LocAutoVar auto_var, Expr state, Maybe[Any] stmt_loc, [EnvVar -> Type] env, VarGen init_var_gen) {
     eval_code, surr, var_gen = opt_eval_code(state, env, init_var_gen);
-    ## ADD AN ERROR MESSAGE HERE, AT LEAST IN DEBUG MODE
-    check_instr = do_if_not(qual_bool_var(auto_var, is_new), terminate);
+
+    if options.debug_mode:
+      file, line = file_and_line(fetch(context), stmt_loc);
+      msg = "Cannot set the state of a reactive automaton that has already been initialized: " & user_repr(auto_var);
+      log_instr = log_runtime_failure(true, file, line, just(msg), ());
+      err_code = (log_instr);
+    else
+      err_code = ();
+    ;
+
+    check_instr = do_if_not(qual_bool_var(auto_var, is_new), (err_code | terminate(true)));
     set_state_instr = set_persistent_state(auto_var, surr, var_type(auto_var));
     code = (check_instr) & eval_code & (set_state_instr);
     return (code, just(surrogates), [], init_var_gen);

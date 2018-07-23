@@ -9,6 +9,30 @@ A transfer(A to, B from) =
 
 ////////////////////////////////////////////////////////////////////////////////
 
+(String, NzNat) file_and_line(Maybe[Any] maybe_decl_loc, Maybe[Any] maybe_err_loc) {
+  file = "FILE UNKNOWN";
+  line = 1000000000;
+
+  err_code = ();
+  if maybe_decl_loc != nothing:
+    decl_loc = value(maybe_decl_loc);
+    if decl_loc :: (String, NzNat, NzNat):
+      file, line, unused_var = decl_loc;
+    ;
+  ;
+
+  if maybe_err_loc != nothing:
+    err_loc = value(maybe_err_loc);
+    if err_loc :: ((NzNat, NzNat), (NzNat, NzNat)):
+      line = err_loc(0)(0);
+    ;
+  ;
+
+  return (file, line);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
 String* indent_lines(String* strs) = (if s != "" then "  " & s else "" : s <- strs);
 
 ////////////////////////////////////////////////////////////////////////////////
