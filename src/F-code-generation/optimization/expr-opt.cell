@@ -226,8 +226,17 @@ implicit program     : Program,
 
   // relvar_clause(vars: StdVar+, rel_var: AnyRelVar, args: Maybe[Expr]+);
   (Nat, [EnvVar -> Type])* subenvs(RelvarClause cls, Expr* exprs, [EnvVar -> Type] env) {
-    ## IMPLEMENT IMPLEMENT IMPLEMENT
-    fail;
+    arity = |cls.args|;
+
+    signs = relvar_signatures(cls.rel_var);
+    assert not (s <- signs : |s| != arity);
+    args_supertypes = (union_superset([s(i) : s <- signs]) : i < arity);
+
+    free_args = (i : a @ i <- cls.args, a == nothing);
+    exprs_env = env & [v -> args_supertypes(free_args(i)) : v @ i <~ cls.vars];
+
+    return ((expr_ref_id_unsafe(e), exprs_env) : e <- exprs) &
+           ((expr_ref_id_unsafe(value(a)), env) : a <- cls.args, a != nothing);
   }
 
 

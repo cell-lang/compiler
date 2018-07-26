@@ -99,8 +99,8 @@ implicit program           : Program,
     unary_pseudo_call() = unary_pseudo_call_opt_eval_info(expr.target, expr.arg, var_gen),
     rel_memb_test()     = rel_memb_test_opt_eval_info(expr.rel, expr.args, var_gen),
     rel_lookup()        = rel_lookup_opt_eval_info(expr, var_gen),
-    // relvar_memb_test()  = undefined,
-    // relvar_lookup()     = undefined,
+    relvar_memb_test()  = relvar_memb_test_opt_eval_info(expr.rel_var, expr.args, var_gen),
+    relvar_lookup()     = relvar_lookup_opt_eval_info(expr.rel_var, expr.set_args, expr.unknown_arg_idx, var_gen),
     and_expr()          = and_expr_opt_eval_info(expr.left, expr.right, var_gen),
     or_expr()           = or_expr_opt_eval_info(expr.left, expr.right, var_gen),
     not_expr(e?)        = not_expr_opt_eval_info(e, var_gen),
@@ -110,7 +110,7 @@ implicit program           : Program,
     accessor()          = accessor_opt_eval_info(expr.expr, expr.field, var_gen),
     accessor_test()     = accessor_test_opt_eval_info(expr.expr, expr.field, var_gen),
     auto_method_call()  = auto_method_call_opt_eval_info(expr, var_gen),
-    // db_method_call()    = undefined,
+    db_method_call()    = db_method_call_opt_eval_info(expr, var_gen),
     if_expr()           = if_expr_opt_eval_info(expr, var_gen),
     match_expr()        = match_expr_opt_eval_info(expr, var_gen),
     do_expr()           = do_expr_opt_eval_code(expr, environments(expr_id), var_gen),
@@ -121,6 +121,140 @@ implicit program           : Program,
     tern_rel_comp()     = tern_rel_comp_opt_eval_info(expr, var_gen),
     seq_comp()          = seq_comp_opt_eval_info(expr, var_gen),
     range_comp()        = range_comp_opt_eval_info(expr, var_gen);
+
+
+  // relvar_memb_test(rel_var: AnyRelVar, args: Maybe[Expr]+);
+  (Instr*, ObjExpr, VarGen) relvar_memb_test_opt_eval_info(AnyRelVar rel_var, Maybe[Expr]+ args, VarGen init_var_gen) {
+    args_perm = relvar_cols_perm(rel_var);
+    table_args = (args(i) : i <- args_perm);
+
+    filtered_idxs = nonempty(idxs_into_filtered_seq((a != nothing : a <- table_args)));
+    unfiltered_idxs = (i : a @ i <- table_args, a != nothing);
+
+    set_args = (value(a) : a <- table_args, a != nothing);
+    eval_code, args_aliases, var_gen = opt_eval_info(set_args, init_var_gen);
+
+    res_var, ret_var_gen = next_bool_var(init_var_gen);
+    surr_vars, var_gen = next_int_vars(ret_var_gen, |set_args|);
+    it_var, var_gen = next_table_it_var(var_gen, |table_args|);
+
+    surr_args = (apply(mi, surr_vars($)) : mi <- filtered_idxs);
+
+    if (a <~ table_args : a == nothing):
+      code = (
+        get_table_iter(it_var, rel_var, surr_args),
+        set_bvar(res_var, neg(is_out_of_range(it_var)))
+      );
+    else
+      code = (set_bvar(res_var, table_contains(rel_var, nonempty(surr_vars))));
+    ;
+
+    for e @ i <- reverse(args_aliases):
+      store_id = table_col_store_id(rel_var, rat(unfiltered_idxs, i));
+      surr_var = rat(surr_vars, i);
+      code = (
+        set_ivar(surr_var, lookup_value(store_id, e)),
+        do_if_not(are_eq(int_obj(surr_var), int_obj(-1)), code)
+      );
+    ;
+
+    code = eval_code & (set_bvar(res_var, false)) & code;
+    return (code, bool_obj(res_var), ret_var_gen);
+  }
+
+
+  // relvar_lookup(rel_var: AnyRelVar, set_args: Expr*, unknown_arg_idx: Nat)
+  (Instr*, ObjExpr, VarGen) relvar_lookup_opt_eval_info(AnyRelVar rel_var, Expr* set_args, Nat unknown_arg_idx, VarGen var_gen) {
+    if set_args == ():
+      fail; ## IMPLEMENT IMPLEMENT IMPLEMENT
+    ;
+
+    args_perm = relvar_cols_perm(rel_var);
+    args_rev_perm = reverse_perm(args_perm);
+
+    unknown_table_arg_idx = args_rev_perm(unknown_arg_idx);
+
+    all_relvar_args = take(set_args, unknown_arg_idx) & (:not_an_expr) & drop(set_args, unknown_arg_idx);
+    all_table_args = (all_relvar_args(i) : i <- args_perm);
+    set_table_args = (a : a <- all_table_args, a != :not_an_expr);
+
+    assert {
+      set_args_perm = ({
+          j = i + bit(i >= unknown_table_arg_idx); // Index of the argument in the full list of permutated arguments
+          k = args_perm(j); // Index of the argument in the full list of arguments, before permutation
+          assert k != unknown_arg_idx;
+          h = k - bit(k > unknown_arg_idx); // Index of the argument in the list of set arguments before permutation
+          return h;
+        } : i < |set_args|
+      );
+      set_table_args_2 = (set_args(i) : i <- set_args_perm);
+      return set_table_args == set_table_args_2;
+    };
+
+    return after_perm_eval_info(rel_var, nonempty(set_table_args), unknown_table_arg_idx, var_gen);
+
+
+    (Instr*, ObjExpr, VarGen) after_perm_eval_info(AnyRelVar rel_var, Expr+ set_args, Nat unknown_arg_idx, VarGen init_var_gen) {
+      arity = nz_nat(|set_args| + 1);
+
+      res_var, ret_var_gen = next_obj_var(init_var_gen);
+      args_eval_code, args_aliases, var_gen = opt_eval_info(set_args, ret_var_gen);
+
+      surr_vars, var_gen = next_int_vars(var_gen, nat(arity-1));
+      it_var, var_gen = next_table_it_var(var_gen, arity);
+
+      all_args = (
+        if i < unknown_arg_idx
+          then just(surr_vars(i))
+        elif i == unknown_arg_idx
+          then nothing
+        else
+          just(surr_vars(i-1))
+        : i < arity
+      );
+
+      args_lookup_code = join(({
+          arg_idx = i + bit(i >= unknown_arg_idx);
+          store_id = table_col_store_id(rel_var, nat(arg_idx));
+          surr_var = surr_vars(i);
+          return (
+            set_ivar(surr_var, lookup_value(store_id, e)),
+            check(neg(is_eq(surr_var, -1)))
+          );
+        } : e @ i <- args_aliases
+      ));
+
+      res_store_id = table_col_store_id(rel_var, unknown_arg_idx);
+
+      lookup_code = (
+        get_table_iter(it_var, rel_var, all_args),
+        check(neg(is_out_of_range(it_var))),
+        lookup_surrogate(res_var, res_store_id, get_tuple_field(it_var, unknown_arg_idx))
+      );
+
+      code = args_eval_code & args_lookup_code & lookup_code;
+
+      return (code, res_var, ret_var_gen);
+    }
+  }
+
+
+  // db_method_call(var: AnyDBVar?, name: MethodSymbol, args: Expr*)
+  (Instr*, ObjExpr, VarGen) db_method_call_opt_eval_info(DBMethodCall expr, VarGen init_var_gen) {
+    res_var, ret_var_gen = next_obj_var(init_var_gen);
+    args_eval_code, args_surrs, var_gen = opt_eval_info(expr.args, ret_var_gen);
+
+    invoke_method_instr = invoke_db_method(
+      res_var:    res_var,
+      db_var:     expr.var if expr.var?,
+      type:       if expr.var? then var_type(expr.var) else this_db_symbol,
+      method_id:  method_id(expr.name, |expr.args|),
+      args:       args_surrs
+    );
+
+    code = (args_eval_code | invoke_method_instr);
+    return (code, res_var, ret_var_gen);
+  }
 
 
   // auto_method_call(var: AnyAutoVar?, name: MethodSymbol, args: Expr*)

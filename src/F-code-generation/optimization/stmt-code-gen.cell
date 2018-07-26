@@ -58,46 +58,157 @@ implicit program           : Program,
   //////////////////////////////////////////////////////////////////////////////
 
   StmtCompInfo stmt_opt_code(Statement stmt, [EnvVar -> Type] env, VarGen var_gen) =
-    break_stmt                = break_stmt_opt_code(env, var_gen),
-    fail_stmt()               = fail_stmt_opt_code(stmt, env, var_gen),
-    loop_stmt(ss?)            = loop_stmt_opt_code(ss, env, var_gen),
-    print_stmt(e?)            = print_stmt_opt_code(e, env, var_gen),
-    return_stmt(e?)           = return_stmt_opt_code(e, env, var_gen),
-    assert_stmt()             = assert_stmt_opt_code(stmt, env, var_gen),
-    let_stmt()                = let_stmt_opt_code(stmt.asgnms, stmt.body, env, var_gen),
-    assignment_stmt()         = assignment_stmt_opt_code(stmt.vars, stmt.value, env, var_gen),
-    seq_update_stmt()         = seq_update_stmt_opt_code(stmt, env, var_gen),
-    if_stmt()                 = if_stmt_opt_code(stmt, env, var_gen),
-    for_stmt()                = for_stmt_opt_code(stmt, env, var_gen),
-    foreach_stmt()            = foreach_stmt_opt_code(stmt, env, var_gen),
-    return_stmt               = ((exit_block), just(surrogates), [], var_gen),
-    proc_call_stmt()          = proc_call_stmt_opt_code(stmt, env, var_gen),
+    break_stmt            = break_stmt_opt_code(env, var_gen),
+    fail_stmt()           = fail_stmt_opt_code(stmt, env, var_gen),
+    loop_stmt(ss?)        = loop_stmt_opt_code(ss, env, var_gen),
+    print_stmt(e?)        = print_stmt_opt_code(e, env, var_gen),
+    return_stmt(e?)       = return_stmt_opt_code(e, env, var_gen),
+    assert_stmt()         = assert_stmt_opt_code(stmt, env, var_gen),
+    let_stmt()            = let_stmt_opt_code(stmt.asgnms, stmt.body, env, var_gen),
+    assignment_stmt()     = assignment_stmt_opt_code(stmt.vars, stmt.value, env, var_gen),
+    seq_update_stmt()     = seq_update_stmt_opt_code(stmt, env, var_gen),
+    if_stmt()             = if_stmt_opt_code(stmt, env, var_gen),
+    for_stmt()            = for_stmt_opt_code(stmt, env, var_gen),
+    foreach_stmt()        = foreach_stmt_opt_code(stmt, env, var_gen),
+    return_stmt           = ((exit_block), just(surrogates), [], var_gen),
+    proc_call_stmt()      = proc_call_stmt_opt_code(stmt, env, var_gen),
 
-    send_msg_stmt()               = undefined,
-    try_update_stmt()             = undefined,
-    set_memb_var_stmt()           = undefined,
-    delete_stmt()                 = undefined,
-    insert_stmt()                 = undefined,
+    send_msg_stmt()       = send_msg_stmt_opt_code(stmt.target, stmt.msg, env, var_gen),
+    try_update_stmt()     = try_update_stmt_opt_code(stmt.name, stmt.args, env, var_gen),
+    set_memb_var_stmt()   = set_memb_var_stmt_opt_code(stmt.var, stmt.value, env, var_gen),
+    delete_stmt()         = delete_stmt_opt_code(stmt.var, stmt.fields, env, var_gen),
+    insert_stmt()         = insert_stmt_opt_code(stmt.var, stmt.fields, stmt.force, env, var_gen),
 
     set_input_ctrl_stmt()         = set_input_ctrl_stmt_opt_code(stmt.var, stmt.input, stmt.value, env, var_gen),
     clear_input_ctrl_stmt()       = clear_input_ctrl_stmt_opt_code(stmt.var, stmt.input, env, var_gen),
     set_elapsed_time_ctrl_stmt()  = set_elapsed_time_ctrl_stmt_opt_code(stmt.var, stmt.time, env, var_gen),
     apply_ctrl_stmt()             = apply_ctrl_stmt_opt_code(stmt.auto_var, stmt.res_var, env, var_gen),
-
-    send_msg_ctrl_stmt()          = undefined,
-
+    send_msg_ctrl_stmt()          = send_msg_ctrl_stmt_opt_code(stmt.res_var, stmt.db_var, stmt.msg, env, var_gen),
     read_state_ctrl_stmt()        = read_state_ctrl_stmt_opt_code(stmt.res_var, stmt.auto_var, env, var_gen),
     restore_state_ctrl_stmt()     = restore_state_ctrl_stmt_opt_code(stmt.res_var, stmt.auto_var, stmt.state, fetch(stmt), env, var_gen);
 
 
+  StmtCompInfo send_msg_stmt_opt_code(NestedDBVar target, Expr msg, [EnvVar -> Type] env, VarGen init_var_gen) {
+    code, surr, unused_var = opt_eval_code(msg, env, init_var_gen);
+    spent_var = nested_db_spent(target);
+    code = (
+      code |
+      do_if(spent_var, terminate),
+      send_msg(target, var_type(target), surr, false),
+      set_bvar(spent_var, true)
+    );
+    return (code, just(surrogates), [], init_var_gen);
+  }
 
-  StmtCompInfo read_state_ctrl_stmt_opt_code(StdVar res_var, LocDBVar db_var, [EnvVar -> Type] env, VarGen init_var_gen) {
-    fail;
+
+  StmtCompInfo try_update_stmt_opt_code(UpdateSymbol name, Expr* args, [EnvVar -> Type] env, VarGen init_var_gen) {
+    code, surrs, unused_var = opt_eval_code(args, env, init_var_gen);
+    code = (code | try_update(this_db_symbol, update_id(name, |args|), surrs));
+    return (code, just(surrogates), [], init_var_gen);
+  }
+
+
+  StmtCompInfo set_memb_var_stmt_opt_code(MembVar var, Expr value, [EnvVar -> Type] env, VarGen init_var_gen) {
+    code, surr, unused_var = opt_eval_code(value, env, init_var_gen);
+    pvar = pending_state_var(bare_id(var));
+    code = (code | do_if_not(is_blank(pvar), terminate), set_var(pvar, surr));
+    return (code, just(surrogates), [], init_var_gen);
+  }
+
+
+  StmtCompInfo delete_stmt_opt_code(RelVar rel_var, Maybe[Expr]+ fields, [EnvVar -> Type] env, VarGen init_var_gen) {
+    args_perm = relvar_cols_perm(rel_var);
+    table_args = (fields(i) : i <- args_perm);
+
+    filtered_idxs = idxs_into_filtered_seq((a != nothing : a <- table_args));
+    unfiltered_idxs = (i : a @ i <- table_args, a != nothing);
+
+    set_args = (value(a) : a <- table_args, a != nothing);
+    args_eval_code, args_aliases, var_gen = opt_eval_code(set_args, env, init_var_gen);
+
+    surr_vars, var_gen = next_int_vars(var_gen, |set_args|);
+    surr_args = (apply(mi, surr_vars($)) : mi <- filtered_idxs);
+
+    code = (queue_deletes(rel_var, nonempty(surr_args)));
+
+    for e @ i <- reverse(args_aliases):
+      store_id = table_col_store_id(rel_var, rat(unfiltered_idxs, i));
+      surr_var = rat(surr_vars, i);
+      code = (
+        set_ivar(surr_var, lookup_value(store_id, e)),
+        do_if_not(is_eq(surr_var, -1), code)
+      );
+    ;
+
+    return (args_eval_code & code, just(surrogates), [], init_var_gen);
+  }
+
+
+  StmtCompInfo insert_stmt_opt_code(RelVar rel_var, Expr+ fields, Bool force, [EnvVar -> Type] env, VarGen init_var_gen) {
+    args_perm = relvar_cols_perm(rel_var);
+    table_args = (fields(i) : i <- args_perm);
+
+    args_eval_code, args_aliases, var_gen = opt_eval_code(table_args, env, init_var_gen);
+
+    arity = |table_args|;
+    surr_vars, var_gen = next_int_vars(var_gen, arity);
+    is_new_val_vars, var_gen = next_bool_vars(var_gen, arity);
+
+    keys = table_keys(rel_var);
+    col_is_tracked = if force then union(keys) else [];
+
+    value_prep_code = join(({
+        store_id = table_col_store_id(rel_var, i);
+        surr_var = surr_vars(i);
+        is_new_val_var = is_new_val_vars(i);
+        return (
+          set_ivar(surr_var, lookup_value_ex(store_id, e)),
+          set_bvar(is_new_val_var, is_eq(surr_var, -1)) if col_is_tracked(i),
+          do_if(if col_is_tracked(i) then is_new_val_var else is_eq(surr_var, -1), queue_insert(surr_var, store_id, e))
+        );
+      } : e @ i <- args_aliases
+    ));
+
+    if force:
+      deletion_code = ({
+          value_cond = and([neg(is_new_val_vars(i)) : i <- as]);
+          surr_args = (if as(i) then just(surr_vars(i)) else nothing : i < arity);
+          return do_if(value_cond, queue_deletes(rel_var, surr_args));
+        } : as <- rand_sort(keys)
+      );
+    else
+      deletion_code = ();
+    ;
+
+    insertion_code = (queue_insert(rel_var, nonempty(surr_vars)));
+    code = args_eval_code & value_prep_code & deletion_code & insertion_code;
+
+    return (code, just(surrogates), [], init_var_gen);
+  }
+
+
+  StmtCompInfo send_msg_ctrl_stmt_opt_code(StdVar res_var, LocDBVar db_var, Expr msg, [EnvVar -> Type] env, VarGen init_var_gen) {
+    code, surr, unused_var = opt_eval_code(msg, env, init_var_gen);
+    db_type = var_type(db_var);
+    res_bvar = low_level_bvar(res_var);
+    code = (code | send_msg(db_var, db_type, surr, true, res_bvar));
+    surrs = update(surrogates, res_var, bool_obj(res_bvar));
+    return (code, just(surrs), [], init_var_gen);
+  }
+
+
+  StmtCompInfo read_state_ctrl_stmt_opt_code(StdVar res_var, LocDBVar db_var, [EnvVar -> Type] env, VarGen var_gen) {
+    code = (copy_state(res_var, db_var, var_type(db_var)));
+    return (code, just(surrogates), [], var_gen);
   }
 
 
   StmtCompInfo restore_state_ctrl_stmt_opt_code(StdVar res_var, LocDBVar db_var, Expr state, Maybe[Any] stmt_loc, [EnvVar -> Type] env, VarGen init_var_gen) {
-    fail;
+    code, surr, unused_var = opt_eval_code(state, env, init_var_gen);
+    res_bvar = low_level_bvar(res_var);
+    code = (code | set_state(res_bvar, db_var, surr, var_type(db_var)));
+    surrs = update(surrogates, res_var, bool_obj(res_bvar));
+    return (code, just(surrs), [], init_var_gen);
   }
 
   //////////////////////////////////////////////////////////////////////////////
