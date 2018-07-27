@@ -127,36 +127,11 @@ implicit typedefs : [TypeName -> NeType] {
 }
 
 
-implicit program : Program, typedefs : [TypeName -> NeType] {
+implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptions {
   AnyLowLevelRepr opt_repr(NeType type) {
     for r <- atomic_low_level_reprs:
       return r if is_subset_wrapper_1(type, low_level_repr_type(r));
     ;
-
-    // if is_subset(type, type_tagged_obj):
-    //   tag_type = tag_supertype(type);
-    //   if is_symb_singl_type(tag_type):
-    //     tag = untag(only_symb(tag_type));
-    //     if optimized_tagged_records(tag, *):
-    //       untagged_type = untagged_objs_supertype(type);
-    //       for r @ i <- optimized_tagged_records(tag, !!):
-    //         rec_type = low_level_repr_type(r);
-    //         return opt_tag_rec_repr(tag, i) if is_subset(untagged_type, rec_type);
-    //       ;
-    //     ;
-    //   ;
-    // ;
-
-    // ## PERFORMANCE HERE IS PROBABLY HORRIFYING. FIX
-    // for tag <- isort(keys(optimized_tagged_records)):
-    //   if is_subset(type, tag_obj_type(symb_type(tag), type_any)):
-    //     untagged_type = untagged_objs_supertype(type);
-    //     for repr @ i <- optimized_tagged_records(tag, !!):
-    //       rec_type = low_level_repr_type(repr);
-    //       return opt_tag_rec_repr(tag, i) if is_subset(untagged_type, rec_type);
-    //     ;
-    //   ;
-    // ;
 
     res = try_mono_tag_type(type);
     if res != nothing:
@@ -207,28 +182,12 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
   }
 
 
-// type SymbType           = symb_type(SymbObj);
-// type TagType            = SymbType, atom_type;
-// type TagObjType         = tag_obj_type(tag_type: TagType, obj_type: NeType);
-
-
-
-  // Type untagged_objs_supertype(Type type) =
-  //   tag_obj_type()    = type.obj_type,
-  //   union_type(ts?)   = union_superset([untagged_objs_supertype(t) : t <- ts]),
-  //   type_var()        = type_any,
-  //   type_ref(ts?)     = untagged_objs_supertype(expand_type_ref(ts, typedefs)),
-  //   _                 = empty_type;
-
-  // }
-
-
   LowLevelRepr opt_repr(<empty_type>) = :object;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
-implicit program : Program, typedefs : [TypeName -> NeType] {
+implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptions {
   LowLevelSign low_level_sign(Function fn) =
     low_level_sign(
       args:       (opt_repr(t) : unused_var, t <- fn.args),
