@@ -159,9 +159,7 @@ implicit typedefs : [TypeName -> NeType] {
     ne_seq_type(),      ptrn_ne_seq       = empty_type,
 
     tuple_type(ts?),    ptrn_ne_seq       = empty_type,
-    tuple_type(ts?),    ptrn_tuple(ps?)   = if |ts| == |ps|
-                                            then tuple_type((type_minus_pattern(t, ps(i)) : t @ i <- ts))
-                                            else type,
+    tuple_type(ts?),    ptrn_tuple(ps?)   = if |ts| == |ps| then tuple_type_minus_tuple_ptrn(ts, ps) else type,
 
     ne_set_type(),      _                 = if ptrn != ptrn_ne_set then type else empty_type,
 
@@ -193,6 +191,19 @@ implicit typedefs : [TypeName -> NeType] {
 
       symb_type(s?),  ptrn_symbol       = tag_obj_type(type.tag_type, obj_type),
       symb_type(ts?), ptrn_symbol(ps?)  = if ts == ps then tag_obj_type(type.tag_type, obj_type) else type;
+  }
+
+
+  Type tuple_type_minus_tuple_ptrn(NeType+ types, Pattern+ ptrns) {
+    rem_types = (type_minus_pattern(t, ptrns(i)) : t @ i <- types);
+    ne_count = count(rem_types, $ != empty_type);
+    if ne_count == 0:
+      return empty_type;
+    elif ne_count == 1:
+      return tuple_type((if t != empty_type then t else types(i) : t @ i <- rem_types));
+    else
+      return tuple_type(types);
+    ;
   }
 
   ////////////////////////////////////////////////////////////////////////////////
