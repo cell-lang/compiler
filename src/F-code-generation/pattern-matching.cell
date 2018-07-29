@@ -257,56 +257,93 @@ implicit typedefs : [TypeName -> NeType] {
     Instr* tag_objs_ptrns_opt_code(ObjExpr expr, Type type, (Pattern, Instr+, [StdVar -> AnyLocVar])+ cases) {
       assert is_subset(type, type_tagged_obj);
 
-      pre_type = type;
-      destr_cases = ();
-
-      for p, is, rs @ i <- cases:
-        post_type = type_minus_pattern(pre_type, p);
-        split_ptrn = nonempty_map(split_by_tag_ptype(p));
-
-        if post_type == empty_type:
-          default_code = opt_ptrn_match_code(p, expr, pre_type, is, vars_reprs = rs);
-          return default_code if destr_cases == ();
-          return tag_objs_ptrns_by_tag_opt_code(expr, type, destr_cases, nonempty(default_code));
+      is_complete = false;
+      types = (type);
+      curr_type = type;
+      for p, unused_var_1, unused_var_2 @ i <- cases:
+        curr_type = type_minus_pattern(curr_type, p);
+        types = (types | curr_type);
+        if curr_type == empty_type:
+          return tag_objs_ptrns_opt_code(expr, type, nonempty(take(cases, i+1))) if i != |cases| - 1;
+          is_complete = true;
+          break;
         ;
-
-        if split_ptrn(:symbols, *):
-          non_std_cases = drop(cases, i);
-          non_std_ptrns = (rp : rp, unused_var_1, unused_var_2 <- non_std_cases);
-          is_complete = not may_fall_through(pre_type, non_std_ptrns);
-          non_std_cases_code = (
-            opt_ptrn_match_code(rp, expr, type, ris, vars_reprs = rrs)
-            : rp, ris, rrs @ j <- non_std_cases
-          );
-          default_code = (join(non_std_cases_code) | terminate(is_complete));
-          return default_code if destr_cases == ();
-          return tag_objs_ptrns_by_tag_opt_code(expr, type, destr_cases, default_code);
-        ;
-
-        destr_case = [if t != :symbols then untag(t) else undefined -> (rp, is, rs) : t, rp <- split_ptrn];
-        destr_cases = (destr_cases | destr_case);
-        pre_type = post_type;
       ;
 
-      return tag_objs_ptrns_by_tag_opt_code(expr, type, nonempty(destr_cases), (terminate));
-    }
+      split_ptrns = (split_by_tag_ptype(p) : p, unused_var_1, unused_var_2 <- cases);
+      tag_ptypes = nonempty([pt : c <~ split_ptrns, pt, unused_var <- c]);
 
-
-    Instr* tag_objs_ptrns_by_tag_opt_code(ObjExpr expr, Type type, [+Symbol -> (Pattern, Instr+, [StdVar -> AnyLocVar])]+ cases, Instr+ default_code) {
-      cases_by_tag = zip_by_key(cases);
+      tags = [s : pt <- tag_ptypes, symbol(s?) ?= pt];
 
       code_by_tag = [
-        object(t) -> {
-          case_type = tag_obj_type(symb_type(t), restricted_untagged_objs_supertype(type, t));
-          cases_code = (opt_ptrn_match_code(p, expr, case_type, is, vars_reprs = rs) : p, is, rs <- cs);
-          is_complete = not may_fall_through(case_type, (p : p, unused_var_1, unused_var_2 <- cs));
-          case_def_code = if is_complete then (terminate(true)) else default_code;
-          return nonempty(join(cases_code) & case_def_code);
-        } : t, cs <- cases_by_tag
+        tag -> {
+          ptype = :symbol(tag);
+
+          // Cases that match values tagged with the symbol 'tag'
+          restr_cases = ({
+            unused_var, eval_code, reprs = cases(i);
+            ps = nonempty([ptrns(ptype, !!) if ptrns(ptype, *), ptrns(:symbols, !!) if ptrns(:symbols, *)]);
+            ptrn = ptrn_union(ps);
+            return (ptrn, eval_code, reprs);
+          } : ptrns @ i <- split_ptrns, ptrns(ptype, *) or ptrns(:symbols, *));
+
+          case_type = tag_obj_type(symb_type(tag), restricted_untagged_objs_supertype(type, tag));
+          tag_is_complete = not may_fall_through(case_type, (p : p, unused_var_1, unused_var_2 <- restr_cases));
+
+          if tag_is_complete:
+            last_case = rat(restr_cases, 0);
+            last_case_ptrn, last_case_code, last_case_reprs = last_case;
+            if pattern_vars(last_case_ptrn) == []:
+              assert last_case_reprs == [];
+
+              checked_cases = take(restr_cases, |restr_cases| - 1);
+              checked_cases_code = (opt_ptrn_match_code(p, expr, case_type, is, vars_reprs = rs) : p, is, rs <- checked_cases);
+              ## HERE IT WOULD BE BETTER IF WE COULD INSERT A CHECK FOR THE LAST CASE
+              return join(checked_cases_code) & last_case_code;
+            ;
+          ;
+
+          cases_code = (opt_ptrn_match_code(p, expr, case_type, is, vars_reprs = rs) : p, is, rs <- restr_cases);
+          return (join(cases_code) | terminate(tag_is_complete));
+        } : tag <- tags
       ];
 
-      code_by_tags = [(ss, c) : ss, c <- group_by_right_arg(code_by_tag)];
-      assert code_by_tags == [(ss, nonempty(is)) : is, ss <- reverse_map(code_by_tag)]; ## REMOVED AFTER IT HAS BEEN TESTED THOROUGHLY
+      code_by_tags = [([object(s) : s <- ss], c) : ss, c <- group_by_right_arg(code_by_tag)];
+      assert code_by_tags == [([object(s) : s <- ss], nonempty(is)) : is, ss <- reverse_map(code_by_tag)]; ## REMOVED AFTER IT HAS BEEN TESTED THOROUGHLY
+
+      if tag_ptypes(:symbols):
+        // Cases that match values tagged with any symbol
+        default_cases = ({
+          unused_var, eval_code, reprs = cases(i);
+          return (ptrns(:symbols, !!), eval_code, reprs);
+        } : ptrns @ i <- split_ptrns, ptrns(:symbols, *));
+
+        ## HERE THE TYPE OF THE MATCHED EXPRESSION SHOULD BE NARROWED DOWN
+        ## BY REMOVING ALL TAGS THAT ARE HANDLED SEPARATELY
+        default_is_complete = not may_fall_through(type, (p : p, unused_var_1, unused_var_2 <- default_cases));
+
+        default_cases_code = (opt_ptrn_match_code(p, expr, type, is, vars_reprs = rs) : p, is, rs <- default_cases);
+        default_code = (join(default_cases_code) | terminate(default_is_complete));
+
+        last_case_ptrn, last_case_code, last_case_reprs = rat(default_cases, 0);
+
+        if default_is_complete and pattern_vars(last_case_ptrn) == []:
+          assert last_case_reprs == [];
+
+          default_cases = take(default_cases, |default_cases| - 1);
+          default_cases_code = (opt_ptrn_match_code(p, expr, type, is, vars_reprs = rs) : p, is, rs <- default_cases);
+          ## HERE IT WOULD BE BETTER IF WE COULD INSERT A CHECK FOR THE LAST CASE
+          default_code = join(default_cases_code) & last_case_code;
+
+        else
+          default_cases_code = (opt_ptrn_match_code(p, expr, type, is, vars_reprs = rs) : p, is, rs <- default_cases);
+          default_code = (join(default_cases_code) | terminate(default_is_complete));
+        ;
+
+      else
+        default_code = (terminate(is_complete));
+      ;
+
       return opt_symb_switch(get_tag(expr), code_by_tags, default_code);
     }
 
