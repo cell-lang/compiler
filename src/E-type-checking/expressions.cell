@@ -140,12 +140,19 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     return errs if errs != [];
 
     target_type = expr_type(target, env);
+
     if target_type == empty_type:
       exp_value_type = type_any;
+
     elif is_subset(target_type, atom_type):
       exp_value_type = type_any;
+
     elif is_subset(target_type, type_seq):
       exp_value_type = integer;
+
+    elif is_subset(target_type, empty_rel_type):
+      return [unary_pcall_applied_to_empty_rel];
+
     elif is_subset(target_type, type_set):
       exp_value_type = set_elem_supertype(target_type);
       errs = typecheck(value, type_any, env);
@@ -153,6 +160,10 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
       actual_value_type = expr_type(value, env);
       types_are_disjoint = are_ptype_disjoint(actual_value_type, exp_value_type);
       return [invalid_rel_arg_type(0, actual_value_type, exp_value_type) if types_are_disjoint];
+
+    elif is_subset(target_type, type_bin_rel):
+      exp_value_type = bin_rel_arg_supertype(target_type, 0);
+
     else
       ## BAD BAD: THIS ERROR MESSAGE IS ACTUALLY WRONG...
       return [unexpected_actual_type(target_type, type_unary_pseudocall_target)];

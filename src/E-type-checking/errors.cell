@@ -32,6 +32,7 @@ type TypeCheckingError =
   unexpected_actual_type(actual_type: Type, expected_type: Type),
   invalid_cls_param_type(actual_type: ClsType, exp_arg_types: Type+, exp_ret_type: Type),
   invalid_rel_arg_type(idx: Nat, actual_type: Type, expected_type: Type),
+  unary_pcall_applied_to_empty_rel,
   loop_did_not_converge(iteractions: NzNat, history: [+EnvVar -> Type+]),
   ptrn_cannot_match_type(pattern: Pattern, type: Type),
   invalid_main_arg_type(type: Type),
@@ -135,6 +136,8 @@ TypeCheckingError invalid_cls_param_type(ClsType at, Type+ eat, Type ert) =
   invalid_cls_param_type(actual_type: at, exp_arg_types: eat, exp_ret_type: ert);
 
 TypeCheckingError invalid_rel_arg_type(Nat i, Type at, Type et) = invalid_rel_arg_type(idx: i, actual_type: at, expected_type: et);
+
+TypeCheckingError unary_pcall_applied_to_empty_rel = :unary_pcall_applied_to_empty_rel;
 
 TypeCheckingError loop_did_not_converge(NzNat n, [+EnvVar -> Type+] h) = loop_did_not_converge(iteractions: n, history: h);
 
@@ -263,11 +266,17 @@ String* create_error_msg(TypeCheckingError err) =
                                           "  Expected type: " & user_repr(err.expected_type),
                                           "  Actual type:   " & user_repr(err.actual_type)
                                         ),
+  unary_pcall_applied_to_empty_rel    = (
+    "The () operator cannot be applied to a variable or an expression whose only possible value",
+    "is the empty set/relation because its meaning would be ambiguous. It could be interpreted",
+    "as either the membership test operator for sets or the by-key lookup for binary relations.",
+    "Try explicitly declaring the type of the variable you're applying it to. If it's meant",
+    "to be a map lookup operation, you could also use the more verbose map(key, !!) syntax."
+  ),
   invalid_implicit_par_type()         = ( "Invalid implicit argument type: " & user_repr(err.param_name),
                                           "  Expected type: " & user_repr(err.formal_type),
                                           "  Actual type:   " & user_repr(err.actual_type)
                                         ),
-
   invalid_return_type()               = ( "Invalid return type.",
                                           "  Expected type: " & user_repr(err.expected_type),
                                           "  Actual type:   " & user_repr(err.actual_type)

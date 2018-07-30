@@ -90,7 +90,9 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     if args_types == ():
       return set_elem_supertype(rel_type);
     elif |args_types| == 1 and expr.unknown_arg_idx :: <0..1>:
-      return bin_rel_arg_supertype(rel_type, expr.unknown_arg_idx);
+      return if expr.unknown_arg_idx == 1
+        then restricted_bin_rel_arg1_supertype(rel_type, only(args_types))
+        else bin_rel_arg_supertype(rel_type, expr.unknown_arg_idx);
     elif |args_types| == 2 and expr.unknown_arg_idx :: <0..2>:
       return tern_rel_arg_supertype(rel_type, expr.unknown_arg_idx);
     else
@@ -306,9 +308,12 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
         return union_type([tag_obj_type(symb_type(s), arg_type) : s <- finite_symb_set_enum(target_type)]);
       ;
 
-    else
-      assert is_subset(target_type, type_seq);
+    elif is_subset(target_type, type_seq):
       return restricted_seq_elem_supertype(target_type, arg_type);
+
+    else
+      assert is_subset(target_type, type_bin_rel);
+      return restricted_bin_rel_arg1_supertype(target_type, arg_type);
     ;
   }
 
