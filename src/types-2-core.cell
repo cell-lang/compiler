@@ -1,12 +1,12 @@
 type Obj        = object(Any);
 
-type SymbObj    = object(Atom);
+type SymbObj    = object(Symbol);
 type IntObj     = object(Int);
-type LeafObj    = object(<Atom, Int>);
+type LeafObj    = object(<Symbol, Int>);
 
 ///////////////////////////////////////////////////////////////////////////////
 
-type BasicTypeSymbol  = type_symbol(Atom), schema_type_symbol(Atom), builtin_type_symbol(any);
+type BasicTypeSymbol  = type_symbol(Symbol), schema_type_symbol(Symbol), builtin_type_symbol(any);
 type ParTypeSymbol    = par_type_symbol(symbol: BasicTypeSymbol, params: Type+); ## TOO LOOSE A TYPE, I THINK. MAYBE builtin_type_symbol() SHOULD BE PART OF TypeSymbol, NOT BasicTypeSymbol
 type TypeSymbol       = BasicTypeSymbol, ParTypeSymbol;
 
@@ -21,7 +21,7 @@ type EmptyCollType      = empty_seq_type, empty_rel_type;
 
 type LeafType           = atom_type, SymbType, IntType, FloatType, EmptyCollType;
 
-type TypeVar            = type_var(<Atom, Nat>);
+type TypeVar            = type_var(<Symbol, Nat>);
 type TypeRef            = type_ref(TypeSymbol);
 
 type NeSeqType          = ne_seq_type(elem_type: NeType);
@@ -48,10 +48,10 @@ type Type               = empty_type, NeType;
 ///////////////////////////////////////////////////////////////////////////////
 
 type ClsType  = cls_type(in_types: NeType+, out_type: NeType);
-type AnyType  = NeType, ClsType;
 
 type FnType   = fn_type(
-                  args:       AnyType*,
+                  args:       NeType*,
+                  cls_args:   ClsType*,
                   impl_args:  [ImplArg -> NeType],
                   ret_type:   NeType,
                   constrs:    [FnSymbol -> [+ClsType]]
@@ -69,11 +69,10 @@ type Operator = UnaryOperator, BinaryOperator;
 type BuiltIn  = neg, add, sub, mult, div, mod, lt, le, and, or, xor,
                 fneg, fadd, fsub, fmult, fdiv, flt, fle, fexp, fsqrt,
                 floor, ceiling, float, bits, mantissa, dec_exp,
-                str, symb, isort,
-                slice, cat, rev, tag, untag, parse, print,
+                isort, slice, cat, rev, tag, untag, parse, print,
                 rand_nat, rand_elem, counter, ticks;
 
-type StdFnSymb        = fn_symbol(Atom);
+type StdFnSymb        = fn_symbol(Symbol);
 type OpSymb           = op_symbol(Operator);
 type FnSymbol         = StdFnSymb, OpSymb;
 
@@ -88,19 +87,19 @@ type NestedFnId       = nested_fn_id(outer: PlainFnId, inner: PlainFnId);
 type FnFamilyId       = PlainFnFamilyId, NestedFnFamilyId;
 type FnId             = PlainFnId, NestedFnId;
 
-type MethodSymbol   = method_symbol(Atom);
-type UpdateSymbol   = msg_handler, update_symbol(Atom);
+type MethodSymbol   = method_symbol(Symbol);
+type UpdateSymbol   = msg_handler, update_symbol(Symbol);
 
-type AutoSymbol     = auto_symbol(Atom);
-type DBSymbol       = db_symbol(Atom);
+type AutoSymbol     = auto_symbol(Symbol);
+type DBSymbol       = db_symbol(Symbol);
 
-type StdVar         = var(Atom);
+type StdVar         = var(Symbol);
 type FnArg          = fn_arg(Nat);
-type ImplArg        = impl_arg(Atom);
+type ImplArg        = impl_arg(Symbol);
 
-type MembVar        = memb_var(Atom);
+type MembVar        = memb_var(Symbol);
 
-type SignalVar      = signal_var(Atom);
+type SignalVar      = signal_var(Symbol);
 
 type QualMembVar    = qual_memb_var(db_var: AnyDBVar, memb_var: MembVar);
 type QualSignalVar  = qual_signal_var(auto_var: AnyAutoVar, memb_var: SignalVar);
@@ -110,23 +109,23 @@ type AnySignalVar   = SignalVar, QualSignalVar;
 
 type PrevVarValue   = prev_var_value(AnySignalVar);
 
-type LocAutoVar     = loc_auto_var(Atom);
-type NestedAutoVar  = nested_auto_var(Atom);
+type LocAutoVar     = loc_auto_var(Symbol);
+type NestedAutoVar  = nested_auto_var(Symbol);
 type AnyAutoVar     = LocAutoVar, NestedAutoVar;
 
-type LocDBVar     = loc_db_var(Atom);
-type NestedDBVar  = nested_db_var(Atom);
+type LocDBVar     = loc_db_var(Symbol);
+type NestedDBVar  = nested_db_var(Symbol);
 type LinkedDBVar  = linked_db_var(Nat);
 type QualDBVar    = qual_db_var(outer: AnyDBVar, inner: <NestedDBVar, LinkedDBVar>);
 type AnyDBVar     = LocDBVar, NestedDBVar, LinkedDBVar, QualDBVar;
 
 type Var        = StdVar, FnArg, ImplArg, AnyMembVar, AnySignalVar, PrevVarValue;
 
-type RelVar     = rel_var(Atom);
+type RelVar     = rel_var(Symbol);
 type QualRelVar = qual_rel_var(db_var: AnyDBVar, rel_var: RelVar);
 type AnyRelVar  = RelVar, QualRelVar;
 
-type ClsVar     = cls_var(<Atom, Nat>);
+type ClsVar     = cls_var(<Symbol, Nat>);
 
 type CondExpr = cond_expr(expr: Expr, cond: Expr);
 
@@ -134,8 +133,10 @@ type SubExpr  = Expr, CondExpr;
 
 type FloatLit = float_lit(mantissa: <0..9>+, negative: Bool, dec_exp: Int);
 
-type Expr     = undefined, LeafObj, FloatLit, Var,
-                SetExpr, SeqExpr, TupleExpr, SeqTailExpr,
+type ExprRef  = expr_ref(Nat);
+
+type Expr     = undefined, LeafObj, FloatLit, Var, ExprRef,
+                SeqExpr, TupleExpr, SeqTailExpr, SetExpr,
                 MapExpr, BinRelExpr, TernRelExpr, TagObjExpr,
                 FnCallExpr, ClsCall, BuiltinCall,
                 SizeExpr,
@@ -160,7 +161,7 @@ type BinRelExpr     = bin_rel_expr([+(args: (Expr, Expr), cond: Expr?)]);
 type TernRelExpr    = tern_rel_expr([+(args: (Expr, Expr, Expr), cond: Expr?)]);
 type TagObjExpr     = tag_obj_expr(tag: Expr, obj: Expr);
 
-type FnCallExpr     = fn_call(fn_id: FnFamilyId, args: AnyExpr*, impl_args: [ImplArg -> Expr]);
+type FnCallExpr     = fn_call(fn_id: FnFamilyId, args: Expr*, cls_args: AnyClsExpr*, impl_args: [ImplArg -> Expr]);
 type ClsCall        = cls_call(name: ClsVar, args: Expr+);
 type BuiltinCall    = builtin_call(name: BuiltIn, args: Expr+);
 
@@ -203,17 +204,15 @@ type TernRelCompExpr  = tern_rel_comp(exprs: (Expr, Expr, Expr), source: Clause)
 type SeqCompExpr    = seq_comp(expr: Expr, vars: StdVar+, idx_var: StdVar?, src_expr: Expr, sel_expr: Expr?);
 type RangeCompExpr  = range_comp(expr: Expr, var: StdVar, bound_expr: Expr, inclusive: Bool, sel_expr: Expr?);
 
-type OutputIsDefExpr  = output_is_def(var: LocAutoVar, output: Atom);
-type OutputIsSetExpr  = output_is_set(var: LocAutoVar, output: Atom);
+type OutputIsDefExpr  = output_is_def(var: LocAutoVar, output: Symbol);
+type OutputIsSetExpr  = output_is_set(var: LocAutoVar, output: Symbol);
 
 ///////////////////////////////////////////////////////////////////////////////
 
 type FnPtr    = fn_ptr(FnFamilyId);
-type ClsExpr  = cls_expr(args: Maybe[StdVar]+, expr: Expr);
+type ClsExpr  = cls_expr(arity: NzNat, expr: Expr);
 
 type AnyClsExpr = ClsVar, FnPtr, ClsExpr;
-
-type AnyExpr    = Expr, AnyClsExpr;
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -244,25 +243,36 @@ type TagPtrn  = ptrn_symbol, ptrn_symbol(SymbObj), ptrn_var(var: StdVar, ptrn: p
 
 ////////////////////////////////////////////////////////////////////////////////
 
-type Clause   = set_clause(var: StdVar, src: Expr),
-                rel_clause(vars: StdVar+, src: Expr, args: Maybe[Expr]+),
-                relvar_clause(vars: StdVar+, rel_var: AnyRelVar, args: Maybe[Expr]+),
-                seq_clause(vars: Maybe[StdVar]+, idx_var: Maybe[StdVar], src: Expr),
-                and_clause(left: Clause, right: Clause),
-                or_clause(left: Clause, right: Clause),
-                match_clause(ptrn: Pattern, expr: Expr),
-                asgnm_clause(var: StdVar, expr: Expr),
-                filter_clause(Expr);
+type Clause = SetClause, RelClause, RelvarClause, SeqClause, AndClause,
+              OrClause, MatchClause, AsgnmClause, FilterClause;
+
+type SetClause    = set_clause(var: StdVar, src: Expr);
+type RelClause    = rel_clause(vars: StdVar+, src: Expr, args: Maybe[Expr]+);
+type RelvarClause = relvar_clause(vars: StdVar+, rel_var: AnyRelVar, args: Maybe[Expr]+);
+type SeqClause    = seq_clause(vars: Maybe[StdVar]+, idx_var: Maybe[StdVar], src: Expr);
+type AndClause    = and_clause(left: Clause, right: Clause);
+type OrClause     = or_clause(left: Clause, right: Clause);
+type MatchClause  = match_clause(ptrn: Pattern, expr: Expr);
+type AsgnmClause  = asgnm_clause(var: StdVar, expr: Expr);
+type FilterClause = filter_clause(Expr);
 
 ////////////////////////////////////////////////////////////////////////////////
 
+type AssertStmt     = assert_stmt(
+                        cond: Expr,
+                        env:  [<StdVar, ImplArg>],
+                        file: String,
+                        line: NzNat,
+                        text: Maybe[String]
+                      );
+
+type FailStmt       = fail_stmt(env: [<StdVar, ImplArg>], file: String, line: NzNat);
+
+type SeqUpdateStmt  = seq_update_stmt(seq_var: StdVar, idx: Expr, value: Expr);
+
 type AtomicFnStmt   = assignment_stmt(vars: StdVar+, value: Expr),
-                      return_stmt(Expr),
-                      break_stmt,
-                      fail_stmt,
-                      assert_stmt(cond: Expr, env: [<StdVar, ImplArg>], file: String, line: NzNat, text: Maybe[String]),
                       print_stmt(Expr),
-                      seq_update_stmt(seq_var: StdVar, idx: Expr, value: Expr); ## NOT SURE IT BELONGS HERE...
+                      SeqUpdateStmt, AssertStmt, FailStmt;
 
 type AtomicUpdateStmt = send_msg_stmt(target: NestedDBVar, msg: Expr),
                         try_update_stmt(name: UpdateSymbol, args: Expr*),
@@ -270,41 +280,50 @@ type AtomicUpdateStmt = send_msg_stmt(target: NestedDBVar, msg: Expr),
                         delete_stmt(var: RelVar, fields: Maybe[Expr]+),
                         insert_stmt(var: RelVar, fields: Expr+, force: Bool);
 
-type AtomicProcStmt = return_stmt,
-                      proc_call_stmt(res_var: StdVar?, proc_name: ProcSymbol, args: Expr*);
+type ProcCallStmt   = proc_call_stmt(res_var: StdVar?, proc_name: ProcSymbol, args: Expr*);
 
-type CtrlStmt = set_input_ctrl_stmt(var: LocAutoVar, input: Atom, value: Expr),
-                clear_input_ctrl_stmt(var: LocAutoVar, input: Atom),
-                set_elapsed_time_ctrl_stmt(var: LocAutoVar, time: Expr),
-                apply_ctrl_stmt(auto_var: LocAutoVar, res_var: StdVar),
-                send_msg_ctrl_stmt(res_var: StdVar, db_var: LocDBVar, msg: Expr),
-                read_state_ctrl_stmt(res_var: StdVar, auto_var: <LocAutoVar, LocDBVar>),
-                restore_state_ctrl_stmt(res_var: StdVar, auto_var: <LocAutoVar, LocDBVar>, state: Expr);
+type SetInputCtrlStmt       = set_input_ctrl_stmt(var: LocAutoVar, input: Symbol, value: Expr);
+type ClearInputCtrlStmt     = clear_input_ctrl_stmt(var: LocAutoVar, input: Symbol);
+type SetElapsedTimeCtrlStmt = set_elapsed_time_ctrl_stmt(var: LocAutoVar, time: Expr);
+type ApplyCtrlStmt          = apply_ctrl_stmt(auto_var: LocAutoVar, res_var: StdVar);
+type SendMsgCtrlStmt        = send_msg_ctrl_stmt(res_var: StdVar, db_var: LocDBVar, msg: Expr);
+type ReadStateCtrlStmt      = read_state_ctrl_stmt(res_var: StdVar, auto_var: <LocAutoVar, LocDBVar>);
+type RestoreStateCtrlStmt   = restore_state_ctrl_stmt(res_var: StdVar, auto_var: <LocAutoVar, LocDBVar>, state: Expr);
 
-type CompositeStmt[T] = if_stmt(cond: Expr, body: T+, else: T*),
-                        loop_stmt(T+),
-                        foreach_stmt(vars: StdVar+, idx_var: StdVar?, values: Expr, body: T+),
-                        for_stmt(var: StdVar?, start_val: Expr, end_val: Expr, end_val_incl: Bool, body: T+),
-                        let_stmt(asgnms: [ImplArg -> Expr], body: T+);
+type CtrlStmt = SetInputCtrlStmt, ClearInputCtrlStmt, SetElapsedTimeCtrlStmt, ApplyCtrlStmt,
+                SendMsgCtrlStmt, ReadStateCtrlStmt, RestoreStateCtrlStmt;
 
-type Statement      = AtomicFnStmt, AtomicUpdateStmt, AtomicProcStmt, CtrlStmt, CompositeStmt[Statement];
+type JumpStmt = return_stmt(Expr), break_stmt, return_stmt;
+
+type IfStmt[T]      = if_stmt(cond: Expr, body: T+, else: T*);
+type LoopStmt[T]    = loop_stmt(T+);
+type ForeachStmt[T] = foreach_stmt(vars: StdVar+, idx_var: StdVar?, values: Expr, body: T+);
+type ForStmt[T]     = for_stmt(var: StdVar?, start_val: Expr, end_val: Expr, end_val_incl: Bool, body: T+);
+type LetStmt[T]     = let_stmt(asgnms: [ImplArg -> Expr], body: T+);
+
+type CompositeStmt[T] = IfStmt[T], LoopStmt[T], ForeachStmt[T], ForStmt[T], LetStmt[T];
+
+type Statement  = AtomicFnStmt, AtomicUpdateStmt, ProcCallStmt, CtrlStmt, JumpStmt, CompositeStmt[Statement];
+
+type IfStmt       = IfStmt[Statement];
+type LoopStmt     = LoopStmt[Statement];
+type ForeachStmt  = ForeachStmt[Statement];
+type ForStmt      = ForStmt[Statement];
+type LetStmt      = LetStmt[Statement];
 
 ///////////////////////////////////////////////////////////////////////////////
 
-type FormalObjArg = formal_obj_arg(var: StdVar?, type: NeType);
-type FormalClsArg = formal_cls_arg(var: ClsVar, type: ClsType);
-type FormalArg    = FormalObjArg, FormalClsArg;
-
 type Function   = function(
                     id:         FnId,
-                    args:       FormalArg*,
+                    args:       (<StdVar, FnArg>, NeType)*,
+                    cls_args:   (ClsVar, ClsType)*,
                     impl_args:  [ImplArg -> NeType], // Types here should not contain type variables
                     res_type:   NeType,
                     expr:       Expr,
                     constrs:    [FnSymbol -> [+ClsType]]
                   );
 
-type ProcSymbol = proc_symbol(Atom);
+type ProcSymbol = proc_symbol(Symbol);
 
 type Procedure  = procedure(
                     id:         ProcSymbol,
@@ -358,7 +377,7 @@ type Automaton  = automaton(
                     rules:          [SignalVar -> Expr],
                     time_rules:     [SignalVar -> TimeRule],
                     discrete_rules: [SignalVar -> [+DiscreteRule]],
-                    nested_autos:   [NestedAutoVar -> (type: AutoSymbol, args: [Atom -> Expr], volatile: Bool)],
+                    nested_autos:   [NestedAutoVar -> (type: AutoSymbol, args: [Symbol -> Expr], volatile: Bool)],
                     nested_dbs:     [NestedDBVar -> (type: DBSymbol, msg_send_rule: MsgSendRule?, volatile: Bool)],
                     methods:        [Method]
                   );

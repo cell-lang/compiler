@@ -1,5 +1,6 @@
+OptTagRecRepr opt_tag_rec_repr(Symbol t, Nat i) = opt_tag_rec_repr(tag: t, index: i);
+
 LocVar lvar(Nat n)      = :lvar(n);
-LocVar never_used_lvar  = :never_used_lvar;
 
 ElemVar evar(Nat id, <Nat, IntVar> i)   = evar(id: id, idx: i);
 ElemVar evar(Nat id, IntVar v, Nat i)   = evar(id: id, idx: add(val1: v, val2: i));
@@ -11,7 +12,9 @@ PendingStateVar pending_state_var(Atom id)  = :pending_state_var(id);
 
 VecVar vvar(Nat n, NzNat s) = vvar(id: n, size: s);
 
-BoolVar bvar(Nat n)                 = :bvar(n);
+LocBoolVar bvar(<Symbol, Nat> id) = :bvar(id);
+BoolFnArg  bool_arg(Nat id)       = :bool_arg(id);
+LocBoolVar bool_arg(Symbol id)    = :bvar(id);
 
 QualBoolVar qual_bool_var(LocAutoVar av, MembBoolVar mv) = qual_bool_var(auto_var: av, memb_var: mv);
 
@@ -35,7 +38,11 @@ IntVar elapsed_time(LocAutoVar v) = :elapsed_time(v);
 
 ProjdIntVar changed_output(<Nat, IntVar> i)  = changed_output(index: i);
 
-IntVar ivar(Nat n)    = :ivar(n);
+LocIntVar ivar(<Symbol, Nat> id)  = :ivar(id);
+IntFnArg  int_arg(Nat id)         = :int_arg(id);
+LocIntVar int_arg(Symbol id)      = :ivar(id);
+
+Int32Var ivar32(Nat n) = :ivar32(n);
 
 MembIntVar update_source_var(Atom n)                            = :update_source_var(n);
 MembIntVar null_locks_count_var(Atom id)                        = :null_locks_count_var(id);
@@ -50,6 +57,17 @@ MembIntVar last_update_time                                     = :last_update_t
 MembIntVar elapsed_time                                         = :elapsed_time;
 MembIntVar changed_outputs_count                                = :changed_outputs_count;
 MembIntVar nested_auto_int_var(NestedAutoVar av, MembIntVar mv) = nested_auto_int_var(auto_var: av, memb_var: mv);
+
+LocFloatVar fvar(<Symbol, Nat> id)  = :fvar(id);
+FloatFnArg  float_arg(Nat id)       = :float_arg(id);
+LocFloatVar float_arg(Symbol id)    = :fvar(id);
+
+LocOptTagRecVar opt_tag_rec_var(<Symbol, Nat> id, Symbol s, Nat i) = opt_tag_rec_var(id: id, tag: s, index: i);
+
+OptTagRecFnArg  opt_tag_rec_fn_arg(Nat id, Symbol s, Nat i) = opt_tag_rec_fn_arg(id: id, tag: s, index: i);
+LocOptTagRecVar opt_tag_rec_fn_arg(Symbol id, Symbol s, Nat i) = opt_tag_rec_var(id: id, tag: s, index: i);
+
+ArrayVar avar(Nat id, LowLevelEltRepr r) = avar(id: id, repr: r);
 
 MembObjVar watched_signal_value_var(Atom id)                  = :watched_signal_value_var(id);
 
@@ -75,73 +93,120 @@ MembTestPredId memb_test(Atom a, Nat n)     = :memb_test(a, n);
 AtomicExpr empty_seq = :empty_seq;
 AtomicExpr empty_rel = :empty_rel;
 
-NatBoolOp is_symb(ObjExpr e)                              = :is_symb(e);
-NatBoolOp is_int(ObjExpr e)                               = :is_int(e);
-NatBoolOp is_float(ObjExpr e)                             = :is_float(e);
-NatBoolOp is_ne_set(ObjExpr e)                            = :is_ne_set(e);
-NatBoolOp is_ne_seq(ObjExpr e)                            = :is_ne_seq(e);
-NatBoolOp is_ne_map(ObjExpr e)                            = :is_ne_map(e);
-NatBoolOp is_ne_bin_rel(ObjExpr e)                        = :is_ne_bin_rel(e);
-NatBoolOp is_ne_tern_rel(ObjExpr e)                       = :is_ne_tern_rel(e);
-NatBoolOp is_tagged_obj(ObjExpr e)                        = :is_tagged_obj(e);
-NatBoolOp is_eq(BoolExpr e1, BoolExpr e2)                 = is_eq_bool(expr1: e1, expr2: e2);
-NatBoolOp is_eq(IntExpr e1, IntExpr e2)                   = is_eq_int(expr1: e1, expr2: e2);
-// NatBoolOp is_eq(ObjExpr e1, ObjExpr e2)                   = is_eq(expr1: e1, expr2: e2);
-NatBoolOp is_lt(IntExpr e1, IntExpr e2)                   = is_lt(expr1: e1, expr2: e2);
-NatBoolOp is_le(IntExpr e1, IntExpr e2)                   = is_le(expr1: e1, expr2: e2);
-NatBoolOp is_gt(IntExpr e1, IntExpr e2)                   = is_lt(expr1: e2, expr2: e1);
-NatBoolOp is_ge(IntExpr e1, IntExpr e2)                   = is_le(expr1: e2, expr2: e1);
-NatBoolOp inline_is_eq(ObjExpr e, InlineObj v)            = inline_is_eq(expr: e, value: v);
-NatBoolOp is_flt(ObjExpr e1, ObjExpr e2)                  = :is_flt(e1, e2);
-NatBoolOp is_fle(ObjExpr e1, ObjExpr e2)                  = :is_fle(e1, e2);
-NatBoolOp is_out_of_range(ItVar v)                        = :is_out_of_range(v);
-NatBoolOp is_blank(<AnySignalVar, LocVar, PendingStateVar> v) = :is_blank(v);
-NatBoolOp is_null(AnyNullableVar v)                       = :is_null(v);
-NatBoolOp has_elem(ObjExpr s, ObjExpr e)                  = has_elem(set: s, elt: e);
-NatBoolOp has_field(ObjExpr r, SymbObj f)                 = has_field(record: r, field: f);
-NatBoolOp contains(ObjExpr r, ObjExpr+ t)                 = contains(coll: r, entry: t);
-NatBoolOp table_contains(AnyRelVar rv, IntVar+ vs)        = table_contains(table: rv, tuple: vs);
+BoolNatOp is_symb(ObjExpr e)                              = :is_symb(e);
+BoolNatOp is_int(ObjExpr e)                               = :is_int(e);
+BoolNatOp is_float(ObjExpr e)                             = :is_float(e);
+BoolNatOp is_ne_set(ObjExpr e)                            = :is_ne_set(e);
+BoolNatOp is_ne_seq(ObjExpr e)                            = :is_ne_seq(e);
+BoolNatOp is_ne_map(ObjExpr e)                            = :is_ne_map(e);
+BoolNatOp is_ne_bin_rel(ObjExpr e)                        = :is_ne_bin_rel(e);
+BoolNatOp is_ne_tern_rel(ObjExpr e)                       = :is_ne_tern_rel(e);
+BoolNatOp is_tagged_obj(ObjExpr e)                        = :is_tagged_obj(e);
+BoolNatOp are_eq(ObjExpr e1, ObjExpr e2)                  = :are_eq(e1, e2);
+BoolNatOp is_lt(IntExpr e1, IntExpr e2)                   = is_lt(expr1: e1, expr2: e2);
+BoolNatOp is_le(IntExpr e1, IntExpr e2)                   = is_le(expr1: e1, expr2: e2);
+BoolNatOp is_gt(IntExpr e1, IntExpr e2)                   = is_lt(expr1: e2, expr2: e1);
+BoolNatOp is_ge(IntExpr e1, IntExpr e2)                   = is_le(expr1: e2, expr2: e1);
+BoolNatOp is_flt(FloatExpr e1, FloatExpr e2)              = :is_flt(e1, e2);
+BoolNatOp is_fle(FloatExpr e1, FloatExpr e2)              = :is_fle(e1, e2);
+BoolNatOp is_out_of_range(ItVar v)                        = :is_out_of_range(v);
+BoolNatOp is_blank(<AnySignalVar, LocVar, PendingStateVar> v) = :is_blank(v);
+BoolNatOp is_null(AnyNullableVar v)                       = :is_null(v);
+BoolNatOp has_elem(ObjExpr s, ObjExpr e)                  = has_elem(set: s, elt: e);
+BoolNatOp has_field(ObjExpr r, SymbObj f)                 = has_field(record: r, field: f);
+BoolNatOp contains(ObjExpr r, ObjExpr+ t)                 = contains(coll: r, entry: t);
+BoolNatOp table_contains(AnyRelVar rv, IntVar+ vs)        = table_contains(table: rv, tuple: vs);
 
-BoolExpr is_eq(ObjExpr e1, ObjExpr e2) =
-  if e1 :: InlineObj
-    then if e2 :: InlineObj then e1 == e2 else inline_is_eq(e2, e1)
-  else
-    if e2 :: InlineObj then inline_is_eq(e1, e2) else is_eq(expr1: e1, expr2: e2);
+## THESE ARE ALL DEPRECATED AND SHOULD BE REMOVED
+BoolNatOp is_eq(BoolExpr e1, BoolExpr e2)       = are_eq(bool_obj(e1), bool_obj(e2));
+BoolNatOp is_eq(IntExpr e1, IntExpr e2)         = are_eq(int_obj(e1), int_obj(e2));
+BoolNatOp is_eq(ObjExpr e1, ObjExpr e2)         = are_eq(e1, e2);
+BoolNatOp inline_is_eq(ObjExpr e1, ObjExpr e2)  = are_eq(e1, e2);
 
-NatIntOp get_int_val(ObjExpr e)                         = :get_int_val(e);
-NatIntOp get_size(ObjExpr e)                            = :get_size(e);
-NatIntOp minus(IntExpr e)                               = :minus(e);
-NatIntOp add(IntExpr e1, IntExpr e2)                    = add(val1: e1, val2: e2);
-NatIntOp sub(IntExpr e1, IntExpr e2)                    = sub(val1: e1, val2: e2);
-NatIntOp mult(IntExpr e1, IntExpr e2)                   = mult(val1: e1, val2: e2);
-NatIntOp div(IntExpr e1, IntExpr e2)                    = div(val1: e1, val2: e2);
-NatIntOp mod_op(IntExpr e1, IntExpr e2)                 = mod(val1: e1, val2: e2); ## THIS SHOULD JUST BE NAMED mod, BUT THAT WOULD CONFLICT WITH THE INTEGER MOD OPERATION
-NatIntOp bitwise_and(IntExpr e1, IntExpr e2)            = :bitwise_and(e1, e2);
-NatIntOp bitwise_or(IntExpr e1, IntExpr e2)             = :bitwise_or(e1, e2);
-NatIntOp bitwise_xor(IntExpr e1, IntExpr e2)            = :bitwise_xor(e1, e2);
-NatIntOp float_bits(ObjExpr e)                          = :float_bits(e);
-NatIntOp mantissa(ObjExpr e)                            = :mantissa(e);
-NatIntOp dec_exp(ObjExpr e)                             = :dec_exp(e);
-NatIntOp lookup_value(AnyValueStoreId s, AtomicExpr e)  = lookup_value(store: s, value: e);
-NatIntOp lookup_value_ex(ValueStoreId s, AtomicExpr e)  = lookup_value_ex(store: s, value: e);
-NatIntOp get_tuple_field(TableItVar v, Nat i)           = get_tuple_field(iter: v, field: i);
-NatIntOp unique_nat                                     = :unique_nat;
-NatIntOp rand_nat(ObjExpr e)                            = :rand_nat(get_int_val(e));
-NatIntOp ticks                                          = :ticks;
 
-NatObjOp at(ObjExpr s, IntExpr i)                 = at(seq: s, idx: i);
-NatObjOp lookup(ObjExpr r, ObjExpr k)             = lookup(rel: r, key: k);
-NatObjOp lookup_field(ObjExpr r, SymbObj f)       = lookup_field(record: r, field: f);
-NatObjOp get_tag(ObjExpr e)                       = :get_tag(e);
-NatObjOp get_inner_obj(ObjExpr e)                 = :get_inner_obj(e);
-NatObjOp bool_obj(BoolExpr e)                     = :bool_obj(e);
-NatObjOp int_obj(IntExpr e)                       = :int_obj(e);
-NatObjOp obj_neg(ObjExpr e)                       = :obj_neg(e);
-NatObjOp to_symb(ObjExpr e)                       = :to_symb(e);
-NatObjOp get_curr_obj(<SetItVar, SeqItVar> it)    = :get_curr_obj(it);
-NatObjOp get_curr_arg(BinRelItVar v, <0..1> a)    = get_curr_arg(var: v, arg: a);
-NatObjOp get_curr_arg(TernRelItVar v, <0..2> a)   = get_curr_arg(var: v, arg: a);
-NatObjOp rand_elem(ObjExpr s)                     = :rand_elem(s);
+IntExpr get_int_val(ObjExpr expr) =
+  int_obj(e?)       = e,
+  object(<*..*> n?) = n,
+  _                 = :get_int_val(expr);
+
+IntNatOp minus(IntExpr e)                               = :minus(e);
+IntNatOp add(IntExpr e1, IntExpr e2)                    = add(val1: e1, val2: e2);
+IntNatOp sub(IntExpr e1, IntExpr e2)                    = sub(val1: e1, val2: e2);
+IntNatOp mult(IntExpr e1, IntExpr e2)                   = mult(val1: e1, val2: e2);
+IntNatOp div(IntExpr e1, IntExpr e2)                    = div(val1: e1, val2: e2);
+IntNatOp mod_op(IntExpr e1, IntExpr e2)                 = mod(val1: e1, val2: e2); ## THIS SHOULD JUST BE NAMED mod, BUT THAT WOULD CONFLICT WITH THE INTEGER MOD OPERATION
+IntNatOp bitwise_and(IntExpr e1, IntExpr e2)            = :bitwise_and(e1, e2);
+IntNatOp bitwise_or(IntExpr e1, IntExpr e2)             = :bitwise_or(e1, e2);
+IntNatOp bitwise_xor(IntExpr e1, IntExpr e2)            = :bitwise_xor(e1, e2);
+IntNatOp float_bits(FloatExpr e)                        = :float_bits(e);
+IntNatOp mantissa(FloatExpr e)                          = :mantissa(e);
+IntNatOp dec_exp(FloatExpr e)                           = :dec_exp(e);
+IntNatOp lookup_value(AnyValueStoreId s, AtomicExpr e)  = lookup_value(store: s, value: e);
+IntNatOp lookup_value_ex(ValueStoreId s, AtomicExpr e)  = lookup_value_ex(store: s, value: e);
+IntNatOp get_tuple_field(TableItVar v, Nat i)           = get_tuple_field(iter: v, field: i);
+IntNatOp unique_nat                                     = :unique_nat;
+IntNatOp rand_nat(ObjExpr e)                            = :rand_nat(get_int_val(e));
+IntNatOp ticks                                          = :ticks;
+
+
+Int32NatOp bool_to_bit(BoolExpr e)            = :bool_to_bit(e);
+Int32NatOp get_size(ObjExpr e)                = :get_size(e);
+Int32NatOp cast_int32(IntExpr e)              = :cast_int32(e);
+Int32NatOp add32(Int32Expr e1, Int32Expr e2)  = :add32(e1, e2);
+
+
+FloatExpr float_value(ObjExpr expr) =
+  float_obj(e?) = e,
+  _             = :float_value(expr);
+
+FloatNatOp neg_float(FloatExpr val)                 = :neg_float(val);
+FloatNatOp add_floats(FloatExpr lv, FloatExpr rv)   = :add_floats(lv, rv);
+FloatNatOp sub_floats(FloatExpr lv, FloatExpr rv)   = :sub_floats(lv, rv);
+FloatNatOp mult_floats(FloatExpr lv, FloatExpr rv)  = :mult_floats(lv, rv);
+FloatNatOp div_floats(FloatExpr lv, FloatExpr rv)   = :div_floats(lv, rv);
+FloatNatOp exp_floats(FloatExpr lv, FloatExpr rv)   = :exp_floats(lv, rv);
+FloatNatOp square_root(FloatExpr value)             = :square_root(value);
+FloatNatOp int_to_float(IntExpr value)              = :int_to_float(value);
+
+
+ObjExpr obj_expr(BoolExpr  expr)  = bool_obj(expr);
+ObjExpr obj_expr(IntExpr   expr)  = int_obj(expr);
+ObjExpr obj_expr(FloatExpr expr)  = float_obj(expr);
+ObjExpr obj_expr(ObjExpr   expr)  = expr;
+
+
+ObjExpr bool_obj(BoolExpr expr) =
+  are_eq(e1?, e2?)  = if   e1 == obj_true then e2
+                      elif e2 == obj_true then e1
+                                          else :bool_obj(expr),
+  _               = :bool_obj(expr);
+
+
+ObjExpr int_obj(IntExpr expr) =
+  get_int_val(e?) = e,
+  _               = :int_obj(expr);
+
+
+ObjExpr float_obj(FloatExpr expr) =
+  float_value(e?) = e,
+  _               = :float_obj(expr);
+
+
+ObjNatOp at(ObjExpr s, IntExpr i)                 = at(seq: s, idx: i);
+ObjNatOp lookup(ObjExpr r, ObjExpr k)             = lookup(rel: r, key: k);
+ObjNatOp lookup_field(ObjExpr e, SymbObj f)       = lookup_field(record: e, field: f, repr: nothing);
+ObjNatOp get_tag(ObjExpr e)                       = :get_tag(e);
+ObjNatOp get_inner_obj(ObjExpr e)                 = :get_inner_obj(e);
+ObjNatOp get_curr_obj(<SetItVar, SeqItVar> it)    = :get_curr_obj(it);
+ObjNatOp get_curr_arg(BinRelItVar v, <0..1> a)    = get_curr_arg(var: v, arg: a);
+ObjNatOp get_curr_arg(TernRelItVar v, <0..2> a)   = get_curr_arg(var: v, arg: a);
+ObjNatOp rand_elem(ObjExpr s)                     = :rand_elem(s);
+
+ObjNatOp lookup_field(ObjExpr e, SymbObj f, Maybe[LowLevelRepr] r) {
+  assert e :: OptTagRecExpr or r == nothing;
+  assert not (e :: OptTagRecExpr and r == nothing); ## JUST A TEMPORARY CHECK, IT'S PROBABLY NOT ALWAYS TRUE
+  return lookup_field(record: e, field: f, repr: r);
+}
 
 BoolFnCall is_member(MembTestPredId p, AtomicExpr e)  = is_member(pred: p, obj: e);
 BoolFnCall state_is_def(AnyAutoVar v, AutoSymbol t)   = state_is_def(auto_var: v, type: t);
@@ -150,15 +215,17 @@ BoolExpr neg(BoolExpr e) =
   neg(ne?)  = ne,
   _         = :neg(e);
 
-BoolExpr and(BoolExpr+ es)                            = :and(es);
-BoolExpr or(BoolExpr+ es)                             = :or(es);
-BoolExpr and_then(BoolExpr+ es)                       = :and_then(es);
-BoolExpr or_else(BoolExpr+ es)                        = :or_else(es);
+BoolExpr and(BoolExpr+ es)      = if |es| != 1 then :and(es)      else only(es);
+BoolExpr or(BoolExpr+ es)       = if |es| != 1 then :or(es)       else only(es);
+BoolExpr and_then(BoolExpr+ es) = if |es| != 1 then :and_then(es) else only(es);
+BoolExpr or_else(BoolExpr+ es)  = if |es| != 1 then :or_else(es)  else only(es);
 
-BoolExpr and([+BoolExpr] es)                          = :and(rand_sort(es));
-BoolExpr or([+BoolExpr] es)                           = :or(rand_sort(es));
+BoolExpr and([+BoolExpr] es)  = and(rand_sort(es));
+BoolExpr or([+BoolExpr] es)   = or(rand_sort(es));
 
 RefObjExpr lookup_surrogate(AnyValueStoreId s, IntExpr e) = lookup_surrogate(store: s, surrogate: e);
+
+OptTagRecExpr cast_opt_tag_rec(Symbol s, Nat i, ObjExpr e) = cast_opt_tag_rec(tag: s, index: i, expr: e);
 
 // Basic instructions
 
@@ -167,9 +234,13 @@ Instr append(StreamVar v, AtomicExpr e) = append(stream: v, obj: e);
 
 Instr mk_set(WriteObjVar v, StreamVar s)            = set_var(v, mk_set_from_stream(stream: s));
 Instr mk_set(WriteObjVar v, VecVar es, IntExpr s)   = set_var(v, mk_set(elems: es, size: s));
+Instr mk_set(WriteObjVar v, ArrayVar a)             = set_var(v, mk_set_from_array(array: a, size: nothing));
+Instr mk_set(WriteObjVar v, ArrayVar a, IntExpr s)  = set_var(v, mk_set_from_array(array: a, size: just(s)));
 
 Instr mk_seq(WriteObjVar v, StreamVar s)            = set_var(v, mk_seq_from_stream(stream: s));
 Instr mk_seq(WriteObjVar v, VecVar es, IntExpr s)   = set_var(v, mk_seq(elems: es, size: s));
+Instr mk_seq(WriteObjVar v, ArrayVar a)             = set_var(v, mk_seq_from_array(array: a, size: nothing));
+Instr mk_seq(WriteObjVar v, ArrayVar a, IntExpr s)  = set_var(v, mk_seq_from_array(array: a, size: just(s)));
 
 Instr build_const_int_seq(WriteObjVar v, Nat id)    = set_var(v, build_const_int_seq(seq_id: id));
 
@@ -178,39 +249,43 @@ Instr mk_map(WriteObjVar v, VecVar ks, VecVar vs, IntExpr s)  = set_var(v, mk_ma
 
 Instr mk_rel(WriteObjVar v, StreamVar s1, StreamVar s2)       = set_var(v, mk_bin_rel_from_streams(streams: (s1, s2)));
 Instr mk_rel(WriteObjVar v, VecVar c1, VecVar c2, IntExpr s)  = set_var(v, mk_bin_rel(cols: (c1, c2), size: s));
+Instr mk_rel(WriteObjVar v, ArrayVar c1, ArrayVar c2, Bool b) = set_var(v, mk_bin_rel_from_arrays(col1: c1, col2: c2, size: nothing, is_map: b));
 
 Instr mk_rel(WriteObjVar v, StreamVar s1, StreamVar s2, StreamVar s3)   = set_var(v, mk_tern_rel_from_streams(streams: (s1, s2, s3)));
 Instr mk_rel(WriteObjVar v, VecVar c1, VecVar c2, VecVar c3, IntExpr s) = set_var(v, mk_tern_rel(cols: (c1, c2, c3), size: s));
+Instr mk_rel(WriteObjVar v, ArrayVar c1, ArrayVar c2, ArrayVar c3)      = set_var(v, mk_tern_rel_from_arrays(col1: c1, col2: c2, col3: c3, size: nothing));
 
 Instr mk_tagged_obj(WriteObjVar v, AtomicExpr t, AtomicExpr o) = set_var(v, mk_tagged_obj(tag: t, obj: o));
 
-Instr mk_float(WriteObjVar v, Int m, Int e)  = set_var(v, mk_float(mantissa: m, dec_exp: e));
+FloatExpr float_value(ObjExpr expr) =
+  float_obj(e?) = e,
+  _             = :float_value(expr);
 
-Instr neg_float(WriteObjVar var, AtomicExpr val)                 = set_var(var, :neg_float(val));
-Instr add_floats(WriteObjVar var, AtomicExpr lv, AtomicExpr rv)  = set_var(var, :add_floats(lv, rv));
-Instr sub_floats(WriteObjVar var, AtomicExpr lv, AtomicExpr rv)  = set_var(var, :sub_floats(lv, rv));
-Instr mult_floats(WriteObjVar var, AtomicExpr lv, AtomicExpr rv) = set_var(var, :mult_floats(lv, rv));
-Instr div_floats(WriteObjVar var, AtomicExpr lv, AtomicExpr rv)  = set_var(var, :div_floats(lv, rv));
-Instr exp_floats(WriteObjVar var, AtomicExpr lv, AtomicExpr rv)  = set_var(var, :exp_floats(lv, rv));
-Instr square_root(WriteObjVar var, AtomicExpr value)             = set_var(var, :square_root(value));
-Instr floor_op(WriteObjVar var, AtomicExpr value)                = set_var(var, :floor_op(value));
-Instr ceiling_op(WriteObjVar var, AtomicExpr value)              = set_var(var, :ceiling_op(value));
-Instr int_to_float(WriteObjVar var, AtomicExpr value)            = set_var(var, :int_to_float(value));
+FloatNatOp neg_float(FloatExpr val)                 = :neg_float(val);
+FloatNatOp add_floats(FloatExpr lv, FloatExpr rv)   = :add_floats(lv, rv);
+FloatNatOp sub_floats(FloatExpr lv, FloatExpr rv)   = :sub_floats(lv, rv);
+FloatNatOp mult_floats(FloatExpr lv, FloatExpr rv)  = :mult_floats(lv, rv);
+FloatNatOp div_floats(FloatExpr lv, FloatExpr rv)   = :div_floats(lv, rv);
+FloatNatOp exp_floats(FloatExpr lv, FloatExpr rv)   = :exp_floats(lv, rv);
+FloatNatOp square_root(FloatExpr value)             = :square_root(value);
+FloatNatOp int_to_float(IntExpr value)              = :int_to_float(value);
 
-Instr mk_array(WriteObjVar v, IntExpr s)                                = set_var(v, mk_array(size: s));
+Instr mk_record(WriteObjVar v, [+SymbObj -> AtomicExpr] fs) = set_var(v, mk_record(fields: fs));
+
+Instr inst_opt_tag_rec(LocOptTagRecVar v, Symbol s, Nat i) = set_var(v, inst_opt_tag_rec(tag: s, repr_idx: i));
+
 Instr get_seq_slice(WriteObjVar v, AtomicExpr s, IntExpr f, IntExpr l)  = set_var(v, get_seq_slice(seq: s, idx_first: f, len: l));
 Instr append_to_seq(WriteObjVar v, AtomicExpr s, AtomicExpr e)          = set_var(v, append_to_seq(seq: s, new_elem: e));
-Instr update_seq_at(WriteObjVar rv, AtomicExpr s, AtomicExpr i, AtomicExpr v) = set_var(rv, update_seq_at(seq: s, idx: i, value: v));
+Instr update_seq_at(WriteObjVar rv, AtomicExpr s, IntExpr i, AtomicExpr v) = set_var(rv, update_seq_at(seq: s, idx: i, value: v));
 
 Instr join_seqs(WriteObjVar v, AtomicExpr l, AtomicExpr r)              = set_var(v, join_seqs(left: l, right: r));
 Instr rev_seq(WriteObjVar v, AtomicExpr s)                              = set_var(v, rev_seq(seq: s));
 Instr set_at(WriteObjVar v, IntExpr i, AtomicExpr x)                    = set_at(var: v, idx: i, value: x);
 
-Instr lookup_field(WriteObjVar v, ObjExpr r, SymbObj f) = set_var(v, lookup_field(r, f));
+Instr lookup_field(WriteObjVar v, ObjExpr e, SymbObj f)                        = set_var(v, lookup_field(e, f));
+Instr lookup_field(WriteObjVar v, ObjExpr e, SymbObj f, Maybe[LowLevelRepr] r) = set_var(v, lookup_field(e, f, r));
 
 Instr internal_sort(WriteObjVar v, AtomicExpr s) = set_var(v, internal_sort(set: s));
-
-Instr symb_to_str(WriteObjVar v, AtomicExpr s)  = set_var(v, :symb_to_str(s));
 
 Instr parse_value(WriteObjVar v, AtomicExpr s)  = set_var(v, parse_value(value: s));
 Instr print_value(WriteObjVar v, AtomicExpr s)  = set_var(v, print_value(value: s));
@@ -224,6 +299,14 @@ Instr lookup_surrogate(WriteObjVar v, AnyValueStoreId s, IntExpr e) = set_var(v,
 
 Instr read_pending_var(WriteObjVar tv, <PendingStateVar, PendingInputVar> sv) = set_var(tv, :read_pending_var(sv));
 
+Instr alloc_array(ArrayVar v, Int32Expr n) = alloc_array(var: v, size: n);
+
+Instr write_array(ArrayVar v, Int32Expr i, ObjExpr e) =
+  write_array(var: v, idx: i, value: low_level_expr(v.repr, e));
+
+Instr write_rec_field(LocOptTagRecVar v, Symbol s, AnyTypeExpr e, Bool b) = write_rec_field(var: v, label: s, value: e, optional: b);
+Instr finish_init(LocOptTagRecVar v) = finish_init(var: v);
+
 Instr get_iter(SeqItVar v, AtomicExpr s) = get_seq_iter(var: v, src: s);
 Instr get_iter(SetItVar v, AtomicExpr s) = get_set_iter(var: v, src: s);
 
@@ -233,13 +316,26 @@ Instr get_iter(BinRelItVar v, AtomicExpr r, (Maybe[AtomicExpr], Maybe[AtomicExpr
 Instr get_iter(TernRelItVar v, AtomicExpr r, (Maybe[AtomicExpr], Maybe[AtomicExpr], Maybe[AtomicExpr]) as) =
   get_tern_rel_iter(var: v, src: r, args: as);
 
+Instr get_any_rel_iter(BinRelItVar v, AtomicExpr r, Maybe[AtomicExpr]* as) =
+  get_iter(v, r, if |as| == 2 then as else undefined);
+
+Instr get_any_rel_iter(TernRelItVar v, AtomicExpr r, Maybe[AtomicExpr]* as) =
+  get_iter(v, r, if |as| == 3 then as else undefined);
+
 Instr move_forward(ItVar v) = :move_forward(v);
 
-Instr set_var(<WriteObjVar, ImplArg> v, ObjExpr e)    = set_var(var: v, value: e);
-Instr set_bvar(BoolVar v, BoolExpr e)                 = set_bvar(var: v, value: e);
-Instr set_ivar(IntVar v, IntExpr e)                   = set_ivar(var: v, value: e);
+Instr set_var(<WriteObjVar, ImplArg> v, ObjExpr e)  = set_var(var: v, value: e);
+Instr set_var(LocOptTagRecVar v, OptTagRecExpr e)   = set_var(var: v, value: e);
 
-Instr set_var(WriteObjVar v, RefObjExpr e)  = set_rc_var(var: v, value: e);
+Instr set_var(LocOptTagRecVar v, <InlineObj, StdObjVar, ObjNatOp> e) =
+  set_var(var: v, value: cast_opt_tag_rec(v.tag, v.index, e));
+
+Instr set_bvar(BoolVar v, BoolExpr e)       = set_bvar(var: v, value: e);
+Instr set_ivar(IntVar v, IntExpr e)         = set_ivar(var: v, value: e);
+Instr set_ivar32(Int32Var v, Int32Expr e)   = set_ivar32(var: v, value: e);
+Instr set_fvar(FloatVar v, FloatExpr e)     = set_fvar(var: v, value: e);
+
+Instr set_var(<WriteObjVar, LocOptTagRecVar> v, RefObjExpr e)  = set_rc_var(var: v, value: e);
 
 Instr init_memb_var(<MembVar, SignalVar, PrevVarValue, MembObjVar, PendingInputVar, PendingStateVar> v, <blank, undefined> s) = init_memb_var(var: v, new_state: s);
 Instr reset_memb_var(<SignalVar, PrevVarValue, MembVar, PendingInputVar> v, <blank, undefined> s) = reset_memb_var(var: v, new_state: s);
@@ -248,21 +344,38 @@ Instr clear_loc_var(LocVar v)                             = :clear_loc_var(v);
 Instr make_var_undef(SignalVar v) = reset_memb_var(v, :undefined);
 Instr make_var_undef(LocVar v)      = clear_loc_var(v);
 
-Instr terminate = :terminate;
+Instr terminate(Bool b) = terminate(hard_fail: b);
+Instr terminate = terminate(false);
 
 Instr add_ref(ObjVar v)                     = :add_ref(v);
 Instr release(<ObjVar, PendingInputVar> v)  = :release(v);
 
 Instr print_obj(AtomicExpr x) = print_obj(obj: x);
 
-Instr ret_val(<AtomicExpr, AtomicBoolExpr> e) = :ret_val(e);
+Instr ret_val(AnyTypeExpr e) = :ret_val(e);
 
 Instr no_op = :no_op;
 
-Instr branch(BoolExpr c, Instr* t, Instr* f) =
-  if t != ()
-    then branch(cond: c, when_true: t, when_false: f)
-    else branch(cond: neg(c), when_true: nonempty(f), when_false: t);
+Instr branch(BoolExpr cond, Instr* body, Instr* neg_body) {
+  if body != ():
+    if |body| == 1:
+      branch_instr = match (only(body))
+        branch() i? = just(i),
+        _           = nothing;
+
+      if branch_instr != nothing:
+        branch_instr = value(branch_instr);
+        if branch_instr.when_false == neg_body:
+          return branch(and_then(cond, branch_instr.cond), branch_instr.when_true, neg_body);
+        ;
+      ;
+    ;
+    return branch(cond: cond, when_true: body, when_false: neg_body);
+
+  else
+    return branch(neg(cond), nonempty(neg_body), ());
+  ;
+}
 
 Instr branch_or_no_op(BoolExpr c, Instr* t, Instr* f) =
   if t == () and f == ()
@@ -275,16 +388,32 @@ Instr break_loop       = :break_loop;
 Instr execute_block(Instr+ b) = :execute_block(b);
 Instr exit_block              = :exit_block;
 
+Instr* opt_execute_block(Instr* b) = (execute_block(b) if b != ());
+
 Instr try_block(LocVar v, Instr+ b) = try_block(var: v, body: b);
 
 Instr switch_on_nat(IntExpr e, Instr*+ cs) = switch_on_nat(value: e, cases: cs);
 
 Instr symb_switch(ObjExpr e, [+([+SymbObj], Instr+)] cs, Instr* eis) = symb_switch(value: e, cases: cs, else: eis);
 
-Instr* opt_symb_switch(ObjExpr e, [([+SymbObj], Instr+)] cs, Instr* eis) = if cs != [] then (symb_switch(e, cs, eis)) else eis;
+Instr* opt_symb_switch(ObjExpr expr, [([+SymbObj], Instr+)] cases, Instr* else_code) {
+  return else_code if cases == [];
 
-Instr call_proc(WriteObjVar v, ObjFnName n, <AtomicExpr, BoundCls>* as) = call_proc(var: v, name: n, args: as);
-Instr call_cls(WriteObjVar v, AnyClsVar cv, AtomicExpr+ as)             = call_cls(var: v, cls_var: cv, args: as);
+  if |cases| == 1:
+    symbs, code = only(cases);
+    if |symbs| < 3:
+      cond = or([are_eq(expr, s) : s <- symbs]);
+      return (branch(cond, code, else_code));
+    ;
+  ;
+
+  return (symb_switch(expr, cases, else_code));
+}
+
+Instr call_proc(AnyWriteVar v, ObjFnName n, AnyTypeExpr* as, BoundCls* cas) = call_proc(var: v, name: n, args: as, cls_args: cas);
+Instr call_proc(ObjFnName n, AnyTypeExpr* as, BoundCls* cas) = call_proc(name: n, args: as, cls_args: cas);
+
+Instr call_cls(WriteObjVar v, AnyClsVar cv, AtomicExpr+ as) = call_cls(var: v, cls_var: cv, args: as);
 
 Instr queue_update(AutoSymbol s, BlockNodeId id)        = queue_update(type: s, id: id, args: ());
 Instr queue_update(AutoSymbol s, BlockNodeId id, Nat a) = queue_update(type: s, id: id, args: (a));
@@ -349,11 +478,11 @@ Instr queue_deletes(RelVar rv, Maybe[IntVar]+ as) = queue_deletes(rel_var: rv, a
 Instr queue_insert(IntVar v, ValueStoreId s, AtomicExpr e)  = queue_insert_value(res_var: v, store: s, value: e);
 Instr queue_insert(RelVar v, IntVar+ t)                     = queue_insert_tuple(rel_var: v, tuple: t);
 
-Instr push_call_info(ObjFnName fn_name, Maybe[FnArg]* params) = push_call_info(fn_name: fn_name, params: params);
+Instr push_call_info(ObjFnName f, ObjExpr* as) = push_call_info(fn_name: f, args: as);
 Instr pop_call_info = :pop_call_info;
 
-Instr runtime_check(AtomicExpr c, String f, NzNat l, Maybe[String] t, <StdVar, ImplArg>* vs) =
-  runtime_check(cond: c, file: f, line: l, text: t, vars: vs);
+Instr log_runtime_failure(Bool b, String f, NzNat l, Maybe[String] t, (<StdVar, ImplArg>, ObjExpr)* vs) =
+  log_runtime_failure(is_assert: b, file: f, line: l, text: t, vars: vs);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -361,11 +490,9 @@ CaptClsVar capt_cls_var(Nat n) = :capt_cls_var(n);
 
 ClsDef cls_def(NzNat a, Instr+ b) = cls_def(arity: a, body: b);
 
-BoundCls bound_cls(ClsDef c, <StdVar, CaptVar>* vs, AnyClsVar* cs) = bound_cls(cls: c, capt_vars: vs, capt_cls_vars: cs);
+BoundCls bound_cls(ClsDef c, ObjExpr* vs, AnyClsVar* cs) = bound_cls(cls: c, capt_vars: vs, capt_cls_vars: cs);
 
-<obj> obj = :obj;
-ObjProcPar cls(ClsVar n, NzNat a) = cls(name: n, arity: a);
-ObjProcPar cls(NzNat a) = cls(arity: a);
+ClsProcArg cls(ClsVar v, NzNat a) = cls(var: v, arity: a);
 
 BoolProcDef bool_proc_def(MembTestPredId name, NzNat arity, Instr+ body) =
   bool_proc_def(
@@ -399,12 +526,17 @@ Table table(ValueStoreId+ vs, [[+Nat]] ks, NeType+ ts, Nat+ p) {
   return table(value_stores: vs, keys: ks, col_types: ts, applied_perm: p);
 }
 
-CompiledMethod compiled_method(NeType* ats, [+MembTestPredId*] mps, NeType rt, Instr* c) {
+CompiledMethod compiled_method(Maybe[StdVar]* as, NeType* ats, [+MembTestPredId*] mps, NeType rt, Instr* c) {
+  assert |as| == |ats|;
   assert not (ps <- mps : |ps| != |ats|);
-  return compiled_method(args_types: ats, args_memb_preds: mps, ret_type: rt, code: c);
+  return compiled_method(args_vars: as, args_types: ats, args_memb_preds: mps, ret_type: rt, code: c);
 }
 
+CompiledUpdate compiled_update(<StdVar, FnArg>* as, Instr* b) = compiled_update(args_vars: as, body: b);
+
 ////////////////////////////// Derived expressions /////////////////////////////
+
+BoolExpr bool_value(ObjExpr expr) = are_eq(expr, obj_true);
 
 BoolExpr and(BoolExpr e1, BoolExpr e2)      = and((e1, e2));
 BoolExpr or(BoolExpr e1, BoolExpr e2)       = or((e1, e2));
@@ -447,6 +579,9 @@ Instr increment(IntVar v, IntExpr a)  = set_ivar(v, add(v, a));
 Instr increment(IntVar v)             = increment(v, 1);
 Instr decrement(IntVar v)             = increment(v, -1);
 
+Instr increment(Int32Var v, Int32Expr e)  = set_ivar32(v, add32(v, e));
+Instr increment(Int32Var v)               = increment(v, 1);
+
 Instr do_if(BoolExpr cond, Instr* instrs)      = branch(cond, instrs, ());
 Instr do_if_not(BoolExpr cond, Instr* instrs)  = branch(cond, (), instrs);
 
@@ -484,9 +619,9 @@ Instr check(BoolExpr e) = do_if_not(e, terminate);
 
 Instr check_is_bool(ObjExpr e) = check(is_bool(e));
 
-Instr get_curr_obj(WriteObjVar v, <SetItVar, SeqItVar> it)    = set_var(v, get_curr_obj(it));
-Instr get_curr_arg(WriteObjVar v, BinRelItVar  it, <0..1> a)  = set_var(v, get_curr_arg(it, a));
-Instr get_curr_arg(WriteObjVar v, TernRelItVar it, <0..2> a)  = set_var(v, get_curr_arg(it, a));
+Instr get_curr_obj(WriteObjVar v, <SetItVar, SeqItVar> it) = set_var(v, get_curr_obj(it));
+Instr get_curr_arg(WriteObjVar v, BinRelItVar  it, Nat a)  = set_var(v, get_curr_arg(it, if a :: <0..1> then a else undefined));
+Instr get_curr_arg(WriteObjVar v, TernRelItVar it, Nat a)  = set_var(v, get_curr_arg(it, if a :: <0..2> then a else undefined));
 
 Instr maybe_op(Instr instr, Bool cond) = if cond then instr else no_op;
 

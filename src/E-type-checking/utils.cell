@@ -126,11 +126,89 @@ implicit typedefs : [TypeName -> NeType] {
                                               return union_type(int_types);
                                             };
 
+
+
   ////////////////////////////////////////////////////////////////////////////////
   ////////////////////////////////////////////////////////////////////////////////
 
-  ## THIS IS PRETTY MUCH UNTESTED. IT SHOULD BE TESTED WITH THE TYPE SUBSET TESTING CODE,
-  ## AND MAYBE IT WOULD BE GOOD TO DO SOME MANUAL TESTING, ESPECIALLY FOR TUPLE TYPES
+  // The type returned by this function is always a subset of the input type
+  Type type_minus_pattern(Type type, Pattern ptrn) =
+    empty_type,         _                 = empty_type,
+
+    _,                  ptrn_any          = empty_type,
+    _,                  ptrn_var()        = type_minus_pattern(type, ptrn.ptrn),
+    _,                  ptrn_union(ps?)   = fold(type, ps, type_minus_pattern),
+
+    type_ref(ts?),      _                 = type_minus_pattern(expand_type_ref(ts, typedefs), ptrn),
+
+    atom_type,          ptrn_symbol       = empty_type,
+
+    symb_type(),        ptrn_symbol       = empty_type,
+    symb_type(ts?),     ptrn_symbol(ps?)  = if ts == ps then empty_type else type,
+
+    integer     |
+    low_ints()  |
+    high_ints() |
+    int_range(),        ptrn_integer(t?)  = int_type_minus_int_type(type, t),
+
+    float_type,         _                 = if ptrn != ptrn_float then float_type else empty_type,
+
+    empty_seq_type,     _                 = if ptrn != ptrn_empty_seq then empty_seq_type else empty_type,
+    empty_rel_type,     _                 = if ptrn != ptrn_empty_rel then empty_rel_type else empty_type,
+
+    ne_seq_type(),      ptrn_ne_seq       = empty_type,
+
+    tuple_type(ts?),    ptrn_ne_seq       = empty_type,
+    tuple_type(ts?),    ptrn_tuple(ps?)   = if |ts| == |ps| then tuple_type_minus_tuple_ptrn(ts, ps) else type,
+
+    ne_set_type(),      _                 = if ptrn != ptrn_ne_set then type else empty_type,
+
+    ne_map_type(),      ptrn_ne_bin_rel   = empty_type,
+    ne_map_type(),      ptrn_ne_map       = empty_type,
+
+    ne_bin_rel_type(),  ptrn_ne_bin_rel   = empty_type,
+
+    ne_tern_rel_type(), _                 = if ptrn != ptrn_ne_tern_rel then type else empty_type,
+
+    ne_record_type(),   ptrn_ne_map       = empty_type,
+    ne_record_type(),   ptrn_ne_bin_rel   = empty_type,
+
+    tag_obj_type(),     ptrn_tag_obj()    = tag_obj_type_minus_pattern_tag_obj(type, ptrn.tag, ptrn.obj),
+
+    union_type(ts?),    _                 = union_type([type_minus_pattern(t, ptrn) : t <- ts]),
+
+    _,                  _                 = type;
+
+
+  Type tag_obj_type_minus_pattern_tag_obj(TagObjType type, TagPtrn tag_ptrn, Pattern obj_ptrn) {
+    obj_type = type_minus_pattern(type.obj_type, obj_ptrn);
+
+    return match (type.tag_type, tag_ptrn)
+      _,              ptrn_var()        = tag_obj_type_minus_pattern_tag_obj(type, tag_ptrn.ptrn, obj_ptrn),
+
+      atom_type,      ptrn_symbol       = tag_obj_type(atom_type, obj_type),
+      atom_type,      ptrn_symbol()     = type,
+
+      symb_type(s?),  ptrn_symbol       = tag_obj_type(type.tag_type, obj_type),
+      symb_type(ts?), ptrn_symbol(ps?)  = if ts == ps then tag_obj_type(type.tag_type, obj_type) else type;
+  }
+
+
+  Type tuple_type_minus_tuple_ptrn(NeType+ types, Pattern+ ptrns) {
+    rem_types = (type_minus_pattern(t, ptrns(i)) : t @ i <- types);
+    ne_count = count(rem_types, $ != empty_type);
+    if ne_count == 0:
+      return empty_type;
+    elif ne_count == 1:
+      return tuple_type((if t != empty_type then t else types(i) : t @ i <- rem_types));
+    else
+      return tuple_type(types);
+    ;
+  }
+
+  ////////////////////////////////////////////////////////////////////////////////
+  ////////////////////////////////////////////////////////////////////////////////
+
   Bool type_contains_obj(Type type, Any obj) =
     empty_type,           _       = false,
 
@@ -239,9 +317,61 @@ implicit typedefs : [TypeName -> NeType] {
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
+Type int_type_minus_int_type(IntType type1, IntType type2) {
+  min1, max1 = range(type1);
+  min2, max2 = range(type2);
+  return union_type([
+    int_type(min1, inf_min(max1, min2-1)),
+    int_type(inf_max(min1, max2+1), max1)
+  ]);
+}
+
+
+type InfInt = Int, inf, neg_inf;
+
+
+(InfInt, InfInt) range(IntType type) =
+  integer     = (:neg_inf, :inf),
+  high_ints() = (type.min, :inf),
+  low_ints()  = (:neg_inf, type.max),
+  int_range() = (type.min, max(type));
+
+
+<IntType, empty_type> int_type(InfInt min, InfInt max) =
+  inf,      _       = empty_type,
+  _,        neg_inf = empty_type,
+  neg_inf,  inf     = integer,
+  <*..*>,   inf     = high_ints(min),
+  neg_inf,  <*..*>  = low_ints(max),
+  <*..*>,   <*..*>  = int_range_ex(min, max);
+
+
+InfInt (_+_)(<inf, neg_inf> i, Int) = i;
+InfInt (_-_)(<inf, neg_inf> i, Int) = i;
+
+
+InfInt inf_min(InfInt i1, InfInt i2) =
+  neg_inf,  _         = :neg_inf,
+  _,        neg_inf   = :neg_inf,
+  inf,      _         = i2,
+  _,        inf       = i1,
+  <*..*>,   <*..*>    = min(i1, i2);
+
+
+InfInt inf_max(InfInt i1, InfInt i2) =
+  inf,      _         = :inf,
+  _,        inf       = :inf,
+  neg_inf,  _         = i2,
+  _,        neg_inf   = i1,
+  <*..*>,   <*..*>    = max(i1, i2);
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
 FnType signature(Function fn) =
   fn_type(
-    args:       (a.type : a <- fn.args),
+    args:       (t : unused_var, t <- fn.args),
+    cls_args:   (t : unused_var, t <- fn.cls_args),
     impl_args:  fn.impl_args,
     ret_type:   fn.res_type,
     constrs:    fn.constrs
@@ -251,6 +381,7 @@ FnType signature(Method m) =
   fn_type(
     args:       (t : t, unused_var <- m.args),
     ret_type:   m.ret_type,
+    cls_args:   (),
     impl_args:  [],
     constrs:    []
   );
@@ -273,8 +404,6 @@ BuiltInType builtin_signature(BuiltIn) =
   or              = binary_int_op,
   xor             = binary_int_op,
 
-  str             = builtin_type((atom_type),                          type_string),
-  symb            = builtin_type((type_string),                        atom_type),
   slice           = builtin_type((type_seq_t, integer, integer),       type_seq_t),
   cat             = builtin_type((type_seq_t, type_seq_t),             type_seq_t),
   rev             = builtin_type((type_seq_t),                         type_seq_t),
@@ -284,7 +413,7 @@ BuiltInType builtin_signature(BuiltIn) =
   untag           = builtin_type((type_tagged_obj),                    type_any),  // Ditto
 
   parse           = builtin_type((type_string),                        type_result(type_any, high_ints(0))),
-  print           = builtin_type((type_any),                           type_string),
+  print           = builtin_type((type_any),                           type_ascii_string),
 
   fneg            = unary_float_op,
   fadd            = binary_float_op,
@@ -335,7 +464,7 @@ NeType type_map_t1_t2         = type_map(type_var(:t1), type_var(:t2));
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-NeType type_unary_pseudocall_target = ne_union_type([atom_type, type_seq, type_set]);
+NeType type_unary_pseudocall_target = ne_union_type([atom_type, type_seq, type_set, type_bin_rel]);
 
 NeType type_dot_access_target =
   ne_union_type([

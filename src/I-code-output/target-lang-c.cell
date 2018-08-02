@@ -6,7 +6,7 @@ CCodeOutput compile_to_c(CompiledPrg prg, Bool include_runtime) {
 
   c_code = ("const uint16 " & symb_idx_name(s) & " = " & printed(i) & ";" : s @ i <- symbs) & 4 * ("");
 
-  symb_strs  = ("  \"" & _str_(bare_obj(s)) & "\"," : s <- symbs);
+  symb_strs  = ("  \"" & _print_(bare_obj(s)) & "\"," : s <- symbs);
   c_code     = c_code & ({"const char *map_symb_to_str[" & printed(|symbs|) & "] = {"}) & symb_strs & ("};") & 4 * ("");
 
   cls_defs = cls_defs(prg);
@@ -856,7 +856,6 @@ implicit {
     join_seqs()                 = mk_call(var, "join_seqs",           (expr.left, expr.right)),
     rev_seq()                   = mk_call(var, "rev_seq",             (expr.seq)),
     internal_sort()             = mk_call(var, "internal_sort",       (expr.set)),
-    symb_to_str(e?)             = mk_call(var, "to_str",              (e)),
     parse_value()               = mk_call(var, "parse_value",         (expr.value)),
     print_value()               = mk_call(var, "print_value",         (expr.value)),
 
@@ -998,7 +997,7 @@ implicit {
       "if (is_symb(" & to_c_expr(cond) & ", " & symb_idx_name(false) & ")) {",
       "  print_assertion_failed_msg(" & printed(file) & ", " & printed(line) & ", " & text_arg & ");"
     );
-    vars_content = ("  dump_var(" & printed(_str_(bare_id(v))) & ", " & to_c_var_ref_name(v) & ");" : v <- vars);
+    vars_content = ("  dump_var(" & printed(_print_(bare_id(v))) & ", " & to_c_var_ref_name(v) & ");" : v <- vars);
     footer = (
       "  soft_fail(0);",
       "}"

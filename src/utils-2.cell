@@ -1,4 +1,12 @@
-Type replace_type_vars(Type type, [TypeVar -> Type] substitutions) = replace_type_vars_computed(type, substitutions[$]);
+Type replace_type_vars(Type type, [TypeVar -> Type] substitutions) =
+  replace_type_vars_computed(type, substitutions[$]);
+
+
+ClsType replace_type_vars(ClsType type, [TypeVar -> NeType] substitutions) =
+  cls_type(
+    (nonempty_type(replace_type_vars(t, substitutions)) : t <- type.in_types),
+    nonempty_type(replace_type_vars(type.out_type, substitutions))
+  );
 
 
 ## BAD: FIND DECENT NAME, OR EVEN BETTER, REMOVE THE RESTRICTIONS ABOUT CLOSURE PARAMETERS FOR FUNCTIONS WITH SAME NAME AND ARITY
@@ -119,57 +127,58 @@ Bool is_param_type(FnType type) = (t <~ type.args : is_param_type(t)) or is_para
 [T] retrieve_from_nested_exprs(Expr expr, (Expr -> [T]) retrieve) {
   return [] if expr :: Var;
   return match (expr)
-    undefined               = [],
-    object()                = [],
-    float_lit()             = [],
-    set_expr(ses?)          = union([any_expr_retrieve_from_nested_exprs(se, retrieve) : se <- ses]),
-    seq_expr(ses?)          = seq_union((any_expr_retrieve_from_nested_exprs(se, retrieve) : se <- ses)),
-    tuple_expr(es?)         = seq_union((retrieve(e) : e <- es)),
-    seq_tail_expr()         = retrieve(expr.seq) & seq_union((retrieve(e) : e <- expr.tail)),
-    map_expr(es?)           = union([retrieve(e.key) & retrieve(e.value) & if e.cond? then retrieve(e.cond) else [] : e <- es]),
-    bin_rel_expr(es?)       |
-    tern_rel_expr(es?)      = union([seq_union((retrieve(e2) : e2 <- e1.args & (e1.cond if e1.cond?))) : e1 <- es]),
-    tag_obj_expr()          = retrieve(expr.tag) & retrieve(expr.obj),
-    fn_call()               = union([any_expr_retrieve_from_nested_exprs(p, retrieve) : p <- set(expr.args) & values(expr.impl_args)]),
-    cls_call()              = seq_union((retrieve(p) : p <- expr.args)),
-    builtin_call()          = seq_union((retrieve(p) : p <- expr.args)),
-    size_expr()             = retrieve(expr.coll),
-    unary_pseudo_call()     = retrieve(expr.target) & retrieve(expr.arg),
-    rel_memb_test()         = retrieve(expr.rel) & seq_union((retrieve(value(a)) : a <- expr.args, a != nothing)),
-    rel_lookup()            = retrieve(expr.rel) & seq_union((retrieve(a) : a <- expr.set_args)),
-    relvar_memb_test()      = seq_union((retrieve(value(a)) : a <- expr.args, a != nothing)),
-    relvar_lookup()         = seq_union((retrieve(e) : e <- expr.set_args)),
-    and_expr()              = retrieve(expr.left) & retrieve(expr.right),
-    or_expr()               = retrieve(expr.left) & retrieve(expr.right),
-    not_expr(e?)            = retrieve(e),
-    eq()                    = retrieve(expr.left) & retrieve(expr.right),
-    membership()            = retrieve(expr.obj),
-    cast_expr()             = retrieve(expr.expr),
-    accessor()              = retrieve(expr.expr),
-    accessor_test()         = retrieve(expr.expr),
-    auto_method_call()      = seq_union((retrieve(a) : a <- expr.args)),
-    db_method_call()        = seq_union((retrieve(a) : a <- expr.args)),
-    if_expr()               = retrieve(expr.cond) & retrieve(expr.then) & retrieve(expr.else),
-    match_expr()            = seq_union((retrieve(e) : e <- expr.exprs)) &
-                              seq_union((retrieve(c.expr) : c <- expr.cases)),
-    do_expr()               = retrieve_from_nested_exprs(expr.body, retrieve),
-    ex_qual()               = retrieve_from_nested_exprs(expr.source, retrieve) & retrieve(expr.cond),
-    set_comp()              = retrieve_from_nested_exprs(expr.source, retrieve) & retrieve(expr.expr),
-    map_comp()              = retrieve_from_nested_exprs(expr.source, retrieve) & retrieve(expr.key_expr) & retrieve(expr.value_expr),
-    bin_rel_comp()          |
-    tern_rel_comp()         = retrieve_from_nested_exprs(expr.source, retrieve) & seq_union((retrieve(e) : e <- expr.exprs)),
-    seq_comp()              = retrieve(expr.expr) & retrieve(expr.src_expr)   & if expr.sel_expr? then retrieve(expr.sel_expr) else [],
-    range_comp()            = retrieve(expr.expr) & retrieve(expr.bound_expr) & if expr.sel_expr? then retrieve(expr.sel_expr) else [],
-    output_is_def()         = [],
-    output_is_set()         = [];
+    undefined             = [],
+    object()              = [],
+    float_lit()           = [],
+    set_expr(ses?)        = union([subexpr_retrieve(se, retrieve) : se <- ses]),
+    seq_expr(ses?)        = seq_union((subexpr_retrieve(se, retrieve) : se <- ses)),
+    tuple_expr(es?)       = seq_union((retrieve(e) : e <- es)),
+    seq_tail_expr()       = retrieve(expr.seq) & seq_union((retrieve(e) : e <- expr.tail)),
+    map_expr(es?)         = union([retrieve(e.key) & retrieve(e.value) & if e.cond? then retrieve(e.cond) else [] : e <- es]),
+    bin_rel_expr(es?)     |
+    tern_rel_expr(es?)    = union([seq_union((retrieve(e2) : e2 <- e1.args & (e1.cond if e1.cond?))) : e1 <- es]),
+    tag_obj_expr()        = retrieve(expr.tag) & retrieve(expr.obj),
+    fn_call()             = union([retrieve(e) : e <- set(expr.args) & values(expr.impl_args)]) &
+                            union([retrieve_from_nested_exprs(e, retrieve) : e <~ expr.cls_args]),
+    cls_call()            = seq_union((retrieve(p) : p <- expr.args)),
+    builtin_call()        = seq_union((retrieve(p) : p <- expr.args)),
+    size_expr()           = retrieve(expr.coll),
+    unary_pseudo_call()   = retrieve(expr.target) & retrieve(expr.arg),
+    rel_memb_test()       = retrieve(expr.rel) & seq_union((retrieve(value(a)) : a <- expr.args, a != nothing)),
+    rel_lookup()          = retrieve(expr.rel) & seq_union((retrieve(a) : a <- expr.set_args)),
+    relvar_memb_test()    = seq_union((retrieve(value(a)) : a <- expr.args, a != nothing)),
+    relvar_lookup()       = seq_union((retrieve(e) : e <- expr.set_args)),
+    and_expr()            = retrieve(expr.left) & retrieve(expr.right),
+    or_expr()             = retrieve(expr.left) & retrieve(expr.right),
+    not_expr(e?)          = retrieve(e),
+    eq()                  = retrieve(expr.left) & retrieve(expr.right),
+    membership()          = retrieve(expr.obj),
+    cast_expr()           = retrieve(expr.expr),
+    accessor()            = retrieve(expr.expr),
+    accessor_test()       = retrieve(expr.expr),
+    auto_method_call()    = seq_union((retrieve(a) : a <- expr.args)),
+    db_method_call()      = seq_union((retrieve(a) : a <- expr.args)),
+    if_expr()             = retrieve(expr.cond) & retrieve(expr.then) & retrieve(expr.else),
+    match_expr()          = seq_union((retrieve(e) : e <- expr.exprs)) &
+                            seq_union((retrieve(c.expr) : c <- expr.cases)),
+    do_expr()             = retrieve_from_nested_exprs(expr.body, retrieve),
+    ex_qual()             = retrieve_from_nested_exprs(expr.source, retrieve) & retrieve(expr.cond),
+    set_comp()            = retrieve_from_nested_exprs(expr.source, retrieve) & retrieve(expr.expr),
+    map_comp()            = retrieve_from_nested_exprs(expr.source, retrieve) & retrieve(expr.key_expr) & retrieve(expr.value_expr),
+    bin_rel_comp()        |
+    tern_rel_comp()       = retrieve_from_nested_exprs(expr.source, retrieve) & seq_union((retrieve(e) : e <- expr.exprs)),
+    seq_comp()            = retrieve(expr.expr) & retrieve(expr.src_expr)   & if expr.sel_expr? then retrieve(expr.sel_expr) else [],
+    range_comp()          = retrieve(expr.expr) & retrieve(expr.bound_expr) & if expr.sel_expr? then retrieve(expr.sel_expr) else [],
+    output_is_def()       = [],
+    output_is_set()       = [];
 }
 
 
-[T] any_expr_retrieve_from_nested_exprs(Expr expr, (Expr -> [T]) retrieve)      = retrieve(expr);
+[T] subexpr_retrieve(Expr expr, (Expr -> [T]) retrieve)     = retrieve(expr);
+[T] subexpr_retrieve(CondExpr expr, (Expr -> [T]) retrieve) = retrieve(expr.expr) & retrieve(expr.cond);
 
-[T] any_expr_retrieve_from_nested_exprs(CondExpr expr, (Expr -> [T]) retrieve)  = retrieve(expr.expr) & retrieve(expr.cond);
 
-[T] any_expr_retrieve_from_nested_exprs(AnyClsExpr expr, (Expr -> [T]) retrieve) =
+[T] retrieve_from_nested_exprs(AnyClsExpr expr, (Expr -> [T]) retrieve) =
   cls_var()   = [],
   fn_ptr()    = [],
   cls_expr()  = retrieve(expr.expr);
@@ -185,7 +194,7 @@ Bool is_param_type(FnType type) = (t <~ type.args : is_param_type(t)) or is_para
   for_stmt()                = retrieve(stmt.start_val) & retrieve(stmt.end_val) & retrieve_from_nested_exprs(stmt.body, retrieve),
   let_stmt()                = union([retrieve(e) : unused_var, e <- stmt.asgnms]) & retrieve_from_nested_exprs(stmt.body, retrieve),
   break_stmt                = [],
-  fail_stmt                 = [],
+  fail_stmt()               = [],
   assert_stmt()             = retrieve(stmt.cond) & union([retrieve(v) : v <- stmt.env]), ## NOT SURE ABOUT THIS ONE. THE VARIABLES ARE KEPT ARTIFICIALLY ALIVE...
   print_stmt(e?)            = retrieve(e),
   seq_update_stmt()         = retrieve(stmt.idx) & retrieve(stmt.value),
@@ -286,7 +295,7 @@ Bool is_param_type(FnType type) = (t <~ type.args : is_param_type(t)) or is_para
   assignment_stmt()         |
   return_stmt()             |
   break_stmt                |
-  fail_stmt                 |
+  fail_stmt()               |
   assert_stmt()             |
   print_stmt()              |
   seq_update_stmt()         |
@@ -310,10 +319,22 @@ Bool is_param_type(FnType type) = (t <~ type.args : is_param_type(t)) or is_para
 ////////////////////////////////////////////////////////////////////////////////
 
 [StdVar] pattern_vars(Pattern ptrn) =
+  ptrn_symbol       |
+  ptrn_float        |
+  ptrn_empty_seq    |
+  ptrn_empty_rel    |
+  ptrn_ne_seq       |
+  ptrn_ne_set       |
+  ptrn_ne_map       |
+  ptrn_ne_bin_rel   |
+  ptrn_ne_tern_rel  |
+  ptrn_any          |
+  ptrn_symbol()     |
+  ptrn_integer()    = [],
+  ptrn_tuple(ps?)   = union([pattern_vars(p) : p <~ ps]),
   ptrn_tag_obj()    = pattern_vars(ptrn.tag) & pattern_vars(ptrn.obj),
   ptrn_var()        = [ptrn.var] & pattern_vars(ptrn.ptrn),
-  ptrn_union(ps?)   = union([pattern_vars(p) : p <- ps]), ## SINCE PATTERNS IN A UNION ARE SUPPOSED TO DEFINE THE SAME SET OF VARIABLES, IT SHOULD BE FINE TO JUST PICK ONE ELEMENT OF THE UNION AND RETURN ITS VARIABLES
-  _                 = [];
+  ptrn_union(ps?)   = only([pattern_vars(p) : p <- ps]);
 
 
 ## BUG BUG BUG: THIS IS INCOMPLETE, A PATTERN UNION COULD BE A PATTERN "ANY" TOO
@@ -334,12 +355,8 @@ Bool is_pattern_any(Pattern ptrn) =
 ## DECIDE EXACTLY WHAT VARIABLES ARE INCLUDED, AND WHAT ONES ARE NOT. AND REVISIT ALL USAGES OF THESE
 ## FUNCTIONS.
 
-[StdVar] new_vars(Pattern ptrn) =
-  ptrn_var()      = new_vars(ptrn.ptrn) & [ptrn.var],
-  ptrn_tuple(ps?) = seq_union((new_vars(p) : p <- ps)),
-  ptrn_tag_obj()  = new_vars(ptrn.tag) & new_vars(ptrn.obj),
-  ptrn_union(ps?) = intersection([new_vars(p) : p <- ps]),
-  _               = [];
+[StdVar] new_vars(Pattern ptrn) = pattern_vars(ptrn);
+
 
 [StdVar] new_vars(Clause cls) =
   set_clause()      = [cls.var],
@@ -368,7 +385,7 @@ Bool is_pattern_any(Pattern ptrn) =
 [Var] extern_vars(Expr expr) {
   return [expr] if expr :: Var;
   return match (expr)
-    fn_call()       = union([any_expr_extern_vars(e) : e <- set(expr.args) & values(expr.impl_args)]),
+    fn_call()       = union([extern_vars(e) : e <- set(expr.args) & set(expr.cls_args) & values(expr.impl_args)]),
     ex_qual()       = comp_extern_vars((expr.cond), expr.source),
     set_comp()      = comp_extern_vars((expr.expr), expr.source),
     map_comp()      = comp_extern_vars((expr.key_expr, expr.value_expr), expr.source),
@@ -416,12 +433,10 @@ Bool is_pattern_any(Pattern ptrn) =
 
 ///////////////////////////////////////////////////////////////////////////////
 
-[Var] any_expr_extern_vars(Expr expr) = extern_vars(expr);
-
-[Var] any_expr_extern_vars(AnyClsExpr expr) =
+[Var] extern_vars(AnyClsExpr expr) =
   cls_var()   = [],
   fn_ptr()    = [],
-  cls_expr()  = { new_vars = [fn_arg(i) : _ @ i <~ expr.args] & set(values(expr.args));
+  cls_expr()  = { new_vars = set((fn_arg(i) : i < expr.arity));
                   ext_vars = extern_vars(expr.expr) - new_vars;
                   assert not (v <- ext_vars : v :: FnArg);
                   return ext_vars;
@@ -461,7 +476,7 @@ Bool is_pattern_any(Pattern ptrn) =
   foreach_stmt()    = extern_vars(s.values) & (stmts_extern_vars(s.body) - (set(s.vars) & [s.idx_var if s.idx_var?])),
   for_stmt()        = extern_vars(s.start_val) & extern_vars(s.end_val) & (stmts_extern_vars(s.body) - [s.var if s.var?]),
   break_stmt        = [],
-  fail_stmt         = [],
+  fail_stmt()       = [],
   assert_stmt()     = extern_vars(s.cond),
   print_stmt(e?)    = extern_vars(e),
   seq_update_stmt() = [s.seq_var] & extern_vars(s.idx) & extern_vars(s.value),
@@ -471,12 +486,12 @@ Bool is_pattern_any(Pattern ptrn) =
 [Var] cls_expr_extern_vars(AnyClsExpr expr) =
   cls_var()   = [],
   fn_ptr()    = [],
-  cls_expr()  = extern_vars(expr.expr) - set(values(expr.args) & (fn_arg(i) : i < |expr.args|));
+  cls_expr()  = extern_vars(expr.expr) - set((fn_arg(i) : i < expr.arity));
 
 ////////////////////////////////////////////////////////////////////////////////
 
 [ClsVar] cls_vars(Expr expr) =
-  fn_call()   = union([cls_vars(e) : e <- set(expr.args) & values(expr.impl_args)]),
+  fn_call()   = union([cls_vars(e) : e <- set(expr.args) & set(expr.cls_args) & values(expr.impl_args)]),
   cls_call()  = { res = [expr.name] & seq_union((cls_vars(a) : a <- expr.args));
                   return if res :: [ClsVar] then res else undefined; ## BAD BAD BAD
                 },
@@ -521,7 +536,7 @@ type StmtOutcome = fails, returns, breaks, falls_through;
   for_stmt()                    = nonempty([:fails, :falls_through] & outcomes(stmt.body) - [:breaks]), // Shutting up the type checker ## BAD: SAME AS ABOVE
   let_stmt()                    = nonempty([:fails] & outcomes(stmt.body)), // Shutting up the type checker
   break_stmt                    = [:breaks],
-  fail_stmt                     = [:fails],
+  fail_stmt()                   = [:fails],
   assert_stmt()                 |
   print_stmt()                  |
   seq_update_stmt()             |
@@ -571,8 +586,6 @@ Bool may_fall_through(Statement* stmts) = in(:falls_through, outcomes(stmts));
   and:         2,
   or:          2,
   xor:         2,
-  str:         1,
-  symb:        1,
   slice:       3,
   cat:         2,
   rev:         1,

@@ -25,7 +25,13 @@ LexerError lexer_error(NzNat line, NzNat col) = lexer_error(line: line, col: col
 
 ////////////////////////////////////////////////////////////////////////////////
 
-Atom symb(Nat* bytes) = _symb_(string(bytes)); ## THIS DOESN'T BELONG HERE
+Symbol symb(Nat* bytes) {
+  res = _parse_(string(bytes));
+  fail if failed(res);
+  value = result(res);
+  fail if not value :: Symbol;
+  return value;
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -182,7 +188,7 @@ ParseTokenResult read_integer_float_or_time(Nat* bytes, Nat offset) {
         time_unit = match (get_result(res).token) lowercase_id(a?) = a;
         if time_unit_scales(time_unit, *):
           nanosecs = nz_nat(value * time_unit_scales[time_unit]);
-          return success(token_line_info(nanoseconds(nanosecs), offset, nz_nat(len + length(_str_(time_unit)))));
+          return success(token_line_info(nanoseconds(nanosecs), offset, nz_nat(len + length(_print_(time_unit)))));
         ;
       ;
     ;
@@ -234,7 +240,7 @@ ParseTokenResult read_integer_float_or_time(Nat* bytes, Nat offset) {
     while |mantissa| > 1 and mantissa(0) == 0:
       mantissa = subseq(mantissa, 1, :blank, 0);
     ;
-    while |mantissa| > 1 and rev_at(mantissa, 0) == 0:
+    while |mantissa| > 1 and rat(mantissa, 0) == 0:
       mantissa = subseq(mantissa, 0, :blank, 1);
       exp = exp + 1;
     ;
@@ -265,11 +271,13 @@ ParseTokenResult read_integer_float_or_time(Nat* bytes, Nat offset) {
   }
 
 
-  [Atom -> Nat] time_unit_scales = (ns: 1, us: 1000, ms: 1000000, s: 1000000000);
+  [Symbol -> Nat] time_unit_scales = (ns: 1, us: 1000, ms: 1000000, s: 1000000000);
 }
 
 
 ParseTokenResult read_string(Nat* bytes, Nat offset) {
+  chs : Nat*; ## BAD BAD BAD: THIS IS A WORKAROUND FOR A BUG IN THE TYPECHECKER
+
   assert is_char(bytes, offset, ascii_double_quotes);
 
   len = |bytes|;

@@ -1,4 +1,4 @@
-implicit program : Program, typedefs : [TypeName -> NeType], context : Context, var_aliases : [[LocVar2]], typed_vars : [StdVar -> NeType] {
+implicit program : Program, typedefs : [TypeName -> NeType], context : Context, typed_vars : [StdVar -> NeType] {
 
   Type expr_type(CondExpr expr, [EnvVar -> Type] env) = expr_type(expr.expr, left(refine_env(expr.cond, env)));
 
@@ -25,7 +25,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     memb_var()            = memb_var_type(expr),
     qual_memb_var()       = qual_memb_var_type(expr),
     qual_signal_var()     = qual_signal_var_type(expr),
-    fn_call()             = fn_call_expr_type(expr.fn_id, expr.args, expr.impl_args, env),
+    fn_call()             = fn_call_expr_type(expr.fn_id, expr.args, expr.cls_args, expr.impl_args, env),
     cls_call()            = closures[cast_cls_var(expr.name)].out_type,
     builtin_call()        = builtin_call_expr_type(expr.name, expr.args, env),
     size_expr()           = size_expr_type(expr.coll, env),
@@ -90,7 +90,9 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     if args_types == ():
       return set_elem_supertype(rel_type);
     elif |args_types| == 1 and expr.unknown_arg_idx :: <0..1>:
-      return bin_rel_arg_supertype(rel_type, expr.unknown_arg_idx);
+      return if expr.unknown_arg_idx == 1
+        then restricted_bin_rel_arg1_supertype(rel_type, only(args_types))
+        else bin_rel_arg_supertype(rel_type, expr.unknown_arg_idx);
     elif |args_types| == 2 and expr.unknown_arg_idx :: <0..2>:
       return tern_rel_arg_supertype(rel_type, expr.unknown_arg_idx);
     else
@@ -268,10 +270,10 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   }
 
 
-  Type builtin_call_expr_type(BuiltIn name, Expr+ params, [EnvVar -> Type] env) =
-    untag = untagged_objs_supertype(expr_type(params(0), env)),
-    tag   = tag_supertype(expr_type(params(0), env)),
-    _     = fn_call_type(builtin_to_fn_type(builtin_signature(name)), params, [], env);
+  Type builtin_call_expr_type(BuiltIn name, Expr+ args, [EnvVar -> Type] env) =
+    untag = untagged_objs_supertype(expr_type(args(0), env)),
+    tag   = tag_supertype(expr_type(args(0), env)),
+    _     = fn_call_type(builtin_to_fn_type(builtin_signature(name)), args, (), [], env);
 
 
   Type size_expr_type(Expr coll_expr, [EnvVar -> Type] env) {
@@ -306,9 +308,12 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
         return union_type([tag_obj_type(symb_type(s), arg_type) : s <- finite_symb_set_enum(target_type)]);
       ;
 
-    else
-      assert is_subset(target_type, type_seq);
+    elif is_subset(target_type, type_seq):
       return restricted_seq_elem_supertype(target_type, arg_type);
+
+    else
+      assert is_subset(target_type, type_bin_rel);
+      return restricted_bin_rel_arg1_supertype(target_type, arg_type);
     ;
   }
 
@@ -325,7 +330,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     sgn_set = method_signatures(auto_type, expr.name, |args_types|);
     types = [
       s.ret_type : s <- sgn_set.sgns,
-        not (at, ft <~ zip(args_types, s.args) : are_ptype_disjoint(at, cast_type(ft))) ## REMOVE THE cast_type() CALL
+        not (at, ft <~ zip(args_types, s.args) : are_ptype_disjoint(at, ft))
     ];
     return union_superset(types);
   }
@@ -337,7 +342,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     sgn_set = method_signatures(db_type, expr.name, |args_types|);
     types = [
       s.ret_type : s <- sgn_set.sgns,
-        not (at, ft <~ zip(args_types, s.args) : are_ptype_disjoint(at, cast_type(ft))) ## REMOVE THE cast_type() CALL
+        not (at, ft <~ zip(args_types, s.args) : are_ptype_disjoint(at, ft))
     ];
     return union_superset(types);
   }
@@ -439,26 +444,15 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////
 
-  Bool will_dispatch_to(FnType signature, AnyExpr* params, [EnvVar -> Type] env) {
-    assert |params| == arity(signature); ## MAYBE I SHOULD RETURN FALSE IF THE TWO DON'T MATCH
-
-    for e, t <- zip(params, signature.args):
-      ## THIS IS A CHECK THAT SHOULD BE PERFORMED ELSEWHERE.
-      assert (e :: Expr and t :: Type) or (e :: AnyClsExpr and t :: ClsType);
-      if e :: Expr and t :: Type:
-        return false if not is_subset(expr_type(e, env), replace_type_vars_with_type_any(t));
-      ;
-    ;
-
-    return true;
-  }
+  Bool will_dispatch_to(FnType signature, Expr* args, [EnvVar -> Type] env) =
+    not (
+      e, t <~ zip(args, signature.args)
+      : not is_subset(expr_type(e, env), replace_type_vars_with_type_any(t))
+    );
 
 
-  Bool will_dispatch_to(ClsType signature, AnyExpr* args, [EnvVar -> Type] env) =
-    all((
-      is_expr(a) and is_subset(expr_type(a, env), t)
-      : a, t <- zip(args, signature.in_types)
-    ));
+  Bool will_dispatch_to(ClsType signature, Expr+ args, [EnvVar -> Type] env) =
+    not (a, t <~ zip(args, signature.in_types) : not is_subset(expr_type(a, env), t));
 
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////
@@ -812,29 +806,10 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////
 
-  Type fn_call_type(FnType signature, AnyExpr* args, [ImplArg -> Expr] impl_args, [EnvVar -> Type] env) { ## DO I NEED THE THIRD PARAMETER?
-    type_var_insts = instantiate_type_vars(args, signature.args, env);
+  Type fn_call_type(FnType signature, Expr* args, ClsExpr* cls_args, [ImplArg -> Expr] impl_args, [EnvVar -> Type] env) { ## DO I NEED THE THIRD PARAMETER?
+    actual_types = (expr_type(e, env) : e <- args);
+    type_var_insts = instantiate_type_vars(actual_types, signature.args, cls_args, signature.cls_args, env);
     return replace_type_vars(signature.ret_type, type_var_insts);
-  }
-
-
-  [TypeVar -> Type] instantiate_type_vars(AnyExpr* args, AnyType* args_types, [EnvVar -> Type] env) {
-    actual_types = ();
-    formal_types = ();
-    cls_args = ();
-    cls_types = ();
-    for e, t <- zip(args, args_types):
-      assert is_expr(e) == is_type(t);
-      if is_expr(e) and is_type(t):
-        actual_types = (actual_types | expr_type(e, env));
-        formal_types = (formal_types | t);
-      elif is_cls_expr(e) and is_cls_type(t):
-        cls_args = (cls_args | e);
-        cls_types = (cls_types | t);
-      ;
-    ;
-
-    return instantiate_type_vars(actual_types, formal_types, cls_args, cls_types, env);
   }
 
 
@@ -862,7 +837,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     cls_var()   = closures[expr].out_type,
     fn_ptr()    = undefined,
     cls_expr()  = { inst_formal_par_types = (replace_type_vars(t, type_var_insts) : t <- type.in_types);
-                    new_env = get_updated_env(env, expr.args, inst_formal_par_types);
+                    new_env = get_updated_env(env, (nothing : i < expr.arity), inst_formal_par_types);
                     return expr_type(expr.expr, new_env);
                   };
 
@@ -957,7 +932,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 type IterTree = never, once([EnvVar -> Type]), repeated(IterTree), any([+IterTree]), all(IterTree+);
 
 
-implicit program : Program, typedefs : [TypeName -> NeType], context : Context, var_aliases : [[LocVar2]], typed_vars : [StdVar -> NeType] {
+implicit program : Program, typedefs : [TypeName -> NeType], context : Context, typed_vars : [StdVar -> NeType] {
 
   IterTree full_iter_tree(Clause cls, [EnvVar -> Type] env) = iter_tree(cls, env, :once($));
 
@@ -1394,7 +1369,7 @@ TernRelCompType tern_rel_both(TernRelCompType type1, TernRelCompType type2) =
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-implicit program : Program, typedefs : [TypeName -> NeType], context : Context, var_aliases : [[LocVar2]], typed_vars : [StdVar -> NeType] {
+implicit program : Program, typedefs : [TypeName -> NeType], context : Context, typed_vars : [StdVar -> NeType] {
 
   Type return_type(Statement* stmts, [EnvVar -> Type] env) {
     curr_env = env;
@@ -1417,7 +1392,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     let_stmt()          = let_stmt_return_type(stmt.asgnms, stmt.body, env),
     assignment_stmt()   |
     break_stmt          |
-    fail_stmt           |
+    fail_stmt()         |
     assert_stmt()       |
     print_stmt()        |
     seq_update_stmt()   = empty_type;
@@ -1491,7 +1466,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     for_stmt()          = for_stmt_update_env(if stmt.var? then just(stmt.var) else nothing, stmt.start_val, stmt.end_val, stmt.end_val_incl, stmt.body, env),
     let_stmt()          = let_stmt_update_env(stmt.asgnms, stmt.body, env),
     break_stmt          = unreachable_env(env),
-    fail_stmt           = unreachable_env(env),
+    fail_stmt()         = unreachable_env(env),
     assert_stmt()       |
     print_stmt()        |
     send_msg_stmt()     |
@@ -1658,6 +1633,4 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 type VarField = accessor(expr: EnvVar, field: SymbObj);
 
 
-implicit var_aliases : [[LocVar2]] {
-  [EnvVar] var_group(EnvVar var) = only_element_or_def_if_empty([as : as <- var_aliases, in(var, as)], [var]);
-}
+[EnvVar] var_group(EnvVar var) = [var]; ## GET RID OF THIS

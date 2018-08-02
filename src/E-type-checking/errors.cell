@@ -24,15 +24,16 @@ type TypeCheckingError =
   invalid_implicit_par_type(
     target_signature:   FnType,
     param_name:         ImplArg,
-    formal_type:        AnyType,
-    inst_formal_type:   <empty_type, AnyType>,
-    actual_type:        AnyType
+    formal_type:        NeType,
+    inst_formal_type:   Type,
+    actual_type:        NeType
   ),
   invalid_return_type(actual_type: Type, expected_type: Type),
   unexpected_actual_type(actual_type: Type, expected_type: Type),
   invalid_cls_param_type(actual_type: ClsType, exp_arg_types: Type+, exp_ret_type: Type),
   invalid_rel_arg_type(idx: Nat, actual_type: Type, expected_type: Type),
-  loop_did_not_converge(iteractions: NzNat),
+  unary_pcall_applied_to_empty_rel,
+  loop_did_not_converge(iteractions: NzNat, history: [+EnvVar -> Type+]),
   ptrn_cannot_match_type(pattern: Pattern, type: Type),
   invalid_main_arg_type(type: Type),
   invalid_main_ret_type(type: Type),
@@ -118,7 +119,7 @@ TypeCheckingError invalid_cls_var_type(ClsVar v, ClsType t, [TypeVar -> Type] tv
 
 TypeCheckingError invalid_cls_param_types(FnType s, [TypeCheckingError] es) = invalid_cls_param_types(target_signature: s, errors: es);
 
-TypeCheckingError invalid_implicit_par_type(FnType s, ImplArg p, AnyType ft, <empty_type, AnyType> ift, AnyType at) =
+TypeCheckingError invalid_implicit_par_type(FnType s, ImplArg p, NeType ft, Type ift, NeType at) =
   invalid_implicit_par_type(
     target_signature:   s,
     param_name:         p,
@@ -136,7 +137,9 @@ TypeCheckingError invalid_cls_param_type(ClsType at, Type+ eat, Type ert) =
 
 TypeCheckingError invalid_rel_arg_type(Nat i, Type at, Type et) = invalid_rel_arg_type(idx: i, actual_type: at, expected_type: et);
 
-TypeCheckingError loop_did_not_converge(NzNat nis) = loop_did_not_converge(iteractions: nis);
+TypeCheckingError unary_pcall_applied_to_empty_rel = :unary_pcall_applied_to_empty_rel;
+
+TypeCheckingError loop_did_not_converge(NzNat n, [+EnvVar -> Type+] h) = loop_did_not_converge(iteractions: n, history: h);
 
 TypeCheckingError ptrn_cannot_match_type(Pattern p, Type t) = add_anchor_if_needed(ptrn_cannot_match_type(pattern: p, type: t), p);
 
@@ -263,11 +266,17 @@ String* create_error_msg(TypeCheckingError err) =
                                           "  Expected type: " & user_repr(err.expected_type),
                                           "  Actual type:   " & user_repr(err.actual_type)
                                         ),
+  unary_pcall_applied_to_empty_rel    = (
+    "The () operator cannot be applied to a variable or an expression whose only possible value",
+    "is the empty set/relation because its meaning would be ambiguous. It could be interpreted",
+    "as either the membership test operator for sets or the by-key lookup for binary relations.",
+    "Try explicitly declaring the type of the variable you're applying it to. If it's meant",
+    "to be a map lookup operation, you could also use the more verbose map(key, !!) syntax."
+  ),
   invalid_implicit_par_type()         = ( "Invalid implicit argument type: " & user_repr(err.param_name),
                                           "  Expected type: " & user_repr(err.formal_type),
                                           "  Actual type:   " & user_repr(err.actual_type)
                                         ),
-
   invalid_return_type()               = ( "Invalid return type.",
                                           "  Expected type: " & user_repr(err.expected_type),
                                           "  Actual type:   " & user_repr(err.actual_type)
@@ -279,7 +288,7 @@ String* create_error_msg(TypeCheckingError err) =
                                           "  Actual type: " & user_repr(err.actual_type),
                                           "  Expected type: " & cls_type_user_repr(err.exp_arg_types, err.exp_ret_type)
                                         ),
-  loop_did_not_converge()             = ("Cannot infer types of variables updated in loop"),
+  loop_did_not_converge()             = loop_did_not_converge_err_msg(err.iteractions, err.history),
   ptrn_cannot_match_type()            = ("Pattern cannot match type: " & user_repr(err.pattern)),
   invalid_main_arg_type()             = ( "The argument of Main() must be of type String*",
                                           "Actual type: " & user_repr(err.type)
@@ -290,9 +299,9 @@ String* create_error_msg(TypeCheckingError err) =
   duplicate_map_key()                 = ("Duplicate map or record key"),
 
   auto_typechecking_cycle()           = ( "Typechecking loop in reactive automaton " & user_repr(err.name),
-                                          "Involved signals: " & append((_str_(bare_id(d)) : d <- rand_sort(err.signals)), ", ")
+                                          "Involved signals: " & append((_print_(bare_id(d)) : d <- rand_sort(err.signals)), ", ")
                                         ),
-  invalid_output_type()               = ( "Invalid output type: " & _str_(err.name),
+  invalid_output_type()               = ( "Invalid output type: " & _print_(err.name),
                                           "  Expected type: " & user_repr(err.expected_type),
                                           "  Actual type: " & user_repr(err.actual_type)
                                         ),
@@ -393,6 +402,18 @@ String* invalid_args_types_err_msg(FnFamilyId fn_name, FnType signature, [+(Nat,
   return errs;
 }
 
+
+String* loop_did_not_converge_err_msg(NzNat iteractions, [+EnvVar -> Type+] history) {
+  msg = ();
+  for v, ts @ i <- isort(history):
+    msg = (msg | "") if i > 0;
+    msg = (msg | "Cannot infer type of variable updated inside a loop: " & user_repr(v));
+    msg = msg & ("  " & user_repr(t) : t <- ts);
+  ;
+  return msg;
+}
+
+////////////////////////////////////////////////////////////////////////////////
 
 String* create_annotated_error_msg(TypeCheckingError error, Any anchor) {
   err_msg = create_error_msg(error);

@@ -101,12 +101,12 @@ RuleMatch+ weird_seq_nodes(RuleMatch mtc) {
 Maybe[((NzNat, NzNat), (NzNat, NzNat))] source_file_location(RuleMatch mtc) =
   null_match              = nothing,
   atomic_rule_match(t?)   = just(((t.line, t.col), (t.line, nz_nat(t.col + t.length - 1)))),
-  rule_seq_match(ms?)     = source_file_location(ms),
-  rep_rule_match(ms?)     = source_file_location(ms),
+  rule_seq_match(ms?)     = source_file_location_span(ms),
+  rep_rule_match(ms?)     = source_file_location_span(ms),
   rule_choice_match()     = source_file_location(mtc.match);
 
 
-Maybe[((NzNat, NzNat), (NzNat, NzNat))] source_file_location(RuleMatch* mtcs) {
+Maybe[((NzNat, NzNat), (NzNat, NzNat))] source_file_location_span(RuleMatch* mtcs) {
   return nothing if mtcs == ();
   start_loc = nothing;
   for m <- mtcs:
@@ -116,7 +116,7 @@ Maybe[((NzNat, NzNat), (NzNat, NzNat))] source_file_location(RuleMatch* mtcs) {
   return nothing if start_loc == nothing;
   end_loc = nothing;
   for i < |mtcs|:
-    end_loc = source_file_location(rev_at(mtcs, i));
+    end_loc = source_file_location(rat(mtcs, i));
     break if end_loc != nothing;
   ;
   fail if end_loc == nothing;

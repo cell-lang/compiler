@@ -116,10 +116,10 @@ Type union_type([Type] ts) {
 
 ClsType cls_type(NeType+ its, NeType ot) = cls_type(in_types: its, out_type: ot);
 
-FnType fn_type(AnyType* as, NeType rt) = fn_type(as, [], rt, []);
+FnType fn_type(NeType* as, ClsType* cas, NeType rt) = fn_type(as, cas, [], rt, []);
 
-FnType fn_type(AnyType* as, [ImplArg -> NeType] nas, NeType rt, [FnSymbol -> [+ClsType]] rs) =
-  fn_type(args: as, impl_args: nas, ret_type: rt, constrs: rs);
+FnType fn_type(NeType* as, ClsType* cas, [ImplArg -> NeType] nas, NeType rt, [FnSymbol -> [+ClsType]] rs) =
+  fn_type(args: as, cls_args: cas, impl_args: nas, ret_type: rt, constrs: rs);
 
 BuiltInType builtin_type(NeType+ pts, NeType rt) = builtin_type(args_types: pts, ret_type: rt);
 
@@ -134,7 +134,16 @@ NeType type_bool = ne_union_type([type_true, type_false]);
 NeType type_nat = high_ints(0);
 NeType type_nz_nat = high_ints(1);
 
+NeType type_nat7 = int_range(0, 127);
+
 NeType type_byte = int_range(0, 255);
+NeType type_int8 = int_range(-128, 127);
+
+NeType type_nat16 = int_range(0, 65535);
+NeType type_int16 = int_range(-32768, 32767);
+
+NeType type_nat32 = int_range(0, 4294967295);
+NeType type_int32 = int_range(-2147483648, 2147483647);
 
 NeType type_seq = type_seq(type_any);
 NeType type_set = type_set(type_any);
@@ -167,7 +176,7 @@ NeType type_seq(NeType elem_type)  = ne_union_type([empty_seq_type, ne_seq_type(
 NeType type_set(NeType elem_type)  = ne_union_type([empty_rel_type, ne_set_type(elem_type)]);
 NeType type_mset(NeType elem_type) = ne_union_type([empty_rel_type, ne_map_type(elem_type, high_ints(1))]);
 
-NeType type_tuple(<2..*> size)  = ne_tuple_type(nonempty(size * (type_any)));
+NeType type_tuple(NzNat size)  = ne_tuple_type(nonempty(size * (type_any)));
 
 NeType type_map(NeType key_type, NeType value_type) =
   ne_union_type([empty_rel_type, ne_map_type(key_type, value_type)]);
@@ -185,6 +194,11 @@ NeType type_tern_rel([+(NeType, NeType, NeType)] signatures, Bool nonempty) {
 }
 
 NeType type_string = tag_obj_type(symb_type(:string), ne_union_type([empty_seq_type, ne_seq_type(type_nat)]));
+
+NeType type_ascii_string  = tag_obj_type(
+                              symb_type(:string),
+                              ne_union_type([empty_seq_type, ne_seq_type(type_nat7)])
+                            );
 
 NeType type_any = type_ref(builtin_type_symbol(:any));
 
@@ -292,6 +306,8 @@ ClsVar cls_var(<Atom, Nat> a)     = :cls_var(a);
 
 FloatLit float_lit(<0..9>+ m, Bool n, Int e)  = float_lit(mantissa: m, negative: n, dec_exp: e);
 
+ExprRef expr_ref(Nat id) = :expr_ref(id);
+
 Expr seq_expr(SubExpr* es)          = :seq_expr(es);
 Expr seq_tail_expr(Expr s, Expr+ t) = seq_tail_expr(seq: s, tail: t);
 
@@ -306,8 +322,9 @@ TernRelExpr tern_rel_expr([+(args: (Expr, Expr, Expr), cond: Expr?)] es) = :tern
 
 Expr tag_obj_expr(Expr t, Expr o)   = tag_obj_expr(tag: t, obj: o);
 
-FnCallExpr fn_call(FnFamilyId n, AnyExpr* as) = fn_call(n, as, []);
-FnCallExpr fn_call(FnFamilyId n, AnyExpr* as, [ImplArg -> Expr] nas) = fn_call(fn_id: n, args: as, impl_args: nas);
+FnCallExpr fn_call(FnFamilyId n, Expr* as, AnyClsExpr* cas) = fn_call(n, as, cas, []);
+FnCallExpr fn_call(FnFamilyId n, Expr* as, AnyClsExpr* cas, [ImplArg -> Expr] nas) =
+  fn_call(fn_id: n, args: as, cls_args: cas, impl_args: nas);
 
 Expr builtin_call(BuiltIn n, Expr+ as)  = builtin_call(name: n, args: as);
 Expr cls_call(ClsVar v, Expr+ as)       = cls_call(name: v, args: as);
@@ -331,7 +348,7 @@ Expr not_expr(Expr e) = :not_expr(e);
 Expr and_expr(Expr+ es) {
   expr = last(es);
   for i = 1..|es|:
-    expr = and_expr(rev_at(es, i), expr);
+    expr = and_expr(rat(es, i), expr);
   ;
   return expr;
 }
@@ -339,7 +356,7 @@ Expr and_expr(Expr+ es) {
 Expr or_expr(Expr+ es) {
   expr = last(es);
   for i = 1..|es|:
-    expr = or_expr(rev_at(es, i), expr);
+    expr = or_expr(rat(es, i), expr);
   ;
   return expr;
 }
@@ -384,26 +401,25 @@ CondExpr cond_expr(Expr e, Expr c) = cond_expr(expr: e, cond: c);
 
 FnPtr fn_ptr(FnFamilyId id) = :fn_ptr(id);
 
-ClsExpr cls_expr(Maybe[StdVar]+ as, Expr e)     = cls_expr(args: as, expr: e);
-ClsExpr no_args_cls_expr(NzNat a, Expr e)       = cls_expr((nothing : unused_var < a), e);
-ClsExpr impl_args_cls_expr(StdVar+ as, Expr e)  = cls_expr(args: (just(a) : a <- as), expr: e);
+ClsExpr cls_expr(NzNat a, Expr e) = cls_expr(arity: a, expr: e);
 
 ////////////////////////////////////////////////////////////////////////////////
 
-Clause set_clause(StdVar v, Expr e)         = set_clause(var: v, src: e);
-Clause seq_clause(Maybe[StdVar]+ vs, Maybe[StdVar] iv, Expr e) = seq_clause(vars: vs, idx_var: iv, src: e);
-Clause and_clause(Clause l, Clause r)       = and_clause(left: l, right: r);
-Clause or_clause(Clause l, Clause r)        = or_clause(left: l, right: r);
-Clause match_clause(Pattern p, Expr e)      = match_clause(ptrn: p, expr: e);
-Clause asgnm_clause(StdVar v, Expr e)       = asgnm_clause(var: v, expr: e);
-Clause filter_clause(Expr e)                = :filter_clause(e);
+SetClause    set_clause(StdVar v, Expr e)     = set_clause(var: v, src: e);
+AndClause    and_clause(Clause l, Clause r)   = and_clause(left: l, right: r);
+OrClause     or_clause(Clause l, Clause r)    = or_clause(left: l, right: r);
+MatchClause  match_clause(Pattern p, Expr e)  = match_clause(ptrn: p, expr: e);
+AsgnmClause  asgnm_clause(StdVar v, Expr e)   = asgnm_clause(var: v, expr: e);
+FilterClause filter_clause(Expr e)            = :filter_clause(e);
 
-Clause rel_clause(StdVar+ vs, Expr e, Maybe[Expr]+ as) {
+SeqClause seq_clause(Maybe[StdVar]+ vs, Maybe[StdVar] iv, Expr e) = seq_clause(vars: vs, idx_var: iv, src: e);
+
+RelClause rel_clause(StdVar+ vs, Expr e, Maybe[Expr]+ as) {
   assert |vs| == count(as, $ == nothing) and (|as| == 2 or |as| == 3);
   return rel_clause(vars: vs, src: e, args: as);
 }
 
-Clause relvar_clause(StdVar+ vs, AnyRelVar rv, Maybe[Expr]+ as) {
+RelvarClause relvar_clause(StdVar+ vs, AnyRelVar rv, Maybe[Expr]+ as) {
   assert |vs| == count(as, $ == nothing) and |as| >= 1 and |as| <= 3;
   return relvar_clause(vars: vs, rel_var: rv, args: as);
 }
@@ -411,12 +427,15 @@ Clause relvar_clause(StdVar+ vs, AnyRelVar rv, Maybe[Expr]+ as) {
 ////////////////////////////////////////////////////////////////////////////////
 
 AtomicFnStmt assignment_stmt(StdVar+ vs, Expr v)        = assignment_stmt(vars: vs, value: v);
-AtomicFnStmt return_stmt(Expr e)                        = :return_stmt(e);
 AtomicFnStmt print_stmt(Expr e)                         = :print_stmt(e);
 AtomicFnStmt seq_update_stmt(StdVar s, Expr i, Expr v)  = seq_update_stmt(seq_var: s, idx: i, value: v);
 AtomicFnStmt assert_stmt(Expr c, [<StdVar, ImplArg>] vs, String f, NzNat l, Maybe[String] t) = assert_stmt(cond: c, env: vs, file: f, line: l, text: t);
-<break_stmt> break_stmt                                 = :break_stmt;
-<fail_stmt>  fail_stmt                                  = :fail_stmt;
+
+FailStmt fail_stmt([<StdVar, ImplArg>] vs, String f, NzNat l) = fail_stmt(env: vs, file: f, line: l);
+
+<break_stmt> break_stmt = :break_stmt;
+
+JumpStmt return_stmt(Expr e) = :return_stmt(e);
 
 AtomicUpdateStmt send_msg_stmt(NestedDBVar v, Expr m)         = send_msg_stmt(target: v, msg: m);
 AtomicUpdateStmt try_update_stmt(UpdateSymbol n, Expr* as)    = try_update_stmt(name: n, args: as);
@@ -447,12 +466,6 @@ CompositeStmt[T] for_stmt(Maybe[StdVar] v, Expr sv, Expr ev, Bool evi, T+ b) =
 ////////////////////////////////////////////////////////////////////////////////
 
 ProcSymbol proc_symbol(Atom a) = :proc_symbol(a);
-
-////////////////////////////////////////////////////////////////////////////////
-
-FormalObjArg formal_obj_arg(NeType t)             = formal_obj_arg(type: t);
-FormalObjArg formal_obj_arg(StdVar v, NeType t)   = formal_obj_arg(var: v, type: t);
-FormalClsArg formal_cls_arg(ClsVar v, ClsType t)  = formal_cls_arg(var: v, type: t);
 
 ////////////////////////////////////////////////////////////////////////////////
 

@@ -9,6 +9,30 @@ A transfer(A to, B from) =
 
 ////////////////////////////////////////////////////////////////////////////////
 
+(String, NzNat) file_and_line(Maybe[Any] maybe_decl_loc, Maybe[Any] maybe_err_loc) {
+  file = "FILE UNKNOWN";
+  line = 1000000000;
+
+  err_code = ();
+  if maybe_decl_loc != nothing:
+    decl_loc = value(maybe_decl_loc);
+    if decl_loc :: (String, NzNat, NzNat):
+      file, line, unused_var = decl_loc;
+    ;
+  ;
+
+  if maybe_err_loc != nothing:
+    err_loc = value(maybe_err_loc);
+    if err_loc :: ((NzNat, NzNat), (NzNat, NzNat)):
+      line = err_loc(0)(0);
+    ;
+  ;
+
+  return (file, line);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
 String* indent_lines(String* strs) = (if s != "" then "  " & s else "" : s <- strs);
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -16,13 +40,13 @@ String* indent_lines(String* strs) = (if s != "" then "  " & s else "" : s <- st
 Nat uppercase(Nat ch) = if ch >= ascii_lower_a and ch <= ascii_lower_z then nat(ch - ascii_lower_a + ascii_upper_a) else ch;
 
 
-String uppercase(Atom a) = string((uppercase(ch) : ch <- chars(_str_(a))));
+String uppercase(Atom a) = string((uppercase(ch) : ch <- chars(_print_(a))));
 
 
-String sentence_case(Atom a) = string((if i == 0 then uppercase(ch) else ch : ch @ i <- chars(_str_(a))));
+String sentence_case(Atom a) = string((if i == 0 then uppercase(ch) else ch : ch @ i <- chars(_print_(a))));
 
 
-String upper_camel_case(Atom a) = capitalize(_str_(a), false);
+String upper_camel_case(Atom a) = capitalize(_print_(a), false);
 
 
 String capitalize(String s, Bool keep_underscores) {
@@ -49,7 +73,7 @@ String user_repr(Type type) = user_repr(type, false, false, false);
 String user_repr(Type type, Bool inside_type_union, Bool incl_empty_seq, Bool incl_empty_rel) =
   empty_type                = "</>",
   atom_type                 = "<+>",
-  symb_type(object(a?))     = {res = _str_(a); res = "<" & res & ">" if not inside_type_union; return res;},
+  symb_type(object(a?))     = {res = _print_(a); res = "<" & res & ">" if not inside_type_union; return res;},
   integer                   = "<*..*>",
   low_ints()                = "<*.." & printed(type.max) & ">",
   high_ints()               = "<" & printed(type.min) & "..*>",
@@ -79,7 +103,7 @@ String ne_record_type_user_repr(RecordTypeFields fields) {
   return "(" & append(rand_sort(field_reprs), ", ") & ")";
 
   String record_field_user_repr(SymbObj label, NeType type, Bool optional) =
-    _str_(match (label) object(a?) = a) & ": " & user_repr(type) & if optional then "?" else "";
+    _print_(match (label) object(a?) = a) & ": " & user_repr(type) & if optional then "?" else "";
 }
 
 
@@ -122,7 +146,7 @@ String tag_obj_type_user_repr(TagType tag_type, NeType obj_type) {
 
   tag_repr = match (tag_type)
     atom_type               = "<+>",
-    symb_type(object(tag?)) = _str_(tag);
+    symb_type(object(tag?)) = _print_(tag);
 
   obj_repr = user_repr(obj_type);
   obj_repr = "(" & obj_repr & ")" if not skip_pars;
@@ -163,31 +187,31 @@ String user_repr(TypeName type_name) {
 
 
 String user_repr(SymbObj) =
-  object(a?)  = _str_(a);
+  object(a?)  = _print_(a);
 
 
 String user_repr(Var var) =
-  var(a?)               = _str_(a),
+  var(a?)               = _print_(a),
   fn_arg(n?)            = "$" & printed(n),
-  impl_arg(a?)          = _str_(a),
-  memb_var(a?)          = _str_(a),
-  signal_var(a?)        = _str_(a),
+  impl_arg(a?)          = _print_(a),
+  memb_var(a?)          = _print_(a),
+  signal_var(a?)        = _print_(a),
   prev_var_value(v?)    = "@" & user_repr(v),
   qual_memb_var(a?)     = user_repr(var.db_var) & "." & user_repr(var.memb_var),
   qual_signal_var(a?)   = user_repr(var.auto_var) & "." & user_repr(var.memb_var);
 
 
-String user_repr(AnyAutoVar v) = _str_(bare_id(v));
+String user_repr(AnyAutoVar v) = _print_(bare_id(v));
 
 
 String user_repr(AnyDBVar v) =
   loc_db_var(a?)    |
-  nested_db_var(a?) = _str_(a),
+  nested_db_var(a?) = _print_(a),
   qual_db_var()     = user_repr(v.outer) & "." & user_repr(v.inner);
 
 
 String user_repr(AnyRelVar v) =
-  rel_var(a?)     = _str_(a),
+  rel_var(a?)     = _print_(a),
   qual_rel_var()  = user_repr(v.db_var) & "." & user_repr(v.rel_var);
 
 
@@ -195,7 +219,7 @@ String user_repr(ProcSymbol) =
   proc_symbol(a?)   = upper_camel_case(a);
 
 
-String user_repr(BuiltIn b) = "_" & _str_(b) & "_";
+String user_repr(BuiltIn b) = "_" & _print_(b) & "_";
 
 
 String user_repr(PlainFnFamilyId id)  = user_repr(id.symbol, id.arity);
@@ -204,12 +228,15 @@ String user_repr(NestedFnId id)       = user_repr(id.outer) & ":" & user_repr(id
 
 
 String user_repr(FnSymbol fn_symb, Nat arity) =
-  fn_symbol(a?)         = _str_(a) & "/" & printed(arity),
+  fn_symbol(a?)         = _print_(a) & "/" & printed(arity),
   op_symbol(op?)        = user_repr(op);
 
 
+String user_repr(ConvFnId) = undefined;
+
+
 String user_repr(ClsVar v) =
-  cls_var(<+> a?)    = _str_(a);
+  cls_var(<+> a?)    = _print_(a);
 
 
 String user_repr(ClsType type) = cls_type_user_repr(type.in_types, type.out_type);
@@ -232,7 +259,7 @@ String user_repr(Pattern ptrn) =
   ptrn_ne_bin_rel     = "[,]",
   ptrn_ne_tern_rel    = "[,,]",
   ptrn_any            = "_",
-  ptrn_symbol(s?)     = _str_(match (s) object(a?) = a),
+  ptrn_symbol(s?)     = _print_(match (s) object(a?) = a),
   ptrn_integer(t?)    = user_repr(t),
   ptrn_tuple(ps?)     = "(" & append((user_repr(p) : p <- ps), ", ") & ")",
   ptrn_tag_obj()      = ptrn_tag_obj_user_repr(ptrn.tag, ptrn.obj),
@@ -242,21 +269,21 @@ String user_repr(Pattern ptrn) =
 
 String ptrn_tag_obj_user_repr(TagPtrn tag, Pattern obj) =
   ptrn_symbol               = "_ @ " & user_repr(obj),
-  ptrn_symbol(object(s?))   = _str_(s) & "(" & user_repr(obj) & ")",
+  ptrn_symbol(object(s?))   = _print_(s) & "(" & user_repr(obj) & ")",
   ptrn_var()                = user_repr(tag.var) & " @ " & user_repr(obj);
 
 
 String user_repr(FnSymbol fn_symb) =
-  fn_symbol(a?)         = _str_(a),
+  fn_symbol(a?)         = _print_(a),
   op_symbol(op?)        = user_repr(op);
 
 
 String user_repr(<MethodSymbol, UpdateSymbol> symb, Nat arity) = user_repr(symb) & "/" & printed(arity);
 
 
-String user_repr(MethodSymbol symb) = method_symbol(a?)  = _str_(a);
+String user_repr(MethodSymbol symb) = method_symbol(a?)  = _print_(a);
 
-String user_repr(UpdateSymbol symb) = update_symbol(a?)  = _str_(a);
+String user_repr(UpdateSymbol symb) = update_symbol(a?)  = _print_(a);
 
 String user_repr(AutoSymbol) = auto_symbol(a?) = upper_camel_case(a);
 

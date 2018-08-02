@@ -1,17 +1,15 @@
-Nat+ choose_disp_args(AnyType++ types, [TypeName -> Type] typedefs) {
+Nat+ choose_disp_args(NeType++ types, [TypeName -> Type] typedefs) {
+  count = |types(0)|;
+  ptypes = ((pseudotype(t, typedefs) : t <- ts) : ts <- types);
+
   ## IF THERE'S MORE THAN ONE CHOICE OF DISPATCH ARGUMENTS,
   ## WE SHOULD CHOOSE THE ONE THAT IS THE MOST EFFICIENT
-  some_types = types(0);
-  obj_args = nonempty((i : t @ i <- some_types, t :: NeType));
-  ptypes = ((pseudotype(cast_type(ts(i)), typedefs) : i <- obj_args) : ts <- types);
-  count = |obj_args|;
   for n = 1...count:
     for idxs <- ordered_combinations(n, count):
-      if are_sufficient(idxs, ptypes, typedefs):
-        return (obj_args(i) : i <- idxs);
-      ;
+      return idxs if are_sufficient(idxs, ptypes, typedefs);
     ;
   ;
+
   fail;
 
 
@@ -62,7 +60,8 @@ CounterSet[T] increment(CounterSet[T] ctr_set, T ctr) {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-type GenVarType = obj, int, bool, set_it, seq_it, bin_rel_it, tern_rel_it, table_it, stream, vector;
+type GenVarType = obj, int, int32, float, bool, array, tag_rec,
+                  set_it, seq_it, bin_rel_it, tern_rel_it, table_it, stream, vector;
 
 type VarGen = CounterSet[GenVarType];
 
@@ -78,42 +77,75 @@ VarGen blank_var_gen = counter_set(nz_ctrs: []);
   // (mk_var(next_value(gen)), increment(gen, var_type));
 
 
-(LocVar, VarGen)  next_obj_var(VarGen gen)  = next_var(gen, :obj, lvar);
-(IntVar, VarGen)  next_int_var(VarGen gen)  = next_var(gen, :int, ivar);
-(BoolVar, VarGen) next_bool_var(VarGen gen) = next_var(gen, :bool, bvar);
+(LocVar,       VarGen) next_obj_var(VarGen gen)   = next_var(gen, :obj, lvar);
+(LocIntVar,    VarGen) next_int_var(VarGen gen)   = next_var(gen, :int, ivar);
+(LocFloatVar,  VarGen) next_float_var(VarGen gen) = next_var(gen, :float, fvar);
+(LocBoolVar,   VarGen) next_bool_var(VarGen gen)  = next_var(gen, :bool, bvar);
+(Int32Var,     VarGen) next_int32_var(VarGen gen) = next_var(gen, :int32, ivar32);
 
-(SeqItVar, VarGen) next_seq_it_var(VarGen gen) = next_var(gen, :seq_it, seq_it_var);
-
-(SetItVar, VarGen) next_set_it_var(VarGen gen) = next_var(gen, :set_it, set_it_var);
+(SeqItVar,     VarGen) next_seq_it_var(VarGen gen)      = next_var(gen, :seq_it, seq_it_var);
+(SetItVar,     VarGen) next_set_it_var(VarGen gen)      = next_var(gen, :set_it, set_it_var);
 (BinRelItVar,  VarGen) next_bin_rel_it_var(VarGen gen)  = next_var(gen, :bin_rel_it, bin_rel_it_var);
 (TernRelItVar, VarGen) next_tern_rel_it_var(VarGen gen) = next_var(gen, :tern_rel_it, tern_rel_it_var);
 
-(TableItVar, VarGen) next_table_it_var(VarGen gen, NzNat arity) = next_var(gen, :table_it, table_it_var($, arity));
+(TableItVar, VarGen) next_table_it_var(VarGen gen, NzNat arity)       = next_var(gen, :table_it, table_it_var($, arity));
+(StreamVar,  VarGen) next_stream_var(VarGen gen)                      = next_var(gen, :stream, svar);
+(VecVar,     VarGen) next_vector_var(VarGen gen, NzNat size)          = next_var(gen, :vector, vvar($, size));
+(ArrayVar,   VarGen) next_array_var(VarGen gen, LowLevelEltRepr repr) = next_var(gen, :array, avar($, repr));
+(ArrayVar,   VarGen) next_array_var(VarGen gen, OptTagRecRepr repr)   = next_var(gen, :array, avar($, :object));
 
-(StreamVar, VarGen) next_stream_var(VarGen gen) = next_var(gen, :stream, svar);
-
-(VecVar, VarGen) next_vector_var(VarGen gen, NzNat size) = next_var(gen, :vector, vvar($, size));
+(LocOptTagRecVar, VarGen) next_opt_tag_rec_var(VarGen gen, Symbol tag, Nat idx)  = next_var(gen, :tag_rec, opt_tag_rec_var($, tag, idx));
 
 
-(IntVar*, VarGen) next_int_vars(VarGen gen, Nat count) {
+(LocIntVar*, VarGen) next_int_vars(VarGen gen, Nat count) {
   g = gen;
   vs = ();
   for i < count:
     v, g = next_int_var(g);
     vs = (vs | v);
   ;
-  return (vs, g);
+  assert (vs, g) == apply_seed(count, gen, next_int_var);
+
+  return apply_seed(count, gen, next_int_var);
 }
 
 
-(BoolVar*, VarGen) next_bool_vars(VarGen gen, Nat count) {
+(LocBoolVar*, VarGen) next_bool_vars(VarGen gen, Nat count) {
   g = gen;
   vs = ();
   for i < count:
     v, g = next_bool_var(g);
     vs = (vs | v);
   ;
-  return (vs, g);
+  assert (vs, g) == apply_seed(count, gen, next_bool_var);
+
+  return apply_seed(count, gen, next_bool_var);
+}
+
+
+(LocVar*, VarGen) next_obj_vars(VarGen gen, Nat count) {
+  g = gen;
+  vs = ();
+  for i < count:
+    v, g = next_obj_var(g);
+    vs = (vs | v);
+  ;
+  assert (vs, g) == apply_seed(count, gen, next_obj_var);
+
+  return apply_seed(count, gen, next_obj_var);
+}
+
+
+(StreamVar*, VarGen) next_stream_vars(VarGen gen, Nat count) {
+  g = gen;
+  vs = ();
+  for i < count:
+    v, g = next_stream_var(g);
+    vs = (vs | v);
+  ;
+  assert (vs, g) == apply_seed(count, gen, next_stream_var);
+
+  return apply_seed(count, gen, next_stream_var);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

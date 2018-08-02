@@ -494,10 +494,10 @@ String source_code_loc_str(ImplArgDecl sgn1, ImplArgDecl sgn2) {
 
 String user_name(Typedef td)        = user_repr(td.name);
 String user_name(ParTypedef td)     = user_repr(td.name) & "/" & printed(|td.params|);
-String user_name(ImplArgDecl s)     = _str_(bare_id(s.name));
+String user_name(ImplArgDecl s)     = _print_(bare_id(s.name));
 String user_name(SynFnDef fd)       = user_repr(fd.name) & "/" & printed(arity(fd));
 String user_name(AutoMethodDef md)  = user_repr(auto_symbol(md.target)) & "." & user_repr(method_symbol(md.name)) & "/" & printed(arity(md));
-String user_name(SynProcDef pd)     = capitalize(_str_(bare_id(pd.name)), false);
+String user_name(SynProcDef pd)     = capitalize(_print_(bare_id(pd.name)), false);
 
 String user_name(ReactAutoDef auto) = user_repr(auto_symbol(auto.name));
 String user_name(SchemaDef s)       = user_repr(db_symbol(s.name));
@@ -509,7 +509,7 @@ String user_repr(ClsPar) =
   cls_par(n?) = string((ascii_dollar, nat(ascii_lower_a + n)));
 
 String user_repr(ConstOrVar) =
-  const_or_var(a?)  = _str_(a);
+  const_or_var(a?)  = _print_(a);
 
 
 String plural(Any+ objs)    = if |objs| > 1 then "s" else "";
@@ -576,7 +576,7 @@ String* incomp_impl_args_err_msg(SynFnDef fd1, SynFnDef fd2, [Atom] nargs1, [Ato
     "The following two " & user_repr(fd1.name, arity(fd1)) & " polymorphic functions:",
     "    " & source_code_loc_str(fd1),
     "    " & source_code_loc_str(fd2),
-    "have different implicit arguments: " & append((_str_(a) : a <- diff_args), ", ")
+    "have different implicit arguments: " & append((_print_(a) : a <- diff_args), ", ")
   );
 }
 
@@ -700,9 +700,9 @@ String* basic_err_msg(TypeWFError err) =
 
 String* basic_err_msg(SchemaSpecWFError err) =
   schema_def_duplicates_type()    = ("A type with the same name already exists: " & user_repr(type_symbol(err.schema_def.name))),
-  duplicate_schema_decl(d1?, d2?) = ("Duplicate declaration: " & _str_(d1.name)),
-  invalid_relvar_arity(d?)        = ("Invalid arity: " & _str_(d.name)),
-  invalid_relvar_keys(d?)         = ("Invalid keys: " & _str_(d.name)),
+  duplicate_schema_decl(d1?, d2?) = ("Duplicate declaration: " & _print_(d1.name)),
+  invalid_relvar_arity(d?)        = ("Invalid arity: " & _print_(d.name)),
+  invalid_relvar_keys(d?)         = ("Invalid keys: " & _print_(d.name)),
   incomp_relvar_decls()           = incomp_relvar_decls_basic_err_msg(err.relvars, err.attr_relvars);
 
 
@@ -710,13 +710,13 @@ String* basic_err_msg(AutoSpecWFError err) =
   auto_type_conflict()      = ("A type with the same name already exists: " & upper_camel_case(err.name)),
   auto_schema_conflict()    = ("A schema with the same name already exists: " & upper_camel_case(err.name)),
   auto_prot_conflict()      = ("A protocol with the same name already exists: " & upper_camel_case(err.name)),
-  duplicate_pos_input()     = ("Input '" & _str_(err.name) & "' appears twice in the list of positional inputs"),
-  undef_pos_input()         = ("Positional input '" & _str_(err.name) & "' is not defined"),
-  undef_def_output()        = ("Default output '" & _str_(err.name) & "' is not defined"),
+  duplicate_pos_input()     = ("Input '" & _print_(err.name) & "' appears twice in the list of positional inputs"),
+  undef_pos_input()         = ("Positional input '" & _print_(err.name) & "' is not defined"),
+  undef_def_output()        = ("Default output '" & _print_(err.name) & "' is not defined"),
   wrong_num_of_pos_inputs() = if err.exp_num != 0
                                 then ("Wrong number of positional inputs (expected " & printed(err.exp_num) & ")")
                                 else ("Nested automaton does not accept positional inputs"),
-  duplicate_actual_inputs() = ("Duplicate nested automaton inputs: " & append((_str_(a) : a <- rand_sort(err.dupl_args)), ", "));
+  duplicate_actual_inputs() = ("Duplicate nested automaton inputs: " & append((_print_(a) : a <- rand_sort(err.dupl_args)), ", "));
 
 
 String* incomp_relvar_decls_basic_err_msg([RelVarsDecl] relvars, [(RelVarsDecl, Nat)] attr_relvars) {
@@ -726,7 +726,7 @@ String* incomp_relvar_decls_basic_err_msg([RelVarsDecl] relvars, [(RelVarsDecl, 
     parent_relvar, idx = an_elem(nonempty(attr_relvars));
     name = parent_relvar.attributes(idx).name;
   ;
-  return ("Overloaded relation variables declarations are incompatible: " & _str_(name));
+  return ("Overloaded relation variables declarations are incompatible: " & _print_(name));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -751,9 +751,9 @@ String* basic_err_msg(TypeVarDeclError err) =
 
 String* basic_err_msg(ExprSpecWFError err) =
   already_def_var(v?)         = ("Variable redefinition: " & user_repr(v)),
-  undef_var_or_const(a?)      = ("Undefined variable or constant: " & _str_(a)),
+  undef_var_or_const(a?)      = ("Undefined variable or constant: " & _print_(a)),
   not_an_object()             = not_an_object_err_msg(err.expr, err.resols),
-  not_a_signal()              = ("Unknown signal: " & _str_(err.id)),
+  not_a_signal()              = ("Unknown signal: " & _print_(err.id)),
   ambiguous_expr()            = ("Ambiguous expression", printed(err.resols)),
   invalid_expr()              = ("Invalid expression"),
   wrong_builtin_arity()       = ("Wrong builtin function arity: " & user_repr(err.name)),
@@ -774,14 +774,14 @@ String* basic_err_msg(ExprSpecWFError err) =
                                   target = err.expr.target;
                                   if target :: IdChain:
                                     symbols = destructure_id_chain(target);
-                                    msg = msg & ": " & append((_str_(s) : s <- symbols), ".") & "(..), a";
+                                    msg = msg & ": " & append((_print_(s) : s <- symbols), ".") & "(..), a";
                                   else
                                     msg = msg & ". A";
                                   ;
                                   arities = append((printed(a) : a <- rand_sort(err.actual_arities)), ", ");
                                   return (msg & "ctual arity: " & arities);
                                 },
-  wrong_rel_lookup_arity()    = ("Wrong number of arguments: " & append((_str_(s) : s <- err.target), ".") &
+  wrong_rel_lookup_arity()    = ("Wrong number of arguments: " & append((_print_(s) : s <- err.target), ".") &
                                 "(..), actual_arity: " & append((printed(a) : a <- rand_sort(err.actual_arities)))),
   wrong_pseudocall_arity()    = ("Too many arguments for set/map membership test or map lookup"),
   unknown_function()          = ("Unknown function: " & user_repr(fn_symbol(err.expr.name))),
@@ -799,7 +799,7 @@ String* basic_err_msg(ExprSpecWFError err) =
                                 ),
   wrong_cls_call_arity()      = ("Wrong number of arguments: " & user_repr(fn_symbol(err.expr.name)) & ", actual arity: " & printed(err.exp_arity)),
   impl_args_not_allowed()     = ("Closures cannot have implicit parameters: " & user_repr(fn_symbol(err.expr.name))),
-  not_a_scalar_var()          = ("Invalid use of non-object variable: " & append((_str_(n) : n <- err.names), ".")),
+  not_a_scalar_var()          = ("Invalid use of non-object variable: " & append((_print_(n) : n <- err.names), ".")),
   dupl_var_mult_asgnm(v?)     = ("Duplicated variable in multiple assignment: " & user_repr(v)),
   diff_var_sets_in_ptrn_union(ps?)  = ("Individual patterns in a union must define the same set of variables"),
   iter_clause_wrong_arity()   = { arities_str = append((printed(a) : a <- rand_sort(err.valid_arities)), " ");
@@ -825,65 +825,65 @@ String* basic_err_msg(ExprSpecWFError err) =
 
   unknown_auto()              = ("Automaton does not exist: " & user_repr(err.auto_symb)),
   undef_react_auto_var()      = ({if err.is_other_var_type then "Not an automaton" else "Undefined"} & " variable: " & user_repr(err.var)),
-  unknown_input()             = ("Automaton " & user_repr(auto_symbol(err.automaton.name)) & " has no such input: " & _str_(err.name)),
-  unknown_output()            = ("Automaton " & user_repr(auto_symbol(err.automaton.name)) & " has no such output: " & _str_(err.name)),
-  unknown_db_field()          = ("Automaton " & user_repr(db_symbol(err.schema.name)) & " has no such state variable or nested automaton: " & _str_(err.name)),
-  not_a_discrete_signal()     = ("Not a discrete signal: " & user_repr(auto_symbol(err.automaton.name)) & "." & _str_(err.name)),
-  not_a_memb_copy_var()       = ("Unknown signal: @" & _str_(err.name)),
+  unknown_input()             = ("Automaton " & user_repr(auto_symbol(err.automaton.name)) & " has no such input: " & _print_(err.name)),
+  unknown_output()            = ("Automaton " & user_repr(auto_symbol(err.automaton.name)) & " has no such output: " & _print_(err.name)),
+  unknown_db_field()          = ("Automaton " & user_repr(db_symbol(err.schema.name)) & " has no such state variable or nested automaton: " & _print_(err.name)),
+  not_a_discrete_signal()     = ("Not a discrete signal: " & user_repr(auto_symbol(err.automaton.name)) & "." & _print_(err.name)),
+  not_a_memb_copy_var()       = ("Unknown signal: @" & _print_(err.name)),
   invalid_signal_copy_context() = (
-                                  "Invalid expression: @" & _str_(err.name),
+                                  "Invalid expression: @" & _print_(err.name),
                                   "Use of the @ notation is only permitted in the definition of a reactive automaton"
                                 ),
-  not_a_copiable_signal()     = ( "Invalid expression: @" & _str_(err.name),
+  not_a_copiable_signal()     = ( "Invalid expression: @" & _print_(err.name),
                                   "The @ notation can only be applied to continuous inputs and state variables"
                                 ),
-  duplicate_tracked_signal()  = ("Signal " & _str_(err.name) & " appears multiple times in the list of tracked signals"),
-  unknown_state_var()         = ("Not a state variable: " & _str_(err.name)),
+  duplicate_tracked_signal()  = ("Signal " & _print_(err.name) & " appears multiple times in the list of tracked signals"),
+  unknown_state_var()         = ("Not a state variable: " & _print_(err.name)),
   no_discrete_signals_in_expr() = { descr = if err.is_update then "State variable update" else "Discrete rule";
                                     return (descr & " without a guard must reference at least one discrete signal");
                                   },
-  discrete_signals_in_countinuous_rule()  = ( "Discrete signal(s) used in continuous rule " & _str_(err.name) &
+  discrete_signals_in_countinuous_rule()  = ( "Discrete signal(s) used in continuous rule " & _print_(err.name) &
                                               ": " & append((user_repr(v) : v <- rand_sort(err.discrete_signals)), ", ")),
 
   conflicting_auto_decls(d1?, d2?) = conflicting_auto_decls_err_msg(d1, d2),
 
   undef_static_auto_var()     = ( if err.is_auto_var
-                                    then _str_(err.var) & " is a reactive automaton, not a static one"
+                                    then _print_(err.var) & " is a reactive automaton, not a static one"
                                   elif err.is_obj_var
-                                    then "Not an automaton variable: " & _str_(err.var)
+                                    then "Not an automaton variable: " & _print_(err.var)
                                   else
-                                    "Unknown automaton variable: " & _str_(err.var)
+                                    "Unknown automaton variable: " & _print_(err.var)
                                 ),
   wrong_auto_var_arity()      = ( if err.expected == 0
-                                      then "Automaton variable " & _str_(err.var) & " does not expect arguments"
+                                      then "Automaton variable " & _print_(err.var) & " does not expect arguments"
                                     elif err.actual == 0
-                                      then "Automaton variable " & _str_(err.var) & " requires " & printed(err.expected) & " arguments"
+                                      then "Automaton variable " & _print_(err.var) & " requires " & printed(err.expected) & " arguments"
                                     else
-                                      "Automaton variable " & _str_(err.var) & " requires " & printed(err.expected) & " arguments"
+                                      "Automaton variable " & _print_(err.var) & " requires " & printed(err.expected) & " arguments"
                                 ),
-  wrong_auto_arg_type()       = ( "Wrong automaton type, argument " & _str_(err.arg_var) & " of automaton variable " & _str_(err.var),
+  wrong_auto_arg_type()       = ( "Wrong automaton type, argument " & _print_(err.arg_var) & " of automaton variable " & _print_(err.var),
                                   "  Expected type: " & upper_camel_case(err.expected),
                                   "  Actual type:   " & upper_camel_case(err.actual)
                                 ),
   db_has_no_handlers()        = ("Automaton " & user_repr(db_symbol(err.db_type)) & " has no message handlers"),
-  not_a_nested_db_var()       = ("Not a nested automaton: " & _str_(err.var)),
-  unknown_nested_db_var()     = ("Unknown automaton variable: " & _str_(err.var)),
-  unknown_update()            = ("Unknown update: " & _str_(err.name)),
+  not_a_nested_db_var()       = ("Not a nested automaton: " & _print_(err.var)),
+  unknown_nested_db_var()     = ("Unknown automaton variable: " & _print_(err.var)),
+  unknown_update()            = ("Unknown update: " & _print_(err.name)),
   invalid_update_arity()      = ( "Wrong number of arguments: " & printed(err.arity) &
                                   ", actual arity: " & append((printed(a) : a <- rand_sort(err.arities)), ", ")
                                 ),
 
-  not_a_memb_var()            = ("Not a scalar member variable: " & _str_(err.var)),
-  unknown_memb_var()          = ("Unknown member variable: " & _str_(err.var)),
-  invalid_rel_var_arity()     = ( "Wrong relational variable arity: " & _str_(err.var) &
+  not_a_memb_var()            = ("Not a scalar member variable: " & _print_(err.var)),
+  unknown_memb_var()          = ("Unknown member variable: " & _print_(err.var)),
+  invalid_rel_var_arity()     = ( "Wrong relational variable arity: " & _print_(err.var) &
                                   ", actual arity: " & printed(err.relvar_arity)
                                 ),
-  not_a_rel_var()             = ("Not a relational variable: " & _str_(err.var)),
-  unknown_rel_var()           = ("Unknown relational variable: " & _str_(err.var)),
+  not_a_rel_var()             = ("Not a relational variable: " & _print_(err.var)),
+  unknown_rel_var()           = ("Unknown relational variable: " & _print_(err.var)),
 
   undef_auto_var()            = ( if err.is_data_var
-                                    then _str_(err.var) & " is not an automaton variable"
-                                    else "Unknown variable: " & _str_(err.var)
+                                    then _print_(err.var) & " is not an automaton variable"
+                                    else "Unknown variable: " & _print_(err.var)
                                 ),
 
   anchored_errors()           = join((basic_err_msg(e) : e <- err.errors)),
@@ -915,7 +915,7 @@ String* conflicting_auto_decls_err_msg(AnyAutoDecl decl1, AnyAutoDecl decl2) {
 
   String description(AnyAutoDecl decl) {
     descr = auto_decl_descr(decl);
-    descr = descr & " " & _str_(decl.name) if decl.name?;
+    descr = descr & " " & _print_(decl.name) if decl.name?;
     maybe_loc = artifact_source_code_location(decl);
     if maybe_loc != nothing:
       start_line = left(left(value(maybe_loc)));
@@ -932,8 +932,8 @@ String* create_error_msg(GenDefSpecWFError err) =
 
 
 String* create_dupl_par_names_error_msg([Atom] pos_args, [Atom] impl_args) =
-  ("Duplicated parameter name: " & _str_(a) : a <- rand_sort(pos_args)) &
-  ("Implicit and standard arguments cannot have the same name: " & _str_(a) : a <- rand_sort(impl_args));
+  ("Duplicated parameter name: " & _print_(a) : a <- rand_sort(pos_args)) &
+  ("Implicit and standard arguments cannot have the same name: " & _print_(a) : a <- rand_sort(impl_args));
 
 
 String* create_invalid_ptrn_list_len(Nat actual, Nat max) =
@@ -941,7 +941,7 @@ String* create_invalid_ptrn_list_len(Nat actual, Nat max) =
 
 
 String* create_error_msg(FnDefSpecWFError err) =
-  invalid_cls_type_vars()       = ("Invalid type variable: " & user_repr(v)  & " in argument type: " & _str_(err.var_name) : v <- rand_sort(err.type_vars)),
+  invalid_cls_type_vars()       = ("Invalid type variable: " & user_repr(v)  & " in argument type: " & _print_(err.var_name) : v <- rand_sort(err.type_vars)),
   invalid_res_type_vars()       = ("Invalid type variable in function result: " & user_repr(v) : v <- rand_sort(err.type_vars)),
   nested_functions_errors(es?)  = ("Errors in nested functions") & ("    " & l : l <- join((create_error_msg(e) : e <- es)));
 
@@ -949,7 +949,7 @@ String* create_error_msg(FnDefSpecWFError err) =
 String* create_error_msg(ProcDefSpecWFError err) =
   builtin_proc_redef    = ("Redefinition of builtin procedure"),
   wrong_main_proc_arity = ("Main procedure can only have one parameter"),
-  dup_auto_or_db_var()  = ("Duplicate automaton variable: " & _str_(err.name)),
+  dup_auto_or_db_var()  = ("Duplicate automaton variable: " & _print_(err.name)),
   undef_auto_or_db()    = ("Automaton is not defined: " & upper_camel_case(err.type));
 
 ////////////////////////////////////////////////////////////////////////////////

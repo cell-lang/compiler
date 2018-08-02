@@ -45,6 +45,7 @@ implicit typedefs : [TypeName -> NeType] {
 
   [TypeVar -> Type] type_var_instantiations_for_subset(Type* actual_types, Type* formal_types) {
     type_vars = seq_union((retrieve_type_vars(t, typedefs) : t <- formal_types));
+    return [] if type_vars == []; ## SEE IF THIS MAKES ANY PERFORMANCE DIFFERENCE
     conds = merge_value_sets([subset_conds(at, ft) : at, ft <~ zip(actual_types, formal_types)]);
     return [v -> union_superset(lookup(conds, v, [])) : v <- type_vars];
   }
@@ -70,7 +71,7 @@ implicit typedefs : [TypeName -> NeType] {
   // Here I just assume that the pattern can actually match objects of the specified type
   // If it cannot, the function is free to fail or return garbage.
   ## WOULD BE GOOD TO ADD AN ASSERTION THAT CHECKS THAT THE PATTERN CAN ACTUALLY MATCH THE TYPE
-  [EnvVar -> Type] generate_env(Pattern ptrn, Type type) =
+  [StdVar -> Type] generate_env(Pattern ptrn, Type type) =
     ptrn_symbol         = [],
     ptrn_float          = [],
     ptrn_empty_seq      = [],
@@ -89,25 +90,25 @@ implicit typedefs : [TypeName -> NeType] {
     ptrn_union(ps?)     = ptrn_union_gen_env(ps, type);
 
 
-  [EnvVar -> Type] ptrn_tuple_gen_env(Pattern+ ps, Type type) {
+  [StdVar -> Type] ptrn_tuple_gen_env(Pattern+ ps, Type type) {
     field_supertypes = tuple_field_supertypes(type, |ps|);
     return merge((generate_env(p, t) : p, t <- zip(ps, field_supertypes)));
   }
 
 
-  [EnvVar -> Type] ptrn_tag_obj_gen_env(TagPtrn tag_ptrn, Pattern obj_ptrn, Type type) =
+  [StdVar -> Type] ptrn_tag_obj_gen_env(TagPtrn tag_ptrn, Pattern obj_ptrn, Type type) =
     ptrn_symbol     = generate_env(obj_ptrn, untagged_objs_supertype(type)),
     ptrn_symbol(object(a?)) = generate_env(obj_ptrn, restricted_untagged_objs_supertype(type, a)),
     ptrn_var()      = [tag_ptrn.var -> tag_supertype(type)] & ptrn_tag_obj_gen_env(tag_ptrn.ptrn, obj_ptrn, type);
 
 
-  [EnvVar -> Type] ptrn_var_gen_env(EnvVar var, Pattern ptrn, Type type) {
+  [StdVar -> Type] ptrn_var_gen_env(StdVar var, Pattern ptrn, Type type) {
     assert type == empty_type or may_match(ptrn, type);
     return [var -> type_pattern_intersection_superset(type, ptrn)] & generate_env(ptrn, type);
   }
 
 
-  [EnvVar -> Type] ptrn_union_gen_env([+Pattern] ptrns, Type type) {
+  [StdVar -> Type] ptrn_union_gen_env([+Pattern] ptrns, Type type) {
     matching_ptrns = [p : p <- ptrns, may_match(p, type)];
     return [v -> union_superset(ts) : v, ts <- merge_values([generate_env(p, type) : p <- matching_ptrns])];
   }
@@ -147,7 +148,7 @@ implicit typedefs : [TypeName -> NeType] {
 
 
 AnyClsExpr rewrite_cls_expr(AnyClsExpr expr) =
-  fn_ptr(id?) = no_args_cls_expr(arity(expr), fn_call(id, (fn_arg(i) : i < arity(id)))),
+  fn_ptr(id?) = cls_expr(arity(expr), fn_call(id, (fn_arg(i) : i < arity(id)), ())),
   _           = expr;
 
 ////////////////////////////////////////////////////////////////////////////////

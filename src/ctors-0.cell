@@ -49,15 +49,15 @@ AmberSymb double_pipe         = :double_pipe;
 AmberSymb double_lower        = :double_lower;
 AmberSymb double_greater      = :double_greater;
 
-PlainToken lowercase_id(Atom s)       = :lowercase_id(s);
-PlainToken mixedcase_id(Atom s)       = :mixedcase_id(s);
-PlainToken uppercase_id(Atom s)       = :uppercase_id(s);
-PlainToken qualified_symbol(Atom s)   = :qualified_symbol(s);
-PlainToken operator(Operator op)      = :operator(op);
-PlainToken builtin(BuiltIn b)         = :builtin(b);
-PlainToken qual_var(Nat n)            = :qual_var(n);
-PlainToken pref_lowercase_id(Atom s)  = :pref_lowercase_id(s);
-PlainToken nanoseconds(NzNat n)       = :nanoseconds(n);
+PlainToken lowercase_id(Symbol s)       = :lowercase_id(s);
+PlainToken mixedcase_id(Symbol s)       = :mixedcase_id(s);
+PlainToken uppercase_id(Symbol s)       = :uppercase_id(s);
+PlainToken qualified_symbol(Symbol s)   = :qualified_symbol(s);
+PlainToken operator(Operator op)        = :operator(op);
+PlainToken builtin(BuiltIn b)           = :builtin(b);
+PlainToken qual_var(Nat n)              = :qual_var(n);
+PlainToken pref_lowercase_id(Symbol s)  = :pref_lowercase_id(s);
+PlainToken nanoseconds(NzNat n)         = :nanoseconds(n);
 
 AnnotatedToken annotated_token(PlainToken t, NzNat l, NzNat c, NzNat len, Nat i) =
   annotated_token(token: t, line: l, col: c, length: len, index: i);
@@ -75,7 +75,7 @@ TokenMatchingRule builtin           = :builtin;
 TokenMatchingRule qual_var          = :qual_var;
 TokenMatchingRule pref_lowercase_id = :pref_lowercase_id;
 TokenMatchingRule time_span         = :time_span;
-TokenMatchingRule keyword(Atom a)   = :keyword(a);
+TokenMatchingRule keyword(Symbol a) = :keyword(a);
 
 ParsingRule empty_rule                                                = :empty_rule;
 ParsingRule atomic_rule(TokenMatchingRule r)                          = :atomic_rule(r);
@@ -90,13 +90,13 @@ ParsingRule rep_rule(ParsingRule r, Bool ne)                          = rep_rule
 ParsingRule rep_rule(ParsingRule r, ParsingRule s, Bool ne, Bool ss)  = rep_rule(r, bit(ne), s, ss);
 ParsingRule rep_rule_nonempty(ParsingRule r)                          = rep_rule(r, true);
 ParsingRule rule_anon_choice(ParsingRule+ rs)                         = :rule_choice(((rule: r) : r <- rs));
-ParsingRule rule_choice((Atom, ParsingRule)+ rs)                      = :rule_choice(((name: n, rule: r) : n, r <- rs));
+ParsingRule rule_choice((Symbol, ParsingRule)+ rs)                    = :rule_choice(((name: n, rule: r) : n, r <- rs));
 ParsingRule rule_neg(ParsingRule r)                                   = :rule_neg(r);
 ParsingRule block_rule(ParType pt, ParsingRule r)                     = rule_seq((atomic_rule(left(pt)), r, atomic_rule(right(pt))));
-ParsingRule rule_ref(Atom a)                                          = :rule_ref(a); ## MAKE IT MORE SPECIFIC
+ParsingRule rule_ref(Symbol a)                                        = :rule_ref(a); ## MAKE IT MORE SPECIFIC
 
-RuleMatch null_match                              = :null_match;
-RuleMatch atomic_rule_match(AnnotatedToken t)     = :atomic_rule_match(t);
-RuleMatch rule_seq_match(RuleMatch+ rms)          = :rule_seq_match(rms);
-RuleMatch rep_rule_match(RuleMatch* rms)          = :rep_rule_match(rms);
-RuleMatch rule_choice_match(Atom n, RuleMatch m)  = rule_choice_match(name: n, match: m);
+RuleMatch null_match                                = :null_match;
+RuleMatch atomic_rule_match(AnnotatedToken t)       = :atomic_rule_match(t);
+RuleMatch rule_seq_match(RuleMatch+ rms)            = :rule_seq_match(rms);
+RuleMatch rep_rule_match(RuleMatch* rms)            = :rep_rule_match(rms);
+RuleMatch rule_choice_match(Symbol n, RuleMatch m)  = rule_choice_match(name: n, match: m);

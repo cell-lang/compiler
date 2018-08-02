@@ -2,7 +2,10 @@ ObjProcDef remove_dead_code(ObjProcDef pd) =
   obj_proc_def(
     name:           pd.name,
     args:           pd.args,
+    cls_args:       pd.cls_args,
     impl_args:      pd.impl_args,
+    ret_val_repr:   pd.ret_val_repr,
+    type:           pd.type,
     loc_auto_vars:  pd.loc_auto_vars,
     loc_db_vars:    pd.loc_db_vars,
     body:           nonempty(remove_dead_code(pd.body)),
@@ -29,7 +32,7 @@ ReactBlock remove_dead_code(ReactBlock block) =
     state_is_def_code:    block.state_is_def_code,
     copy_state_code:      remove_dead_code(block.copy_state_code),
     set_state_code:       remove_dead_code(block.set_state_code),
-    methods:              [ id -> compiled_method(m.args_types, m.args_memb_preds, m.ret_type, remove_dead_code(m.code))
+    methods:              [ id -> compiled_method(m.args_vars, m.args_types, m.args_memb_preds, m.ret_type, remove_dead_code(m.code))
                             : id, m <- block.methods
                           ],
     const_data:           block.const_data,
@@ -50,10 +53,10 @@ StaticBlock remove_dead_code(StaticBlock block) =
     cleanup_code:     remove_dead_code(block.cleanup_code),
     copy_state_code:  remove_dead_code(block.copy_state_code),
     set_state_code:   remove_dead_code(block.set_state_code),
-    methods:          [ id -> compiled_method(m.args_types, m.args_memb_preds, m.ret_type, remove_dead_code(m.code))
+    methods:          [ id -> compiled_method(m.args_vars, m.args_types, m.args_memb_preds, m.ret_type, remove_dead_code(m.code))
                         : id, m <- block.methods
                       ],
-    updates_code:     [id -> remove_dead_code(c) : id, c <- block.updates_code],
+    updates:          [id -> compiled_update(u.args_vars, remove_dead_code(u.body)) : id, u <- block.updates],
     msg_memb_pred:    block.msg_memb_pred,
     state_memb_pred:  block.state_memb_pred
   );
@@ -80,6 +83,7 @@ Instr* remove_dead_code(Instr instr) =
   switch_on_nat()     = remove_dead_nat_switch_code(instr.value, instr.cases),
   symb_switch()       = remove_dead_symb_switch_code(instr.value, instr.cases, instr.else),
   repeat(is?)         = remove_dead_loop_code(is),
+  foreach()           = remove_dead_foreach_code(instr),
   execute_block(is?)  = remove_dead_block_code(is),
   try_block()         = remove_dead_try_block_code(instr.var, instr.body),
   _                   = (instr);
@@ -112,6 +116,22 @@ Instr* remove_dead_loop_code(Instr+ body) {
 }
 
 
+Instr* remove_dead_foreach_code(ForeachInstr instr) {
+  opt_body = remove_dead_code(instr.body);
+  return (
+    foreach(
+      seq:        instr.seq,
+      src_array:  instr.src_array,
+      tmp_buffer: instr.tmp_buffer if instr.tmp_buffer?,
+      count_var:  instr.count_var,
+      idx_var:    instr.idx_var,
+      it_var:     instr.it_var,
+      body:       opt_body
+    ) if opt_body != ()
+  );
+}
+
+
 Instr* remove_dead_block_code(Instr+ body) {
   opt_body = remove_dead_code(body);
   opt_body = remove_useless_exit_blocks(opt_body);
@@ -120,7 +140,7 @@ Instr* remove_dead_block_code(Instr+ body) {
 
   Instr* remove_useless_exit_blocks(Instr* body) =
     if body != ()
-      then subseq(body, 0, :blank, 1) & remove_useless_exit_blocks(rev_at(body, 0))
+      then subseq(body, 0, :blank, 1) & remove_useless_exit_blocks(rat(body, 0))
       else ();
 
   Instr* remove_useless_exit_blocks(Instr instr) =

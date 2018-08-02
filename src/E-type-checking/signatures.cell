@@ -47,7 +47,7 @@ type SgnSet = sgn_set(
                 sgns:           [+FnType],
                 agg_sgns:       [FnType],
                 ret_type:       Maybe[Type],
-                disp_arg_idxs:  Maybe[Nat+],
+                disp_args_idxs: Maybe[Nat+],
                 refines_env:    Bool
               );
 
@@ -70,7 +70,7 @@ implicit typedefs : [TypeName -> NeType] {
       sgns:           signatures,
       agg_sgns:       agg_sgns,
       ret_type:       maybe_ret_type,
-      disp_arg_idxs:  disp_arg_idxs,
+      disp_args_idxs: disp_arg_idxs,
       refines_env:    refines_env
     );
 
@@ -105,10 +105,10 @@ implicit typedefs : [TypeName -> NeType] {
   [+FnType] aggregate_signatures([+FnType] signatures) {
     a_sgn = an_elem(signatures);
     sgns = signatures;
-    for i < arity(a_sgn):
+    for i < |a_sgn.args|:
       sgns = merge_comp_sgns(sgns, i);
     ;
-    for i < arity(a_sgn):
+    for i < |a_sgn.args|:
       sgns = [extend_sgn(s, sgns, i) : s <- sgns];
     ;
     return sgns;
@@ -119,7 +119,7 @@ implicit typedefs : [TypeName -> NeType] {
       fail if ext_sgns == [];
       return only(ext_sgns) if |ext_sgns| == 1;
 
-      merged_arg_type = ne_union_type([cast_type(s.args(arg_idx)) : s <- ext_sgns]);
+      merged_arg_type = ne_union_type([s.args(arg_idx) : s <- ext_sgns]);
       if (s <- ext_sgns : not is_subset(s.ret_type, signature.ret_type)):
         merged_ret_type = type_any;
       else
@@ -128,33 +128,27 @@ implicit typedefs : [TypeName -> NeType] {
 
       args = (if i == arg_idx then merged_arg_type else t : t @ i <- signature.args);
       constrs = merge_value_sets_nonempty([s.constrs : s <- ext_sgns]);
-      return fn_type(args, signature.impl_args, merged_ret_type, constrs);
+      return fn_type(args, signature.cls_args, signature.impl_args, merged_ret_type, constrs);
     }
+
 
     Bool other_args_are_supersets(FnType sgn1, FnType sgn2, Nat arg_idx) {
       for t1, t2 @ i <- zip(sgn1.args, sgn2.args):
-        return false if i!= arg_idx and not is_subset_ex(t1, t2);
+        return false if i != arg_idx and not is_subset(t1, t2);
+      ;
+      for t1, t2 @ i <- zip(sgn1.cls_args, sgn2.cls_args):
+        return false if not is_fn_subtype(t1.in_types, t1.out_type, t2.in_types, t2.out_type);
       ;
       nargs = keys(sgn1.impl_args);
       return false if nargs != keys(sgn2.impl_args);
       for a <- rand_sort(nargs):
         t1 = sgn1.impl_args[a];
         t2 = sgn2.impl_args[a];
-        return false if not is_subset_ex(t1, t2);
+        return false if not is_subset(t1, t2);
       ;
       return true;
     }
 
-    Bool is_subset_ex(AnyType t1, AnyType t2) {
-      if is_type(t1) and is_type(t2):
-        return is_subset(t1, t2);
-      elif is_cls_type(t1) and is_cls_type(t2):
-        return is_fn_subtype(t1.in_types, t1.out_type, t2.in_types, t2.out_type);
-      else
-        assert false;
-        return false;
-      ;
-    }
 
     [+FnType] merge_comp_sgns([+FnType] signatures, Nat par_idx) {
       new_sgns = [];
@@ -169,35 +163,33 @@ implicit typedefs : [TypeName -> NeType] {
       return nonempty(new_sgns);
     }
 
+
     FnType merge_all_sgns([+FnType] signatures, Nat par_idx) {
       ## BUG BUG BUG: THERE'S PROBABLY A BUG WITH CLOSURE PARAMETERS HERE. INVESTIGATE
-      merged_par_type = ne_union_type([cast_type(s.args(par_idx)) : s <- signatures]);
+      merged_par_type = ne_union_type([s.args(par_idx) : s <- signatures]);
       merged_ret_type = ne_union_superset([s.ret_type : s <- signatures]);
       a_sgn = an_elem(signatures);
       args = (if i == par_idx then merged_par_type else p : p @ i <- an_elem(signatures).args);
       constrs = merge_value_sets_nonempty([s.constrs : s <- signatures]);
-      return fn_type(args, a_sgn.impl_args, merged_ret_type, constrs);
+      return fn_type(args, a_sgn.cls_args, a_sgn.impl_args, merged_ret_type, constrs);
     }
+
 
     Bool other_params_are_eq(FnType sgn1, FnType sgn2, Nat par_idx) {
       for p1, p2 @ i <- zip(sgn1.args, sgn2.args):
-        return false if i != par_idx and not types_or_cls_types_are_eq(p1, p2);
+        return false if i != par_idx and not is_eq(p1, p2);
+      ;
+      for p1, p2 @ i <- zip(sgn1.cls_args, sgn2.cls_args):
+        return false if not is_eq(p1, p2);
       ;
       nargs = keys(sgn1.impl_args);
       return false if nargs != keys(sgn2.impl_args);
       for a <- rand_sort(nargs):
         t1 = sgn1.impl_args[a];
         t2 = sgn2.impl_args[a];
-        return false if not types_or_cls_types_are_eq(t1, t2);
+        return false if not is_eq(t1, t2);
       ;
       return true;
     }
-
-
-    Bool types_or_cls_types_are_eq(Type    t1, Type    t2)  = is_eq(t1, t2);
-    Bool types_or_cls_types_are_eq(ClsType t1, ClsType t2)  = is_eq(t1, t2);
-
-    Bool types_or_cls_types_are_eq(Type,    ClsType)  = undefined;
-    Bool types_or_cls_types_are_eq(ClsType, Type)     = undefined;
   }
 }

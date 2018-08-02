@@ -1,4 +1,4 @@
-implicit program : Program, automaton : Automaton, options : CompilationOptions {
+implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automaton, options : CompOptions {
   ReactBlock gen_auto_code {
     nodes = gen_auto_nodes;
 
@@ -108,11 +108,13 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions 
       sorted_methods = rand_sort(methods);
       comp_methods = merge(([method_id(m.name, arity, i) -> compiled(m)] : m @ i <- sorted_methods));
 
-      disp_method_args_types = (ne_union_superset([left(m.args(i)) : m <- methods]) : i < arity);
-      disp_method_args_memb_preds = [(memb_test_preds_map[t] : t, unused_var <- m.args) : m <- methods];
-      disp_method_ret_type = ne_union_superset([m.ret_type : m <- methods]);
-      disp_method_code = gen_dispatch_auto_method_body(automaton.name, sorted_methods, program.typedefs);
-      disp_method = compiled_method(disp_method_args_types, disp_method_args_memb_preds, disp_method_ret_type, disp_method_code);
+      disp_method = compiled_method(
+        (nothing : i < arity),
+        (ne_union_superset([left(m.args(i)) : m <- methods]) : i < arity),
+        [(memb_test_preds_map[t] : t, unused_var <- m.args) : m <- methods],
+        ne_union_superset([m.ret_type : m <- methods]),
+        gen_dispatch_auto_method_body(automaton.name, sorted_methods)
+      );
 
       return comp_methods & [method_id(name, arity) -> disp_method];
     }
@@ -120,6 +122,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions 
 
     CompiledMethod compiled(Method method) =
       compiled_method(
+        (v : unused_var, v <- method.args),
         (t : t, unused_var <- method.args),
         [(memb_test_preds_map[t] : t, unused_var <- method.args)],
         method.ret_type,
@@ -128,14 +131,11 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions 
 
 
     Instr* gen_code(Method method) {
-      res_var, var_gen = next_obj_var(blank_var_gen);
-      args_code = (set_var(value(v), fn_arg(i)) : unused_var, v @ i <- method.args, v != nothing);
-      let context = automaton, var_subst_map = [], cls_var_subst_map = [], next_var_gen = var_gen:
-        body_code = gen_eval_code(method.expr, res_var);
+      args_env = [if a != nothing then value(a) else fn_arg(i) -> t : t, a @ i <~ method.args];
+      let context = automaton, var_subst_map = [], cls_var_subst_map = [], typed_vars = [], surrogates = []:
+        eval_code, surr, unused_var = opt_eval_code(method.expr, args_env & react_auto_env, blank_var_gen);
       ;
-      // entry_code = [push_call_info(fndef.name, fn_arg(i)) : p @ i <- fndef.params])];
-      // exit_code = [pop_call_info];
-      return (args_code & body_code | ret_val(res_var));
+      return (eval_code | ret_val(surr));
     }
   }
 
@@ -401,59 +401,41 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions 
     dep_map = [a -> [cast_signal_var(v) : v <- extern_vars(p.value)] : a, p <- automaton.params];
     assert not (s, ts <- dep_map, t <- ts : not in(t, param_ids));
     sorted_params = topological_sort(dep_map);
-    let next_var_gen = blank_var_gen:
-      params_init_code = (
-        (gen_safe_eval_code(automaton.params[p].value, p) : p <- rand_sort(ps))
-        : ps <- sorted_params
-      );
-    ;
+    params_init_code = (
+      (safe_eval_code(automaton.params[p].value, p, blank_var_gen) : p <- rand_sort(ps))
+      : ps <- sorted_params
+    );
     return join((join(cfs) : cfs <- params_init_code));
   }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
-Instr* gen_dispatch_auto_method_body(AutoSymbol auto_type, Method+ methods, [TypeName -> Type] typedefs) {
-  assert |methods| > 1;                     // There must be more than one method
-  assert |[m.name : m <~ methods]| == 1;    // All methods must have the same name
-  assert |[|m.args| : m <~ methods]| == 1;  // All methods have the same arity
-  assert |head(methods).args| > 0;          // No-argument methods cannot be polymorphic
+implicit typedefs : [TypeName -> NeType] {
+  Instr* gen_dispatch_auto_method_body(AutoSymbol auto_type, Method+ methods) {
+    assert |methods| > 1;                     // There must be more than one method
+    assert |[m.name : m <~ methods]| == 1;    // All methods must have the same name
+    assert |[|m.args| : m <~ methods]| == 1;  // All methods have the same arity
+    assert |head(methods).args| > 0;          // No-argument methods cannot be polymorphic
 
-  l0 = lvar(0);
+    l0 = lvar(0);
 
-  count = |methods|;
+    count = |methods|;
 
-  a_method  = head(methods);
-  name      = a_method.name;
-  arity     = |a_method.args|;
+    a_method  = head(methods);
+    name      = a_method.name;
+    arity     = |a_method.args|;
 
-  disp_args = choose_disp_args(((t : t, unused_var <- nonempty(m.args)) : m <- methods), typedefs);
+    disp_args = choose_disp_args(((t : t, unused_var <- nonempty(m.args)) : m <- methods), typedefs);
 
-  cases = join(({
-    if i < count-1:
-      ptrns = ();
-      for j <- disp_args:
-        pt = pseudotype(left(m.args(j)), typedefs);
-        // return () if pt == :pseudotype([]); ## THIS SHOULD ACTUALLY WORK
-        return () if not pt :: NePseudoType;
-        ptrns = (ptrns | pseudotype_pattern(pt));
-      ;
-    else
-      ptrns = (ptrn_any : unused_var <- disp_args);
-    ;
-    code = (
-      invoke_auto_method(
-        l0,
-        auto_type,
-        method_id(name, arity, i),
-        (fn_arg(j) : j < arity)
-      ),
-      exit_block
-    );
-    return ((ptrns: nonempty(ptrns), code: code));
-  } : m @ i <- methods));
-  return (terminate) if cases == ();
+    cases = [{
+      types = (left(m.args(j)) : j <- disp_args);
+      invoke_method_instr = invoke_auto_method(l0, auto_type, method_id(name, arity, i), (fn_arg(j) : j < arity));
+      code = (invoke_method_instr, ret_val(l0));
+      return (types, code);
+    } : m @ i <~ methods];
 
-  code = gen_switch_code((fn_arg(i) : i <- disp_args), cases, next_var_gen = blank_var_gen);
-  return (code | ret_val(l0));
+    code = dynamic_dispatch_code((fn_arg(i) : i <- disp_args), cases);
+    return (code | ret_val(l0));
+  }
 }

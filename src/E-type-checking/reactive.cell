@@ -1,10 +1,10 @@
 implicit program : Program, typedefs : [TypeName -> NeType] {
   [<Automaton, Method> -> [+TypeCheckingError]] typecheck_automaton(Automaton auto) =
-    typecheck_automaton(context=auto, var_aliases=[], typed_vars=[]);
+    typecheck_automaton(context=auto, typed_vars=[]);
 }
 
 
-implicit program : Program, typedefs : [TypeName -> NeType], context : Automaton, var_aliases : [], typed_vars : [] {
+implicit program : Program, typedefs : [TypeName -> NeType], context : Automaton, typed_vars : [] {
   [<Automaton, Method> -> [+TypeCheckingError]] typecheck_automaton {
     // Typechecking and inferring type of constants
     consts = context.params;
@@ -137,9 +137,66 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Automaton
 
 
   [TypeCheckingError] typecheck_auto_method(Method method, [EnvVar -> Type] env) {
-    aliases = [[fn_arg(i), value(v)] : unused_var, v @ i <~ method.args, v != nothing];
     env_delta = merge([[fn_arg(i) -> t, value(v) -> t if v != nothing] : t, v @ i <~ method.args]);
-    return typecheck(method.expr, method.ret_type, env & env_delta, var_aliases = aliases);
+    return typecheck(method.expr, method.ret_type, env & env_delta);
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automaton {
+  [SignalVar -> Type] react_auto_env {
+    let context = automaton, typed_vars = []:
+      // Inferring type of constants
+      consts = context.params;
+      consts_vars = [id -> type_dependencies(info.value) : id, info <- consts];
+      expl_consts_types = [id -> info.type : id, info <- consts, info.type?];
+
+      consts_ids = keys(consts);
+      curr_env = expl_consts_types;
+      while consts_ids != []:
+        ready_consts = [c : c <- consts_ids, not (v <- consts_vars[c] : not curr_env(v, *))];
+        env_delta = [c -> expr_type(consts[c].value, curr_env) : c <- ready_consts, not curr_env(c, *)];
+        curr_env = curr_env & env_delta;
+        consts_ids = consts_ids - ready_consts;
+      ;
+
+      // All explicitly declared types, except for outputs
+      inputs_types      = [id -> info.type : id, info <- context.inputs];
+      state_vars_types  = [id -> info.type : id, info <- context.state];
+      time_rules_types  = [id -> type_bool : id, unused_var <- context.time_rules];
+
+      expl_types = inputs_types & state_vars_types & time_rules_types;
+
+      // Typechecking and inferring types of rules
+      rules = context.rules;
+      rules_vars = [id -> type_dependencies(expr) : id, expr <- rules];
+
+      rule_ids = keys(rules);
+      curr_env = curr_env & expl_types;
+      while rule_ids != []:
+        ready_rules = [r : r <- rule_ids, not (v <- rules_vars[r] : not curr_env(v, *))];
+        env_delta = [r -> expr_type(rules[r], curr_env) : r <- ready_rules];
+        assert disjoint(keys(curr_env), keys(env_delta));
+        curr_env = curr_env & env_delta;
+        rule_ids = rule_ids - ready_rules;
+      ;
+
+      // Typechecking and inferring types of discrete rules
+      discrete_rules = context.discrete_rules;
+      discrete_rules_vars = [id -> union([type_dependencies(r) : r <- rs]) : id, rs <- discrete_rules];
+
+      discrete_rules_ids = keys(discrete_rules);
+      while discrete_rules_ids != []:
+        ready_rules = [r : r <- discrete_rules_ids, not (v <- discrete_rules_vars[r] : not curr_env(v, *))];
+        env_delta = [id -> union_superset([expr_type(r.value, curr_env) : r <- discrete_rules[id]]) : id <- ready_rules];
+        assert disjoint(keys(curr_env), keys(env_delta));
+        curr_env = curr_env & env_delta;
+        discrete_rules_ids = discrete_rules_ids - ready_rules;
+      ;
+    ;
+    return curr_env;
   }
 }
 

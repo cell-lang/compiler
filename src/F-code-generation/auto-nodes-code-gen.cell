@@ -1,4 +1,4 @@
-implicit program : Program, automaton : Automaton, options : CompilationOptions {
+implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automaton, options : CompOptions {
   Instr+ gen_node_update_code(AutoInputNode node) {
     id = get_inner_id(node.id);
 
@@ -27,7 +27,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions 
 
     var = signal_var(id);
     nv_var, var_gen = next_obj_var(blank_var_gen);
-    eval_code = gen_safe_eval_code(node.expr, nv_var, next_var_gen = var_gen);
+    eval_code = safe_eval_code(node.expr, nv_var, var_gen);
     eval_code = (try_block(nv_var, eval_code)) if not is_total(node.expr);
     cond = neg(is_eq(var, nv_var));
     body = (set_var(var, nv_var)) &
@@ -42,10 +42,8 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions 
 
     var = signal_var(id);
     nv_var, var_gen = next_obj_var(blank_var_gen);
-    let next_var_gen = var_gen:
-      cases = nonempty((gen_safe_eval_code(e, nv_var) : e <- node.exprs) & ((clear_loc_var(nv_var))));
-      eval_instr = switch_on_nat(update_source_var(id), cases);
-    ;
+    cases = nonempty((safe_eval_code(e, nv_var, var_gen) : e <- node.exprs) & ((clear_loc_var(nv_var))));
+    eval_instr = switch_on_nat(update_source_var(id), cases);
     eval_instr = try_block(nv_var, (eval_instr)) if (e <~ node.exprs : not is_total(e));
     cond = neg(is_eq(var, nv_var));
     body = (set_var(var, nv_var)) &
@@ -63,10 +61,8 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions 
 
     var = signal_var(id);
     nv_var, var_gen = next_obj_var(blank_var_gen);
-    let next_var_gen = var_gen:
-      cases = nonempty((gen_safe_eval_code(e, nv_var) : e <- node.exprs) & ((clear_loc_var(nv_var))));
-      eval_instr = switch_on_nat(update_source_var(id), cases);
-    ;
+    cases = nonempty((safe_eval_code(e, nv_var, var_gen) : e <- node.exprs) & ((clear_loc_var(nv_var))));
+    eval_instr = switch_on_nat(update_source_var(id), cases);
     eval_instr = try_block(nv_var, (eval_instr)) if (e <~ node.exprs : not is_total(e));
     lock_check_instr = if |node.exprs| > 1
       then do_if_not(is_eq(null_locks_count_var(id), 0), set_ivar(update_source_var(id), |node.exprs|))
@@ -90,13 +86,13 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions 
 
     // Evaluating the condition and storing the result in l0
     l0, var_gen = next_obj_var(blank_var_gen);
-    cond_eval_code = gen_safe_eval_code(node.cond, l0, next_var_gen = var_gen);
+    cond_eval_code = safe_eval_code(node.cond, l0, var_gen);
     cond_eval_code = (try_block(l0, cond_eval_code)) if not is_total(node.cond);
 
     // Base case, the condition stays defined. b1 holds the value of the condition, b0 whether it has changed
     // If the condition has changed, we queue the updates for the appropriate branch
     cond_stays_def_branch = (
-      set_bvar(b1, inline_is_eq(l0, obj_true)),
+      set_bvar(b1, bool_value(l0)),
       set_bvar(b0, neg(is_eq(id_var, b1))),
       set_bvar(id_var, b1),
       do_if(
@@ -117,7 +113,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions 
       branch(
         cond_is_def_var,
         cond_stays_def_branch,
-        ( set_bvar(id_var, inline_is_eq(l0, obj_true)),
+        ( set_bvar(id_var, bool_value(l0)),
           set_bvar(cond_is_def_var, true)
         )
       )
@@ -144,7 +140,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions 
 
     // Evaluating the condition and storing the result in l0
     l0, var_gen = next_obj_var(blank_var_gen);
-    cond_eval_code = gen_safe_eval_code(node.cond, l0, next_var_gen = var_gen);
+    cond_eval_code = safe_eval_code(node.cond, l0, var_gen);
     cond_eval_code = (try_block(l0, cond_eval_code)) if not is_total(node.cond);
 
     continuous_signals = rand_sort([v : v, unused_var <- node.signals_state, not is_discrete(v)]);
@@ -200,7 +196,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions 
 
         // The condition is defined, we run the normal actions
         ( branch_or_no_op(
-            inline_is_eq(l0, obj_true),
+            bool_value(l0),
             join(rand_sort([gen_update_code(a) : a <- node.actions])),
             ()
           )
@@ -398,7 +394,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions 
       );
     ;
 
-    cond_eval_code = gen_safe_eval_code(node.cond, l0, next_var_gen = var_gen);
+    cond_eval_code = safe_eval_code(node.cond, l0, var_gen);
     cond_eval_code = (try_block(l0, cond_eval_code)) if not is_total(node.cond);
 
     // Final node code
@@ -545,7 +541,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions 
     node_id = node.id;
     auto_var = nested_auto_var(node_id.auto);
 
-    eval_code = gen_safe_eval_code(node.value, nv_var, next_var_gen = var_gen);
+    eval_code = safe_eval_code(node.value, nv_var, var_gen);
     eval_code = (try_block(nv_var, eval_code)) if not is_total(node.value);
 
     set_var_code = (
@@ -605,15 +601,10 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions 
     db_var = nested_db_var(inner_id);
     db_type = automaton.nested_dbs[db_var].type;
 
-    if is_total(node.message):
-      msg_eval_info = gen_safe_eval_info(node.message, next_var_gen = blank_var_gen);
-      eval_code = msg_eval_info.eval_code;
-      atomic_msg_expr = msg_eval_info.expr;
-    else
-      nv_var, var_gen = next_obj_var(blank_var_gen);
-      eval_code = (try_block(nv_var, gen_safe_eval_code(node.message, nv_var, next_var_gen = var_gen)));
-      atomic_msg_expr = nv_var;
-    ;
+    nv_var, var_gen = next_obj_var(blank_var_gen);
+    eval_code = safe_eval_code(node.message, nv_var, var_gen);
+    eval_code = (try_block(nv_var, eval_code)) if not is_total(node.message);
+    atomic_msg_expr = nv_var;
 
     msg_send_instr = send_msg(db_var, db_type, atomic_msg_expr, true);
 

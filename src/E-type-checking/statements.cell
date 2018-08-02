@@ -1,4 +1,4 @@
-implicit program : Program, typedefs : [TypeName -> NeType], context : Context, var_aliases : [[LocVar2]], typed_vars : [StdVar -> NeType] {
+implicit program : Program, typedefs : [TypeName -> NeType], context : Context, typed_vars : [StdVar -> NeType] {
 
   [TypeCheckingError] typecheck(Statement* stmts, Type exp_type, [EnvVar -> Type] env) {
     curr_env = env;
@@ -30,7 +30,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
                             },
       let_stmt()          = typecheck_let_stmt(stmt.asgnms, stmt.body, exp_type, env),
       break_stmt          = [],
-      fail_stmt           = [],
+      fail_stmt()         = [],
       assert_stmt()       = typecheck(stmt.cond, type_bool, env),
       print_stmt(e?)      = typecheck(e, type_any, env),
       seq_update_stmt()   = typecheck_seq_update_stmt(stmt.seq_var, stmt.idx, stmt.value, env),
@@ -84,14 +84,16 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   [TypeCheckingError] typecheck_loop_stmt(Statement+ body, Type exp_type, [EnvVar -> Type] env) {
     out_of_loop_vars = keys(env);
     entry_env = env;
+    envs = (env);
     for 2:
       errs = typecheck(body, exp_type, entry_env);
       return errs if errs != [];
       exit_env = select_by_key(update_env(body, entry_env), out_of_loop_vars);
       return [] if not (v, t <- exit_env : not is_subset(t, entry_env[v]));
       entry_env = exit_env;
+      envs = (envs | exit_env);
     ;
-    return [loop_did_not_converge(2)];
+    return [loop_did_not_converge(2, bad_vars_history(envs))];
   }
 
 
@@ -114,15 +116,17 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     out_of_loop_vars = keys(env);
 
     entry_env = env & loop_vars;
+    envs = (env);
     for 2:
       errs = typecheck(body, exp_type, entry_env);
       return errs if errs != [];
       exit_env = select_by_key(update_env(body, entry_env), out_of_loop_vars);
       return [] if not (v, t <- exit_env : not is_subset(t, entry_env[v]));
       entry_env = exit_env & loop_vars;
+      envs = (envs | exit_env);
     ;
 
-    return [loop_did_not_converge(2)];
+    return [loop_did_not_converge(2, bad_vars_history(envs))];
   }
 
 
@@ -142,14 +146,17 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     out_of_loop_vars = keys(env);
 
     entry_env = env & loop_vars;
+    envs = (env);
     for 2:
       errs = typecheck(body, exp_type, entry_env);
       return errs if errs != [];
       exit_env = select_by_key(update_env(body, entry_env), out_of_loop_vars);
       return [] if not (v, t <- exit_env : not is_subset(t, entry_env[v]));
       entry_env = exit_env & loop_vars;
+      envs = (envs | exit_env);
     ;
-    return [loop_did_not_converge(2)];
+
+    return [loop_did_not_converge(2, bad_vars_history(envs))];
   }
 
 
@@ -251,5 +258,18 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   [TypeCheckingError] typecheck_restore_state_ctrl_stmt(StdVar res_var, <LocAutoVar, LocDBVar> auto_var, Expr state, [EnvVar -> Type] env) {
     auto = automaton_by_id(var_type(auto_var));
     return typecheck(state, state_type_workaround(auto), env);
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+implicit typedefs : [TypeName -> NeType] {
+  [+EnvVar -> Type+] bad_vars_history([EnvVar -> Type]+ envs) {
+    fail if |envs| != 3;
+    env0, env1, env2 = envs;
+    vars = only([keys(e) : e <~ envs]);
+    res = [v -> (e(v, !!) : e <- envs) : v <- vars, not is_subset(env2(v, !!), env1(v, !!))];
+    return nonempty_map(res);
   }
 }

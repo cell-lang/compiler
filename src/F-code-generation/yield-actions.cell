@@ -1,0 +1,329 @@
+type YieldValueAction   = yield_value_action(var: AnyLocVar, expr: Expr, instrs: Instr+);
+
+type SetYieldAction     = set_yield_action(var: StdVar, src_set: Expr, next: YieldAction);
+type RelYieldAction     = rel_yield_action(
+                            vars: StdVar+, src_rel: Expr, args: Maybe[Expr]+, next: YieldAction
+                          );
+
+type RelvarYieldAction  = relvar_yield_action(
+                            vars: StdVar+, relvar: AnyRelVar, args: Maybe[Expr]+, next: YieldAction
+                          );
+
+type SeqYieldAction     = seq_yield_action(
+                            vars: Maybe[StdVar]+, idx_var: Maybe[StdVar], src_seq: Expr, next: YieldAction
+                          );
+
+type MatchYieldAction   = match_yield_action(ptrn: Pattern, expr: Expr, next: YieldAction);
+type LetYieldAction     = let_yield_action(var: StdVar, expr: Expr, next: YieldAction);
+type CondYieldAction    = cond_yield_action(cond: Expr, next: YieldAction);
+
+type YieldActions       = yield_actions(YieldAction+);
+
+type YieldAction        = YieldValueAction, SetYieldAction, RelYieldAction, RelvarYieldAction, SeqYieldAction,
+                          MatchYieldAction, LetYieldAction, CondYieldAction, YieldActions;
+
+////////////////////////////////////////////////////////////////////////////////
+
+YieldValueAction yield_value_action(AnyLocVar v, Expr e, Instr+ is) =
+  yield_value_action(var: v, expr: e, instrs: is);
+
+YieldAction yield_actions(YieldAction+ actions) =
+  if |actions| != 1 then :yield_actions(actions) else only(actions);
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+YieldAction yield_action(Clause cls, YieldAction next) =
+  set_clause()      = set_yield_action(var: cls.var, src_set: cls.src, next: next),
+  rel_clause()      = rel_yield_action(vars: cls.vars, src_rel: cls.src, args: cls.args, next: next),
+  relvar_clause()   = relvar_yield_action(vars: cls.vars, relvar: cls.rel_var, args: cls.args, next: next),
+  seq_clause()      = seq_yield_action(vars: cls.vars, idx_var: cls.idx_var, src_seq: cls.src, next: next),
+  and_clause()      = yield_action(cls.left, yield_action(cls.right, next)),
+  or_clause()       = yield_actions((yield_action(cls.left, next), yield_action(cls.right, next))),
+  match_clause()    = match_yield_action(ptrn: cls.ptrn, expr: cls.expr, next: next),
+  asgnm_clause()    = let_yield_action(var: cls.var, expr: cls.expr, next: next),
+  filter_clause(e?) = cond_yield_action(cond: e, next: next);
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+implicit program           : Program,
+         typedefs          : [TypeName -> NeType],
+         context           : Context,
+         var_subst_map     : [StdVar -> CaptVar],
+         cls_var_subst_map : [ClsVar -> CaptClsVar],
+         cluster           : Expr+,
+         types             : Type+,
+         environments      : [EnvVar -> Type]+,
+         surrogates        : [SurrExpr -> ObjExpr],
+         expr_id           : Nat,
+         options           : CompOptions {
+
+  Instr* yield_action_opt_code(YieldAction action, VarGen var_gen) =
+    yield_value_action()    = yield_value_action_opt_code(action, var_gen),
+    set_yield_action()      = set_yield_action_opt_code(action, var_gen),
+    rel_yield_action()      = rel_yield_action_opt_code(action, var_gen),
+    relvar_yield_action()   = relvar_yield_action_opt_code(action, var_gen),
+    seq_yield_action()      = seq_yield_action_opt_code(action, var_gen),
+    match_yield_action()    = match_yield_action_opt_code(action, var_gen),
+    let_yield_action()      = let_yield_action_opt_code(action, var_gen),
+    cond_yield_action()     = cond_yield_action_opt_code(action, var_gen),
+    yield_actions(as?)      = join((yield_action_opt_code(a, var_gen) : a <- as));
+
+
+  // relvar_yield_action(vars: StdVar+, relvar: AnyRelVar, args: Maybe[Expr]+, next: YieldAction)
+  Instr* relvar_yield_action_opt_code(RelvarYieldAction action, VarGen init_var_gen) {
+    args_perm = relvar_cols_perm(action.relvar);
+    table_args = (action.args(i) : i <- args_perm);
+
+    ## INVALID ARGS SHOULD BE NULL...
+    vars = action.vars;
+    arg_to_var_before_perm = (i-1 : i <- partial_sums((bit(a == nothing) : a <- action.args)));
+    var_to_arg_after_perm = (i : a @ i <- table_args, a == nothing);
+    vars_perm = (arg_to_var_before_perm(args_perm(var_to_arg_after_perm(i))) : unused_var @ i <- action.vars); ## UGLY UGLY UGLY
+    perm_vars = (action.vars(vars_perm(i)) : unused_var @ i <- vars); ## UGLY UGLY UGLY
+
+    assert {
+      if all((a == nothing : a <- action.args)):
+        return false if |action.vars| != |action.args|;
+        return perm_vars == (action.vars(i) : i <- args_perm);
+      else
+        ## ADD SOME CHECK HERE TOO...
+        return true;
+      ;
+    };
+
+    filtered_idxs = idxs_into_filtered_seq((a != nothing : a <- table_args));
+    unfiltered_idxs = (i : a @ i <- table_args, a != nothing);
+    blank_idxs = (i : a @ i <- table_args, a == nothing);
+    set_args = values(table_args);
+
+    args_eval_code, args_aliases, var_gen = opt_eval_info(set_args, init_var_gen);
+
+    surr_vars, var_gen = next_int_vars(var_gen, |set_args|);
+    it_var, var_gen = next_table_it_var(var_gen, |table_args|);
+
+    surr_args = (apply(mi, surr_vars($)) : mi <- filtered_idxs);
+
+    action_code = yield_action_opt_code(action.next, var_gen);
+
+    if surr_args :: Just[IntVar]+:
+      plain_surr_args = (value(a) : a <- surr_args);
+      vars_setup_code = (lookup_surrogate(v, table_col_store_id(action.relvar, i), plain_surr_args(i)) : v @ i <- perm_vars);
+      code = (do_if(table_contains(action.relvar, plain_surr_args), vars_setup_code & action_code));
+    else
+      lookup_exprs = (
+        lookup_surrogate(table_col_store_id(action.relvar, i), get_tuple_field(it_var, i))
+        : i <- blank_idxs
+      );
+      vars_setup_code = (set_var(v, lookup_exprs(i)) : v @ i <- perm_vars);
+      loop_code = (break_if(is_out_of_range(it_var))) & vars_setup_code & action_code & (move_forward(it_var));
+      code = (
+        get_table_iter(it_var, action.relvar, nonempty(surr_args)),
+        repeat(nonempty(loop_code))
+      );
+    ;
+
+    for e @ i <- reverse(args_aliases):
+      store_id = table_col_store_id(action.relvar, rat(unfiltered_idxs, i));
+      surr_var = rat(surr_vars, i);
+      code = (
+        set_ivar(surr_var, lookup_value(store_id, e)),
+        do_if_not(is_eq(surr_var, -1), code)
+      );
+    ;
+
+    return args_eval_code & code;
+  }
+
+
+  // rel_yield_action(vars: StdVar+, src_rel: Expr, args: Maybe[Expr]+, next: YieldAction)
+  Instr* rel_yield_action_opt_code(RelYieldAction action, VarGen init_var_gen) {
+    args_surrs : Maybe[ObjExpr]*;
+
+    code, src_surr, var_gen = opt_eval_info(action.src_rel, init_var_gen);
+    if |action.args| == 2:
+      it_var, var_gen = next_bin_rel_it_var(var_gen);
+    else
+      assert |action.args| == 3;
+      it_var, var_gen = next_tern_rel_it_var(var_gen);
+    ;
+
+    args_surrs = ();
+    for a <- action.args:
+      if a != nothing:
+        arg_code, arg_surr, var_gen = opt_eval_info(value(a), var_gen);
+        code = code & arg_code;
+        args_surrs = (args_surrs | just(arg_surr));
+      else
+        args_surrs = (args_surrs | nothing);
+      ;
+    ;
+    code = (code | get_any_rel_iter(it_var, src_surr, args_surrs));
+
+    body = (break_if(is_out_of_range(it_var)));
+
+    vars_idxs = (i : a @ i <- action.args, a == nothing);
+    body = body & (get_curr_arg(v, it_var, vars_idxs(i)) : v @ i <- action.vars);
+
+    body = body & yield_action_opt_code(action.next, var_gen);
+    body = (body | move_forward(it_var));
+
+    return (code | repeat(body));
+  }
+
+
+  // yield_value_action(var: LocVar, expr: Expr, instrs: Instr+)
+  Instr* yield_value_action_opt_code(YieldValueAction action, VarGen var_gen) {
+    code, surr, unused_var = opt_eval_info(action.expr, var_gen);
+    code = store_result(code, surr, action.var);
+    return code & action.instrs;
+  }
+
+
+  // set_yield_action(var: StdVar, src_set: Expr, next: YieldAction)
+  Instr* set_yield_action_opt_code(SetYieldAction action, VarGen init_var_gen) {
+    src_eval_code, src_surr, var_gen = opt_eval_info(action.src_set, init_var_gen);
+    it_var, var_gen = next_set_it_var(var_gen);
+
+    nested_code = yield_action_opt_code(action.next, var_gen);
+
+    return src_eval_code & (
+      get_iter(it_var, src_surr),
+      repeat((
+        break_if(is_out_of_range(it_var)),
+        set_var(action.var, get_curr_obj(it_var))
+        ) & nested_code & (
+        move_forward(it_var)
+      ))
+    );
+  }
+
+
+  // seq_yield_action(vars: Maybe[StdVar]+, idx_var: Maybe[StdVar], src_seq: Expr, next: YieldAction)
+  Instr* seq_yield_action_opt_code(SeqYieldAction action, VarGen init_var_gen) {
+    // Calculating source type, and returning early if the type is trivial
+    src_type = subexpr_type(action.src_seq);
+    if src_type == empty_type:
+      return (terminate);
+    elif is_subset(src_type, empty_seq_type):
+      return ();
+    ;
+
+    // Types of elements of source and destination sequences
+    src_elt_type = seq_elem_supertype(src_type);
+    elt_type = subexpr_type(action.src_seq);
+    assert src_elt_type != empty_type and elt_type != empty_type;
+    fail if src_elt_type == empty_type or elt_type == empty_type;
+
+    // Low-level representation of elements of source and destination sequences
+    src_repr = opt_repr(src_elt_type);
+
+    // Evaluation of source expression
+    eval_code, src_surr, var_gen = opt_eval_info(action.src_seq, init_var_gen);
+    if not src_surr :: <LocVar, StdVar>:
+      src_var, var_gen = next_obj_var(var_gen);
+      eval_code = (eval_code | set_var(src_var, src_surr));
+      src_surr = src_var;
+    ;
+
+    // Temporary buffer for source data
+    src_array_var, var_gen = next_array_var(var_gen, src_repr);
+
+    // Input sequence size variable
+    array_size_var, var_gen = next_int32_var(var_gen);
+    set_size_var = set_ivar32(array_size_var, get_size(src_surr));
+
+    vars = action.vars;
+    body = ();
+
+    if |vars| == 1:
+      var = only(vars); ## CHECK IF THIS IS ALWAYS VERIFIED...
+      if var != nothing:
+        var = value(var);
+        it_var = low_level_var(src_repr, var);
+        surrs = surrogates & [var -> obj_expr(it_var) if it_var != var];
+      else
+        ## THIS IS UNNECESSARY, BECAUSE THE VALUE IS NOT BEING USED,
+        ## BUT SINCE IT'S SUCH A MARGINAL USE CASE...
+        it_var, var_gen = next_obj_var(var_gen);
+        surrs = surrogates;
+      ;
+
+    else
+      assert src_repr == :object;
+      vars_types = tuple_field_supertypes(src_elt_type, |vars|);
+      ## REMOVE WHEN DONE
+      assert vars_types == (restricted_seq_elem_supertype(src_elt_type, singleton_type(i)) : i < |vars|);
+      reprs = (opt_repr(t) : t <- vars_types);
+      it_var, var_gen = next_obj_var(var_gen);
+      surrs = surrogates;
+      for mv @ i <- vars:
+        if mv != nothing:
+          v = value(mv);
+          phys_var = low_level_var(reprs(i), v);
+          surrs = surrs & [v -> obj_expr(phys_var) if v != phys_var];
+          body = (body | set_any_var(phys_var, at(it_var, i)));
+        ;
+      ;
+    ;
+
+    // Index variables
+    hidden_idx_var, var_gen = next_int32_var(var_gen);
+    surrs = surrs & [value(action.idx_var) -> int_obj(hidden_idx_var)] if action.idx_var != nothing;
+
+    // Evaluation of nested yield action
+    body = body & yield_action_opt_code(action.next, var_gen, surrogates = surrs);
+
+    // Looping over the source sequence
+    loop_instr = foreach(
+      seq:        src_surr,
+      src_array:  src_array_var,
+      // tmp_buffer: array_var,
+      count_var:  array_size_var,
+      idx_var:    hidden_idx_var,
+      it_var:     it_var,
+      body:       body
+    );
+
+    return (eval_code | set_size_var, loop_instr);
+  }
+
+
+  // match_yield_action(ptrn: Pattern, expr: Expr, next: YieldAction)
+  Instr* match_yield_action_opt_code(MatchYieldAction action, VarGen init_var_gen) {
+    eval_code, expr_surr, var_gen = opt_eval_info(action.expr, init_var_gen);
+    expr_type = subexpr_type(action.expr);
+
+    ptrn_env = generate_env(action.ptrn, expr_type);
+    vars_reprs = [v -> low_level_var(opt_repr(t), v) : v, t <- ptrn_env];
+    surrs = surrogates & [v -> obj_expr(pv) : v, pv <- vars_reprs];
+
+    let surrogates = surrs, vars_reprs = vars_reprs:
+      nested_code = yield_action_opt_code(action.next, var_gen);
+      code = opt_ptrn_match_code(action.ptrn, expr_surr, expr_type, nested_code);
+    ;
+
+    return eval_code & code;
+  }
+
+
+  // let_yield_action(var: StdVar, expr: Expr, next: YieldAction);
+  Instr* let_yield_action_opt_code(LetYieldAction action, VarGen init_var_gen) {
+    repr = opt_repr(subexpr_type(action.expr));
+    phys_var = low_level_var(repr, action.var);
+    eval_code, surr, var_gen = opt_eval_info(action.expr, init_var_gen);
+    eval_code = store_result(eval_code, surr, phys_var);
+    surrs = surrogates & [action.var -> obj_expr(phys_var) if action.var != phys_var];
+    nested_code = yield_action_opt_code(action.next, var_gen, surrogates = surrs);
+    return eval_code & nested_code;
+  }
+
+
+  // cond_yield_action(cond: Expr, next: YieldAction);
+  Instr* cond_yield_action_opt_code(CondYieldAction action, VarGen init_var_gen) {
+    eval_code, cond_surr, var_gen = opt_eval_info(action.cond, init_var_gen);
+    nested_code = yield_action_opt_code(action.next, var_gen);
+    return (eval_code | do_if(bool_value(cond_surr), nested_code));
+  }
+}

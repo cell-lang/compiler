@@ -35,7 +35,7 @@ implicit syn_prg : SynPrg, type_arity_map : [BasicTypeSymbol -> [+Nat]] {
     nested_dbs = (d : d <- db_def.decls, d :: NestedDBDecl);
 
     // Starting with state variables and nested automata, whose names cannot be overloaded
-    non_overloadable_decls = sort(state_vars & nested_dbs, _str_($a.name) < _str_($b.name));
+    non_overloadable_decls = sort(state_vars & nested_dbs, _print_($a.name) < _print_($b.name));
     errs = join((schema_decl_wf_errors(d) : d <- non_overloadable_decls));
     for i < |non_overloadable_decls| - 1:
       d1 = non_overloadable_decls(i);
@@ -96,7 +96,7 @@ implicit syn_prg : SynPrg, type_arity_map : [BasicTypeSymbol -> [+Nat]] {
     errs = (duplicate_schema_decl(decl, non_overloadable_decls_by_name[decl.name])
               if non_overloadable_decls_by_name(decl.name, *));
 
-    attributes = sort(decl.attributes, _str_($a.name) < _str_($b.name));
+    attributes = sort(decl.attributes, _print_($a.name) < _print_($b.name));
     for arv @ i <- attributes:
       if arv.name == decl.name:
         errs = (errs | duplicate_schema_decl(decl, arv));

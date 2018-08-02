@@ -1,0 +1,66 @@
+implicit program : Program, typedefs : [TypeName -> NeType], context : Context, typed_vars : [StdVar -> NeType] {
+  ClsType* inst_cls_types(FnFamilyId fn_id, Type* args_types, AnyClsExpr* cls_args, [EnvVar -> Type] env) {
+    return () if cls_args == ();
+
+    unused_var_1, signature = restricted_signature(fn_id, args_types);
+    type_vars_insts = instantiate_type_vars(args_types, signature.args, cls_args, signature.cls_args, env);
+
+    // ## NOT AT ALL SURE WHETHER THIS IS TRUE AND WHAT TO DO IF IT ISN'T
+    // assert type_vars_insts :: [TypeVar -> NeType];
+    // fail if not type_vars_insts :: [TypeVar -> NeType];
+
+    ## HERE I'M NOT AT ALL SURE I'VE GOT THIS RIGHT. A MERGED SIGNATURE, LIKE THE
+    ## ABOVE ONE (THAT COMES FROM isort()) WILL CONTAIN REDUNDANT TYPE VARIABLES
+    ## THAT WILL BE INSTANTIATED TO THE EMPTY TYPE BUT THAT SHOULD NOT MATTER,
+    ## BECAUSE EVEN AFTER REMOVING ALL THE UNMATCHED TYPE VARIABLES THERE SHOULD
+    ## BE ENOUGH OF THE PARAMETRIC TYPE LEFT TO ACTUALLY AVOID BINDING THE TYPES
+    ## IN THE SIGNATURE TO AN EMPTY TYPE
+    type_vars_insts = [v -> t : v, t <- type_vars_insts, t != empty_type];
+
+    return (replace_type_vars(t, type_vars_insts) : t <- signature.cls_args);
+  }
+}
+
+
+implicit program : Program, typedefs : [TypeName -> NeType], context : Context {
+  (FnId, FnType) restricted_signature(FnFamilyId fn_id, Type* args_types) {
+    signs = signatures_info_by_family_id(fn_id, !!);
+    for id, s <- signs:
+      return (id, s) if not (t @ i <~ args_types : not is_subset(t, replace_type_vars_with_type_any(s.args(i))));
+    ;
+
+    aggr_signs = aggr_signs_by_fn_family_id(fn_id, !!);
+    for s <- aggr_signs:
+      return (fn_id, s) if not (t @ i <~ args_types : not is_subset(t, replace_type_vars_with_type_any(s.args(i))));
+    ;
+
+    if constraints(fn_id, *):
+      prot_sngs = constraints[fn_id];
+      for s <- isort(prot_sngs):
+        return (fn_id, cls_to_fn_type(s)) if not (t @ i <~ args_types : not is_subset(t, s.in_types(i)));
+      ;
+    ;
+
+    signatures_info_by_family_id_copy = signatures_info_by_family_id;
+    aggr_signs_by_fn_family_id_copy = aggr_signs_by_fn_family_id;
+    assert false;
+    fail;
+  }
+}
+
+
+implicit program : Program, typedefs : [TypeName -> NeType] {
+  [FnFamilyId -> FnType*] aggr_signs_by_fn_family_id = [
+    fam_id -> isort(aggr_signs)
+      : fam_id, info <- signatures_info_by_family_id,
+        signs = [sign : fn_id, sign <~ info],
+        aggr_signs = aggregate_signatures(signs) - signs
+  ];
+
+
+  [FnFamilyId -> (FnId, FnType)+] signatures_info_by_family_id {
+    sgn_info = [family_id(fn.id), (fn.id, signature(fn)) : fn <- program.fndefs];
+    family_ids = [id : id, unused_var <- sgn_info];
+    return [id -> nonempty(isort([info : info <- sgn_info(id, ?)])) : id <- family_ids];
+  }
+}
