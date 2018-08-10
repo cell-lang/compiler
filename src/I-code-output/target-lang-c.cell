@@ -7,7 +7,7 @@ CCodeOutput compile_to_c(CompiledPrg prg, Bool include_runtime) {
   c_code = ("const uint16 " & symb_idx_name(s) & " = " & printed(i) & ";" : s @ i <- symbs) & 4 * ("");
 
   symb_strs  = ("  \"" & _str_(bare_obj(s)) & "\"," : s <- symbs);
-  c_code     = c_code & ("const char *map_symb_to_str[" & printed(|symbs|) & "] = {") & symb_strs & ("};") & 4 * ("");
+  c_code     = c_code & ({"const char *map_symb_to_str[" & printed(|symbs|) & "] = {"}) & symb_strs & ("};") & 4 * ("");
 
   cls_defs = cls_defs(prg);
 
@@ -227,8 +227,8 @@ Int pow(Int b, Nat e) {
     max_len = nat(max((length(printed(n)) : n <- (min_elem, max_elem))));
     last_idx = |int_seq| - 1;
     strs = (align_text(s, max_len, ascii_space) & if i != last_idx then ", " else "" : s @ i <- strs);
-    cont_lines = ("  " & append(ss) : ss <- split_into_groups(strs, nz_nat(100 / #(max_len + 2))));
-    def = (sgn & " = {") & cont_lines & ("};");
+    cont_lines = ("  " & append(ss) : ss <- split_into_groups(strs, nz_nat(100 / (max_len + 2))));
+    def = ({sgn & " = {"}) & cont_lines & ("};");
   ;
 
   return (decl, def);
@@ -258,15 +258,15 @@ String+ generate_push_call_info_wrapper(Nat arity) {
               append((", OBJ " & to_c_var_decl_name(fn_arg(i)) : i < arity)) & ")";
   code = (signature & " {", "#ifndef NDEBUG");
   if arity == 0:
-    code = code & ("  push_call_info(fn_name, 0, (OBJ *)0);");
+    code = (code | "  push_call_info(fn_name, 0, (OBJ *)0);");
   else
-    code = code & ("  OBJ *params = new_obj_array(" & printed(arity) & ");");
+    code = (code | "  OBJ *params = new_obj_array(" & printed(arity) & ");");
     for i < arity:
-      code = code & ("  params[" & printed(i) & "] = " & to_c_var_decl_name(fn_arg(i)) & ";");
+      code = (code | "  params[" & printed(i) & "] = " & to_c_var_decl_name(fn_arg(i)) & ";");
     ;
-    code = code & ("  push_call_info(fn_name, " & printed(arity) & ", params);");
+    code = (code | "  push_call_info(fn_name, " & printed(arity) & ", params);");
   ;
-  return nonempty(code & ("#endif", "}"));
+  return nonempty((code | "#endif", "}"));
 }
 
 
@@ -378,7 +378,7 @@ implicit {
     comp_body = compile_to_c(body, nothing);
 
     has_var_decls = var_decls != () or auto_var_decls != () or db_vars_decls != ();
-    code = (signature & " {") & indent_lines(var_decls) & indent_lines(auto_var_decls) &
+    code = ({signature & " {"}) & indent_lines(var_decls) & indent_lines(auto_var_decls) &
            indent_lines(db_vars_decls) & ("" if has_var_decls) & indent_lines(comp_body) & ("}");
 
     if cached:
@@ -458,7 +458,7 @@ implicit {
     vars_decls = gen_vars_decls(cd.body);
     comp_body = compile_to_c(cd.body, nothing);
 
-    return (signature & " {") & indent_lines(vars_decls) & ("") & indent_lines(comp_body) & ("}");
+    return ({signature & " {"}) & indent_lines(vars_decls) & ("") & indent_lines(comp_body) & ("}");
   }
 
 
@@ -713,10 +713,10 @@ implicit {
     head = body(0);
     if head :: <branch(cond: BoolExpr, when_true: (<break_loop>), when_false: ())>:
       cond_str = to_c_expr(neg(head.cond));
-      body_text = indent_lines(compile_to_c(tail(body), block_id)) & ("}");
-      return ("while (" & cond_str & ") {") & body_text;
+      body_text = (indent_lines(compile_to_c(tail(body), block_id)) | "}");
+      return ({"while (" & cond_str & ") {"}) & body_text;
     else
-      body_text = indent_lines(compile_to_c(body, block_id)) & ("}");
+      body_text = (indent_lines(compile_to_c(body, block_id)) | "}");
       return ("for ( ; ; ) {") & body_text;
     ;
   }
@@ -724,7 +724,7 @@ implicit {
 
   String compile_init_db_to_c(AnyDBVar db_var, LocDBVar* links, DBSymbol type) {
     links_args = ("&" & to_c_var_ref_name(l) : l <- links);
-    return mk_gen_call(init_method_name(type), ("&" & to_c_var_ref_name(db_var)) & links_args & ("env"));
+    return mk_gen_call(init_method_name(type), ({"&" & to_c_var_ref_name(db_var)}) & links_args & ("env"));
   }
 
 
@@ -803,10 +803,10 @@ implicit {
   ## TERMINATE AN OUTER LOOP, THAT BREAK WILL TERMINATE THE SWITCH/CASE INSTEAD.
   String* compile_switch_on_nat_to_c(IntExpr value, Instr*+ cases, Maybe[Nat] block_id) {
     cases_code = (
-      ("case " & printed(i) & ":") & indent_lines((compile_to_c(c, block_id) | "break;", ""))
+      ({"case " & printed(i) & ":"}) & indent_lines((compile_to_c(c, block_id) | "break;", ""))
       : c @ i <- cases
     );
-    return ("switch (" & to_c_expr(value) & ") {") & indent_lines(join(cases_code)) & ("}");
+    return ({"switch (" & to_c_expr(value) & ") {"}) & indent_lines(join(cases_code)) & ("}");
   }
 
 
@@ -825,7 +825,7 @@ implicit {
     );
     body_code = (body_code | ("", "default:") & indent_lines(compile_to_c(else, block_id))) if else != ();
 
-    return ("switch (" & value_str & ") {") & indent_lines(join(body_code)) & ("}");
+    return ({"switch (" & value_str & ") {"}) & indent_lines(join(body_code)) & ("}");
   }
 
 
@@ -948,31 +948,31 @@ implicit {
         if p.capt_vars != ():
           if |p.capt_vars| != 1:
             var_name = "cd_" & printed(par_id);
-            code = code & ("OBJ " & var_name & "[" & printed(|p.capt_vars|) & "];");
+            code = (code | "OBJ " & var_name & "[" & printed(|p.capt_vars|) & "];");
             for v @ i <- p.capt_vars:
-              code = code & (var_name & "[" & printed(i) & "] = " & to_c_expr(v) & ";");
+              code = (code | var_name & "[" & printed(i) & "] = " & to_c_expr(v) & ";");
             ;
-            code = code & (par_name & ".data = " & var_name & ";");
+            code = (code | par_name & ".data = " & var_name & ";");
           else
-            code = code & (par_name & ".data = &" & to_c_expr(only(p.capt_vars)) & ";");
+            code = (code | par_name & ".data = &" & to_c_expr(only(p.capt_vars)) & ";");
           ;
         else
-          code = code & (par_name & ".data = 0;");
+          code = (code | par_name & ".data = 0;");
         ;
 
         if p.capt_cls_vars != ():
           if |p.capt_cls_vars| != 1:
             var_name = "cd_" & printed(par_id);
-            code = code & ("CLS " & var_name & "[" & printed(|p.capt_cls_vars|) & "];");
+            code = (code | "CLS " & var_name & "[" & printed(|p.capt_cls_vars|) & "];");
             for v @ i <- p.capt_cls_vars:
-              code = code & (var_name & "[" & printed(i) & "] = " & to_c_expr(v) & ";");
+              code = (code | var_name & "[" & printed(i) & "] = " & to_c_expr(v) & ";");
             ;
-            code = code & (par_name & ".cls = " & var_name & ";");
+            code = (code | par_name & ".cls = " & var_name & ";");
           else
-            code = code & (par_name & ".cls = &" & to_c_expr(only(p.capt_cls_vars)) & ";");
+            code = (code | par_name & ".cls = &" & to_c_expr(only(p.capt_cls_vars)) & ";");
           ;
         else
-          code = code & (par_name & ".cls = 0;");
+          code = (code | par_name & ".cls = 0;");
         ;
 
         return (code, par_var);
@@ -982,11 +982,11 @@ implicit {
 
   String* compile_branch_to_c(BoolExpr cond, Instr* when_true, Instr* when_false, Maybe[Nat] block_id) {
     assert when_true != ();
-    code = ("if (" & to_c_expr(cond) & ") {")     &
+    code = ({"if (" & to_c_expr(cond) & ") {"}) &
            indent_lines(compile_to_c(when_true, block_id)) &
            ("}");
     if when_false != ():
-      code = code & ("else {") & indent_lines(compile_to_c(when_false, block_id)) & ("}");
+      code = (code | "else {") & indent_lines(compile_to_c(when_false, block_id)) & ("}");
     ;
     return code;
   }
@@ -1011,7 +1011,7 @@ implicit {
 
   String to_c_arg(FnCallParam arg) {
     by_ref = arg :: <TableItVar, AnyRelVar>;
-    return #(if by_ref then "&" else "") & to_c_expr(arg);
+    return {if by_ref then "&" else ""} & to_c_expr(arg);
   }
 
   String mk_gen_call(String fn_name, String* leading_params, FnCallParam* params, String* trailing_params) =

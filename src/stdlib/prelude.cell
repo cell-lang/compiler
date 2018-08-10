@@ -22,7 +22,7 @@ type Opt[T]         = (), (T);
 
 type Nothing        = nothing;
 type Just[T]        = just(T);
-type Maybe[T]       = nothing, just(T);
+type Maybe[T]       = Nothing, Just[T]; //nothing, just(T);
 
 type Success[T]     = success(T);
 type Failure[T]     = failure(T);
@@ -206,7 +206,10 @@ T error(Failure[T] r) = untag(r);
 
 ////////////////////////////////////////////////////////////////////////////////
 
-T* (_&_)(T* s1, T* s2) = _cat_(s1, s2);
+() (_&_)((),    ())    = ();
+T+ (_&_)(T+ s,  ())    = s;
+T+ (_&_)((),    T+ s)  = s;
+T+ (_&_)(T+ s1, T+ s2) = {res = _cat_(s1, s2); return if res != () then res else undefined;};
 
 T* join(T** seqs) {
   res = ();
@@ -218,7 +221,7 @@ T* join(T** seqs) {
 
 T* reverse(T* seq) = _rev_(seq);
 
-T* take(T* seq, Int count) = _slice_(seq, 0, count);
+T* take(T* seq, Int count) = if |seq| > count then _slice_(seq, 0, count) else seq;
 T* drop(T* seq, Int count) = if |seq| > count then _slice_(seq, count, |seq| - count) else ();
 
 T* slice(T* seq, Int first, Int count) = _slice_(seq, first, count);
@@ -411,6 +414,10 @@ Byte ascii_tilde             = 126;
 Bool is_digit(Nat ch) = ch >= ascii_0 and ch <= ascii_9;
 Bool is_lower(Nat ch) = ch >= ascii_lower_a and ch <= ascii_lower_z;
 Bool is_upper(Nat ch) = ch >= ascii_upper_a and ch <= ascii_upper_z;
+
+Bool is_hex_digit(Nat ch) = is_digit(ch) or
+                            (ch >= ascii_lower_a and ch <= ascii_lower_f) or
+                            (ch >= ascii_upper_a and ch <= ascii_upper_f);
 
 Bool is_space(Int ch) = ch == ascii_space or
                         ch == ascii_tab or

@@ -529,20 +529,13 @@ implicit filename : String, lines : Nat** {
 
   ////////////////////////////////////////////////////////////////////////////////
 
-  ## WITH AN IMPROVED PATTERN MATCHING, THIS FUNCTION COULD BE WRITTEN LIKE THIS:
-  // SynExpr try_to_rewrite_seq_expr_into_log_expr(SynExpr expr):
-  //   seq_expr((and() | or() e?))   = e,
-  //   _                             = expr;
-  SynExpr try_to_rewrite_seq_expr_into_log_expr(SynExpr expr) {
-    return match(expr)
-      seq_expr(es?)   = if |es| == 1 then try_rewrite(only(es), expr) else expr,
-      _               = expr;
+  SynExpr try_to_rewrite_seq_expr_into_log_expr(SynExpr expr) =
+    seq_expr((and() e? | or() e?))  = e,
+    _                               = expr;
 
-    SynExpr try_rewrite(SynSubExpr elem_expr, SynSeqExpr seq_expr) =
-      and()   = elem_expr,
-      or()    = elem_expr,
-      _       = seq_expr;
-  }
+  SynExpr convert_seq_expr_to_grouping(SynExpr expr) =
+    seq_expr((binary_op_call() e?)) = e,
+    _                               = expr;
 
   ////////////////////////////////////////////////////////////////////////////////
 
@@ -597,11 +590,14 @@ implicit filename : String, lines : Nat** {
 
   SynExpr build_expr_6_ast(RuleMatch mtc) {
     nodes = rep_rule_nodes(mtc);
+    is_bin_op_call = |nodes| > 1;
     expr = build_expr_5_ast(nodes(0));
+    expr = convert_seq_expr_to_grouping(expr) if is_bin_op_call;
     i = 1;
     while i < |nodes|:
       op = token_to_binary_operator(get_token(nodes(i)));
       right_expr = build_expr_5_ast(nodes(i+1));
+      right_expr = convert_seq_expr_to_grouping(right_expr) if is_bin_op_call;
       expr = syn_op_call(op, expr, right_expr);
       i = i + 2;
     ;
@@ -610,14 +606,18 @@ implicit filename : String, lines : Nat** {
 
   SynExpr build_expr_5_ast(RuleMatch mtc) {
     nodes = rep_rule_nodes(mtc);
+    is_bin_op_call = |nodes| > 1;
     expr = build_expr_4_ast(nodes(0));
+    expr = convert_seq_expr_to_grouping(expr) if is_bin_op_call;
     i = 1;
     while i < |nodes|:
       op = token_to_binary_operator(get_token(nodes(i)));
       right_expr = build_expr_4_ast(nodes(i+1));
+      right_expr = convert_seq_expr_to_grouping(right_expr) if is_bin_op_call;
       expr = syn_op_call(op, expr, right_expr);
       i = i + 2;
     ;
+
     return attach_src_code_info(expr, mtc);
   }
 
@@ -632,7 +632,7 @@ implicit filename : String, lines : Nat** {
         expr = match (expr)
           object(<*..*> n?) = object(-n),
           float_lit()       = float_lit(expr.mantissa, not expr.negative, expr.dec_exp),
-          _                 = syn_op_call(:unary_minus, expr);
+          _                 = syn_op_call(:unary_minus, convert_seq_expr_to_grouping(expr));
       else
         assert op == lowercase_id(:not);
         expr = syn_not(try_to_rewrite_seq_expr_into_log_expr(expr));
@@ -643,10 +643,13 @@ implicit filename : String, lines : Nat** {
 
   SynExpr build_expr_3_ast(RuleMatch mtc) {
     nodes = rep_rule_nodes(mtc);
+    is_bin_op_call = |nodes| > 1;
     expr = build_expr_2_ast(last(nonempty(nodes)));
+    expr = convert_seq_expr_to_grouping(expr) if is_bin_op_call;
     i = |nodes| - 2;
     while i >= 0:
       left_expr = build_expr_2_ast(nodes(i));
+      left_expr = convert_seq_expr_to_grouping(left_expr) if is_bin_op_call;
       expr = syn_op_call(:exp, left_expr, expr);
       i = i - 1;
     ;
@@ -735,9 +738,10 @@ implicit filename : String, lines : Nat** {
       record              = build_record_expr_ast(inner_match),
       seq                 = build_seq_expr_ast(inner_match),
       seq_tail            = build_seq_tail_expr_ast(inner_match),
+      singl_seq           = syn_seq_expr((grouped_expr(build_expr_ast(rule_seq_node(block_node(inner_match), 0))))),
       tag_record          = build_tag_record_expr_ast(inner_match),
       builtin_call        = build_builtin_call_expr_ast(inner_match),
-      par_expr            = build_expr_ast(block_node(rule_seq_node(inner_match, 1))),
+      par_expr            = grouped_expr(build_expr_ast(block_node(inner_match))),
       ex_qual             = build_ex_qual_expr_ast(inner_match),
       set_cp              = build_set_cp_expr_ast(block_node(inner_match)),
       map_cp              = build_map_cp_expr_ast(inner_match),

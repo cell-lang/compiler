@@ -25,7 +25,7 @@
     i = len - ri - 1;
     next_nodes = (nat(len-j-1) : j <- forward_flow_map(i));
     live_vars_downstream = live_vars_downstream(next_nodes, rev_new_map);
-    live_vars = vars_used_map(i) & #(live_vars_downstream - vars_set_map(i));
+    live_vars = vars_used_map(i) & (live_vars_downstream - vars_set_map(i));
     rev_new_map = (rev_new_map | live_vars);
   ;
   return reverse(rev_new_map);
@@ -52,7 +52,7 @@
     if i <= start_idx:
       next_nodes = (nat(len-j-1) : j <- forward_flow_map(i));
       live_vars_downstream = live_vars_downstream(next_nodes, rev_new_map);
-      live_vars = live_vars & #(live_vars_downstream - vars_set_map(i));
+      live_vars = live_vars & (live_vars_downstream - vars_set_map(i));
     ;
     rev_new_map = (rev_new_map | live_vars);
   ;
@@ -80,7 +80,7 @@
 ////////////////////////////////////////////////////////////////////////////////
 
 [TrkVar] update_node(Nat* next_nodes, [TrkVar]* live_vars_map, [TrkVar] vars_used, [TrkVar] vars_set) =
-  vars_used & #(live_vars_downstream(next_nodes, live_vars_map) - vars_set);
+  vars_used & (live_vars_downstream(next_nodes, live_vars_map) - vars_set);
 
 
 [TrkVar] live_vars_downstream(Nat* next_nodes, [TrkVar]* live_vars_map) =

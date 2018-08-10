@@ -22,24 +22,24 @@ implicit {
       );
     ;
 
-    decl = ("struct " & name_str & " {") & indent_lines(vars_decl) & ("};");
+    decl = ({"struct " & name_str & " {"}) & indent_lines(vars_decl) & ("};");
 
     pre_init_vars_decl = gen_vars_decls(block.pre_init_code);
     pre_init_vars_decl = pre_init_vars_decl & ("") if pre_init_vars_decl != ();
     pre_init_body = pre_init_vars_decl & compile_to_c(block.pre_init_code, nothing);
     pre_init_sgn = "void " & pre_init_method_name(block.name) & "(" & name_str & " *self, ENV &env)";
     pre_init_decl = (pre_init_sgn & ";");
-    pre_init_proc = (pre_init_sgn & " {") & indent_lines(pre_init_body) & ("}");
+    pre_init_proc = ({pre_init_sgn & " {"}) & indent_lines(pre_init_body) & ("}");
 
     cleanup_body = compile_to_c(block.cleanup_code, nothing);
     cleanup_sgn = "void " & cleanup_method_name(block.name) & "(" & name_str & " *self)";
     cleanup_decl = (cleanup_sgn & ";");
-    cleanup_proc = (cleanup_sgn & " {") & indent_lines(cleanup_body) & ("}");
+    cleanup_proc = ({cleanup_sgn & " {"}) & indent_lines(cleanup_body) & ("}");
 
     all_loc_vars = vars_to_declare(block.apply_code) & union([vars_to_declare(c) : id, c <- block.nodes_update_code]);
     aux_vars = [v : v <- all_loc_vars, v :: AuxVar] & [curr_time if has_time_rules];
     aux_name_str = aux_struct_c_name(block.name);
-    aux_decls = ("struct " & aux_name_str & " {") & indent_lines((var_decl(v) : v <- rand_sort(aux_vars))) & ("};");
+    aux_decls = ({"struct " & aux_name_str & " {"}) & indent_lines((var_decl(v) : v <- rand_sort(aux_vars))) & ("};");
 
     apply_method_vars_decls = (
       gen_vars_decls(block.apply_code) |
@@ -51,7 +51,7 @@ implicit {
     apply_body = apply_method_vars_decls & compile_to_c(block.apply_code, nothing);
     apply_sgn = "void " & apply_method_name(block.name) & "(" & name_str & " *self, ENV &env)";
     apply_decl = (apply_sgn & ";");
-    apply_proc = (apply_sgn & " {") & indent_lines(apply_body) & ("}");
+    apply_proc = ({apply_sgn & " {"}) & indent_lines(apply_body) & ("}");
 
     update_node_bodies = [
       id -> {
@@ -68,7 +68,7 @@ implicit {
     ];
     update_node_decls = rand_sort([s & ";" : unused_var, s <- update_node_sngs]);
     update_node_procs_unsorted = [
-      (update_node_sngs[id] & " {") & indent_lines(update_node_bodies[id]) & ("}")
+      ({update_node_sngs[id] & " {"}) & indent_lines(update_node_bodies[id]) & ("}")
       : id, unused_var <- block.nodes_update_code
     ];
     update_node_procs = join(intermix(rand_sort(update_node_procs_unsorted), ("", "")));
@@ -119,7 +119,7 @@ implicit {
     vars_decls = gen_vars_decls(code);
     body = vars_decls & ("" if vars_decls != ()) & compile_to_c(code, nothing);
     sng = "bool " & state_is_def_proc_name(name) & "(" & to_c_name(name) & " *self)";
-    return (sng & ";", (sng & " {") & indent_lines(body) & ("}"));
+    return (sng & ";", ({sng & " {"}) & indent_lines(body) & ("}"));
   }
 
 
@@ -127,7 +127,7 @@ implicit {
     vars_decls = gen_vars_decls(code);
     body = vars_decls & ("" if vars_decls != ()) & compile_to_c(code, nothing);
     sgn = "OBJ " & copy_state_proc_name(name) & "(" & to_c_name(name) & " *self)";
-    return (sgn & ";", (sgn & " {") & indent_lines(body) & ("}"));
+    return (sgn & ";", ({sgn & " {"}) & indent_lines(body) & ("}"));
   }
 
 
@@ -136,7 +136,7 @@ implicit {
     body = vars_decls & ("" if vars_decls != ()) & compile_to_c(code, nothing);
     ## WHY DOES THIS RETURN AN OBJ?
     sgn = "void " & set_state_proc_name(name) & "(" & to_c_name(name) & " *self, OBJ a0)";
-    return (sgn & ";", (sgn & " {") & indent_lines(body) & ("}"));
+    return (sgn & ";", ({sgn & " {"}) & indent_lines(body) & ("}"));
   }
 
 
@@ -146,11 +146,11 @@ implicit {
 
 
   (String, String*) gen_user_def_method(AutoSymbol block_name, MethodId name, Instr* body) {
-    args_str = append((to_c_name(block_name) & " *self") & ("OBJ " & to_c_var_decl_name(fn_arg(i)) : i < name.arity), ", ");
+    args_str = append(({to_c_name(block_name) & " *self"}) & ("OBJ " & to_c_var_decl_name(fn_arg(i)) : i < name.arity), ", ");
     sgn = "OBJ " & user_def_method_name(block_name, name) & "(" & args_str & ", ENV &env)";
     vars_decls = gen_vars_decls(body);
     body_text = vars_decls & ("" if vars_decls != ()) & compile_to_c(body, nothing);
-    return (sgn & ";", (sgn & " {") & indent_lines(body_text) & ("}"));
+    return (sgn & ";", ({sgn & " {"}) & indent_lines(body_text) & ("}"));
   }
 
 
@@ -185,7 +185,7 @@ implicit {
     vars_decl_text = gen_vars_decls(body);
     vars_decl_text = (vars_decl_text | "") if vars_decl_text != ();
     body_text = vars_decl_text & compile_to_c(body, nothing);
-    return (sgn & ";", (sgn & " {") & indent_lines(body_text) & ("}"));
+    return (sgn & ";", ({sgn & " {"}) & indent_lines(body_text) & ("}"));
   }
 
 
@@ -213,7 +213,7 @@ implicit {
       "self->time_triggers_count = n + 1;"
     );
 
-    return (sgn & ";", (sgn & " {") & indent_lines(body_text) & ("}"));
+    return (sgn & ";", ({sgn & " {"}) & indent_lines(body_text) & ("}"));
   }
 
 
@@ -239,6 +239,6 @@ implicit {
       "}"
     );
 
-    return (sgn & ";", (sgn & " {") & indent_lines(body_text) & ("}"));
+    return (sgn & ";", ({sgn & " {"}) & indent_lines(body_text) & ("}"));
   }
 }

@@ -140,7 +140,7 @@ implicit block : ReactBlock, typedefs : [TypeName -> NeType] {
       "",
       ret_type & auto_class_name & "::get_" & base_name & "() {",
       "  OBJ target = " & auto_struct_ptr & "->" & var_name & ";",
-      "  if (is_null_obj(target)" & #(if output.discrete then " | is_blank_obj(target)" else "") & ")",
+      "  if (is_null_obj(target)" & {if output.discrete then " | is_blank_obj(target)" else ""} & ")",
       "    throw 0;",
       "  return " & export_expr(inter_type, "target") & ";",
       "}"
@@ -421,7 +421,7 @@ implicit typedefs : [TypeName -> NeType] {
 
     if cond != "":
       release_stmts = ("    release(obj" & printed(i) & ");" : i < arity);
-      impl = impl & ("  if (!" & cond & ") {") & release_stmts & ("    throw 0LL;", "  }");
+      impl = impl & ({"  if (!" & cond & ") {"}) & release_stmts & ("    throw 0LL;", "  }");
     ;
 
     impl = impl & (

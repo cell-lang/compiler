@@ -40,7 +40,18 @@ Bool is_alphanum(Nat* bytes, Nat offset, <upper, lower, any> case)  = is_alpha(b
 Bool is_alpha(Nat* bytes, Nat offset, <upper, lower, any> case)     = (case != :lower and is_upper(bytes, offset)) or
                                                                       (case != :upper and is_lower(bytes, offset));
 
-## THESE TWO FUNCTIONS DO NOT BELONG HERE
+## THESE FUNCTIONS DO NOT BELONG HERE
+
+Nat hex_value(Nat ch) =
+  if is_digit(ch) then
+    nat(ch - ascii_0)
+  elif ch >= ascii_lower_a and ch <= ascii_lower_f then
+    nat(ch - ascii_lower_a + 10)
+  elif ch >= ascii_upper_a and ch <= ascii_upper_f then
+    nat(ch - ascii_upper_a + 10)
+  else
+    undefined;
+
 Bool is_alphanum(Nat ch, <upper, lower, any> case)  = is_alpha(ch, case) or is_digit(ch);
 Bool is_alpha(Nat ch, <upper, lower, any> case)     = (case != :lower and is_upper(ch)) or (case != :upper and is_lower(ch));
 
@@ -64,17 +75,16 @@ Bool is_comment(Nat* bytes, Nat offset) =
 
 ////////////////////////////////////////////////////////////////////////////////
 
-LexerResult lex_src_file(Nat* chars) {
-  lines = split_lines(chars);
+LexerResult lex_src_file(Byte* bytes) {
+  lines = split_lines(bytes);
   tokens = ();
   for l @ i <- lines:
-    res = split_line_into_tokens(l);
-    if is_success(res):
-      start_idx = |tokens|;
-      tokens = tokens & (annotated_token(ti, nz_nat(i+1), nz_nat(start_idx+j+1)) : ti @ j <- get_result(res));
-    else
-      return failure(lexer_error(nz_nat(i+1), nz_nat(get_error(res)+1)));
-    ;
+    res = from_utf8(l);
+    return failure(lexer_error(nz_nat(i+1), nz_nat(untag(res) + 1))) if failed(res);
+    res = split_line_into_tokens(untag(res));
+    return failure(lexer_error(nz_nat(i+1), nz_nat(get_error(res)+1))) if failed(res);
+    start_idx = |tokens|;
+    tokens = tokens & (annotated_token(ti, nz_nat(i+1), nz_nat(start_idx+j+1)) : ti @ j <- get_result(res));
   ;
   return success(tokens);
 }
@@ -277,14 +287,25 @@ ParseTokenResult read_string(Nat* bytes, Nat offset) {
       return failure(len) if idx >= len; ## WOULD BE GOOD TO ADD MORE INFORMATION ABOUT THE FAILURE HERE
       ch = bytes(idx);
       if ch == ascii_backslash or ch == ascii_double_quotes:
-        chs = chs & (ch);
+        chs = (chs | ch);
       elif ch == ascii_lower_n:
-        chs = chs & (ascii_newline);
+        chs = (chs | ascii_newline);
+      elif is_hex_digit(ch):
+        return failure(len) if idx + 3 >= len; ## WOULD BE GOOD TO ADD MORE INFORMATION ABOUT THE FAILURE HERE
+        value = hex_value(ch);
+        for 3:
+          idx = offset + i;
+          i = i + 1;
+          ch = bytes(idx);
+          return failure(nat(idx)) if not is_hex_digit(ch);
+          value = 16 * value + hex_value(ch);
+        ;
+        chs = (chs | nat(value));
       else
         return failure(nat(offset+i)); ## WOULD BE GOOD TO ADD MORE INFORMATION ABOUT THE FAILURE HERE
       ;
     else
-      chs = chs & (ch);
+      chs = (chs | ch);
     ;
   ;
 }

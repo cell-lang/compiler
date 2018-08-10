@@ -161,7 +161,7 @@ NeType desugar_type(SynType type, (<SynTypeRef, SynTypeVar> -> NeType) desugar) 
 [Atom] refd_prot_types(SynType type, [Atom] prot_types) {
   return [] if type :: LeafType;
   return match (type)
-    type_ref(ts?)       = #(match (ts) type_symbol(a?) = [a if prot_types(a)], _ = []),
+    type_ref(ts?)       = {match (ts) type_symbol(a?) = [a if prot_types(a)], _ = []},
     type_var()          = [],
     syn_int_range()     = [],
     ne_seq_type()       = refd_prot_types(type.elem_type, prot_types),
@@ -208,7 +208,7 @@ NeType desugar_type(SynType type, (<SynTypeRef, SynTypeVar> -> NeType) desugar) 
 [+StmtOutcome] syn_outcomes(SynStmt* stmts) {
   os = [:falls_through];
   for s <- stmts:
-    os = #(os - [:falls_through]) & syn_outcomes(s);
+    os = (os - [:falls_through]) & syn_outcomes(s);
     break if not os(:falls_through);
   ;
   return nonempty(os);

@@ -1,6 +1,6 @@
 
-Result[PrgDecl*, <LexerError, ParError, ParserError>] lex_and_parse_src_file(String filename, Nat* chars) {
-  lex_res = lex_src_file(chars);
+Result[PrgDecl*, <LexerError, ParError, ParserError>] lex_and_parse_src_file(String filename, Byte* content) {
+  lex_res = lex_src_file(content);
   return failure(get_error(lex_res)) if is_failure(lex_res); ## BAD: TO SHUT UP THE TYPECHECKER IT HAS TO BE failure(get_error(lex_res)) INSTEAD OF JUST lex_res
   tokens = get_result(lex_res);
 
@@ -26,7 +26,7 @@ Result[PrgDecl*, <LexerError, ParError, ParserError>] lex_and_parse_src_file(Str
   parser_res = parse_all(rule_amber_file, tokens, rec_rules);
   return failure(get_error(parser_res)) if is_failure(parser_res); ## BAD: SEE ABOVE COMMENT
   parser_match = get_result(parser_res);
-  return success(build_amber_file_ast(parser_match.rule_match, filename, split_lines(chars)));
+  return success(build_amber_file_ast(parser_match.rule_match, filename, split_lines(content)));
 }
 
 ////////////////////////////////////////////////////////////////////////////////

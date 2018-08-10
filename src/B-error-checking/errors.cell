@@ -623,7 +623,7 @@ String* update_def_err_msg(SchemaDef s, UpdateDef upd, UpdateDefWFError+ errs) =
 
 
 String* handler_def_err_msg(HandlerDef handler, UpdateDefWFError+ errs) =
-  ("Error" & plural(errs) & " in message handler definition") &
+  ({"Error" & plural(errs) & " in message handler definition"}) &
   ("    " & l : l <- join((create_error_msg(e) : e <- errs)));
 
 
@@ -633,12 +633,12 @@ String* proc_def_errs_msg(SynProcDef proc_def, ProcDefWFError+ errs) =
 
 
 String* same_name_proc_defs_err_msg(SynProcDef+ proc_defs) =
-  ("Multiple definitions of the same procedure: " & user_name(head(proc_defs))) &
+  ({"Multiple definitions of the same procedure: " & user_name(head(proc_defs))}) &
   ("    " & source_code_loc_str(pd) : pd <- proc_defs);
 
 
 String* duplicate_schema_defs_err_msg(SchemaDef+ schema_defs) =
-  ("Multiple definition of schema " & user_name(head(schema_defs))) &
+  ({"Multiple definition of schema " & user_name(head(schema_defs))}) &
   ("    " & source_code_loc_str(db) : db <- schema_defs);
 
 
@@ -649,7 +649,7 @@ String* recursively_defined_schema_err_msg(SchemaDef schema, [+Atom] dependencie
 
 
 String* protocol_redef_err_msg(Atom type, [+ProtDecl] protocols) =
-  ("Conflicting protocol declarations: " & upper_camel_case(type)) &
+  ({"Conflicting protocol declarations: " & upper_camel_case(type)}) &
   ("    " & source_code_loc_str(p) : p <- rand_sort(protocols));
 
 
@@ -660,7 +660,7 @@ String* protocol_errs_msg(ProtDecl prot, ProtWFError+ errors) =
 
 
 String* dupl_auto_defs_err_msg([+ReactAutoDef] defs) =
-  ("Duplicate reactive automata definitions: " & upper_camel_case(an_elem(defs).name)) &
+  ({"Duplicate reactive automata definitions: " & upper_camel_case(an_elem(defs).name)}) &
   ("    " & source_code_loc_str(d) : d <- rand_sort(defs));
 
 
@@ -752,7 +752,7 @@ String* basic_err_msg(TypeVarDeclError err) =
 String* basic_err_msg(ExprSpecWFError err) =
   already_def_var(v?)         = ("Variable redefinition: " & user_repr(v)),
   undef_var_or_const(a?)      = ("Undefined variable or constant: " & _str_(a)),
-  not_an_object()             = ("Expression resolves to something other than an object"),
+  not_an_object()             = not_an_object_err_msg(err.expr, err.resols),
   not_a_signal()              = ("Unknown signal: " & _str_(err.id)),
   ambiguous_expr()            = ("Ambiguous expression", printed(err.resols)),
   invalid_expr()              = ("Invalid expression"),
@@ -824,7 +824,7 @@ String* basic_err_msg(ExprSpecWFError err) =
   unreachable_stmt()          = ("Unreachable statement"),
 
   unknown_auto()              = ("Automaton does not exist: " & user_repr(err.auto_symb)),
-  undef_react_auto_var()      = (#(if err.is_other_var_type then "Not an automaton" else "Undefined") & " variable: " & user_repr(err.var)),
+  undef_react_auto_var()      = ({if err.is_other_var_type then "Not an automaton" else "Undefined"} & " variable: " & user_repr(err.var)),
   unknown_input()             = ("Automaton " & user_repr(auto_symbol(err.automaton.name)) & " has no such input: " & _str_(err.name)),
   unknown_output()            = ("Automaton " & user_repr(auto_symbol(err.automaton.name)) & " has no such output: " & _str_(err.name)),
   unknown_db_field()          = ("Automaton " & user_repr(db_symbol(err.schema.name)) & " has no such state variable or nested automaton: " & _str_(err.name)),
@@ -890,6 +890,19 @@ String* basic_err_msg(ExprSpecWFError err) =
 
   annotated_syn_expr_error()  = basic_err_msg(err.error),
   annotated_syn_stmt_error()  = basic_err_msg(err.error);
+
+
+String* not_an_object_err_msg(SynExpr expr, [<SymbChainExpr, ClsVar, AnyAutoVar, AnyDBVar, AnyRelVar, FnFamilyId, PreCall>] resols) {
+  if expr :: ConstOrVar:
+    token = _print_(untag(expr));
+    return (
+      "Undefined variable or constant: " & token,
+      "There might be a function, closure or method with the same name"
+    );
+  ;
+
+  return ("Expression resolves to something other than a value");
+}
 
 
 String* conflicting_auto_decls_err_msg(AnyAutoDecl decl1, AnyAutoDecl decl2) {

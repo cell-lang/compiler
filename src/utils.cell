@@ -61,12 +61,12 @@ String user_repr(Type type, Bool inside_type_union, Bool incl_empty_seq, Bool in
   type_var(<*..*> n?)       = "<" & printed(n) & "'>",
   type_ref(ts?)             = user_repr(ts),
   ne_seq_type()             = user_repr(type.elem_type) & if incl_empty_seq then "*" else "+",
-  ne_set_type()             = "[" & #(if incl_empty_rel then "" else "+") & user_repr(type.elem_type) & "]",
-  ne_map_type()             = "[" & #(if incl_empty_rel then "" else "+") &
+  ne_set_type()             = "[" & {if incl_empty_rel then "" else "+"} & user_repr(type.elem_type) & "]",
+  ne_map_type()             = "[" & {if incl_empty_rel then "" else "+"} &
                               user_repr(type.key_type) & " -> " & user_repr(type.value_type) & "]",
-  ne_bin_rel_type()         = "[" & #(if incl_empty_rel then "" else "+") &
+  ne_bin_rel_type()         = "[" & {if incl_empty_rel then "" else "+"} &
                               append((append((user_repr(t) : t <- s), ", ") : s <- rand_sort(type.signatures)), "; ") & "]",
-  ne_tern_rel_type()        = "[" & #(if incl_empty_rel then "" else "+") &
+  ne_tern_rel_type()        = "[" & {if incl_empty_rel then "" else "+"} &
                               append((append((user_repr(t) : t <- s), ", ") : s <- rand_sort(type.signatures)), "; ") & "]",
   ne_record_type(fs?)       = ne_record_type_user_repr(fs),
   tuple_type(ts?)           = "(" & append((user_repr(t) : t <- ts), ", ") & ")",
@@ -236,7 +236,7 @@ String user_repr(Pattern ptrn) =
   ptrn_integer(t?)    = user_repr(t),
   ptrn_tuple(ps?)     = "(" & append((user_repr(p) : p <- ps), ", ") & ")",
   ptrn_tag_obj()      = ptrn_tag_obj_user_repr(ptrn.tag, ptrn.obj),
-  ptrn_var()          = #(if ptrn.ptrn != ptrn_any then user_repr(ptrn.ptrn) & " " else "") & user_repr(ptrn.var) & "?",
+  ptrn_var()          = {if ptrn.ptrn != ptrn_any then user_repr(ptrn.ptrn) & " " else ""} & user_repr(ptrn.var) & "?",
   ptrn_union(ps?)     = append((user_repr(p) : p <- rand_sort(ps)), " | ");
 
 

@@ -28,7 +28,7 @@ String* create_error_msg(ParserError err, String filename) =
 
 
 Maybe[CCodeOutput] Compile(
-  [String -> Nat*] src_files, Bool include_runtime, Bool run_typechecking, Bool add_rc,
+  [String -> Byte*] src_files, Bool include_runtime, Bool run_typechecking, Bool add_rc,
   Bool ignore_assertions, Bool print_intermediate, Bool print_times, Bool wait_for_key
 ) {
   t0 = _ticks_(:any_value_will_do);
@@ -175,7 +175,7 @@ Maybe[CCodeOutput] Compile(
 
   c_code  = compile_to_c(rc_code, include_runtime);
   t9 = _ticks_(:any_value_will_do);
-  Print("C code generated\n");
+  Print("C++ code generated\n");
   if wait_for_key:
     unused_var = GetChar();
   ;
@@ -194,7 +194,7 @@ Maybe[CCodeOutput] Compile(
     if add_rc:
       Print("Reference counting:  " & printed(t8-t7) & "ms\n");
     ;
-    Print("C code generation:   " & printed(t9-t8) & "ms\n");
+    Print("C++ code generation: " & printed(t9-t8) & "ms\n");
     Print("Total time elapsed:  " & printed(t9-t0) & "ms\n");
   ;
 
@@ -233,7 +233,7 @@ Int Main(String* args) {
   argc = |args|;
 
   if args == ():
-    Print("Usage: amberc <project file>\n");
+    Print("Usage: cellc <project file>\n");
     return 1;
   ;
 

@@ -12,7 +12,7 @@ implicit {
     nested_blocks_decls = [to_c_name(t) & " " & to_c_var_decl_name(v) & ";" : v, t <- block.nested_blocks];
 
     memb_decls = links_decls & rand_sort(state_vars_decls) & rand_sort(value_store_decls) & rand_sort(table_decls) & rand_sort(nested_blocks_decls);
-    struct_decl = ("struct " & to_c_name(block.name) & " {") & indent_lines(memb_decls) & ("};");
+    struct_decl = ({"struct " & to_c_name(block.name) & " {"}) & indent_lines(memb_decls) & ("};");
 
     aux_vars_decls = ["OBJ " & to_c_var_decl_name(pending_state_var(bare_id(v))) & ";" : v, unused_var <- block.state_vars];
     aux_bool_vars_decls = ["bool " & to_c_var_decl_name(nested_db_spent(v)) & ";" : v, unused_var <- block.nested_blocks];
@@ -24,7 +24,7 @@ implicit {
     nested_aux_blocks_decls = [aux_struct_c_name(t) & " " & aux_struct_var_decl_name(v) & ";" : v, t <- block.nested_blocks];
     aux_memb_decls = rand_sort(aux_vars_decls) & rand_sort(aux_bool_vars_decls) & rand_sort(aux_stores_decls) &
       rand_sort(aux_tables_decls) & rand_sort(nested_aux_blocks_decls);
-    aux_struct_decl = ("struct " & aux_struct_c_name(block.name) & " {") & indent_lines(aux_memb_decls) & ("};");
+    aux_struct_decl = ({"struct " & aux_struct_c_name(block.name) & " {"}) & indent_lines(aux_memb_decls) & ("};");
 
     init_decl, init_impl = compile_init_code_to_c(block.name, block.links, block.init_code);
     cleanup_decl, cleanup_impl = compile_cleanup_code_to_c(block.name, block.cleanup_code);
@@ -85,7 +85,7 @@ implicit {
     link_args = append((", " & to_c_name(l) & " *linked_auto_" & printed(i) : l @ i <- links));
     init_sgn = "void " & init_method_name(name) & "(" & to_c_name(name) & " *self" & link_args & ", ENV &env)";
     init_decl = init_sgn & ";";
-    init_proc = (init_sgn & " {") & indent_lines(init_body) & ("}");
+    init_proc = ({init_sgn & " {"}) & indent_lines(init_body) & ("}");
     return (init_decl, init_proc);
   }
 
@@ -94,7 +94,7 @@ implicit {
     cleanup_body = compile_to_c(cleanup_code, nothing);
     cleanup_sgn = "void " & cleanup_method_name(name) & "(" & to_c_name(name) & " *self)";
     cleanup_decl = cleanup_sgn & ";";
-    cleanup_proc = (cleanup_sgn & " {") & indent_lines(cleanup_body) & ("}");
+    cleanup_proc = ({cleanup_sgn & " {"}) & indent_lines(cleanup_body) & ("}");
     return (cleanup_decl, cleanup_proc);
   }
 
@@ -103,7 +103,7 @@ implicit {
     vars_decls = gen_vars_decls(code);
     body = vars_decls & ("" if vars_decls != ()) & compile_to_c(code, nothing);
     sgn = "OBJ " & copy_state_proc_name(name) & "(" & to_c_name(name) & " *self)";
-    return (sgn & ";", (sgn & " {") & indent_lines(body) & ("}"));
+    return (sgn & ";", ({sgn & " {"}) & indent_lines(body) & ("}"));
   }
 
 
@@ -112,7 +112,7 @@ implicit {
     body = vars_decls & ("" if vars_decls != ()) & compile_to_c(code, nothing);
     sgn = "OBJ " & set_state_proc_name(name) & "(" & to_c_name(name) & " *self, " &
           aux_struct_c_name(name) & " *self_aux, OBJ a0)";
-    return (sgn & ";", (sgn & " {") & indent_lines(body) & ("}"));
+    return (sgn & ";", ({sgn & " {"}) & indent_lines(body) & ("}"));
   }
 
 
@@ -153,7 +153,7 @@ implicit {
       "return ok;"
     );
 
-    return (sgn & ";", (sgn & " {") & indent_lines(body) & ("}"));
+    return (sgn & ";", ({sgn & " {"}) & indent_lines(body) & ("}"));
   }
 
 
@@ -186,7 +186,7 @@ implicit {
       "return ok;"
     );
 
-    return (sgn & ";", (sgn & " {") & indent_lines(body) & ("}"));
+    return (sgn & ";", ({sgn & " {"}) & indent_lines(body) & ("}"));
   }
 
 
@@ -206,7 +206,7 @@ implicit {
     sgn = "bool " & updates_check_proc_name(block.name) &  "(" & to_c_name(block.name) &
           " *self, " & aux_struct_c_name(block.name) & " *self_aux)";
 
-    return (sgn & ";", (sgn & " {") & indent_lines(body) & ("}"));
+    return (sgn & ";", ({sgn & " {"}) & indent_lines(body) & ("}"));
 
 
     [NzNat -> [[[+Nat]] -> String]] fn_names = [
@@ -247,7 +247,7 @@ implicit {
     sgn = "void " & updates_copy_proc_name(block.name) & "(" & to_c_name(block.name) &
           " *self, " & aux_struct_c_name(block.name) & " *self_aux)";
 
-    return (sgn & ";", (sgn & " {") & indent_lines(body) & ("}"));
+    return (sgn & ";", ({sgn & " {"}) & indent_lines(body) & ("}"));
   }
 
 
@@ -258,7 +258,7 @@ implicit {
     );
 
     tables_apply_code = [{
-        other_args = ("&" & pending_updates_var_ref_name(v)) & (to_c_var_ref_name(vs) : vs <- t.value_stores);
+        other_args = ({"&" & pending_updates_var_ref_name(v)}) & (to_c_var_ref_name(vs) : vs <- t.value_stores);
         return mk_gen_call(fn_names_by_arity[arity(t)], (), (v), other_args);
       } : v, t <- block.tables
     ];
@@ -273,7 +273,7 @@ implicit {
     sgn = "void " & updates_apply_proc_name(block.name) & "(" & to_c_name(block.name) &
           " *self, " & aux_struct_c_name(block.name) & " *self_aux)";
 
-    return (sgn & ";", (sgn & " {") & indent_lines(body) & ("}"));
+    return (sgn & ";", ({sgn & " {"}) & indent_lines(body) & ("}"));
 
 
     [NzNat -> String] fn_names_by_arity = [
@@ -289,7 +289,7 @@ implicit {
     vars_copy_code = join((var_apply_code(id) : id <- var_ids));
 
     tables_finish_code = [{
-        other_args = ("&" & pending_updates_var_ref_name(v)) & (to_c_var_ref_name(vs) : vs <- t.value_stores);
+        other_args = ({"&" & pending_updates_var_ref_name(v)}) & (to_c_var_ref_name(vs) : vs <- t.value_stores);
         return mk_gen_call(fn_names_by_arity[arity(t)], (), (), other_args);
       } : v, t <- block.tables
     ];
@@ -304,7 +304,7 @@ implicit {
     sgn = "void " & updates_finish_proc_name(block.name) & "(" & to_c_name(block.name) &
           " *self, " & aux_struct_c_name(block.name) & " *self_aux)";
 
-    return (sgn & ";", (sgn & " {") & indent_lines(body) & ("}"));
+    return (sgn & ";", ({sgn & " {"}) & indent_lines(body) & ("}"));
 
 
     [NzNat -> String] fn_names_by_arity = [
@@ -342,7 +342,7 @@ implicit {
 
     sgn = "void " & aux_struct_init_proc_name(block.name) & "(" & to_c_name(block.name) & " *self, " & aux_struct_c_name(block.name) & " *self_aux)";
 
-    return (sgn & ";", (sgn & " {") & indent_lines(body) & ("}"));
+    return (sgn & ";", ({sgn & " {"}) & indent_lines(body) & ("}"));
 
 
     [NzNat -> String] fn_names_by_arity = [
@@ -373,7 +373,7 @@ implicit {
 
     sgn = "void " & aux_struct_cleanup_proc_name(block.name) & "(" & aux_struct_c_name(block.name) & " *self_aux)";
 
-    return (sgn & ";", (sgn & " {") & indent_lines(body) & ("}"));
+    return (sgn & ";", ({sgn & " {"}) & indent_lines(body) & ("}"));
 
 
     [NzNat -> String] fn_names_by_arity = [
@@ -403,11 +403,11 @@ implicit {
 
 
   (String, String*) gen_user_def_method(DBSymbol block_name, MethodId method_id, Instr* body) {
-    args_str = append((to_c_name(block_name) & " *self") & ("OBJ " & to_c_var_decl_name(fn_arg(i)) : i < method_id.arity), ", ");
+    args_str = append(({to_c_name(block_name) & " *self"}) & ("OBJ " & to_c_var_decl_name(fn_arg(i)) : i < method_id.arity), ", ");
     sgn = "OBJ " & user_def_method_name(block_name, method_id) & "(" & args_str & ", ENV &env)";
     vars_decls = gen_vars_decls(body);
     body_text = vars_decls & ("" if vars_decls != ()) & compile_to_c(body, nothing);
-    return (sgn & ";", (sgn & " {") & indent_lines(body_text) & ("}"));
+    return (sgn & ";", ({sgn & " {"}) & indent_lines(body_text) & ("}"));
   }
 
 
@@ -418,6 +418,6 @@ implicit {
     sgn = "void " & update_name(block_name, update_id) & "(" & args_str & ", ENV &env)";
     vars_decls = gen_vars_decls(body);
     body_text = vars_decls & ("" if vars_decls != ()) & compile_to_c(body, nothing);
-    return (sgn & ";", (sgn & " {") & indent_lines(body_text) & ("}"));
+    return (sgn & ";", ({sgn & " {"}) & indent_lines(body_text) & ("}"));
   }
 }
