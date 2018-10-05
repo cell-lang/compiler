@@ -1835,8 +1835,30 @@ implicit filename : String, lines : Nat** {
       var           = build_state_var_decl_ast(inner_match),
       relvar        = build_relvar_decl_ast(inner_match),
       relvar_attrs  = build_relvar_attrs_decl_ast(inner_match),
+      foreign_key   = build_foreign_key_decl_ast(inner_match),
       nested_db     = build_nested_db_decl_ast(inner_match);
     return attach_src_code_info(decl, mtc);
+  }
+
+  ForeignKeyDecl build_foreign_key_decl_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 5;
+    src_rel = get_lowercase_id(nodes(0));
+    src_args = (
+      if get_token(n) == :underscore then nothing else just(get_lowercase_id(n))
+      : n <- nonempty(rep_rule_nodes(block_node(nodes(1))))
+    );
+    targets = ({
+      target_nodes = rule_seq_nodes(n);
+      assert |target_nodes| == 2;
+      target_rel = get_lowercase_id(target_nodes(0));
+      target_args = (
+        if get_token(a) == :underscore then nothing else just(get_lowercase_id(a))
+        : a <- nonempty(rep_rule_nodes(block_node(target_nodes(1))))
+      );
+      return (target_rel, target_args);
+    } : n <- nonempty(rep_rule_nodes(nodes(3))));
+    return foreign_key_decl(src_rel, src_args, targets);
   }
 
   RelVarsDecl build_relvar_attrs_decl_ast(RuleMatch mtc) {

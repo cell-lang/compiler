@@ -1148,6 +1148,7 @@ ParsingRule rule_db_decl =
     (:var,          rule_seq((rule_lc_id, rule_colon, rule_type, rule_equals, rule_expr, rule_semicolon))),
     (:relvar,       rule_relvar_decl),
     (:relvar_attrs, rule_relvar_attrs_decl),
+    (:foreign_key,  rule_foreign_key_decl),
     (:nested_db,    rule_seq((rule_id, rule_colon, rule_mc_id, rule_semicolon)))
   ));
 
@@ -1179,6 +1180,21 @@ ParsingRule rule_relvar_attrs_decl =
   ));
 
 ParsingRule rule_card = optional_rule(rule_anon_choice((rule_question_mark, rule_asterisk, rule_plus)));
+
+ParsingRule rule_foreign_key_decl =
+  rule_seq((
+    rule_lc_id,
+    par_rule(comma_sep_seq(rule_anon_choice((rule_lc_id, rule_underscore)))),
+    // par_rule(rule_underscore),
+    rule_right_arrow,
+    comma_sep_seq(
+      rule_seq((
+        rule_lc_id,
+        par_rule(comma_sep_seq(rule_anon_choice((rule_lc_id, rule_underscore))))
+      ))
+    ),
+    rule_semicolon
+  ));
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////

@@ -16,6 +16,7 @@ implicit syn_prg : SynPrg, artifact : SchemaDef {
       links:        (db_symbol(id) : id <- artifact.links),
       state_vars:   state_vars,
       rel_vars:     desugared_relvars,
+      foreign_keys: desugared_foreign_keys,
       nested_dbs:   db_vars_types,
       methods:      methods,
       updates:      updates,
@@ -27,6 +28,13 @@ implicit syn_prg : SynPrg, artifact : SchemaDef {
 
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////
+
+  [ForeignKey] desugared_foreign_keys = [{
+    used_args = [value(a) : a <~ as, a != nothing];
+    src_args = (if a != nothing and not used_args(value(a)) then nothing else a : a <- k.src_args);
+    return foreign_key((rel_var(k.src_rel), src_args), (rel_var(r), as));
+  } : k <- db_foreign_keys, t <~ k.targets, (r?, as?) ?= t];
+
 
   [RelVar -> (signatures: [+NeType+], keys: [[+Nat]])] desugared_relvars {
     root_relvars_sgns = [
