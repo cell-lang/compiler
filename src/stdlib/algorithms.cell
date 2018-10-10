@@ -263,3 +263,27 @@ Nat* reverse_perm(Nat* p) = array_map(reverse(merge(([i -> n] : n @ i <- p))));
   ord_set = rand_sort(set);
   return [x, y : x @ i <~ ord_set, y <~ drop(ord_set, i+1)];
 }
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+[[+T]] merge_intersecting([[+T]] sets) {
+  taken : [Int];
+
+  ord_sets = isort(sets);
+  loop
+    taken = [];
+    merged_sets = ();
+    for s @ i <- ord_sets:
+      if not taken(i):
+        intersecting = (i+j+1 : os @ j <- drop(ord_sets, i+1), not taken(j) and not disjoint(s, os));
+        merged_set = s & union([ord_sets(j) : j <~ intersecting]);
+        merged_sets = (merged_sets | merged_set);
+        taken = taken & set(intersecting);
+      ;
+    ;
+    break if ord_sets == merged_sets;
+    ord_sets = merged_sets;
+  ;
+  return set(ord_sets);
+}

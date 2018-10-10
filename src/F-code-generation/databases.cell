@@ -15,6 +15,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
       state_vars:       [v -> info.type : v, info <- database.state_vars],
       value_stores:     value_stores,
       tables:           tables,
+      foreign_keys:     [low_level_key(k, tables) : k <- database.foreign_keys],
       nested_blocks:    database.nested_dbs,
       init_code:        database_init_code,
       cleanup_code:     database_cleanup_code,
@@ -271,22 +272,78 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
+BlockForeignKey low_level_key(ForeignKey key, [RelVar -> Table] tables) {
+  origin_relvar, origin_args = key.source;
+  target_relvar, target_args = key.target;
+
+  assert match (origin_args, target_args)
+    (just(s1?)),              (just(s2?))            = s1 == s2,
+    (just(s1?)),              (just(s2?), nothing)   = s1 == s2,
+    (just(s1?)),              (nothing, just(s2?))   = s1 == s2,
+    (just(s1?), nothing),     (just(s2?))            = s1 == s2,
+    (nothing, just(s1?)),     (just(s2?))            = s1 == s2,
+    _,                        _                      = false;
+
+  key_type = match (origin_args, target_args)
+    (just()),           (just())            = :unary_unary,
+    (just()),           (just(), nothing)   = :unary_binary(if unflipped(tables(target_relvar)) then 0 else 1),
+    (just()),           (nothing, just())   = :unary_binary(if unflipped(tables(target_relvar)) then 1 else 0),
+    (just(), nothing),  (just())            = :binary_unary(if unflipped(tables(origin_relvar)) then 0 else 1),
+    (nothing, just()),  (just())            = :binary_unary(if unflipped(tables(origin_relvar)) then 1 else 0);
+
+  return foreign_key(origin_relvar, target_relvar, key_type);
+
+  Bool unflipped(Table table) {
+    assert table.applied_perm == (0, 1) or table.applied_perm == (1, 0);
+    return table.applied_perm == (0, 1);
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+[[+(RelVar, Nat)]] column_clusters([RelVar, NzNat] relvars, [ForeignKey] foreign_keys) {
+  init_clusters = union([associations(k) : k <- foreign_keys]);
+  non_trivial_clusters = merge_intersecting(init_clusters);
+  all_cols = [(r, i) : r, a <- relvars, i <~ (i : i < a)];
+  rem_cols = all_cols - union(non_trivial_clusters);
+  final_clusters = non_trivial_clusters & [[c] : c <- rem_cols];
+  assert union(final_clusters) == all_cols;
+  return final_clusters;
+
+
+  [[+(RelVar, Nat)]] associations(ForeignKey foreign_key) {
+    origin_relvar, origin_args = foreign_key.source;
+    target_relvar, target_args = foreign_key.target;
+    origin_args_idxs = [value(a) -> i : a @ i <~ origin_args, a != nothing];
+    idx_assocs = [origin_args_idxs(value(a)), i : a @ i <~ target_args, a != nothing];
+    return [[(origin_relvar, i), (target_relvar, j)] : i, j <- idx_assocs];
+  }
+}
+
+
 implicit program : Program, database : Database { ## program IS NOT REALLY NEEDED, BUT THE TYPECHECKER...
   ([ValueStoreId], [RelVar -> Table]) value_stores_and_tables {
-    sorted_cols = rand_sort([(v, i) : v, info <- database.rel_vars, i <- range(arity(info.signatures))]);
-    col_to_id_map = merge(([c -> i] : c @ i <- sorted_cols));
-
-    value_stores = [value_store_id(i) : _ @ i <~ sorted_cols];
+    relvars_arity = [r, arity(info.signatures) : r, info <- database.rel_vars];
+    clusters = column_clusters(relvars_arity, database.foreign_keys);
+    ord_clusters = isort(clusters);
+    col_to_id_map = [c -> i : cs @ i <~ ord_clusters, c <- cs];
+    value_stores = [value_store_id(i) : i <- range(|ord_clusters|)];
 
     let context = database:
       tables = [
-        v -> table(
-          (value_store_id(col_to_id_map[(v, i)]) : i < arity(info.signatures)),
-          table_keys(v),
-          col_types(info.signatures, info.keys),
-          relvar_cols_perm(v)
-        )
-        : v, info <- database.rel_vars
+        v -> {
+          arity = arity(info.signatures);
+
+          non_permutated_value_stores = (value_store_id(col_to_id_map[(v, i)]) : i < arity);
+          keys = table_keys(v);
+          col_types = col_types(info.signatures, info.keys);
+          applied_perm = relvar_cols_perm(v);
+
+          permutated_value_stores = (non_permutated_value_stores(applied_perm(i)) : i < arity);
+
+          return table(permutated_value_stores, keys, col_types, applied_perm);
+        } : v, info <- database.rel_vars
       ];
     ;
 
