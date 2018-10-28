@@ -286,20 +286,12 @@ BlockForeignKey low_level_key(ForeignKey key, [RelVar -> Table] tables) {
 
     (just(s1?), nothing),     (just(s2?))                     = s1 == s2,
     (nothing, just(s1?)),     (just(s2?))                     = s1 == s2,
-    (just(s1?), just(s2?)),   (just(s3?), just(s4?), nothing) = s1 != s2 and
-                                                                ((s1 == s3 and s2 == s4) or
-                                                                 (s1 == s4 and s2 == s3)),
+    (just(s1?), just(s2?)),   (just(s3?), just(s4?), nothing) = s1 != s2 and s1 == s3 and s2 == s4,
 
     (_, _, _) as?,            (t?)                            = { las = (a : a <- as, a != nothing);
                                                                   return |las| == 1 and only(las) == t;
                                                                 },
-    (_, _, _) oas?,           (ta1?, ta2?)                    = { las = (a : a <- oas, a != nothing);
-                                                                  return false if |las| != 2;
-                                                                  oa1, oa2 = las;
-                                                                  return oa1 != oa2 and
-                                                                         ((oa1 == ta1 and oa2 == ta2) or
-                                                                          (oa1 == ta2 and oa2 == ta1));
-                                                                },
+    (just(s1?), just(s2?), nothing),  (just(s3?), just(s4?))  = s1 != s2 and s1 == s3 and s2 == s4,
 
     _,                        _                               = false;
 
@@ -307,27 +299,21 @@ BlockForeignKey low_level_key(ForeignKey key, [RelVar -> Table] tables) {
   target_perm = reverse_perm(tables(target_relvar).applied_perm);
 
   key_type = match (origin_args, target_args)
-    (just()),           (just())            = :unary_unary,
-    (just()),           (just(), nothing)   = unary_binary(target_perm(0)),
-    (just()),           (nothing, just())   = unary_binary(target_perm(1)),
-    (just()),           (_, _, _) as?       = { idx = only_unsafe((i : a @ i <- as, a != nothing));
-                                                return unary_ternary(target_perm(idx));
-                                              },
+    (just()),           (just())          = :unary_unary,
+    (just()),           (just(), nothing) = unary_binary(target_perm(0)),
+    (just()),           (nothing, just()) = unary_binary(target_perm(1)),
+    (just()),           (_, _, _) as?     = { idx = only_unsafe((i : a @ i <- as, a != nothing));
+                                              return unary_ternary(target_perm(idx));
+                                            },
 
-    (just(), nothing),          (just())        = binary_unary(origin_perm(0)),
-    (nothing, just()),          (just())        = binary_unary(origin_perm(1)),
-    (just() oa1?, just() oa2?), (_, _, _) tas?  = { idx1 = only_unsafe((i : a @ i <- tas, a == oa1));
-                                                    idx2 = only_unsafe((i : a @ i <- tas, a == oa2));
-                                                    idx1, idx2 = (idx2, idx1) if origin_perm == (1, 0);
-                                                    return binary_ternary(target_perm(idx1), target_perm(idx2));
-                                                  },
+    (just(),  nothing), (just())          = binary_unary(origin_perm(0)),
+    (nothing, just()),  (just())          = binary_unary(origin_perm(1)),
+    (just(),  just()),  (_, _, _)         = :binary_ternary,
 
-    (_, _, _) oas?,     (just() ta?)  = ternary_unary(origin_perm(only_unsafe((i : a @ i <- oas, a == ta)))),
-    (_, _, _) oas?,     (ta1?, ta2?)  = { idx1 = only_unsafe((i : a @ i <- oas, a == ta1));
-                                          idx2 = only_unsafe((i : a @ i <- oas, a == ta2));
-                                          idx1, idx2 = (idx2, idx1) if target_perm == (1, 0);
-                                          return ternary_binary(origin_perm(idx1), origin_perm(idx2));
-                                        };
+    (_, _, _) oas?,     (just() ta?)      = { idx = only_unsafe((i : a @ i <- oas, a == ta));
+                                              return ternary_unary(origin_perm(idx));
+                                            },
+    (_, _, _),          (_, _)            = :ternary_binary;
 
   return foreign_key(origin_relvar, target_relvar, key_type);
 }
