@@ -407,7 +407,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
 
   Statement+ desugar_stmt(SynStmt stmt, [StdVar] def_vars) {
     stmts = match (stmt)
-      delete_stmt() = (desugar_delete_entry(e, def_vars) : e <- stmt.entries),
+      delete_stmt() = desugar_delete_stmt(stmt.entries, def_vars),
       insert_stmt() = (desugar_insert_entry(e, stmt.force, def_vars) : e <- stmt.entries),
       _             = (desugar_stmt_plain(stmt, def_vars));
 
@@ -460,8 +460,18 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
   }
 
 
-  Statement desugar_delete_entry((var: Atom, args: Maybe[SynExpr]+) entry, [StdVar] def_vars) =
-    delete_stmt(rel_var(entry.var), (apply(a, desugar_expr($, def_vars)) : a <- entry.args));
+  Statement+ desugar_delete_stmt((var: Symbol, args: Maybe[SynExpr]+)+ entries, [StdVar] def_vars) =
+    nonempty(join(({
+      args = (apply(a, desugar_expr($, def_vars)) : a <- e.args);
+      stmt = delete_stmt(rel_var(e.var), args);
+      target = match (artifact)
+        handler_def()             |
+        using_block_update_def()  = artifact.target;
+      attr_relvars = attribute_relvars(target, e.var);
+      attr_args = (args | nothing);
+      attr_stmts = (delete_stmt(r, attr_args) : r <- attr_relvars);
+      return (stmt) & attr_stmts;
+    } : e <- entries)));
 
 
   Statement desugar_insert_entry((var: Atom, args: SynExpr+) entry, Bool force, [StdVar] def_vars) =
