@@ -1291,16 +1291,16 @@ implicit filename : String, lines : Nat** {
       nodes = rule_seq_nodes(get_rule_match(mtc));
 
       if get_rule_name(mtc) == :foreach:
-        vars = (var(get_lowercase_id(n)) : n <- rep_rule_nodes(nodes(0)));
+        vars = (just(var(get_lowercase_id(n))) : n <- rep_rule_nodes(nodes(0)));
         expr = build_expr_ast(nodes(2));
-        return syn_seq_iter(nonempty(vars), expr);
+        return syn_coll_iter(nonempty(vars), expr);
       ;
 
       if get_rule_name(mtc) == :foreach_idx:
-        vars = (var(get_lowercase_id(n)) : n <- rep_rule_nodes(nodes(0)));
+        vars = (just(var(get_lowercase_id(n))) : n <- rep_rule_nodes(nodes(0)));
         idx_var = var(get_lowercase_id(nodes(2)));
         expr = build_expr_ast(nodes(4));
-        return syn_seq_iter(nonempty(vars), idx_var, expr);
+        return syn_coll_iter(nonempty(vars), idx_var, expr);
       ;
 
       if get_rule_name(mtc) == :for_upper:
@@ -1418,14 +1418,24 @@ implicit filename : String, lines : Nat** {
       insert  = false,
       update  = true;
     entries = (build_entry_ast(n) : n <- rep_rule_nodes(nodes(1)));
-    return syn_insert_stmt(nonempty(entries), force);
+    return insert_stmt(entries: nonempty(entries), force: force);
 
-    (Atom, SynExpr+) build_entry_ast(RuleMatch mtc) {
+    (var: Symbol, args: SynExpr+, iter: SynCollIter?) build_entry_ast(RuleMatch mtc) {
       nodes = rule_seq_nodes(mtc);
-      assert |nodes| == 2;
+      assert |nodes| == 3;
       relvar = get_lowercase_id(nodes(0));
       args = (build_expr_ast(n) : n <- rep_rule_nodes(block_node(nodes(1))));
-      return (relvar, nonempty(args));
+      return (var: relvar, args: nonempty(args)) if nodes(2) == null_match;
+      nodes = rule_seq_nodes(nodes(2));
+      assert |nodes| == 5;
+      vars = (just(var(get_lowercase_id(n))) : n <- rep_rule_nodes(nodes(1)));
+      src_expr = build_expr_ast(nodes(4));
+      iter = coll_value_iter(
+        vars:     nonempty(vars),
+        idx_var:  var(get_lowercase_id(rule_seq_node(nodes(2), 1))) if nodes(2) != null_match,
+        src_expr: src_expr
+      );
+      return (var: relvar, args: nonempty(args), iter: iter);
     }
   }
 

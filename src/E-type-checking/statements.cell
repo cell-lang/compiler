@@ -21,9 +21,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
       return_stmt(e?)     = typecheck(e, exp_type, env),
       if_stmt()           = typecheck_if_stmt(stmt.cond, stmt.body, stmt.else, exp_type, env),
       loop_stmt(ss?)      = typecheck_loop_stmt(ss, exp_type, env),
-      foreach_stmt()      = { maybe_idx_var = if stmt.idx_var? then just(stmt.idx_var) else nothing;
-                              return typecheck_foreach_stmt(stmt.vars, maybe_idx_var, stmt.values, stmt.body, exp_type, env);
-                            },
+      foreach_stmt()      = typecheck_foreach_stmt(stmt.iter, stmt.body, exp_type, env),
       for_stmt()          = { maybe_var = if stmt.var? then just(stmt.var) else nothing;
                               return typecheck_for_stmt(maybe_var, stmt.start_val,
                                 stmt.end_val, stmt.end_val_incl, stmt.body, exp_type, env);
@@ -39,7 +37,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
       try_update_stmt()   = typecheck_try_update_stmt(stmt.name, stmt.args, env),
       set_memb_var_stmt() = typecheck_set_memb_var_stmt(stmt.var, stmt.value, env),
       delete_stmt()       = typecheck_delete_stmt(stmt.var, stmt.fields, env),
-      insert_stmt()       = typecheck_insert_stmt(stmt.var, stmt.fields, stmt.force, env),
+      insert_stmt()       = typecheck_insert_stmt(stmt, env),
 
       return_stmt         = [],
       proc_call_stmt()    = typecheck_proc_call_stmt(
@@ -97,36 +95,93 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   }
 
 
-  [TypeCheckingError] typecheck_foreach_stmt(StdVar+ vars, Maybe[StdVar] maybe_idx_var, Expr values, Statement+ body, Type exp_type, [EnvVar -> Type] env) {
-    nvars = nz_nat(|vars|);
+  [TypeCheckingError] typecheck_foreach_stmt(CollValueIter iter, Statement+ body, Type exp_type, [EnvVar -> Type] env) {
+    nvars = |iter.vars|;
     exp_src_type = if nvars == 1 then type_seq else type_seq(type_tuple(nvars));
-    errs = typecheck(values, exp_src_type, env);
-    return errs if errs != [];
-    elem_type = seq_elem_supertype(expr_type(values, env));
+    errs_seq = typecheck(iter.src_expr, exp_src_type, env);
+    return typecheck_seq_foreach(iter, body, exp_type, env) if errs_seq == [];
+    return errs_seq if iter.idx_var? or nvars > 3;
 
-    num_vars = nz_nat(|vars|);
-    if num_vars == 1:
-      loop_vars = [vars(0) -> elem_type];
+    if |iter.vars| == 1:
+      errs_set = typecheck(iter.src_expr, type_set, env);
+      if errs_set != []:
+        ## BAD: THIS SHOULB BE DONE IN error-euristics.cell, NOT HERE
+        errs_any = typecheck(iter.src_expr, ne_union_type([type_seq, type_set]), env);
+        return if errs_any != [] then errs_any else errs_seq & errs_set;
+      ;
+      return typecheck_set_foreach(iter, body, exp_type, env);
+
+    elif |iter.vars| == 2:
+      errs_rel = typecheck(iter.src_expr, type_bin_rel, env);
+      if errs_rel != []:
+        ## BAD: THIS SHOULB BE DONE IN error-euristics.cell, NOT HERE
+        errs_any = typecheck(iter.src_expr, ne_union_type([type_seq, type_bin_rel]), env);
+        return if errs_any != [] then errs_any else errs_seq & errs_rel;
+      ;
+      return typecheck_bin_rel_foreach(iter, body, exp_type, env);
+
     else
-      field_types = tuple_field_supertypes(elem_type, num_vars);
-      loop_vars = merge(([v -> t] : v, t <- zip(vars, field_types)));
-    ;
-    loop_vars = loop_vars & [value(maybe_idx_var) -> type_nat] if maybe_idx_var != nothing;
-
-    out_of_loop_vars = keys(env);
-
-    entry_env = env & loop_vars;
-    envs = (env);
-    for 2:
-      errs = typecheck(body, exp_type, entry_env);
-      return errs if errs != [];
-      exit_env = select_by_key(update_env(body, entry_env), out_of_loop_vars);
-      return [] if not (v, t <- exit_env : not is_subset(t, entry_env[v]));
-      entry_env = exit_env & loop_vars;
-      envs = (envs | exit_env);
+      assert |iter.vars| == 3;
+      errs_rel = typecheck(iter.src_expr, type_tern_rel, env);
+      if errs_rel != []:
+        ## BAD: THIS SHOULB BE DONE IN error-euristics.cell, NOT HERE
+        errs_any = typecheck(iter.src_expr, ne_union_type([type_seq, type_tern_rel]), env);
+        return if errs_any != [] then errs_any else errs_seq & errs_rel;
+      ;
+      return typecheck_tern_rel_foreach(iter, body, exp_type, env);
     ;
 
-    return [loop_did_not_converge(2, bad_vars_history(envs))];
+
+    [TypeCheckingError] typecheck_seq_foreach(CollValueIter iter, Statement+ body, Type exp_type, [EnvVar -> Type] env) {
+      elem_type = seq_elem_supertype(expr_type(iter.src_expr, env));
+      if |iter.vars| == 1:
+        var = only(iter.vars);
+        loop_vars = [value(var) -> elem_type if var != nothing];
+      else
+        field_types = tuple_field_supertypes(elem_type, |iter.vars|);
+        loop_vars = [value(v) -> field_types(i) : v @ i <~ iter.vars, v != nothing];
+      ;
+      loop_vars = loop_vars & [iter.idx_var -> type_nat] if iter.idx_var?;
+      return typecheck_loop_body(body, loop_vars, exp_type, env);
+    }
+
+
+    [TypeCheckingError] typecheck_set_foreach(CollValueIter iter, Statement+ body, Type exp_type, [EnvVar -> Type] env) {
+      elem_type = set_elem_supertype(expr_type(iter.src_expr, env));
+      var = only_unsafe(iter.vars);
+      loop_vars = [value(var) -> elem_type if var != nothing];
+      return typecheck_loop_body(body, loop_vars, exp_type, env);
+    }
+
+
+    [TypeCheckingError] typecheck_bin_rel_foreach(CollValueIter iter, Statement+ body, Type exp_type, [EnvVar -> Type] env) {
+      args_types = bin_rel_args_supertypes(expr_type(iter.src_expr, env));
+      loop_vars = [value(v) -> args_types(i) : v @ i <~ iter.vars, v != nothing];
+      return typecheck_loop_body(body, loop_vars, exp_type, env);
+    }
+
+
+    [TypeCheckingError] typecheck_tern_rel_foreach(CollValueIter iter, Statement+ body, Type exp_type, [EnvVar -> Type] env) {
+      args_types = tern_rel_args_supertypes(expr_type(iter.src_expr, env));
+      loop_vars = [value(v) -> args_types(i) : v @ i <~ iter.vars, v != nothing];
+      return typecheck_loop_body(body, loop_vars, exp_type, env);
+    }
+
+
+    [TypeCheckingError] typecheck_loop_body(Statement+ body, [EnvVar -> Type] loop_vars, Type exp_type, [EnvVar -> Type] env) {
+      out_of_loop_vars = keys(env);
+      entry_env = env & loop_vars;
+      envs = (env);
+      for 2:
+        errs = typecheck(body, exp_type, entry_env);
+        return errs if errs != [];
+        exit_env = select_by_key(update_env(body, entry_env), out_of_loop_vars);
+        return [] if not (v, t <- exit_env : not is_subset(t, entry_env[v]));
+        entry_env = exit_env & loop_vars;
+        envs = (envs | exit_env);
+      ;
+      return [loop_did_not_converge(2, bad_vars_history(envs))];
+    }
   }
 
 
@@ -212,17 +267,17 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   }
 
 
-  [TypeCheckingError] typecheck_insert_stmt(RelVar var, Expr+ fields, Bool force, [EnvVar -> Type] env) {
-    errs = seq_union((typecheck(f, type_any, env) : f <- fields));
+  [TypeCheckingError] typecheck_insert_stmt(InsertStmt stmt, [EnvVar -> Type] env) {
+    errs = seq_union((typecheck(f, type_any, env) : f <- stmt.fields));
     return errs if errs != [];
-    args_types = (expr_type(f, env) : f <- fields);
+    args_types = (expr_type(f, env) : f <- stmt.fields);
     database = cast_database(context);
-    sgns = database.rel_vars[var].signatures;
-    agg_sgns = relvar_aggregated_signatures(database.name, var);
+    sgns = database.rel_vars[stmt.var].signatures;
+    agg_sgns = relvar_aggregated_signatures(database.name, stmt.var);
     for s <- rand_sort(sgns) & rand_sort(agg_sgns):
       return [] if all((is_subset(at, ft) : at, ft <- zip(args_types, s)));
     ;
-    return [no_matching_relvar(var, (just(a) : a <- args_types), sgns)];
+    return [no_matching_relvar(stmt.var, (just(a) : a <- args_types), sgns)];
   }
 
   //////////////////////////////////////////////////////////////////////////////

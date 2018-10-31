@@ -474,8 +474,20 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
     } : e <- entries)));
 
 
-  Statement desugar_insert_entry((var: Atom, args: SynExpr+) entry, Bool force, [StdVar] def_vars) =
-    insert_stmt(rel_var(entry.var), (desugar_expr(e, def_vars) : e <- entry.args), force);
+  Statement desugar_insert_entry((var: Atom, args: SynExpr+, iter: SynCollIter?) entry, Bool force, [StdVar] def_vars) {
+    args_vars = def_vars & if entry.iter? then syn_new_vars(entry.iter) else [];
+    args = (desugar_expr(e, args_vars) : e <- entry.args);
+    stmt = insert_stmt(rel_var(entry.var), args, force);
+    stmt = foreach_stmt(desugar(entry.iter, def_vars), (stmt)) if entry.iter?;
+    return stmt;
+
+    CollValueIter desugar(SynCollIter iter, [StdVar] def_vars) =
+      coll_value_iter(
+        vars:     iter.vars,
+        idx_var:  iter.idx_var if iter.idx_var?,
+        src_expr: desugar_expr(iter.src_expr, def_vars)
+      );
+  }
 
 
   Statement desugar_if_stmt((cond: SynExpr, body: SynStmt+)+ branches, SynStmt* syn_else_body, [StdVar] def_vars) {
@@ -519,10 +531,14 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
     return desugar(iter, body, def_vars);
 
 
-    Statement desugar(SynSeqIter iter, Statement+ body, [StdVar] def_vars) {
-      source = desugar_expr(iter.values, def_vars);
-      maybe_idx_var = if iter.idx_var? then just(iter.idx_var) else nothing;
-      return foreach_stmt(iter.vars, maybe_idx_var, source, body);
+    Statement desugar(SynCollIter syn_iter, Statement+ body, [StdVar] def_vars) {
+      src_expr = desugar_expr(syn_iter.src_expr, def_vars);
+      iter = coll_value_iter(
+        vars:     syn_iter.vars,
+        idx_var:  syn_iter.idx_var if syn_iter.idx_var?,
+        src_expr: src_expr
+      );
+      return foreach_stmt(iter, body);
     }
 
 

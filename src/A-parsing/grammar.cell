@@ -711,7 +711,19 @@ ParsingRule rule_delete_stmt =
 ParsingRule rule_insert_stmt =
   rule_seq((
     rule_anon_choice((keyword_insert, keyword_update)),
-    comma_sep_seq(rule_seq((rule_id, par_rule(comma_sep_seq(rule_expr))))),
+    comma_sep_seq(
+      rule_seq((
+        rule_id,
+        par_rule(comma_sep_seq(rule_expr)),
+        optional_rule_seq((
+          rule_colon,
+          comma_sep_seq(rule_id),
+          optional_rule_seq((rule_at, rule_id)),
+          rule_left_arrow,
+          rule_expr
+        ))
+      ))
+    ),
     rule_semicolon
   ));
 

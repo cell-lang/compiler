@@ -712,6 +712,54 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////
 
+  // [EnvVar -> Type] downstream_env(CollValueIter iter, [EnvVar -> Type] env) {
+  //   src_type = expr_type(iter.src_expr, env);
+
+  //   if is_subset(src_type, type_seq):
+  //     return seq_iter_env(iter, src_type, env);
+  //   elif |iter.vars| == 1:
+  //     var = only(iter.vars);
+  //     return env & [value(var) -> set_elem_supertype(src_type) if var != nothing];
+  //   else
+  //     return rel_iter_env(iter.vars, (nothing : unused_var <- iter.vars), src_type, env);
+  //   ;
+
+
+  //   [EnvVar -> Type] seq_iter_env(CollValueIter iter, Type src_type, [EnvVar -> Type] env) {
+  //     elem_type = seq_elem_supertype(src_type);
+
+  //     nvars = nz_nat(|iter.vars|);
+  //     if nvars == 1:
+  //       var = iter.vars(0);
+  //       env_delta = [value(var) -> elem_type if var != nothing];
+  //     else
+  //       types = tuple_field_supertypes(elem_type, nvars);
+  //       env_delta = merge(([value(v) -> t] : v, t <- zip(iter.vars, types), v != nothing));
+  //     ;
+  //     env_delta = env_delta & [iter.idx_var -> type_nat] if iter.idx_var?;
+
+  //     return env & env_delta;
+  //   }
+
+
+  //   [EnvVar -> Type] rel_iter_env(Maybe[StdVar]+ vars, Maybe[StdVar]+ args, Type src_type, [EnvVar -> Type] env) {
+  //     env_delta : [EnvVar -> Type];
+
+  //     assert |args| == 2 or |args| == 3;
+  //     assert |vars| == count(args, $ == nothing);
+
+  //     args_types = if |args| == 2
+  //       then bin_rel_args_supertypes(src_type)
+  //       else tern_rel_args_supertypes(src_type);
+  //     idxs = packed_seq_idxs((a == nothing : a <- args));
+  //     env_delta = [value(v) -> args_types(i) : a @ i <~ args, a == nothing, v = vars(idxs(i)), v != nothing];
+  //     return env & env_delta;
+  //   }
+  // }
+
+  //////////////////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////
+
   [EnvVar -> Type] generate_env(Clause cls, [EnvVar -> Type] env) =
     set_clause()        = env & [cls.var -> set_elem_supertype(expr_type(cls.src, env))],
     rel_clause()        = gen_rel_clause_env(cls.vars, cls.src, cls.args, env),
@@ -774,15 +822,19 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   //////////////////////////////////////////////////////////////////////////////
 
   // We assume the assignment typechecks
-  [EnvVar -> Type] asgnm_env_updates(EnvVar+ vars, Type value_type) {
-    nvars = nz_nat(|vars|);
-    if nvars == 1:
-      return [vars(0) -> value_type];
+  [EnvVar -> Type] partial_asgnm_env_updates(Maybe[EnvVar]+ vars, Type value_type) {
+    if |vars| == 1:
+      var = only(vars);
+      return [value(var) -> value_type if var != nothing];
     else
-      types = tuple_field_supertypes(value_type, nvars);
-      return merge(([v -> t] : v, t <- zip(vars, types)));
+      types = tuple_field_supertypes(value_type, |vars|);
+      return [value(v) -> types(i) : v @ i <~ vars, v != nothing];
     ;
   }
+
+
+  [EnvVar -> Type] asgnm_env_updates(EnvVar+ vars, Type value_type) =
+    partial_asgnm_env_updates((just(v) : v <- vars), value_type);
 
 
   [EnvVar -> Type] merge_envs([EnvVar -> Type] env1, [EnvVar -> Type] env2) {
@@ -1387,7 +1439,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     return_stmt(e?)     = expr_type(e, env),
     if_stmt()           = if_stmt_return_type(stmt.cond, stmt.body, stmt.else, env),
     loop_stmt(ss?)      = loop_stmt_return_type(ss, env),
-    foreach_stmt()      = foreach_stmt_return_type(stmt.vars, if stmt.idx_var? then just(stmt.idx_var) else nothing, stmt.values, stmt.body, env),
+    foreach_stmt()      = foreach_stmt_return_type(stmt.iter, stmt.body, env),
     for_stmt()          = for_stmt_return_type(if stmt.var? then just(stmt.var) else nothing, stmt.start_val, stmt.end_val, stmt.end_val_incl, stmt.body, env),
     let_stmt()          = let_stmt_return_type(stmt.asgnms, stmt.body, env),
     assignment_stmt()   |
@@ -1415,10 +1467,11 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   }
 
 
-  Type foreach_stmt_return_type(StdVar+ vars, Maybe[StdVar] maybe_idx_var, Expr values, Statement+ body, [EnvVar -> Type] env) {
-    elem_type = seq_elem_supertype(expr_type(values, env));
+  Type foreach_stmt_return_type(CollValueIter iter, Statement+ body, [EnvVar -> Type] env) {
+    elem_type = seq_elem_supertype(expr_type(iter.src_expr, env));
     assert elem_type != empty_type;
-    env_delta = asgnm_env_updates(vars, elem_type) & [value(maybe_idx_var) -> type_nat if maybe_idx_var != nothing];
+    env_delta = partial_asgnm_env_updates(iter.vars, elem_type);
+    env_delta = env_delta & [iter.idx_var -> type_nat] if iter.idx_var?;
     env_0 = update(env, env_delta);
     env_1 = update_env(body, env_0);
     ret_type_0 = return_type(body, env_0);
@@ -1462,7 +1515,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     return_stmt(e?)     = unreachable_env(env),
     if_stmt()           = if_stmt_update_env(stmt.cond, stmt.body, stmt.else, env),
     loop_stmt(ss?)      = loop_stmt_update_env(ss, env),
-    foreach_stmt()      = foreach_stmt_update_env(stmt.vars, if stmt.idx_var? then just(stmt.idx_var) else nothing, stmt.values, stmt.body, env),
+    foreach_stmt()      = foreach_stmt_update_env(stmt.iter, stmt.body, env),
     for_stmt()          = for_stmt_update_env(if stmt.var? then just(stmt.var) else nothing, stmt.start_val, stmt.end_val, stmt.end_val_incl, stmt.body, env),
     let_stmt()          = let_stmt_update_env(stmt.asgnms, stmt.body, env),
     break_stmt          = unreachable_env(env),
@@ -1548,19 +1601,19 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   }
 
 
-  [EnvVar -> Type] foreach_stmt_update_env(StdVar+ vars, Maybe[StdVar] maybe_idx_var, Expr values, Statement+ body, [EnvVar -> Type] env) {
-    elem_type = seq_elem_supertype(expr_type(values, env));
+  [EnvVar -> Type] foreach_stmt_update_env(CollValueIter iter, Statement+ body, [EnvVar -> Type] env) {
+    elem_type = seq_elem_supertype(expr_type(iter.src_expr, env));
     // assert elem_type != empty_type;
-    loop_vars = set(vars) & [value(maybe_idx_var) if maybe_idx_var != nothing];
+    loop_vars = set(values(iter.vars)) & [iter.idx_var if iter.idx_var?];
     assert disjoint(keys(env), loop_vars);
-    nvars = nz_nat(|vars|);
-    if nvars == 1:
-      non_idx_typed_loop_vars = [vars(0) -> elem_type];
+    if |iter.vars| == 1:
+      var = only(iter.vars);
+      non_idx_typed_loop_vars = [value(var) -> elem_type if var != nothing];
     else
-      field_types = tuple_field_supertypes(elem_type, nvars);
-      non_idx_typed_loop_vars = merge(([v -> t] : v, t <- zip(vars, field_types)));
+      args_types = tuple_field_supertypes(elem_type, |iter.vars|);
+      non_idx_typed_loop_vars = [value(v) -> args_types(i) : v @ i <~ iter.vars, v != nothing];
     ;
-    env_0 = env & non_idx_typed_loop_vars & [value(maybe_idx_var) -> type_nat if maybe_idx_var != nothing];
+    env_0 = env & non_idx_typed_loop_vars & [iter.idx_var -> type_nat if iter.idx_var?];
     env_1 = update_env(body, env_0);
     return merge_envs([env, remove_keys(env_1, loop_vars), break_env(body, env_0), break_env(body, env_1)]);
   }

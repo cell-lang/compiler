@@ -71,7 +71,7 @@ implicit {
       try_update_stmt()       = join((expr_wf_errors(e, all_vars) : e <- stmt.args)),
       set_memb_var_stmt()     = expr_wf_errors(stmt.value, all_vars),
       delete_stmt()           = join((join((expr_wf_errors(value(a), all_vars) : a <- e.args, a != nothing)) : e <- stmt.entries)),
-      insert_stmt()           = join((join((expr_wf_errors(a, all_vars) : a <- e.args)) : e <- stmt.entries)),
+      insert_stmt()           = insert_stmt_wf_errors(stmt.entries, all_vars),
 
       set_input_ctrl_stmt()         = expr_wf_errors(stmt.value, all_vars),
       clear_input_ctrl_stmt()       = (),
@@ -113,9 +113,20 @@ implicit {
     }
 
 
+    ExprWFError* insert_stmt_wf_errors((var: Symbol, args: SynExpr+, iter: SynCollIter?)+ entries, [DefVar] vars) =
+      join(({
+        if e.iter?:
+          errs = iter_wf_errors(e.iter, vars);
+          return errs if errs != ();
+        ;
+        args_vars = vars & if e.iter? then syn_new_vars(e.iter) else [];
+        return join((expr_wf_errors(a, args_vars) : a <- e.args));
+      } : e <- entries));
+
+
     ExprWFError* iter_wf_errors(SynIter iter, [DefVar] vars) =
-      seq_iter()    = expr_wf_errors(iter.values, vars),
-      range_iter()  = expr_wf_errors(iter.start_val, vars) & expr_wf_errors(iter.end_val, vars);
+      coll_value_iter() = expr_wf_errors(iter.src_expr, vars),
+      range_iter()      = expr_wf_errors(iter.start_val, vars) & expr_wf_errors(iter.end_val, vars);
   }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -241,8 +252,8 @@ implicit {
     new_vars = [];
     for it <- stmt.loops:
       dupl_vars = match (it)
-        seq_iter()    = duplicates(it.vars & (it.idx_var if it.idx_var?)),
-        range_iter()  = [];
+        coll_value_iter() = duplicates(values(it.vars) & (it.idx_var if it.idx_var?)),
+        range_iter()      = [];
       errs = errs & (dupl_var_mult_asgnm(v) : v <- rand_sort(dupl_vars));
       it_vars = syn_new_vars(it);
       bad_vars = already_def_vars(it_vars, union([ro_vars, rw_vars, new_vars]));

@@ -190,7 +190,7 @@ Bool is_param_type(FnType type) = (t <~ type.args : is_param_type(t)) or is_para
   if_stmt()                 = retrieve(stmt.cond) & retrieve_from_nested_exprs(stmt.body, retrieve) &
                               retrieve_from_nested_exprs(stmt.else, retrieve),
   loop_stmt(ss?)            = retrieve_from_nested_exprs(ss, retrieve),
-  foreach_stmt()            = retrieve(stmt.values) & retrieve_from_nested_exprs(stmt.body, retrieve),
+  foreach_stmt()            = retrieve(stmt.iter.src_expr) & retrieve_from_nested_exprs(stmt.body, retrieve),
   for_stmt()                = retrieve(stmt.start_val) & retrieve(stmt.end_val) & retrieve_from_nested_exprs(stmt.body, retrieve),
   let_stmt()                = union([retrieve(e) : unused_var, e <- stmt.asgnms]) & retrieve_from_nested_exprs(stmt.body, retrieve),
   break_stmt                = [],
@@ -473,7 +473,9 @@ Bool is_pattern_any(Pattern ptrn) =
   return_stmt(e?)   = extern_vars(e),
   if_stmt()         = extern_vars(s.cond) & stmts_extern_vars(s.body) & stmts_extern_vars(s.else),
   loop_stmt(ss?)    = stmts_extern_vars(ss),
-  foreach_stmt()    = extern_vars(s.values) & (stmts_extern_vars(s.body) - (set(s.vars) & [s.idx_var if s.idx_var?])),
+  foreach_stmt()    = { loc_def_vars = set(values(s.iter.vars)) & [s.idx_var if s.idx_var?];
+                        return extern_vars(s.iter.src_expr) & (stmts_extern_vars(s.body) - loc_def_vars);
+                      },
   for_stmt()        = extern_vars(s.start_val) & extern_vars(s.end_val) & (stmts_extern_vars(s.body) - [s.var if s.var?]),
   break_stmt        = [],
   fail_stmt()       = [],

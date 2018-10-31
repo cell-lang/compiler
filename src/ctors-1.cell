@@ -129,7 +129,6 @@ SynAtomicUpdateStmt syn_send_msg_stmt(Atom v, SynExpr m)          = send_msg_stm
 SynAtomicUpdateStmt syn_try_update_stmt(Atom n, SynExpr* as)      = try_update_stmt(name: n, args: as);
 SynAtomicUpdateStmt syn_set_memb_var_stmt(Atom v, SynExpr e)      = set_memb_var_stmt(var: v, value: e);
 SynAtomicUpdateStmt syn_delete_stmt((Atom, Maybe[SynExpr]+)+ es)  = delete_stmt(entries: ((var: v, args: as) : v, as <- es));
-SynAtomicUpdateStmt syn_insert_stmt((Atom, SynExpr+)+ es, Bool f) = insert_stmt(entries: ((var: v, args: as) : v, as <- es), force: f);
 
 SynAtomicProcStmt syn_proc_call_stmt(ProcSymbol n, SynExpr* ps)            = proc_call_stmt(proc_name: n, args: ps);
 SynAtomicProcStmt syn_proc_call_stmt(StdVar v, ProcSymbol n, SynExpr* ps)  = proc_call_stmt(res_var: v, proc_name: n, args: ps);
@@ -150,8 +149,8 @@ SynInfLoopStmt[T] syn_inf_loop_stmt(T+ ss)                          = :inf_loop_
 SynForStmt[T]     syn_for_stmt(SynIter+ ls, T+ b)                   = for_stmt(loops: ls, body: b);
 SynLetStmt[T]     syn_let_stmt((ImplArg, SynExpr)+ a, T+ b)         = let_stmt(asgnms: a, body: b);
 
-SynIter syn_seq_iter(StdVar+ vs, SynExpr e)             = seq_iter(vars: vs, values: e);
-SynIter syn_seq_iter(StdVar+ vs, StdVar iv, SynExpr e)  = seq_iter(vars: vs, idx_var: iv, values: e);
+SynIter syn_coll_iter(Maybe[StdVar]+ vs, SynExpr e)             = coll_value_iter(vars: vs, src_expr: e);
+SynIter syn_coll_iter(Maybe[StdVar]+ vs, StdVar iv, SynExpr e)  = coll_value_iter(vars: vs, idx_var: iv, src_expr: e);
 
 ////////////////////////////////////////////////////////////////////////////////
 

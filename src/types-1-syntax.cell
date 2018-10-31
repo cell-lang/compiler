@@ -172,7 +172,7 @@ type SynAtomicUpdateStmt  = send_msg_stmt(var: Symbol, msg: SynExpr),
                             try_update_stmt(name: Symbol, args: SynExpr*),
                             set_memb_var_stmt(var: Symbol, value: SynExpr),
                             delete_stmt(entries: (var: Symbol, args: Maybe[SynExpr]+)+),
-                            insert_stmt(entries: (var: Symbol, args: SynExpr+)+, force: Bool);
+                            insert_stmt(entries: (var: Symbol, args: SynExpr+, iter: SynCollIter?)+, force: Bool);
 
 type SynAtomicProcStmt  = SynNoValRetStmt, SynProcCallStmt;
 
@@ -198,10 +198,10 @@ type SynLetStmt[T]      = let_stmt(asgnms: (ImplArg, SynExpr)+, body: T+);
 
 /////////////////////////////////////////////////////////////////////////////////////
 
-type SynSeqIter     = seq_iter(vars: StdVar+, idx_var: StdVar?, values: SynExpr);
-type SynRangeIter   = range_iter(var: StdVar?, start_val: SynExpr, end_val: SynExpr, end_val_incl: Bool);
+type SynCollIter  = coll_value_iter(vars: Maybe[StdVar]+, idx_var: StdVar?, src_expr: SynExpr);
+type SynRangeIter = range_iter(var: StdVar?, start_val: SynExpr, end_val: SynExpr, end_val_incl: Bool);
 
-type SynIter = SynSeqIter, SynRangeIter;
+type SynIter = SynCollIter, SynRangeIter;
 
 /////////////////////////////////////////////////////////////////////////////////////
 
