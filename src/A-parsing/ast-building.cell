@@ -1188,6 +1188,7 @@ implicit filename : String, lines : Nat** {
       set_memb_var      = build_set_memb_var_stmt_ast(inner_match),
       delete            = build_delete_stmt_ast(inner_match),
       insert            = build_insert_stmt_ast(inner_match),
+      insert_with_attrs = build_insert_with_attrs_stmt_ast(inner_match),
 
       ctrl_set_input    = build_set_input_ctrl_stmt_ast(inner_match),
       ctrl_clear_input  = build_clear_input_ctrl_stmt_ast(inner_match),
@@ -1437,6 +1438,49 @@ implicit filename : String, lines : Nat** {
       );
       return (var: relvar, args: nonempty(args), iter: iter);
     }
+  }
+
+  SynStmt build_insert_with_attrs_stmt_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 6;
+
+    relvar = get_lowercase_id(nodes(1));
+    args_nodes = rule_seq_nodes(block_node(nodes(2)));
+    args = (build_expr_ast(args_nodes(0)));
+    args = (args | build_expr_ast(rule_seq_node(args_nodes(1), 1))) if args_nodes(1) != null_match;
+
+    attrs = ({
+      attr_nodes = rule_seq_nodes(attrs_node);
+      assert |attr_nodes| == 4;
+      name = get_lowercase_id(attr_nodes(0));
+      value = build_expr_ast(attr_nodes(2));
+      return (name: name, value: value) if attr_nodes(3) == null_match;
+
+      // We've either a condition or an iterator
+      label = get_rule_name(attr_nodes(3));
+      inner_mtc = get_rule_match(attr_nodes(3));
+
+      // Checking if it's a condition
+      if label == :cond:
+        cond = build_expr_ast(rule_seq_node(inner_mtc, 1));
+        return (name: name, value: value, cond: cond);
+      ;
+
+      // Then it's an iterator
+      assert label == :iter;
+      iter_nodes = rule_seq_nodes(inner_mtc);
+      assert |iter_nodes| == 5;
+      vars = (just(var(get_lowercase_id(n))) : n <- rep_rule_nodes(iter_nodes(1)));
+      src_expr = build_expr_ast(iter_nodes(4));
+      iter = coll_value_iter(
+        vars:     nonempty(vars),
+        idx_var:  var(get_lowercase_id(rule_seq_node(iter_nodes(2), 1))) if iter_nodes(2) != null_match,
+        src_expr: src_expr
+      );
+      return (name: name, value: value, iter: iter);
+    } : attrs_node <- rep_rule_nodes(nodes(4)));
+
+    return insert_with_attrs_stmt(relvar: relvar, args: args, attrs: nonempty(attrs));
   }
 
   SynStmt build_set_memb_var_stmt_ast(RuleMatch mtc) {
@@ -1880,9 +1924,9 @@ implicit filename : String, lines : Nat** {
     return relvars_decl(name, nonempty(col_types), (), attrs);
 
 
-    (Atom, SynType, AttrCard) build_attr_relvar_ast(RuleMatch mtc) {
+    (Atom, SynType, AttrCard, Bool) build_attr_relvar_ast(RuleMatch mtc) {
       nodes = rule_seq_nodes(mtc);
-      assert |nodes| == 4;
+      assert |nodes| == 5;
       name = get_lowercase_id(nodes(0));
       type = build_type_ast(nodes(3));
       card_node = nodes(1);
@@ -1894,7 +1938,8 @@ implicit filename : String, lines : Nat** {
       else
         card = attr_card(true, false);
       ;
-      return (name, type, card);
+      unique = nodes(4) != null_match;
+      return (name, type, card, unique);
     }
   }
 

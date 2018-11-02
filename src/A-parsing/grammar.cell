@@ -72,6 +72,7 @@ ParsingRule keyword_true      = rule_keyword(true);
 ParsingRule keyword_type      = rule_keyword(:type);
 ParsingRule keyword_typevar   = rule_keyword(:typevar);
 ParsingRule keyword_update    = rule_keyword(:update);
+ParsingRule keyword_unique    = rule_keyword(:unique);
 ParsingRule keyword_using     = rule_keyword(:using);
 ParsingRule keyword_when      = rule_keyword(:when);
 ParsingRule keyword_while     = rule_keyword(:while);
@@ -519,6 +520,7 @@ ParsingRule rule_stmt(StmtCtx ctx) =
 
     (:delete,             rule_delete_stmt)                 if ctx == :update,
     (:insert,             rule_insert_stmt)                 if ctx == :update,
+    (:insert_with_attrs,  rule_insert_with_attrs_stmt)      if ctx == :update,
 
     (:ctrl_set_input,     rule_set_input_ctrl_stmt)         if ctx == :proc,
     (:ctrl_clear_input,   rule_clear_input_ctrl_stmt)       if ctx == :proc,
@@ -724,6 +726,30 @@ ParsingRule rule_insert_stmt =
         ))
       ))
     ),
+    rule_semicolon
+  ));
+
+ParsingRule rule_insert_with_attrs_stmt =
+  rule_seq((
+    keyword_insert,
+    rule_id,
+    par_rule(rule_seq((rule_expr, optional_rule_seq((rule_comma, rule_expr))))),
+    rule_colon,
+    comma_sep_seq(
+      rule_seq((
+        rule_id,
+        rule_equals,
+        rule_expr,
+        optional_rule(
+          rule_choice((
+            (:cond,   rule_seq((keyword_if, rule_expr))),
+            (:iter,   rule_seq((
+                        rule_colon,
+                        comma_sep_seq(rule_id),
+                        optional_rule_seq((rule_at, rule_id)),
+                        rule_left_arrow,
+                        rule_expr
+    ))))))))),
     rule_semicolon
   ));
 
@@ -1187,7 +1213,15 @@ ParsingRule rule_relvar_attrs_decl =
     rule_lc_id,
     par_rule(comma_sep_seq(rule_type)),
     rule_colon,
-    comma_sep_seq(rule_seq((rule_id, rule_card, rule_colon, rule_type))),
+    comma_sep_seq(
+      rule_seq((
+        rule_id,
+        rule_card,
+        rule_colon,
+        rule_type,
+        optional_rule(bracket_rule(keyword_unique))
+      ))
+    ),
     rule_semicolon
   ));
 

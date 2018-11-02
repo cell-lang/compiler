@@ -51,7 +51,10 @@ implicit syn_prg : SynPrg, artifact : SchemaDef {
     root_relvars_keys = [[rel_var(v.name) -> [set(k) : k <~ v.keys] : v <- db_rel_vars]];
 
     attr_relvars_keys = [
-      [rel_var(arv.name) -> if arv.cardinality.multiple then [] else [[i : _ @ i <~ rv.col_types]]]
+      [ rel_var(arv.name) -> [
+        [i : _ @ i <~ rv.col_types] if not arv.cardinality.multiple,
+        [|rv.col_types|] if arv.unique
+      ]]
       : rv <- db_rel_vars, arv <~ rv.attributes
     ];
 

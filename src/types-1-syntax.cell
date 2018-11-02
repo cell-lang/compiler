@@ -168,11 +168,24 @@ type SynAssertStmt    = assert_stmt(cond: SynExpr, file: String, line: NzNat, te
 type SynPrintStmt     = print_stmt(SynExpr);
 type SynSeqUpdateStmt = seq_update_stmt(obj: StdVar, idx: SynExpr, value: SynExpr);
 
-type SynAtomicUpdateStmt  = send_msg_stmt(var: Symbol, msg: SynExpr),
-                            try_update_stmt(name: Symbol, args: SynExpr*),
-                            set_memb_var_stmt(var: Symbol, value: SynExpr),
-                            delete_stmt(entries: (var: Symbol, args: Maybe[SynExpr]+)+),
-                            insert_stmt(entries: (var: Symbol, args: SynExpr+, iter: SynCollIter?)+, force: Bool);
+type SynAtomicUpdateStmt  = SynSendMsgStmt, SynTryUpdateStmt, SynSetMembVarStmt,
+                            SynDeleteStmt, SynInsertStmt, SynInsertWithAttrsStmt;
+
+type SynSendMsgStmt         = send_msg_stmt(var: Symbol, msg: SynExpr);
+type SynTryUpdateStmt       = try_update_stmt(name: Symbol, args: SynExpr*);
+type SynSetMembVarStmt      = set_memb_var_stmt(var: Symbol, value: SynExpr);
+type SynDeleteStmt          = delete_stmt(entries: (var: Symbol, args: Maybe[SynExpr]+)+);
+
+type SynInsertStmt          = insert_stmt(
+                                entries: (var: Symbol, args: SynExpr+, iter: SynCollIter?)+,
+                                force:   Bool
+                              );
+
+type SynInsertWithAttrsStmt = insert_with_attrs_stmt(
+                                relvar: Symbol,
+                                args:   SynExpr+,
+                                attrs:  (name: Symbol, value: SynExpr, cond: SynExpr?, iter: SynCollIter?)+
+                              );
 
 type SynAtomicProcStmt  = SynNoValRetStmt, SynProcCallStmt;
 
@@ -311,7 +324,7 @@ type RelVarsDecl    = relvars_decl(
                         attributes: AttrRelVar*
                       );
 
-type AttrRelVar     = attr_relvar(name: Symbol, type: SynType, cardinality: AttrCard);
+type AttrRelVar     = attr_relvar(name: Symbol, type: SynType, cardinality: AttrCard, unique: Bool);
 type AttrCard       = attr_card(required: Bool, multiple: Bool);
 
 type ForeignKeyDecl = foreign_key_decl(

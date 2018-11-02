@@ -407,9 +407,10 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
 
   Statement+ desugar_stmt(SynStmt stmt, [StdVar] def_vars) {
     stmts = match (stmt)
-      delete_stmt() = desugar_delete_stmt(stmt.entries, def_vars),
-      insert_stmt() = (desugar_insert_entry(e, stmt.force, def_vars) : e <- stmt.entries),
-      _             = (desugar_stmt_plain(stmt, def_vars));
+      delete_stmt()             = desugar_delete_stmt(stmt.entries, def_vars),
+      insert_stmt()             = (desugar_insert_entry(e, stmt.force, def_vars) : e <- stmt.entries),
+      insert_with_attrs_stmt()  = desugar_insert_with_attrs_stmt(stmt, def_vars),
+      _                         = (desugar_stmt_plain(stmt, def_vars));
 
     return (transfer(s, stmt) : s <- stmts);
   }
@@ -487,6 +488,25 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
         idx_var:  iter.idx_var if iter.idx_var?,
         src_expr: desugar_expr(iter.src_expr, def_vars)
       );
+  }
+
+
+  Statement+ desugar_insert_with_attrs_stmt(SynInsertWithAttrsStmt stmt, [StdVar] def_vars) {
+    relvar = rel_var(stmt.relvar);
+    args = (desugar_expr(a, def_vars) : a <- stmt.args);
+    attrs_inserts = ({
+      assert not (attr.cond? and attr.iter?);
+      if attr.iter?:
+        entry = (var: attr.name, args: (stmt.args | attr.value), iter: attr.iter if attr.iter?);
+        return desugar_insert_entry(entry, false, def_vars);
+      else
+        attr_rel_args = (args | desugar_expr(attr.value, def_vars));
+        attr_stmt = insert_stmt(rel_var(attr.name), attr_rel_args, false);
+        attr_stmt = if_stmt(desugar_expr(attr.cond, def_vars), (attr_stmt), ()) if attr.cond?;
+        return attr_stmt;
+      ;
+    } : attr <- stmt.attrs);
+    return (insert_stmt(relvar, args, false)) & attrs_inserts;
   }
 
 
