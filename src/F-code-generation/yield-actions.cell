@@ -109,8 +109,16 @@ implicit program           : Program,
 
     if surr_args :: Just[IntVar]+:
       plain_surr_args = (value(a) : a <- surr_args);
-      vars_setup_code = (lookup_surrogate(v, table_col_store_id(action.relvar, i), plain_surr_args(i)) : v @ i <- perm_vars);
-      code = (do_if(table_contains(action.relvar, plain_surr_args), vars_setup_code & action_code));
+      vars_setup_code = (
+        lookup_surrogate(v, table_col_store_id(action.relvar, i), plain_surr_args(i))
+        : v @ i <- perm_vars
+      );
+      code = (
+        do_if(
+          table_contains(rel_var_to_table_var(action.relvar), plain_surr_args),
+          vars_setup_code & action_code
+        )
+      );
     else
       lookup_exprs = (
         lookup_surrogate(table_col_store_id(action.relvar, i), get_tuple_field(it_var, i))
@@ -119,7 +127,7 @@ implicit program           : Program,
       vars_setup_code = (set_var(v, lookup_exprs(i)) : v @ i <- perm_vars);
       loop_code = (break_if(is_out_of_range(it_var))) & vars_setup_code & action_code & (move_forward(it_var));
       code = (
-        get_table_iter(it_var, action.relvar, nonempty(surr_args)),
+        get_table_iter(it_var, rel_var_to_table_var(action.relvar), nonempty(surr_args)),
         repeat(nonempty(loop_code))
       );
     ;

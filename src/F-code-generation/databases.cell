@@ -273,7 +273,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 ////////////////////////////////////////////////////////////////////////////////
 
 BlockForeignKey low_level_key(ForeignKey key, [RelVar -> Table] tables) {
-  origin_relvar, origin_args = key.source;
+  origin_relvar, typed_origin_args = key.source;
+  origin_args = (a : a, t <- typed_origin_args);
   target_relvar, target_args = key.target;
 
   assert match (origin_args, target_args)
@@ -334,7 +335,7 @@ BlockForeignKey low_level_key(ForeignKey key, [RelVar -> Table] tables) {
   [[+(RelVar, Nat)]] associations(ForeignKey foreign_key) {
     origin_relvar, origin_args = foreign_key.source;
     target_relvar, target_args = foreign_key.target;
-    origin_args_idxs = [value(a) -> i : a @ i <~ origin_args, a != nothing];
+    origin_args_idxs = [value(a) -> i : a, unused_var @ i <~ origin_args, a != nothing];
     idx_assocs = [origin_args_idxs(value(a)), i : a @ i <~ target_args, a != nothing];
     return [[(origin_relvar, i), (target_relvar, j)] : i, j <- idx_assocs];
   }

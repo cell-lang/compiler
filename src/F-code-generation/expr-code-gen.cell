@@ -142,11 +142,11 @@ implicit program           : Program,
 
     if (a <~ table_args : a == nothing):
       code = (
-        get_table_iter(it_var, rel_var, surr_args),
+        get_table_iter(it_var, rel_var_to_table_var(rel_var), surr_args),
         set_bvar(res_var, neg(is_out_of_range(it_var)))
       );
     else
-      code = (set_bvar(res_var, table_contains(rel_var, nonempty(surr_vars))));
+      code = (set_bvar(res_var, table_contains(rel_var_to_table_var(rel_var), nonempty(surr_vars))));
     ;
 
     for e @ i <- reverse(args_aliases):
@@ -227,7 +227,7 @@ implicit program           : Program,
       res_store_id = table_col_store_id(rel_var, unknown_arg_idx);
 
       lookup_code = (
-        get_table_iter(it_var, rel_var, all_args),
+        get_table_iter(it_var, rel_var_to_table_var(rel_var), all_args),
         check(neg(is_out_of_range(it_var))),
         lookup_surrogate(res_var, res_store_id, get_tuple_field(it_var, unknown_arg_idx))
       );

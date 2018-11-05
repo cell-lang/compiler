@@ -16,7 +16,7 @@ implicit syn_prg : SynPrg, artifact : SchemaDef {
       links:        (db_symbol(id) : id <- artifact.links),
       state_vars:   state_vars,
       rel_vars:     desugared_relvars,
-      foreign_keys: desugared_foreign_keys,
+      foreign_keys: desugared_foreign_keys & desugared_implicit_foreign_keys,
       nested_dbs:   db_vars_types,
       methods:      methods,
       updates:      updates,
@@ -29,11 +29,30 @@ implicit syn_prg : SynPrg, artifact : SchemaDef {
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////
 
+  [ForeignKey] desugared_implicit_foreign_keys = union([{
+      base_relvar = rel_var(rv.name);
+      attr_relvar = rel_var(arv.name);
+      args_names = (:a, :b);
+      typed_base_args = ((just(args_names(i)), just(desugar_plain_type(t))) : t @ i <- rv.col_types);
+      typed_attr_args = (typed_base_args | (nothing, nothing));
+      untyped_base_args = (v : v, unused_var <- typed_base_args);
+      untyped_attr_args = (v : v, unused_var <- typed_attr_args);
+      return [
+        foreign_key((base_relvar, typed_base_args), (attr_relvar, untyped_attr_args)),
+        foreign_key((attr_relvar, typed_attr_args), (base_relvar, untyped_base_args))
+      ];
+    } : rv <- db_rel_vars, arv <~ rv.attributes]);
+
+
   [ForeignKey] desugared_foreign_keys = [{
     used_args = [value(a) : a <~ as, a != nothing];
-    src_args = (if a != nothing and not used_args(value(a)) then nothing else a : a <- k.src_args);
+    src_args = (
+      ( if a != nothing and not used_args(value(a)) then nothing else a,
+        apply(t, desugar_plain_type)
+      ) : a, t <- k.src_args
+    );
     return foreign_key((rel_var(k.src_rel), src_args), (rel_var(r), as));
-  } : k <- db_foreign_keys, t <~ k.targets, (r?, as?) ?= t];
+  } : k <- db_foreign_keys, tgt <~ k.targets, (r?, as?) ?= tgt];
 
 
   [RelVar -> (signatures: [+NeType+], keys: [[+Nat]])] desugared_relvars {

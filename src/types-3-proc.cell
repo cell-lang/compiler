@@ -118,6 +118,10 @@ type AnyVar         = ObjVar, OptTagRecVar, VecVar, ArrayVar, BoolVar, IntVar,
 
 type AnyLocVar      = LocBoolVar, LocIntVar, LocFloatVar, LocOptTagRecVar, LocVar, StdVar;
 
+type TableVar       = RelVar, partial_relvar(RelVar, Nat);
+type QualTableVar   = qual_table_var(db_var: AnyDBVar, table_var: TableVar);
+type AnyTableVar    = TableVar, QualTableVar;
+
 ////////////////////////////////////////////////////////////////////////////////
 
 type MembTestPredId = memb_test(<Symbol, Nat, (Symbol, <Symbol, Nat>)>);
@@ -150,7 +154,7 @@ type BoolNatOp      = is_symb(ObjExpr),
                       has_elem(set: ObjExpr, elt: ObjExpr),
                       has_field(record: ObjExpr, field: SymbObj),
                       contains(coll: ObjExpr, entry: ObjExpr+),
-                      table_contains(table: AnyRelVar, tuple: IntVar+);
+                      table_contains(table: AnyTableVar, tuple: IntVar+);
 
 type IntNatOp       = get_int_val(ObjExpr),
                       minus(IntExpr),
@@ -361,15 +365,16 @@ type BasicInstr     = init_stream(StreamVar),
                       // Table instructions
                       init_value_store(store: ValueStoreId),
                       cleanup_value_store(store: ValueStoreId),
-                      init_table(rel_var: RelVar, table: Table),
-                      cleanup_table(rel_var: RelVar, table: Table),
+                      init_table(table_var: TableVar, table: Table),
+                      cleanup_table(table_var: TableVar, table: Table),
 
                       set_table(relvar: RelVar, table: Table, state: AtomicExpr, perm: Nat+),
 
-                      get_table_iter(it_var: TableItVar, table: AnyRelVar, args: Maybe[IntVar]+),
-                      queue_deletes(rel_var: RelVar, args: Maybe[IntVar]+),
+                      get_table_iter(it_var: TableItVar, table: AnyTableVar, args: Maybe[IntVar]+),
+                      queue_deletes(table_var: TableVar, args: Maybe[IntVar]+),
                       queue_insert_value(res_var: IntVar, store: ValueStoreId, value: AtomicExpr), // Ownership transfer: <value>
-                      queue_insert_tuple(rel_var: RelVar, tuple: IntVar+);
+                      lookup_or_queue_insert_value(res_var: IntVar, store: ValueStoreId, value: AtomicExpr), // Ownership transfer: <value>
+                      queue_insert_tuple(table_var: TableVar, tuple: IntVar+);
 
 type JumpInstr      = break_loop,
                       exit_block,
@@ -448,13 +453,13 @@ type ValueStoreId       = value_store_id(Nat);
 type NestedValueStoreId = nested_value_store_id(db_var: AnyDBVar, store_id: ValueStoreId);
 type AnyValueStoreId    = ValueStoreId, NestedValueStoreId;
 
-type Table  = table(value_stores: ValueStoreId+, keys: [[+Nat]], col_types: NeType+, applied_perm: Nat+);
+type Table = table(value_stores: ValueStoreId+, keys: [[+Nat]], col_types: NeType+, applied_perm: Nat+);
 
 type ForeignKeyType = unary_unary, unary_binary(<0..1>), unary_ternary(<0..2>),
                       binary_unary(<0..1>), ternary_unary(<0..2>),
                       binary_ternary, ternary_binary;
 
-type BlockForeignKey  = foreign_key(origin: RelVar, target: RelVar, type: ForeignKeyType);
+type BlockForeignKey  = foreign_key(origin: TableVar, target: TableVar, type: ForeignKeyType);
 
 type CompiledMethod = compiled_method(
                         args_vars:        Maybe[StdVar]*,
@@ -495,7 +500,7 @@ type StaticBlock = static_block(
                     links:            DBSymbol*,
                     state_vars:       [MembVar -> NeType],
                     value_stores:     [ValueStoreId],
-                    tables:           [RelVar -> Table],
+                    tables:           [TableVar -> Table],
                     foreign_keys:     [BlockForeignKey],
                     nested_blocks:    [NestedDBVar -> DBSymbol],
                     init_code:        Instr*,
