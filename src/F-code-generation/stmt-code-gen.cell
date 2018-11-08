@@ -76,8 +76,10 @@ implicit program           : Program,
     send_msg_stmt()       = send_msg_stmt_opt_code(stmt.target, stmt.msg, env, var_gen),
     try_update_stmt()     = try_update_stmt_opt_code(stmt.name, stmt.args, env, var_gen),
     set_memb_var_stmt()   = set_memb_var_stmt_opt_code(stmt.var, stmt.value, env, var_gen),
-    delete_stmt()         = delete_stmt_opt_code(stmt.var, stmt.fields, env, var_gen),
-    insert_stmt()         = insert_stmt_opt_code(stmt, env, var_gen),
+    delete_stmt()         = delete_stmt_opt_code(stmt.var, stmt.args, env, var_gen),
+    insert_stmt()         = if stmt.force
+                              then forced_insert_stmt_opt_code(stmt.var, stmt.args, env, var_gen)
+                              else insert_stmt_opt_code(stmt.var, stmt.args, env, var_gen),
 
     set_input_ctrl_stmt()         = set_input_ctrl_stmt_opt_code(stmt.var, stmt.input, stmt.value, env, var_gen),
     clear_input_ctrl_stmt()       = clear_input_ctrl_stmt_opt_code(stmt.var, stmt.input, env, var_gen),
@@ -116,9 +118,9 @@ implicit program           : Program,
   }
 
 
-  StmtCompInfo delete_stmt_opt_code(RelVar rel_var, Maybe[Expr]+ fields, [EnvVar -> Type] env, VarGen init_var_gen) {
+  StmtCompInfo delete_stmt_opt_code(RelVar rel_var, Maybe[Expr]+ args, [EnvVar -> Type] env, VarGen init_var_gen) {
     args_perm = relvar_cols_perm(rel_var);
-    table_args = (fields(i) : i <- args_perm);
+    table_args = (args(i) : i <- args_perm);
 
     filtered_idxs = idxs_into_filtered_seq((a != nothing : a <- table_args));
     unfiltered_idxs = (i : a @ i <- table_args, a != nothing);
@@ -144,11 +146,9 @@ implicit program           : Program,
   }
 
 
-  StmtCompInfo insert_stmt_opt_code(InsertStmt stmt, [EnvVar -> Type] env, VarGen init_var_gen) {
-    rel_var = stmt.var;
-
+  StmtCompInfo insert_stmt_opt_code(RelVar rel_var, Expr+ args, [EnvVar -> Type] env, VarGen init_var_gen) {
     args_perm = relvar_cols_perm(rel_var);
-    table_args = (stmt.fields(i) : i <- args_perm);
+    table_args = (args(i) : i <- args_perm);
 
     args_eval_code, args_aliases, var_gen = opt_eval_code(table_args, env, init_var_gen);
 
@@ -156,38 +156,52 @@ implicit program           : Program,
     surr_vars, var_gen = next_int_vars(var_gen, arity);
     is_new_val_vars, var_gen = next_bool_vars(var_gen, arity);
 
-    if stmt.force:
-      keys = table_var_keys(rel_var);
-      col_is_tracked = if stmt.force then union(keys) else [];
+    pre_insert_code = ({
+      store_id = table_col_store_id(rel_var, i);
+      surr_var = surr_vars(i);
+      return lookup_or_queue_insert_value(surr_var, store_id, e);
+    } : e @ i <- args_aliases);
 
-      value_prep_code = join(({
-          store_id = table_col_store_id(rel_var, i);
-          surr_var = surr_vars(i);
-          is_new_val_var = is_new_val_vars(i);
-          return (
-            set_ivar(surr_var, lookup_value_ex(store_id, e)),
-            set_bvar(is_new_val_var, is_eq(surr_var, -1)) if col_is_tracked(i),
-            do_if(if col_is_tracked(i) then is_new_val_var else is_eq(surr_var, -1), queue_insert_value(surr_var, store_id, e))
-          );
-        } : e @ i <- args_aliases
-      ));
+    insertion_code = (queue_insert_tuple(rel_var, nonempty(surr_vars)));
+    code = args_eval_code & pre_insert_code & insertion_code;
 
-      deletion_code = ({
-          value_cond = and([neg(is_new_val_vars(i)) : i <- as]);
-          surr_args = (if as(i) then just(surr_vars(i)) else nothing : i < arity);
-          return do_if(value_cond, queue_deletes(rel_var, surr_args));
-        } : as <- rand_sort(keys)
-      );
+    return (code, just(surrogates), [], init_var_gen);
+  }
 
-      pre_insert_code = value_prep_code & deletion_code;
 
-    else
-      pre_insert_code = ({
+  StmtCompInfo forced_insert_stmt_opt_code(RelVar rel_var, Expr+ args, [EnvVar -> Type] env, VarGen init_var_gen) {
+    args_perm = relvar_cols_perm(rel_var);
+    table_args = (args(i) : i <- args_perm);
+
+    args_eval_code, args_aliases, var_gen = opt_eval_code(table_args, env, init_var_gen);
+
+    arity = |table_args|;
+    surr_vars, var_gen = next_int_vars(var_gen, arity);
+    is_new_val_vars, var_gen = next_bool_vars(var_gen, arity);
+
+    keys = table_var_keys(rel_var);
+    col_is_tracked = union(keys);
+
+    value_prep_code = join(({
         store_id = table_col_store_id(rel_var, i);
         surr_var = surr_vars(i);
-        return lookup_or_queue_insert_value(surr_var, store_id, e);
-      } : e @ i <- args_aliases);
-    ;
+        is_new_val_var = is_new_val_vars(i);
+        return (
+          set_ivar(surr_var, lookup_value_ex(store_id, e)),
+          set_bvar(is_new_val_var, is_eq(surr_var, -1)) if col_is_tracked(i),
+          do_if(if col_is_tracked(i) then is_new_val_var else is_eq(surr_var, -1), queue_insert_value(surr_var, store_id, e))
+        );
+      } : e @ i <- args_aliases
+    ));
+
+    deletion_code = ({
+        value_cond = and([neg(is_new_val_vars(i)) : i <- as]);
+        surr_args = (if as(i) then just(surr_vars(i)) else nothing : i < arity);
+        return do_if(value_cond, queue_deletes(rel_var, surr_args));
+      } : as <- rand_sort(keys)
+    );
+
+    pre_insert_code = value_prep_code & deletion_code;
 
     insertion_code = (queue_insert_tuple(rel_var, nonempty(surr_vars)));
     code = args_eval_code & pre_insert_code & insertion_code;
