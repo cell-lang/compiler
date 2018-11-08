@@ -1,0 +1,65 @@
+implicit program : Program, typedefs : [TypeName -> NeType] {
+  Nat+ rel_var_cols_perm(DBSymbol database, RelVar rel_var) =
+    cols_perms_by_database_relvar((database, rel_var), !!);
+
+
+  [+TableVar] physical_tables(DBSymbol database) =
+    nonempty(keys(physical_tables_signatures_by_rel_auto_id(database, !!)));
+
+
+  [+TableVar] physical_tables(DBSymbol database, RelVar rel_var) {
+    ## COULD BE MADE MORE EFFICIENT
+    tables_signatures = physical_tables_signatures_by_rel_auto_id(database, !!);
+    return nonempty([v : v, unused_var <- tables_signatures, logical_rel_var(v) == rel_var]);
+  }
+
+
+  [+NeType+] table_signatures(DBSymbol database, TableVar table_var) =
+    physical_tables_signatures_by_rel_auto_id(database, !!)(table_var);
+
+  //////////////////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////
+
+  [(DBSymbol, RelVar) -> Nat+] cols_perms_by_database_relvar = [
+    (db.name, rv) -> {
+      arity = only([|s| : s <- info.signatures]);
+      return table_cols_perm(arity, info.keys);
+    } : db <- program.data_bases, rv, info <- db.rel_vars
+  ];
+
+
+  [DBSymbol -> [TableVar -> [+NeType+]]] physical_tables_signatures_by_rel_auto_id =
+    [db.name -> physical_tables_signatures(db) : db <- program.data_bases];
+
+  //////////////////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////
+
+  ## MOVE SOMEWHERE ELSE?
+  [TableVar -> [+NeType+]] physical_tables_signatures(Database database) {
+    ## TRY TO IMPLEMENT THIS FUNCTION IN NEO
+    rel_vars = database.rel_vars;
+    foreign_keys = group_by(database.foreign_keys, left($.source));
+
+    tables = ();
+    for rv <- isort(keys(rel_vars)):
+      rv_info = rel_vars(rv);
+      split_sgns = [rv_info.signatures];
+      keys = rv_info.keys;
+
+      frn_keys_types = [(t : unused_var, t <- right(fk.source)) : fk <- foreign_keys(rv)];
+      for ts <- isort(frn_keys_types):
+        split_sgns = split_sets_by_pred(split_sgns, signature_overlaps_partial_signature($, ts));
+      ;
+
+      if |split_sgns| > 1:
+        for s @ i <- isort(split_sgns):
+          tables = (tables | (partial_relvar(rv, i), s));
+        ;
+      else
+        tables = (tables | (rv, only(split_sgns)));
+      ;
+    ;
+
+    return [v -> ss : v, ss <~ tables];
+  }
+}

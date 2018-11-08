@@ -1,0 +1,22 @@
+implicit program : Program, typedefs : [TypeName -> NeType] {
+  Database rel_auto_by_id(DBSymbol rel_auto_id) = rel_autos_by_id(rel_auto_id, !!);
+
+  NzNat arity(DBSymbol rel_auto_id, RelVar rel_var) {
+    signatures = rel_autos_by_id(rel_auto_id, !!).rel_vars(rel_var).signatures;
+    return only([|s| : s <- signatures]); ## BAD BAD BAD: THIS THING IS PRETTY UGLY AND UNSAFE...
+  }
+
+  [[+Nat]] rel_var_keys(DBSymbol rel_auto_id, RelVar rel_var) =
+    rel_auto_by_id(rel_auto_id).rel_vars(rel_var).keys;
+
+  [[+Nat]] table_var_keys(DBSymbol rel_auto_id, TableVar table_var) {
+    rel_var = logical_rel_var(table_var);
+    log_keys = rel_var_keys(rel_auto_id, rel_var);
+    perm = rel_var_cols_perm(rel_auto_id, rel_var);
+    return permutate_keys(log_keys, perm);
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  [DBSymbol -> Database] rel_autos_by_id = [db.name -> db : db <- program.data_bases];
+}

@@ -15,7 +15,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
       state_vars:       [v -> info.type : v, info <- database.state_vars],
       value_stores:     value_stores,
       tables:           tables,
-      foreign_keys:     [low_level_key(k, tables) : k <- database.foreign_keys],
+      foreign_keys:     physical_foreign_keys,
       nested_blocks:    database.nested_dbs,
       init_code:        database_init_code,
       cleanup_code:     database_cleanup_code,
@@ -89,7 +89,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
           value_var = evar(values_var.id, i);
           set_value_instr = match (v)
             memb_var()      = set_var(value_var, v),
-            rel_var()       = copy_table(value_var, v, tables[v], relvar_cols_perm(v)),
+            rel_var()       = copy_table(value_var, v, tables[v], rel_var_cols_perm(database.name, v)),
             nested_db_var() = copy_state(value_var, v, var_type(v));
           return (set_label_instr, set_value_instr);
         } : v @ i <- all_vars
@@ -128,7 +128,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
         code = (code |
           queue_deletes(v, (nothing : i < arity)),
           lookup_field(tmp_var, state_var, object(bare_id(v))),
-          set_table(v, tables[v], tmp_var, relvar_cols_perm(v))
+          set_table(v, tables[v], tmp_var, rel_var_cols_perm(database.name, v))
         );
       ;
     ;
@@ -272,57 +272,144 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-BlockForeignKey low_level_key(ForeignKey key, [RelVar -> Table] tables) {
-  origin_relvar, typed_origin_args = key.source;
-  origin_args = (a : a, t <- typed_origin_args);
-  target_relvar, target_args = key.target;
+implicit program : Program, typedefs : [TypeName -> NeType], database : Database {
+  [BlockForeignKey] physical_foreign_keys {
+    tables : [+TableVar];
+    table_vars_by_rel_var : [RelVar -> [+TableVar]];
 
-  assert match (origin_args, target_args)
-    (just(s1?)),              (just(s2?))                     = s1 == s2,
-    (just(s1?)),              (just(s2?), nothing)            = s1 == s2,
-    (just(s1?)),              (nothing, just(s2?))            = s1 == s2,
-    (just(s1?)),              (just(s2?), nothing, nothing)   = s1 == s2,
-    (just(s1?)),              (nothing, just(s2?), nothing)   = s1 == s2,
-    (just(s1?)),              (nothing, nothing, just(s2?))   = s1 == s2,
+    rel_auto_id = database.name;
 
-    (just(s1?), nothing),     (just(s2?))                     = s1 == s2,
-    (nothing, just(s1?)),     (just(s2?))                     = s1 == s2,
-    (just(s1?), just(s2?)),   (just(s3?), just(s4?), nothing) = s1 != s2 and s1 == s3 and s2 == s4,
+    tables = physical_tables(rel_auto_id);
+    table_vars_by_rel_var = group_by(tables, logical_rel_var);
 
-    (_, _, _) as?,            (t?)                            = { las = (a : a <- as, a != nothing);
-                                                                  return |las| == 1 and only(las) == t;
-                                                                },
-    (just(s1?), just(s2?), nothing),  (just(s3?), just(s4?))  = s1 != s2 and s1 == s3 and s2 == s4,
+    physical_keys = ();
 
-    _,                        _                               = false;
+    // Iterating through all foreign keys
+    for k <- isort(database.foreign_keys):
+      src_args = right(k.source);
 
-  origin_perm = reverse_perm(tables(origin_relvar).applied_perm);
-  target_perm = reverse_perm(tables(target_relvar).applied_perm);
+      // Source signature of the foreign key
+      src_key_sgn = (t : unused_var, t <- src_args);
 
-  key_type = match (origin_args, target_args)
-    (just()),           (just())          = :unary_unary,
-    (just()),           (just(), nothing) = unary_binary(target_perm(0)),
-    (just()),           (nothing, just()) = unary_binary(target_perm(1)),
-    (just()),           (_, _, _) as?     = { idx = only_unsafe((i : a @ i <- as, a != nothing));
-                                              return unary_ternary(target_perm(idx));
-                                            },
+      // Iterating through the tables the source relation is partitioned in
+      for sv <- isort(table_vars_by_rel_var(left(k.source))):
 
-    (just(),  nothing), (just())          = binary_unary(origin_perm(0)),
-    (nothing, just()),  (just())          = binary_unary(origin_perm(1)),
-    (just(),  just()),  (_, _, _)         = :binary_ternary,
+        // Signatures of the current source table
+        src_table_sgns = table_signatures(rel_auto_id, sv);
 
-    (_, _, _) oas?,     (just() ta?)      = { idx = only_unsafe((i : a @ i <- oas, a == ta));
-                                              return ternary_unary(origin_perm(idx));
-                                            },
-    (_, _, _),          (_, _)            = :ternary_binary;
+        // Checking to see if the current table signature overlaps
+        // with the source signature of the foreign key
+        if (s <- src_table_sgns : signature_overlaps_partial_signature(s, src_key_sgn)):
 
-  return foreign_key(origin_relvar, target_relvar, key_type);
+          // Making sure that source signature of the foreing key applies to the entire table
+          ## THIS HAS TO BE CHECKED DURING WELL-FORMEDNESS CHECKING, EITHER IN STAGE ONE OR TWO
+          assert not (s <- src_table_sgns : not is_subset_signature(s, src_key_sgn));
+
+          // Target tables that are reached by the instantiation of the foreign
+          // key on this particular physical table
+          target_tables = [];
+
+          // Iterating through the polymorphic signatures of the source table
+          for src_sgn <- isort(src_table_sgns):
+
+            // Target signature for this particular source table signature
+            args_types = [v -> src_sgn(i) : v, unused_var @ i <~ src_args, v != nothing];
+            target_key_sgn = (if v != nothing then just(args_types(v)) else nothing : v <- right(k.target));
+
+            // Iterating through the tables the target relation is partitioned in
+            for tv <- isort(table_vars_by_rel_var(left(k.target))):
+
+              // Polymorphic signatures of the target table
+              target_table_signatures = table_signatures(rel_auto_id, tv);
+
+              // If any of the polymorphic signatures of the target table overlaps with the
+              // current target signature, then the table is a target of the physical key
+              if (s <- target_table_signatures : overlap(s, target_key_sgn)):
+                target_tables = target_tables & [tv];
+              ;
+            ;
+          ;
+
+          // Just double checking that there's only one possible target table for this key
+          assert |target_tables| == 1;
+
+          // Creating the physical foreign key
+          key_type = foreign_key_type(k);
+          physical_key = foreign_key(sv, only(target_tables), key_type);
+          physical_keys = (physical_keys | physical_key);
+        ;
+      ;
+    ;
+
+    return physical_foreign_keys;
+
+
+    Bool overlap(NeType+ signature, Maybe[NeType]+ partial_signature) {
+      assert |signature| == |signatures|;
+      for t2 @ i <- partial_signature:
+        return false if t2 != nothing and are_ptype_disjoint(signature(i), value(t2));
+      ;
+      return true;
+    }
+
+    Bool is_subset_signature(NeType+ signature, Maybe[NeType]+ partial_signature) {
+      fail;
+    }
+  }
+
+
+  ForeignKeyType foreign_key_type(ForeignKey key) {
+    origin_relvar, typed_origin_args = key.source;
+    origin_args = (a : a, t <- typed_origin_args);
+    target_relvar, target_args = key.target;
+
+    assert match (origin_args, target_args)
+      (just(s1?)),              (just(s2?))                     = s1 == s2,
+      (just(s1?)),              (just(s2?), nothing)            = s1 == s2,
+      (just(s1?)),              (nothing, just(s2?))            = s1 == s2,
+      (just(s1?)),              (just(s2?), nothing, nothing)   = s1 == s2,
+      (just(s1?)),              (nothing, just(s2?), nothing)   = s1 == s2,
+      (just(s1?)),              (nothing, nothing, just(s2?))   = s1 == s2,
+
+      (just(s1?), nothing),     (just(s2?))                     = s1 == s2,
+      (nothing, just(s1?)),     (just(s2?))                     = s1 == s2,
+      (just(s1?), just(s2?)),   (just(s3?), just(s4?), nothing) = s1 != s2 and s1 == s3 and s2 == s4,
+
+      (_, _, _) as?,            (t?)                            = { las = (a : a <- as, a != nothing);
+                                                                    return |las| == 1 and only(las) == t;
+                                                                  },
+      (just(s1?), just(s2?), nothing),  (just(s3?), just(s4?))  = s1 != s2 and s1 == s3 and s2 == s4,
+
+      _,                        _                               = false;
+
+    rev_origin_perm = reverse_perm(rel_var_cols_perm(database.name, origin_relvar));
+    rev_target_perm = reverse_perm(rel_var_cols_perm(database.name, target_relvar));
+
+    key_type = match (origin_args, target_args)
+      (just()),           (just())          = :unary_unary,
+      (just()),           (just(), nothing) = unary_binary(rev_target_perm(0)),
+      (just()),           (nothing, just()) = unary_binary(rev_target_perm(1)),
+      (just()),           (_, _, _) as?     = { idx = only_unsafe((i : a @ i <- as, a != nothing));
+                                                return unary_ternary(rev_target_perm(idx));
+                                              },
+
+      (just(),  nothing), (just())          = binary_unary(rev_origin_perm(0)),
+      (nothing, just()),  (just())          = binary_unary(rev_origin_perm(1)),
+      (just(),  just()),  (_, _, _)         = :binary_ternary,
+
+      (_, _, _) oas?,     (just() ta?)      = { idx = only_unsafe((i : a @ i <- oas, a == ta));
+                                                return ternary_unary(rev_origin_perm(idx));
+                                              },
+      (_, _, _),          (_, _)            = :ternary_binary;
+
+    return key_type;
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-[[+(RelVar, Nat)]] column_clusters([RelVar, NzNat] relvars, [ForeignKey] foreign_keys) {
+[[+(TableVar, Nat)]] column_clusters([TableVar, NzNat] relvars, [BlockForeignKey] foreign_keys) {
   init_clusters = union([associations(k) : k <- foreign_keys]);
   non_trivial_clusters = merge_intersecting(init_clusters);
   all_cols = [(r, i) : r, a <- relvars, i <~ (i : i < a)];
@@ -332,48 +419,45 @@ BlockForeignKey low_level_key(ForeignKey key, [RelVar -> Table] tables) {
   return final_clusters;
 
 
-  [[+(RelVar, Nat)]] associations(ForeignKey foreign_key) {
-    origin_relvar, origin_args = foreign_key.source;
-    target_relvar, target_args = foreign_key.target;
-    origin_args_idxs = [value(a) -> i : a, unused_var @ i <~ origin_args, a != nothing];
-    idx_assocs = [origin_args_idxs(value(a)), i : a @ i <~ target_args, a != nothing];
-    return [[(origin_relvar, i), (target_relvar, j)] : i, j <- idx_assocs];
+  [[+(TableVar, Nat)]] associations(BlockForeignKey foreign_key) {
+    idx_assocs = match (foreign_key.type)
+      unary_unary         = [0 -> 0],
+      unary_binary(i?)    |
+      unary_ternary(i?)   = [0 -> i],
+      binary_unary(i?)    |
+      ternary_unary(i?)   = [i -> 0],
+      binary_ternary      |
+      ternary_binary      = [0 -> 0, 1 -> 1];
+
+    return [[(foreign_key.origin, i), (foreign_key.target, j)] : i, j <- idx_assocs];
   }
 }
 
 
-implicit program : Program, database : Database { ## program IS NOT REALLY NEEDED, BUT THE TYPECHECKER...
-  ([ValueStoreId], [RelVar -> Table]) value_stores_and_tables {
-    relvars_arity = [r, arity(info.signatures) : r, info <- database.rel_vars];
-    clusters = column_clusters(relvars_arity, database.foreign_keys);
+implicit program : Program, typedefs : [TypeName -> NeType], database : Database { ## program IS NOT REALLY NEEDED, BUT THE TYPECHECKER...
+  ([ValueStoreId], [TableVar -> Table]) value_stores_and_tables {
+    auto_id = database.name;
+    table_vars_arity = [r, arity(auto_id, logical_rel_var(r)) : r <- physical_tables(auto_id)];
+    clusters = column_clusters(table_vars_arity, physical_foreign_keys);
     ord_clusters = isort(clusters);
     col_to_id_map = [c -> i : cs @ i <~ ord_clusters, c <- cs];
     value_stores = [value_store_id(i) : i <- range(|ord_clusters|)];
-
-    let context = database:
-      tables = [
-        v -> {
-          arity = arity(info.signatures);
-
-          non_permutated_value_stores = (value_store_id(col_to_id_map[(v, i)]) : i < arity);
-          keys = table_keys(v);
-          col_types = col_types(info.signatures, info.keys);
-          applied_perm = relvar_cols_perm(v);
-
-          permutated_value_stores = (non_permutated_value_stores(applied_perm(i)) : i < arity);
-
-          return table(permutated_value_stores, keys, col_types, applied_perm);
-        } : v, info <- database.rel_vars
-      ];
-    ;
-
+    tables = [
+      v -> {
+        arity = only([|s| : s <- info.signatures]); ## BAD BAD BAD
+        non_permutated_value_stores = (value_store_id(col_to_id_map[(v, i)]) : i < arity);
+        keys = table_var_keys(auto_id, v);
+        col_types = col_types(info.signatures, info.keys);
+        applied_perm = rel_var_cols_perm(auto_id, v);
+        permutated_value_stores = (non_permutated_value_stores(applied_perm(i)) : i < arity);
+        return table(permutated_value_stores, keys, col_types, applied_perm);
+      } : v, info <- database.rel_vars
+    ];
     return (value_stores, tables);
 
 
-    NzNat arity([+NeType+] signatures) = only([|s| : s <- signatures]); ## BAD BAD BAD: THIS THING IS PRETTY UGLY AND UNSAFE...
-
     NeType+ col_types([+NeType+] signatures, [[+Nat]] keys) {
-      arity = arity(signatures);
+      arity = only([|s| : s <- signatures]); ## BAD BAD BAD
       types = (ne_union_superset([ts(i) : ts <- signatures]) : i < arity);
       perm = table_cols_perm(arity, keys);
       return (types(i) : i <- perm);

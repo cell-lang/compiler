@@ -1,0 +1,16 @@
+implicit program : Program, typedefs : [TypeName -> NeType] {
+  Bool signature_overlaps_partial_signature(NeType+ signature, Maybe[Type]+ partial_signature) {
+    assert |signature| == |signatures|;
+    for mt2 @ i <- partial_signature:
+      if mt2 != nothing:
+        t2 = value(mt2);
+        return false if t2 == empty_type or are_ptype_disjoint(signature(i), t2);
+      ;
+    ;
+    return true;
+  }
+
+
+  Bool any_signature_overlaps_partial_signature([+NeType+] signatures, Maybe[Type]+ partial_signature) =
+    (s <- signatures : signature_overlaps_partial_signature(s, partial_signature));
+}

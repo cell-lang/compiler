@@ -289,3 +289,17 @@ Nat* reverse_perm(Nat* p) = array_map(reverse(merge(([i -> n] : n @ i <- p))));
   ;
   return set(ord_sets);
 }
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+[[+T]] split_sets_by_pred([[+T]] sets, (T -> Bool) p) {
+  split_sets = ();
+  for s <- isort(sets):
+    in = [e : e <- s, p(e)];
+    out = s - in;
+    split_sets = (split_sets | in)  if in != [];
+    split_sets = (split_sets | out) if out != [];
+  ;
+  return set(split_sets);
+}
