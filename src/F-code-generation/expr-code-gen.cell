@@ -140,25 +140,34 @@ implicit program           : Program,
 
     surr_args = (apply(mi, surr_vars($)) : mi <- filtered_idxs);
 
-    if (a <~ table_args : a == nothing):
-      code = (
-        get_table_iter(it_var, rel_var_to_table_var(rel_var), surr_args),
-        set_bvar(res_var, neg(is_out_of_range(it_var)))
-      );
-    else
-      code = (set_bvar(res_var, table_contains(rel_var_to_table_var(rel_var), nonempty(surr_vars))));
+    // Selecting the candidate tables among those the relation is partitioned into
+    log_args_types = (apply(a, subexpr_type) : a <- args);
+    candidate_tables = overlapping_physical_tables(rel_var, log_args_types);
+
+    code = (eval_code | set_bvar(res_var, false));
+    for tv @ i <- isort(candidate_tables):
+      if (a <~ table_args : a == nothing):
+        table_code = (
+          get_table_iter(it_var, tv, surr_args),
+          set_bvar(res_var, neg(is_out_of_range(it_var)))
+        );
+      else
+        table_code = (set_bvar(res_var, table_contains(tv, nonempty(surr_vars))));
+      ;
+
+      for e @ j <- reverse(args_aliases):
+        store_id = table_col_store_id(tv, rat(unfiltered_idxs, j));
+        surr_var = rat(surr_vars, j);
+        table_code = (
+          set_ivar(surr_var, lookup_value(store_id, e)),
+          do_if_not(are_eq(int_obj(surr_var), int_obj(-1)), table_code)
+        );
+      ;
+
+      table_code = (do_if_not(res_var, table_code)) if i == 0;
+      code = code & table_code;
     ;
 
-    for e @ i <- reverse(args_aliases):
-      store_id = table_col_store_id(rel_var, rat(unfiltered_idxs, i));
-      surr_var = rat(surr_vars, i);
-      code = (
-        set_ivar(surr_var, lookup_value(store_id, e)),
-        do_if_not(are_eq(int_obj(surr_var), int_obj(-1)), code)
-      );
-    ;
-
-    code = eval_code & (set_bvar(res_var, false)) & code;
     return (code, bool_obj(res_var), ret_var_gen);
   }
 
@@ -203,7 +212,7 @@ implicit program           : Program,
       surr_vars, var_gen = next_int_vars(var_gen, nat(arity-1));
       it_var, var_gen = next_table_it_var(var_gen, arity);
 
-      all_args = (
+      all_surr_args_ref = (
         if i < unknown_arg_idx
           then just(surr_vars(i))
         elif i == unknown_arg_idx
@@ -212,29 +221,45 @@ implicit program           : Program,
           just(surr_vars(i-1))
         : i < arity
       );
+      all_surr_args = insert((just(v) : v <- surr_vars), unknown_arg_idx, nothing);
+      assert all_surr_args == all_surr_args_ref;
 
-      args_lookup_code = join(({
-          arg_idx = i + bit(i >= unknown_arg_idx);
-          store_id = table_col_store_id(rel_var, nat(arg_idx));
-          surr_var = surr_vars(i);
+      // Selecting the candidate tables among those the relation is partitioned into
+      all_args = insert((just(a) : a <- set_args), unknown_arg_idx, nothing);
+      log_args_types = (apply(a, subexpr_type) : a <- all_args);
+      candidate_tables = overlapping_physical_tables(rel_var, log_args_types);
+
+      // If all the lookups fail, then we throw an exception
+      code = (terminate);
+
+      // Iterating through all the candidate tables
+      for tv @ k <- isort(candidate_tables):
+        args_lookup_code = join(({
+          arg_idx = j + bit(j >= unknown_arg_idx);
+          store_id = table_col_store_id(tv, nat(arg_idx));
+          surr_var = surr_vars(j);
           return (
             set_ivar(surr_var, lookup_value(store_id, e)),
             check(neg(is_eq(surr_var, -1)))
           );
-        } : e @ i <- args_aliases
-      ));
+        } : e @ j <- args_aliases));
 
-      res_store_id = table_col_store_id(rel_var, unknown_arg_idx);
+        res_store_id = table_col_store_id(tv, unknown_arg_idx);
 
-      lookup_code = (
-        get_table_iter(it_var, rel_var_to_table_var(rel_var), all_args),
-        check(neg(is_out_of_range(it_var))),
-        lookup_surrogate(res_var, res_store_id, get_tuple_field(it_var, unknown_arg_idx))
-      );
+        lookup_code = (
+          get_table_iter(it_var, tv, all_surr_args),
+          branch(
+            neg(is_out_of_range(it_var)),
+            (lookup_surrogate(res_var, res_store_id, get_tuple_field(it_var, unknown_arg_idx))),
+            // If the lookup on this table fails we keep going, unless this is the last table left
+            code
+          )
+        );
 
-      code = args_eval_code & args_lookup_code & lookup_code;
+        code = args_lookup_code & lookup_code;
+      ;
 
-      return (code, res_var, ret_var_gen);
+      return (args_eval_code & code, res_var, ret_var_gen);
     }
   }
 
