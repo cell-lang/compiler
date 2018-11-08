@@ -1,0 +1,69 @@
+implicit program : Program, typedefs : [TypeName -> NeType], context : Context {
+  DBSymbol var_type(NestedDBVar var) =
+    match (context)
+      automaton()   = context.nested_dbs[var].type,
+      data_base()   = context.nested_dbs[var];
+
+
+  DBSymbol var_type(LinkedDBVar var) =
+    match (context)
+      data_base() = context.links(match (var) linked_db_var(i?) = i);
+
+
+  DBSymbol var_type(LocDBVar var) =
+    match (context)
+      procedure()    = context.db_vars[var].type;
+
+
+  DBSymbol var_type(QualDBVar var) = rel_auto_by_id(var_type(var.outer)).nested_dbs[var.inner];
+
+
+  DBSymbol this_db_symbol = ## RENAME THIS
+    match (context)
+      data_base()  = context.name;
+
+
+  [+NeType+] relvar_signatures(AnyRelVar rel_var) =
+    rel_auto_by_id(rel_auto_type(rel_var)).rel_vars(unqualified(rel_var)).signatures;
+
+
+  DBSymbol rel_auto_type(AnyRelVar var) =
+    rel_var()       = this_db_symbol,
+    qual_rel_var()  = var_type(var.db_var);
+
+  ////////////////////////////////////////////////////////////////////////////////
+  ////////////////////////////////////////////////////////////////////////////////
+
+  [[+Nat]] relvar_keys(AnyRelVar relvar) =
+    rel_var()       = rel_var_keys(this_db_symbol, relvar),
+    qual_rel_var()  = rel_var_keys(var_type(relvar.db_var), relvar.rel_var);
+
+
+  [[+Nat]] table_var_keys(TableVar var)     = table_var_keys(this_db_symbol, var);
+  [[+Nat]] table_var_keys(QualTableVar var) = table_var_keys(var_type(var.db_var), var.table_var);
+
+
+  ValueStoreId table_col_store_id(TableVar rel_var, Nat col_idx) =
+    tables_by_db[this_db_symbol][rel_var].value_stores(col_idx);
+
+
+  NestedValueStoreId table_col_store_id(QualTableVar table_var, Nat col_idx) {
+    db_type = var_type(table_var.db_var);
+    store_id = tables_by_db[db_type][table_var.table_var].value_stores(col_idx);
+    return nested_value_store_id(table_var.db_var, store_id);
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////
+
+  Nat+ relvar_cols_perm(AnyRelVar rel_var) = rel_var_cols_perm(rel_auto_type(rel_var), unqualified(rel_var));
+
+
+  T+ logical_to_physical_order(AnyRelVar rel_var, T+ logical_values) =
+    logical_to_physical_order(rel_auto_type(rel_var), unqualified(rel_var), logical_values);
+
+
+  // The arguments must be in the logical order, not in the physical one
+  [+TableVar] overlapping_physical_tables(AnyRelVar var, Maybe[Type]+ log_args_types) =
+    overlapping_physical_tables(rel_auto_type(var), unqualified(var), log_args_types);
+}
