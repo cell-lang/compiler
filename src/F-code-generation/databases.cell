@@ -1,7 +1,5 @@
 implicit program : Program, typedefs : [TypeName -> NeType], database : Database, options : CompOptions {
   StaticBlock compiled_database {
-    value_stores, tables = value_stores_and_tables;
-
     methods = compiled_database_methods(database.methods);
     updates = compiled_database_updates(database.updates);
     handlers = compiled_database_handlers(database.handlers);
@@ -14,7 +12,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
       links:            database.links,
       state_vars:       [v -> info.type : v, info <- database.state_vars],
       value_stores:     value_stores,
-      tables:           tables,
+      tables:           tables_info,
       foreign_keys:     physical_foreign_keys,
       nested_blocks:    database.nested_dbs,
       init_code:        database_init_code,
@@ -43,10 +41,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
     ;
     nested_dbs_init_code = rand_sort([init_db(v, (), t) : v, t <- nested_dbs]);
 
-    value_stores, tables = value_stores_and_tables;
-
     value_stores_init_code = (init_value_store(vs) : vs <- rand_sort(value_stores));
-    tables_init_code = rand_sort([init_table(v, t) : v, t <- tables]);
+    tables_init_code = rand_sort([init_table(v, t) : v, t <- tables_info]);
 
     return vars_pre_init_code & vars_init_code & nested_dbs_init_code & value_stores_init_code & tables_init_code;
   }
@@ -59,10 +55,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
     vars_cleanup_code = rand_sort([reset_memb_var(v, :blank) : v, unused_var <- state_vars]);
     nested_dbs_cleanup_code = rand_sort([cleanup_db(v, t) : v, t <- nested_dbs]);
 
-    value_stores, tables = value_stores_and_tables;
-
     value_stores_cleanup_code = (cleanup_value_store(vs) : vs <- rand_sort(value_stores));
-    tables_cleanup_code = rand_sort([cleanup_table(v, t) : v, t <- tables]);
+    tables_cleanup_code = rand_sort([cleanup_table(v, t) : v, t <- tables_info]);
 
     return vars_cleanup_code & nested_dbs_cleanup_code & value_stores_cleanup_code & tables_cleanup_code;
   }
@@ -81,7 +75,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
     nested_dbs = rand_sort(keys(database.nested_dbs));
     all_vars = state_vars & rel_vars & nested_dbs;
 
-    unused_var, tables = value_stores_and_tables;
+    tables = tables_info;
 
     let context = database:
       code = join(({
@@ -107,7 +101,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
     state_var = fn_arg(0);
     tmp_var = lvar(0);
 
-    unused_var, tables = value_stores_and_tables;
+    tables = tables_info;
 
     code = ();
 
@@ -341,11 +335,11 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
       ;
     ;
 
-    return physical_foreign_keys;
+    return set(physical_keys);
 
 
     Bool overlap(NeType+ signature, Maybe[NeType]+ partial_signature) {
-      assert |signature| == |signatures|;
+      assert |signature| == |partial_signature|;
       for t2 @ i <- partial_signature:
         return false if t2 != nothing and are_ptype_disjoint(signature(i), value(t2));
       ;
@@ -353,7 +347,11 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
     }
 
     Bool is_subset_signature(NeType+ signature, Maybe[NeType]+ partial_signature) {
-      fail;
+      assert |signature| == |partial_signature|;
+      for mst @ i <- partial_signature:
+        return false if mst != nothing and not is_subset(signature(i), value(mst));
+      ;
+      return true;
     }
   }
 
@@ -435,17 +433,26 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 
 
 implicit program : Program, typedefs : [TypeName -> NeType], database : Database { ## program IS NOT REALLY NEEDED, BUT THE TYPECHECKER...
-  ([ValueStoreId], [TableVar -> Table]) value_stores_and_tables {
+  [ValueStoreId] value_stores = values(table_col_value_store_map);
+
+
+  [(TableVar, Nat) -> ValueStoreId] table_col_value_store_map {
     auto_id = database.name;
     table_vars_arity = [r, arity(auto_id, logical_rel_var(r)) : r <- physical_tables(auto_id)];
     clusters = column_clusters(table_vars_arity, physical_foreign_keys);
     ord_clusters = isort(clusters);
-    col_to_id_map = [c -> i : cs @ i <~ ord_clusters, c <- cs];
-    value_stores = [value_store_id(i) : i <- range(|ord_clusters|)];
-    tables = [
+    return [c -> value_store_id(i) : cs @ i <~ ord_clusters, c <- cs];
+  }
+
+
+  [TableVar -> Table] tables_info {
+    auto_id = database.name;
+    col_to_vs_map = table_col_value_store_map;
+    return [
       v -> {
         arity = only([|s| : s <- info.signatures]); ## BAD BAD BAD
-        non_permutated_value_stores = (value_store_id(col_to_id_map[(v, i)]) : i < arity);
+        // arity = arity(database.name, rv);
+        non_permutated_value_stores = (col_to_vs_map((v, i)) : i < arity);
         keys = table_var_keys(auto_id, v);
         col_types = col_types(info.signatures, info.keys);
         applied_perm = rel_var_cols_perm(auto_id, v);
@@ -453,7 +460,6 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
         return table(permutated_value_stores, keys, col_types, applied_perm);
       } : v, info <- database.rel_vars
     ];
-    return (value_stores, tables);
 
 
     NeType+ col_types([+NeType+] signatures, [[+Nat]] keys) {
