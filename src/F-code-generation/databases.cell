@@ -95,48 +95,51 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 
 
   Instr* database_set_state_code {
-    count = nat(|database.state_vars| + |database.rel_vars| + |database.nested_dbs|);
-    return () if count == 0;
+    return ();
 
-    state_var = fn_arg(0);
-    tmp_var = lvar(0);
+    // count = nat(|database.state_vars| + |database.rel_vars| + |database.nested_dbs|);
+    // return () if count == 0;
 
-    tables = tables_info;
+    // state_var = fn_arg(0);
+    // tmp_var = lvar(0);
 
-    code = ();
+    // tables = tables_info;
 
-    state_vars = rand_sort(keys(database.state_vars));
-    for v <- state_vars:
-      code = (code |
-        ## REFERENCE COUNTING BUG HERE...
-        // lookup_field(pending_state_var(bare_id(v)), state_var, object(bare_id(v)))
-        lookup_field(tmp_var, state_var, object(bare_id(v))),
-        set_var(pending_state_var(bare_id(v)), tmp_var)
-      );
-    ;
+    // code = ();
 
-    rel_vars = rand_sort(keys(database.rel_vars));
-    let context = database:
-      for v <- rel_vars:
-        arity = nz_nat(|an_elem(database.rel_vars[v].signatures)|);
-        code = (code |
-          queue_deletes(v, (nothing : i < arity)),
-          lookup_field(tmp_var, state_var, object(bare_id(v))),
-          set_table(v, tables[v], tmp_var, rel_var_cols_perm(database.name, v))
-        );
-      ;
-    ;
+    // state_vars = rand_sort(keys(database.state_vars));
+    // for v <- state_vars:
+    //   code = (code |
+    //     ## REFERENCE COUNTING BUG HERE...
+    //     // lookup_field(pending_state_var(bare_id(v)), state_var, object(bare_id(v)))
+    //     lookup_field(tmp_var, state_var, object(bare_id(v))),
+    //     set_var(pending_state_var(bare_id(v)), tmp_var)
+    //   );
+    // ;
 
-    nested_dbs = rand_sort(keys(database.nested_dbs));
-    for db <- nested_dbs:
-      db_type = database.nested_dbs[db];
-      code = (code |
-        lookup_field(tmp_var, state_var, object(bare_id(db))),
-        set_state(db, tmp_var, db_type)
-      );
-    ;
+    ## REIMPLEMENT REIMPLEMENT
+    // rel_vars = rand_sort(keys(database.rel_vars));
+    // let context = database:
+    //   for v <- rel_vars:
+    //     arity = nz_nat(|an_elem(database.rel_vars[v].signatures)|);
+    //     code = (code |
+    //       queue_deletes(v, (nothing : i < arity)),
+    //       lookup_field(tmp_var, state_var, object(bare_id(v))),
+    //       set_table(v, tables[v], tmp_var, rel_var_cols_perm(database.name, v))
+    //     );
+    //   ;
+    // ;
 
-    return code;
+    // nested_dbs = rand_sort(keys(database.nested_dbs));
+    // for db <- nested_dbs:
+    //   db_type = database.nested_dbs[db];
+    //   code = (code |
+    //     lookup_field(tmp_var, state_var, object(bare_id(db))),
+    //     set_state(db, tmp_var, db_type)
+    //   );
+    // ;
+
+    // return code;
   }
 
 
@@ -454,7 +457,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
         arity = arity(database.name, rv);
 
         value_stores = (col_to_vs_map((tv, i)) : i < arity);
-        keys = table_var_keys(auto_id, rv);
+        keys = table_var_keys(auto_id, tv);
         applied_perm = rel_var_cols_perm(auto_id, rv);
 
         log_cols_types = (ne_union_superset([ts(i) : ts <- table_signatures(auto_id, tv)]) : i < arity);

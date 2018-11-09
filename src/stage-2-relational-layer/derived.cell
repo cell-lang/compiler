@@ -36,6 +36,8 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
 
   ## MOVE SOMEWHERE ELSE?
   [TableVar -> [+NeType+]] physical_tables_signatures(Database database) {
+    tables : (TableVar, [+NeType+])*;
+
     ## TRY TO IMPLEMENT THIS FUNCTION IN NEO
     rel_vars = database.rel_vars;
     foreign_keys = group_by(database.foreign_keys, left($.source));
@@ -53,10 +55,10 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
 
       if |split_sgns| > 1:
         for s @ i <- isort(split_sgns):
-          tables = (tables | (partial_relvar(rv, i), s));
+          tables = (tables | (table_var(rv, i), s));
         ;
       else
-        tables = (tables | (rv, only(split_sgns)));
+        tables = (tables | (table_var(rv), only(split_sgns)));
       ;
     ;
 

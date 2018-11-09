@@ -167,13 +167,15 @@ implicit program           : Program,
 
     if |candidate_tables| == 1:
       // Easy case: there's only one table
+      table_var = table_var(rel_var);
+
       pre_insert_code = ({
-        store_id = table_col_store_id(rel_var, i);
+        store_id = table_col_store_id(table_var, i);
         surr_var = surr_vars(i);
         return lookup_or_queue_insert_value(surr_var, store_id, e);
       } : e @ i <- args_aliases);
 
-      insertion_code = (queue_insert_tuple(rel_var, surr_vars));
+      insertion_code = (queue_insert_tuple(table_var, surr_vars));
       code = args_eval_code & pre_insert_code & insertion_code;
 
       return (code, just(surrogates), [], init_var_gen);
@@ -201,43 +203,45 @@ implicit program           : Program,
 
 
   StmtCompInfo forced_insert_stmt_opt_code(RelVar rel_var, Expr+ args, [EnvVar -> Type] env, VarGen init_var_gen) {
-    args_perm = relvar_cols_perm(rel_var);
-    table_args = (args(i) : i <- args_perm);
+    fail;
 
-    args_eval_code, args_aliases, var_gen = opt_eval_code(table_args, env, init_var_gen);
+    // args_perm = relvar_cols_perm(rel_var);
+    // table_args = (args(i) : i <- args_perm);
 
-    arity = |table_args|;
-    surr_vars, var_gen = next_int_vars(var_gen, arity);
-    is_new_val_vars, var_gen = next_bool_vars(var_gen, arity);
+    // args_eval_code, args_aliases, var_gen = opt_eval_code(table_args, env, init_var_gen);
 
-    keys = table_var_keys(rel_var);
-    col_is_tracked = union(keys);
+    // arity = |table_args|;
+    // surr_vars, var_gen = next_int_vars(var_gen, arity);
+    // is_new_val_vars, var_gen = next_bool_vars(var_gen, arity);
 
-    value_prep_code = join(({
-        store_id = table_col_store_id(rel_var, i);
-        surr_var = surr_vars(i);
-        is_new_val_var = is_new_val_vars(i);
-        return (
-          set_ivar(surr_var, lookup_value_ex(store_id, e)),
-          set_bvar(is_new_val_var, is_eq(surr_var, -1)) if col_is_tracked(i),
-          do_if(if col_is_tracked(i) then is_new_val_var else is_eq(surr_var, -1), queue_insert_value(surr_var, store_id, e))
-        );
-      } : e @ i <- args_aliases
-    ));
+    // keys = table_var_keys(rel_var);
+    // col_is_tracked = union(keys);
 
-    deletion_code = ({
-        value_cond = and([neg(is_new_val_vars(i)) : i <- as]);
-        surr_args = (if as(i) then just(surr_vars(i)) else nothing : i < arity);
-        return do_if(value_cond, queue_deletes(rel_var, surr_args));
-      } : as <- rand_sort(keys)
-    );
+    // value_prep_code = join(({
+    //     store_id = table_col_store_id(rel_var, i);
+    //     surr_var = surr_vars(i);
+    //     is_new_val_var = is_new_val_vars(i);
+    //     return (
+    //       set_ivar(surr_var, lookup_value_ex(store_id, e)),
+    //       set_bvar(is_new_val_var, is_eq(surr_var, -1)) if col_is_tracked(i),
+    //       do_if(if col_is_tracked(i) then is_new_val_var else is_eq(surr_var, -1), queue_insert_value(surr_var, store_id, e))
+    //     );
+    //   } : e @ i <- args_aliases
+    // ));
 
-    pre_insert_code = value_prep_code & deletion_code;
+    // deletion_code = ({
+    //     value_cond = and([neg(is_new_val_vars(i)) : i <- as]);
+    //     surr_args = (if as(i) then just(surr_vars(i)) else nothing : i < arity);
+    //     return do_if(value_cond, queue_deletes(rel_var, surr_args));
+    //   } : as <- rand_sort(keys)
+    // );
 
-    insertion_code = (queue_insert_tuple(rel_var, nonempty(surr_vars)));
-    code = args_eval_code & pre_insert_code & insertion_code;
+    // pre_insert_code = value_prep_code & deletion_code;
 
-    return (code, just(surrogates), [], init_var_gen);
+    // insertion_code = (queue_insert_tuple(rel_var, nonempty(surr_vars)));
+    // code = args_eval_code & pre_insert_code & insertion_code;
+
+    // return (code, just(surrogates), [], init_var_gen);
   }
 
 
