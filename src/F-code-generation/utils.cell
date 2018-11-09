@@ -18,6 +18,10 @@ Nat+ choose_disp_args(NeType++ types, [TypeName -> Type] typedefs) {
     for i1 < count-1; i2 = i1+1..count:
       pts1 = ptypes(i1);
       pts2 = ptypes(i2);
+      // Two subsignatures are disjoint if and only if a pair of corresponding
+      // sets/types are disjoint. If none of the corresponding pairs are disjoint
+      // then you can build a tuple that belongs in both signatures by taking its
+      // elements from the intersections of the corresponding pairs of sets/types
       disjoint = (j <~ arg_idxs : are_disjoint(pts1(j), pts2(j)));
       return false if not disjoint;
     ;
@@ -26,8 +30,36 @@ Nat+ choose_disp_args(NeType++ types, [TypeName -> Type] typedefs) {
 }
 
 
-Nat+ optimal_dispatch_args([+[+NeType+]] signatures, [TypeName -> Type] typedefs) {
+Nat+ optimal_dispatch_args([+[+NeType+]] signatures_sets, [TypeName -> Type] typedefs) {
+  arity = only([|s| : ss <- signatures_sets, s <- ss]); ## BAD
+  ptypes = [[(pseudotype(t, typedefs) : t <- s) : s <- ss] : ss <- signatures_sets];
+
+  ## IF THERE'S MORE THAN ONE CHOICE OF DISPATCH ARGUMENTS,
+  ## WE SHOULD CHOOSE THE ONE THAT IS THE MOST EFFICIENT
+  for n = 1 ... arity:
+    for idxs <- ordered_combinations(n, arity):
+      return idxs if are_sufficient(idxs, ptypes, typedefs);
+    ;
+  ;
+
   fail;
+
+
+  Bool are_sufficient(Nat+ args_idxs, [+[+PseudoType+]] psgns, [TypeName -> Type] typedefs) {
+    ord_psgns = isort(psgns);
+    count = |psgns|;
+    for i1 < count-1; i2 = i1+1 .. count:
+      // Two sets of subsignatures are disjoint if every pairs of
+      // signatures from their cartesian product is disjoint. Otherwise
+      // you could take a pair that belongs in both non-disjoint
+      // signatures and that would belong to both sets of signatures
+      for ps1 <- isort(ord_psgns(i1)); ps2 <- isort(ord_psgns(i2)):
+        disjoint = (j <~ args_idxs : are_disjoint(ps1(j), ps2(j)));
+        return false if not disjoint;
+      ;
+    ;
+    return true;
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////

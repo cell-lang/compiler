@@ -276,7 +276,9 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
 
 implicit typedefs : [TypeName -> NeType] {
   Instr+ polymorphic_dynamic_dispatch_code(ObjExpr+ disp_args, [+([+NeType+], Instr+)] cases) {
-    fail;
+    ## BAD BAD BAD: NOT THE MOST EFFICIENT WAY TO DO IT...
+    expanded_cases = [(s, right(c)) : c <- cases, s <- left(c)];
+    return dynamic_dispatch_code(disp_args, expanded_cases);
   }
 
 
