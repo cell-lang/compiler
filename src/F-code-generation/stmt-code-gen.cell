@@ -154,16 +154,42 @@ implicit program           : Program,
 
     arity = |table_args|;
     surr_vars, var_gen = next_int_vars(var_gen, arity);
+    fail if surr_vars == ();
     is_new_val_vars, var_gen = next_bool_vars(var_gen, arity);
 
-    pre_insert_code = ({
-      store_id = table_col_store_id(rel_var, i);
-      surr_var = surr_vars(i);
-      return lookup_or_queue_insert_value(surr_var, store_id, e);
-    } : e @ i <- args_aliases);
+    // Selecting the candidate tables among those the relation is partitioned into
+    candidate_tables = overlapping_physical_tables(rel_var, (just(expr_type(a, env)) : a <- table_args));
 
-    insertion_code = (queue_insert_tuple(rel_var, nonempty(surr_vars)));
-    code = args_eval_code & pre_insert_code & insertion_code;
+    if |candidate_tables| == 1:
+      // Easy case: there's only one table
+      pre_insert_code = ({
+        store_id = table_col_store_id(rel_var, i);
+        surr_var = surr_vars(i);
+        return lookup_or_queue_insert_value(surr_var, store_id, e);
+      } : e @ i <- args_aliases);
+
+      insertion_code = (queue_insert_tuple(rel_var, surr_vars));
+      code = args_eval_code & pre_insert_code & insertion_code;
+
+      return (code, just(surrogates), [], init_var_gen);
+    ;
+
+    // Choosing the dispatch arguments
+    signatures = [table_signatures(this_db_symbol, tv) : tv <- candidate_tables];
+    disp_args = optimal_dispatch_args(signatures, typedefs);
+
+    cases = [{
+      types = table_signatures(this_db_symbol, tv);
+      code = (
+        lookup_or_queue_insert_value(surr_vars(i), table_col_store_id(tv, i), e)
+        : e @ i <- args_aliases
+      );
+      code = (code | queue_insert_tuple(tv, surr_vars), exit_block);
+      return (types, code);
+    } : tv <- candidate_tables];
+
+    dispatch_code = polymorphic_dynamic_dispatch_code(nonempty(args_aliases), cases);
+    code = (args_eval_code | execute_block(dispatch_code));
 
     return (code, just(surrogates), [], init_var_gen);
   }
