@@ -131,16 +131,21 @@ implicit program           : Program,
     surr_vars, var_gen = next_int_vars(var_gen, |set_args|);
     surr_args = (apply(mi, surr_vars($)) : mi <- filtered_idxs);
 
-    code = (queue_deletes(rel_var, nonempty(surr_args)));
+    // Selecting the candidate tables among those the relation is partitioned into
+    candidate_tables = overlapping_physical_tables(rel_var, (apply(a, expr_type($, env)) : a <- table_args));
 
-    for e @ i <- reverse(args_aliases):
-      store_id = table_col_store_id(rel_var, rat(unfiltered_idxs, i));
-      surr_var = rat(surr_vars, i);
-      code = (
-        set_ivar(surr_var, lookup_value(store_id, e)),
-        do_if_not(is_eq(surr_var, -1), code)
-      );
-    ;
+    code = join(({
+      table_code = (queue_deletes(tv, nonempty(surr_args)));
+      for e @ i <- reverse(args_aliases):
+        store_id = table_col_store_id(tv, rat(unfiltered_idxs, i));
+        surr_var = rat(surr_vars, i);
+        table_code = (
+          set_ivar(surr_var, lookup_value(store_id, e)),
+          do_if_not(is_eq(surr_var, -1), table_code)
+        );
+      ;
+      return table_code;
+    } : tv <- isort(candidate_tables)));
 
     return (args_eval_code & code, just(surrogates), [], init_var_gen);
   }
