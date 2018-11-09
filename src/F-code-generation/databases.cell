@@ -448,26 +448,21 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
   [TableVar -> Table] tables_info {
     auto_id = database.name;
     col_to_vs_map = table_col_value_store_map;
+
     return [
-      v -> {
-        arity = only([|s| : s <- info.signatures]); ## BAD BAD BAD
-        // arity = arity(database.name, rv);
-        non_permutated_value_stores = (col_to_vs_map((v, i)) : i < arity);
-        keys = table_var_keys(auto_id, v);
-        col_types = col_types(info.signatures, info.keys);
-        applied_perm = rel_var_cols_perm(auto_id, v);
-        permutated_value_stores = (non_permutated_value_stores(applied_perm(i)) : i < arity);
-        return table(permutated_value_stores, keys, col_types, applied_perm);
-      } : v, info <- database.rel_vars
+      tv -> {
+        arity = arity(database.name, rv);
+
+        value_stores = (col_to_vs_map((tv, i)) : i < arity);
+        keys = table_var_keys(auto_id, rv);
+        applied_perm = rel_var_cols_perm(auto_id, rv);
+
+        log_cols_types = (ne_union_superset([ts(i) : ts <- table_signatures(auto_id, tv)]) : i < arity);
+        phys_cols_types = (log_cols_types(i) : i <- applied_perm);
+
+        return table(value_stores, keys, phys_cols_types, applied_perm);
+      } : rv, unused_var <- database.rel_vars, tv <- physical_tables(auto_id, rv)
     ];
-
-
-    NeType+ col_types([+NeType+] signatures, [[+Nat]] keys) {
-      arity = only([|s| : s <- signatures]); ## BAD BAD BAD
-      types = (ne_union_superset([ts(i) : ts <- signatures]) : i < arity);
-      perm = table_cols_perm(arity, keys);
-      return (types(i) : i <- perm);
-    }
   }
 }
 
