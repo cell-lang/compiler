@@ -79,15 +79,18 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 
     let context = database:
       code = join(({
-          set_label_instr = set_var(evar(keys_var.id, i), object(bare_id(v)));
-          value_var = evar(values_var.id, i);
-          set_value_instr = match (v)
-            memb_var()      = set_var(value_var, v),
-            rel_var()       = copy_table(value_var, v, tables[v], rel_var_cols_perm(database.name, v)),
-            nested_db_var() = copy_state(value_var, v, var_type(v));
-          return (set_label_instr, set_value_instr);
-        } : v @ i <- all_vars
-      ));
+        set_label_instr = set_var(evar(keys_var.id, i), object(bare_id(v)));
+        value_var = evar(values_var.id, i);
+        set_value_instr = match (v)
+          memb_var()      = set_var(value_var, v),
+          rel_var()       = copy_table(
+                              value_var,
+                              nonempty_map(select_by_key(tables_info, physical_tables(database.name, v))),
+                              rel_var_cols_perm(database.name, v)
+                            ),
+          nested_db_var() = copy_state(value_var, v, var_type(v));
+        return (set_label_instr, set_value_instr);
+      } : v @ i <- all_vars));
     ;
 
     return (code | mk_map(res_var, keys_var, values_var, count), ret_val(res_var));

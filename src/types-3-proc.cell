@@ -118,7 +118,7 @@ type AnyVar         = ObjVar, OptTagRecVar, VecVar, ArrayVar, BoolVar, IntVar,
 
 type AnyLocVar      = LocBoolVar, LocIntVar, LocFloatVar, LocOptTagRecVar, LocVar, StdVar;
 
-type TableVar       = table_var(Symbol), table_var(Symbol, Nat);
+type TableVar       = table_var(Symbol), unique_table_var(Symbol, Nat);
 type QualTableVar   = qual_table_var(db_var: AnyDBVar, table_var: TableVar);
 type AnyTableVar    = TableVar, QualTableVar;
 
@@ -260,7 +260,7 @@ type RefObjExpr     = mk_set_from_stream(stream: StreamVar),
                       print_value(value: AtomicExpr),
 
                       copy_state(var: AnyDBVar, type: DBSymbol),
-                      copy_table(relvar: RelVar, table: Table, perm: Nat+),
+                      copy_table(tables: [+TableVar -> Table], perm: Nat+), ## A BETTER NAME WOULD BE copy_rel()
 
                       copy_persistent_state(var: AnyAutoVar, type: AutoSymbol),
 

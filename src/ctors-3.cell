@@ -86,7 +86,7 @@ TernRelItVar tern_rel_it_var(Nat n) = :tern_rel_it_var(n);
 TableItVar table_it_var(Nat id, NzNat a) = table_it_var(id: id, arity: a);
 
 TableVar table_var(Symbol s)        = :table_var(s);
-TableVar table_var(Symbol s, Nat n) = :table_var(s, n);
+TableVar table_var(Symbol s, Nat n) = :unique_table_var(s, n);
 
 TableVar table_var(RelVar v)        = rel_var(s?) = table_var(s);
 TableVar table_var(RelVar v, Nat n) = rel_var(s?) = table_var(s, n);
@@ -298,8 +298,8 @@ Instr internal_sort(WriteObjVar v, AtomicExpr s) = set_var(v, internal_sort(set:
 Instr parse_value(WriteObjVar v, AtomicExpr s)  = set_var(v, parse_value(value: s));
 Instr print_value(WriteObjVar v, AtomicExpr s)  = set_var(v, print_value(value: s));
 
-Instr copy_state(WriteObjVar rv, AnyDBVar dv, DBSymbol t)     = set_var(rv, copy_state(var: dv, type: t));
-Instr copy_table(WriteObjVar ov, RelVar rv, Table t, Nat+ p)  = set_var(ov, copy_table(relvar: rv, table: t, perm: p));
+Instr copy_state(WriteObjVar rv, AnyDBVar dv, DBSymbol t) = set_var(rv, copy_state(var: dv, type: t));
+Instr copy_table(WriteObjVar ov, [+TableVar -> Table] ts, Nat+ p) = set_var(ov, copy_table(tables: ts, perm: p));
 
 Instr copy_persistent_state(WriteObjVar rv, AnyAutoVar av, AutoSymbol t) = set_var(rv, copy_persistent_state(var: av, type: t));
 

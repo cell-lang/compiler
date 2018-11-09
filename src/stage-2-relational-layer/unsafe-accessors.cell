@@ -44,12 +44,12 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context {
 
 
   ValueStoreId table_col_store_id(TableVar rel_var, Nat col_idx) =
-    tables_by_db[this_db_symbol][rel_var].value_stores(col_idx);
+    tables_by_db(this_db_symbol, !!)(rel_var).value_stores(col_idx);
 
 
   NestedValueStoreId table_col_store_id(QualTableVar table_var, Nat col_idx) {
     db_type = var_type(table_var.db_var);
-    store_id = tables_by_db[db_type][table_var.table_var].value_stores(col_idx);
+    store_id = tables_by_db(db_type, !!)(table_var.table_var).value_stores(col_idx);
     return nested_value_store_id(table_var.db_var, store_id);
   }
 
