@@ -297,9 +297,10 @@ implicit syn_prg : SynPrg {
 
   //////////////////////////////////////////////////////////////////////////////
 
-  RelVar* attribute_relvars(Symbol rel_auto, Symbol relvar) {
+  RelVar* attribute_relvars(Symbol rel_auto, Symbol rel_var_id) {
     attr_relvars = attr_relvars_by_db(db_symbol(rel_auto), !!);
-    return attr_relvars(rel_var(relvar));
+    rel_var = rel_var(rel_var_id);
+    return if attr_relvars(rel_var, *) then attr_relvars(rel_var) else ();
 
     [DBSymbol -> [RelVar -> RelVar*]] attr_relvars_by_db = [
       db_symbol(d.name) -> attribute_relvars(d) : d <- schema_defs

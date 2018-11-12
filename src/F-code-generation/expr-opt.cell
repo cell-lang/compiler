@@ -47,6 +47,25 @@ implicit program           : Program,
     ;
     return (code, surrs, var_gen);
   }
+
+
+  (Instr*, Maybe[ObjExpr]*, VarGen) sparse_opt_eval_code(Maybe[Expr]* exprs, [EnvVar -> Type] env, VarGen init_var_gen) {
+    surrs : Maybe[ObjExpr]*;
+
+    var_gen = init_var_gen;
+    code = ();
+    surrs = ();
+    for e <- exprs:
+      if e != nothing:
+        expr_code, surr, var_gen = opt_eval_code(value(e), env, var_gen);
+        code = code & expr_code;
+        surrs = (surrs | just(surr));
+      else
+        surrs = (surrs | nothing);
+      ;
+    ;
+    return (code, surrs, var_gen);
+  }
 }
 
 

@@ -119,51 +119,75 @@ implicit program           : Program,
 
 
   StmtCompInfo delete_stmt_opt_code(RelVar rel_var, Maybe[Expr]+ args, [EnvVar -> Type] env, VarGen init_var_gen) {
+    args_eval_code, args_aliases, var_gen = sparse_opt_eval_code(args, env, init_var_gen);
+    info = delete_stmt_opt_code(rel_var, nonempty(args_aliases), (apply(a, expr_type($, env)) : a <- args), var_gen);
+    delete_code, surrs, break_surrs, var_gen = info;
+    assert surrs == just(surrogates) and break_surrs == [] and var_gen == init_var_gen;
+    return (args_eval_code & delete_code, just(surrogates), [], init_var_gen);
+  }
+
+
+  StmtCompInfo delete_stmt_opt_code(RelVar rel_var, Maybe[ObjExpr]+ log_args_aliases, Maybe[Type]+ log_args_types, VarGen init_var_gen) {
+    args_surrs : Maybe[IntVar]*;
+
     args_perm = relvar_cols_perm(rel_var);
-    table_args = (args(i) : i <- args_perm);
+    phys_args_aliases = (log_args_aliases(i) : i <- args_perm);
 
-    filtered_idxs = idxs_into_filtered_seq((a != nothing : a <- table_args));
-    unfiltered_idxs = (i : a @ i <- table_args, a != nothing);
+    var_gen = init_var_gen;
 
-    set_args = (value(a) : a <- table_args, a != nothing);
-    args_eval_code, args_aliases, var_gen = opt_eval_code(set_args, env, init_var_gen);
-
-    surr_vars, var_gen = next_int_vars(var_gen, |set_args|);
-    surr_args = (apply(mi, surr_vars($)) : mi <- filtered_idxs);
+    args_surrs = ();
+    for a <- phys_args_aliases:
+      if a != nothing:
+        surr, var_gen = next_int_var(var_gen);
+        args_surrs = (args_surrs | just(surr));
+      else
+        args_surrs = (args_surrs | nothing);
+      ;
+    ;
 
     // Selecting the candidate tables among those the relation is partitioned into
-    candidate_tables = overlapping_physical_tables(rel_var, (apply(a, expr_type($, env)) : a <- table_args));
+    candidate_tables = overlapping_physical_tables(rel_var, log_args_types);
 
     code = join(({
-      table_code = (queue_deletes(tv, nonempty(surr_args)));
-      for e @ i <- reverse(args_aliases):
-        store_id = table_col_store_id(tv, rat(unfiltered_idxs, i));
-        surr_var = rat(surr_vars, i);
-        table_code = (
-          set_ivar(surr_var, lookup_value(store_id, e)),
-          do_if_not(is_eq(surr_var, -1), table_code)
-        );
+      table_code = (queue_deletes(tv, nonempty(args_surrs)));
+      for a @ ri <- reverse(phys_args_aliases):
+        if a != nothing:
+          i = nat(|phys_args_aliases| - ri - 1);
+          store_id = table_col_store_id(tv, i);
+          arg_surr = value_unsafe(args_surrs(i));
+          table_code = (
+            set_ivar(arg_surr, lookup_value(store_id, value(a))),
+            do_if_not(is_eq(arg_surr, -1), table_code)
+          );
+        ;
       ;
       return table_code;
     } : tv <- isort(candidate_tables)));
 
-    return (args_eval_code & code, just(surrogates), [], init_var_gen);
+    return (code, just(surrogates), [], init_var_gen);
   }
 
 
   StmtCompInfo insert_stmt_opt_code(RelVar rel_var, Expr+ args, [EnvVar -> Type] env, VarGen init_var_gen) {
-    args_perm = relvar_cols_perm(rel_var);
-    table_args = (args(i) : i <- args_perm);
+    args_eval_code, args_aliases, var_gen = opt_eval_code(args, env, init_var_gen);
+    info = insert_stmt_opt_code(rel_var, nonempty(args_aliases), (expr_type(a, env) : a <- args), var_gen);
+    insert_code, surrs, break_surrs, var_gen = info;
+    assert surrs == just(surrogates) and break_surrs == [] and var_gen == init_var_gen;
+    return (args_eval_code & insert_code, just(surrogates), [], init_var_gen);
+  }
 
-    args_eval_code, args_aliases, var_gen = opt_eval_code(table_args, env, init_var_gen);
+
+  StmtCompInfo insert_stmt_opt_code(RelVar rel_var, ObjExpr+ log_args_aliases, Type+ log_args_types, VarGen init_var_gen) {
+    args_perm = relvar_cols_perm(rel_var);
+    table_args = (log_args_aliases(i) : i <- args_perm);
 
     arity = |table_args|;
-    surr_vars, var_gen = next_int_vars(var_gen, arity);
+    surr_vars, var_gen = next_int_vars(init_var_gen, arity);
     fail if surr_vars == ();
     is_new_val_vars, var_gen = next_bool_vars(var_gen, arity);
 
     // Selecting the candidate tables among those the relation is partitioned into
-    candidate_tables = overlapping_physical_tables(rel_var, (just(expr_type(a, env)) : a <- table_args));
+    candidate_tables = overlapping_physical_tables(rel_var, (just(t) : t <- log_args_types));
 
     if |candidate_tables| == 1:
       // Easy case: there's only one table
@@ -173,10 +197,10 @@ implicit program           : Program,
         store_id = table_col_store_id(table_var, i);
         surr_var = surr_vars(i);
         return lookup_or_queue_insert_value(surr_var, store_id, e);
-      } : e @ i <- args_aliases);
+      } : e @ i <- table_args);
 
       insertion_code = (queue_insert_tuple(table_var, surr_vars));
-      code = args_eval_code & pre_insert_code & insertion_code;
+      code = pre_insert_code & insertion_code;
 
       return (code, just(surrogates), [], init_var_gen);
     ;
@@ -189,59 +213,36 @@ implicit program           : Program,
       types = table_signatures(this_db_symbol, tv);
       code = (
         lookup_or_queue_insert_value(surr_vars(i), table_col_store_id(tv, i), e)
-        : e @ i <- args_aliases
+        : e @ i <- table_args
       );
       code = (code | queue_insert_tuple(tv, surr_vars), exit_block);
       return (types, code);
     } : tv <- candidate_tables];
 
-    dispatch_code = polymorphic_dynamic_dispatch_code(nonempty(args_aliases), cases);
-    code = (args_eval_code | execute_block(dispatch_code));
+    code = (execute_block(polymorphic_dynamic_dispatch_code(nonempty(table_args), cases)));
 
     return (code, just(surrogates), [], init_var_gen);
   }
 
 
   StmtCompInfo forced_insert_stmt_opt_code(RelVar rel_var, Expr+ args, [EnvVar -> Type] env, VarGen init_var_gen) {
-    fail;
+    args_eval_code, args_aliases, var_gen = opt_eval_code(args, env, init_var_gen);
+    args_types = (expr_type(a, env) : a <- args);
+    info = insert_stmt_opt_code(rel_var, nonempty(args_aliases), args_types, var_gen);
+    code, surrs, break_surrs, var_gen = info;
+    assert surrs == just(surrogates) and break_surrs == [] and var_gen == init_var_gen;
 
-    // args_perm = relvar_cols_perm(rel_var);
-    // table_args = (args(i) : i <- args_perm);
+    for k <- isort(relvar_keys(rel_var)):
+      delete_args = (if k(i) then just(a) else nothing : a @ i <- args_aliases);
+      let surrogates = value_unsafe(surrs): ## IS THIS AT ALL RIGHT? IT MAKES NO DIFFERENCE AT THE MOMENT BUT...
+        delete_code, surrs, break_surrs, var_gen =
+          delete_stmt_opt_code(rel_var, nonempty(delete_args), (just(t) : t <- args_types), var_gen);
+      ;
+      assert surrs == just(surrogates) and break_surrs == [] and var_gen == init_var_gen;
+      code = code & delete_code;
+    ;
 
-    // args_eval_code, args_aliases, var_gen = opt_eval_code(table_args, env, init_var_gen);
-
-    // arity = |table_args|;
-    // surr_vars, var_gen = next_int_vars(var_gen, arity);
-    // is_new_val_vars, var_gen = next_bool_vars(var_gen, arity);
-
-    // keys = table_var_keys(rel_var);
-    // col_is_tracked = union(keys);
-
-    // value_prep_code = join(({
-    //     store_id = table_col_store_id(rel_var, i);
-    //     surr_var = surr_vars(i);
-    //     is_new_val_var = is_new_val_vars(i);
-    //     return (
-    //       set_ivar(surr_var, lookup_value_ex(store_id, e)),
-    //       set_bvar(is_new_val_var, is_eq(surr_var, -1)) if col_is_tracked(i),
-    //       do_if(if col_is_tracked(i) then is_new_val_var else is_eq(surr_var, -1), queue_insert_value(surr_var, store_id, e))
-    //     );
-    //   } : e @ i <- args_aliases
-    // ));
-
-    // deletion_code = ({
-    //     value_cond = and([neg(is_new_val_vars(i)) : i <- as]);
-    //     surr_args = (if as(i) then just(surr_vars(i)) else nothing : i < arity);
-    //     return do_if(value_cond, queue_deletes(rel_var, surr_args));
-    //   } : as <- rand_sort(keys)
-    // );
-
-    // pre_insert_code = value_prep_code & deletion_code;
-
-    // insertion_code = (queue_insert_tuple(rel_var, nonempty(surr_vars)));
-    // code = args_eval_code & pre_insert_code & insertion_code;
-
-    // return (code, just(surrogates), [], init_var_gen);
+    return (args_eval_code & code, just(surrogates), [], init_var_gen);
   }
 
 
