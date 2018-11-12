@@ -1898,9 +1898,16 @@ implicit filename : String, lines : Nat** {
     nodes = rule_seq_nodes(mtc);
     assert |nodes| == 5;
     src_rel = get_lowercase_id(nodes(0));
-    src_args = (
-      if get_token(n) == :underscore then nothing else just(get_lowercase_id(n))
-      : n <- nonempty(rep_rule_nodes(block_node(nodes(1))))
+    src_args = ({
+      inner_match = get_rule_match(n);
+      return match (get_rule_name(n))
+        nothing          = (nothing, nothing),
+        identifier       = (just(get_lowercase_id(inner_match)), nothing),
+        type             = (nothing, just(build_type_ast(inner_match))),
+        typed_identifier = ( just(get_lowercase_id(rule_seq_node(inner_match, 0))),
+                             just(build_type_ast(rule_seq_node(inner_match, 2)))
+                           );
+      } : n <- nonempty(rep_rule_nodes(block_node(nodes(1))))
     );
     targets = ({
       target_nodes = rule_seq_nodes(n);
@@ -1912,7 +1919,7 @@ implicit filename : String, lines : Nat** {
       );
       return (target_rel, target_args);
     } : n <- nonempty(rep_rule_nodes(nodes(3))));
-    return foreign_key_decl(src_rel, ((a, nothing) : a <- src_args), targets);
+    return foreign_key_decl(src_rel, src_args, targets);
   }
 
   RelVarsDecl build_relvar_attrs_decl_ast(RuleMatch mtc) {
