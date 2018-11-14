@@ -34,6 +34,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context {
   ////////////////////////////////////////////////////////////////////////////////
   ////////////////////////////////////////////////////////////////////////////////
 
+  NzNat arity(AnyRelVar rel_var) = arity(this_db_symbol, unqualified(rel_var));
+
   [[+Nat]] relvar_keys(AnyRelVar relvar) =
     rel_var()       = rel_var_keys(this_db_symbol, relvar),
     qual_rel_var()  = rel_var_keys(var_type(relvar.db_var), relvar.rel_var);
@@ -44,12 +46,12 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context {
 
 
   ValueStoreId table_col_store_id(TableVar rel_var, Nat col_idx) =
-    tables_by_db(this_db_symbol, !!)(rel_var).value_stores(col_idx);
+    table_col_store_id(this_db_symbol, rel_var, col_idx);
 
 
   NestedValueStoreId table_col_store_id(QualTableVar table_var, Nat col_idx) {
-    db_type = var_type(table_var.db_var);
-    store_id = tables_by_db(db_type, !!)(table_var.table_var).value_stores(col_idx);
+    rel_auto_type = var_type(table_var.db_var);
+    store_id = table_col_store_id(rel_auto_type, table_var.table_var, col_idx);
     return nested_value_store_id(table_var.db_var, store_id);
   }
 
@@ -61,6 +63,9 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context {
 
   T+ logical_to_physical_order(AnyRelVar rel_var, T+ logical_values) =
     logical_to_physical_order(rel_auto_type(rel_var), unqualified(rel_var), logical_values);
+
+
+  [+TableVar] physical_tables(AnyRelVar relvar) = physical_tables(rel_auto_type(relvar), unqualified(relvar));
 
 
   // The arguments must be in the logical order, not in the physical one

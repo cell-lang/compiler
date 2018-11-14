@@ -98,23 +98,15 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 
 
   Instr* database_set_state_code {
-    count = nat(|database.state_vars| + |database.rel_vars| + |database.nested_dbs|);
-    return () if count == 0;
+    rel_auto_id = database.name;
 
     state_var = fn_arg(0);
-    tmp_var_1 = lvar(0);
-    tmp_var_2 = lvar(1);
-    tmp_var_3 = lvar(2);
-
+    tmp_var = lvar(0);
+    log_args_vars = (lvar(nat(i+1)) : i < 3);
+    surr_vars = (ivar32(i) : i < 3);
     set_it_var = set_it_var(0);
     bin_rel_it_var = bin_rel_it_var(0);
     tern_rel_it_var = tern_rel_it_var(0);
-
-    surr_var_1 = ivar32(0);
-    surr_var_2 = ivar32(1);
-    surr_var_3 = ivar32(2);
-
-    tables = tables_info;
 
     code = ();
 
@@ -123,92 +115,74 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
       instr = do_if(
         has_field(state_var, object(bare_id(v))),
         ( // lookup_field(v, state_var, object(bare_id(v)))  ## REFERENCE COUNTING BUG HERE...
-          lookup_field(tmp_var_1, state_var, object(bare_id(v))),
-          set_var(v, tmp_var_1)
+          lookup_field(tmp_var, state_var, object(bare_id(v))),
+          set_var(v, tmp_var)
         )
       );
       code = (code | instr);
     ;
 
-    rel_vars_arities = [v -> only([|s| : s <- info.signatures]) : v, info <- database.rel_vars];
-    unary_rel_vars = [v : v <- rel_vars_arities(?, 1)];
-    binary_rel_vars = [v : v <- rel_vars_arities(?, 2)];
-    ternary_rel_vars = [v : v <- rel_vars_arities(?, 3)];
-    assert unary_rel_vars & binary_rel_vars & ternary_rel_vars == keys(rel_vars_arities);
+    // Mutable relation variables
+    ord_rel_vars = sort_by_key(keys(database.rel_vars), arity(rel_auto_id, $));
+    for v <- ord_rel_vars:
+      arity = arity(rel_auto_id, v);
+      cols_perm = rel_var_cols_perm(rel_auto_id, v);
+      phys_args_vars = (log_args_vars(i) : i <- cols_perm);
 
-    let context = database:
-      for v <- isort(unary_rel_vars):
-        if |physical_tables(database.name, v)| == 1:
-          arity = nz_nat(|an_elem(database.rel_vars[v].signatures)|);
-          table_var = table_var(v);
-          store_id = table_col_store_id(table_var, 0);
-          core_loop_code = (
-            immediate_insert_or_add_ref(surr_var_1, store_id, tmp_var_1),
-            immediate_insert_tuple(table_var, (surr_var_1))
+      // Physical tables the logical relation is partitioned into
+      phys_tables = physical_tables(rel_auto_id, v);
+
+      if |phys_tables| == 1:
+        table_var = only(phys_tables);
+        stores_ids = (table_col_store_id(rel_auto_id, table_var, i) : i < arity);
+        core_loop_code = (
+          (immediate_insert_or_add_ref(surr_vars(i), stores_ids(i), phys_args_vars(i)) : i < arity) |
+          immediate_insert_tuple(table_var, nonempty(take(surr_vars, arity)))
+        );
+
+      else
+        // Choosing the dispatch arguments
+        signatures = [table_signatures(rel_auto_id, tv) : tv <- phys_tables];
+        disp_args_idxs = optimal_dispatch_args(signatures, typedefs);
+        disp_args = (log_args_vars(i) : i <- disp_args_idxs);
+
+        cases = [{
+          stores_ids = (table_col_store_id(rel_auto_id, tv, i) : i < arity);
+          case_code = (
+            (immediate_insert_or_add_ref(surr_vars(i), stores_ids(i), phys_args_vars(i)) : i < arity) |
+            immediate_insert_tuple(tv, nonempty(take(surr_vars, arity)))
           );
-        else
-          ## IMPLEMENT IMPLEMENT IMPLEMENT
-          core_loop_code = ();
-          print "Skipping...";
-        ;
+          types = table_signatures(rel_auto_id, tv);
+          disp_types = [(ts(i) : i <- disp_args_idxs) : ts <- types];
+          return (disp_types, case_code);
+        } : tv <- phys_tables];
 
-        loop_body = (
-          break_if(is_out_of_range(set_it_var)),
-          get_curr_obj(tmp_var_1, set_it_var)
-        ) & core_loop_code & (
-          move_forward(set_it_var)
-        );
-        instr = do_if(
-          has_field(state_var, object(bare_id(v))),
-          ( lookup_field(tmp_var_1, state_var, object(bare_id(v))),
-            get_iter(set_it_var, tmp_var_1),
-            repeat(loop_body)
-          )
-        );
-        code = (code | instr);
+        block_body = polymorphic_dynamic_dispatch_code(disp_args, cases);
+        core_loop_code = (execute_block(block_body));
       ;
 
-      for v <- isort(binary_rel_vars):
-        if |physical_tables(database.name, v)| == 1:
-          arity = nz_nat(|an_elem(database.rel_vars[v].signatures)|);
-          table_var = table_var(v);
-          store_id_1 = table_col_store_id(table_var, 0);
-          store_id_2 = table_col_store_id(table_var, 1);
-          core_loop_code = (
-            immediate_insert_or_add_ref(surr_var_1, store_id_1, tmp_var_1),
-            immediate_insert_or_add_ref(surr_var_2, store_id_1, tmp_var_1),
-            immediate_insert_tuple(table_var, (surr_var_1, surr_var_2))
-          );
-        else
-          ## IMPLEMENT IMPLEMENT IMPLEMENT
-          core_loop_code = ();
-          print "Skipping...";
-        ;
+      loop_body = (break_if(is_out_of_range(bin_rel_it_var))) &
+                  (get_curr_arg(log_args_vars(i), bin_rel_it_var, i) : i < arity) &
+                  core_loop_code & (move_forward(bin_rel_it_var));
 
-        loop_body = (
-          break_if(is_out_of_range(bin_rel_it_var)),
-          get_curr_arg(tmp_var_1, bin_rel_it_var, 0),
-          get_curr_arg(tmp_var_2, bin_rel_it_var, 1)
-        ) & core_loop_code & (
-          move_forward(bin_rel_it_var)
-        );
-        instr = do_if(
-          has_field(state_var, object(bare_id(v))),
-          ( lookup_field(tmp_var_1, state_var, object(bare_id(v))),
-            get_iter(bin_rel_it_var, tmp_var_1, (nothing, nothing)),
-            repeat(loop_body)
-          )
-        );
-        code = (code | instr);
-      ;
+      instr = do_if(
+        has_field(state_var, object(bare_id(v))),
+        ( lookup_field(tmp_var, state_var, object(bare_id(v))),
+          get_iter(bin_rel_it_var, tmp_var, (nothing, nothing)),
+          repeat(loop_body)
+        )
+      );
+
+      code = (code | instr);
     ;
 
+    // Nested automata
     nested_dbs = rand_sort(keys(database.nested_dbs));
     for db <- nested_dbs:
       db_type = database.nested_dbs[db];
       code = (code |
-        lookup_field(tmp_var_1, state_var, object(bare_id(db))),
-        set_state(db, tmp_var_1, db_type)
+        lookup_field(tmp_var, state_var, object(bare_id(db))),
+        set_state(db, tmp_var, db_type)
       );
     ;
 
