@@ -19,6 +19,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
       cleanup_code:     database_cleanup_code,
       copy_state_code:  database_copy_state_code,
       set_state_code:   database_set_state_code,
+      full_check_code:  database_full_check_code,
       methods:          methods,
       updates:          handlers & updates,
       msg_memb_pred:    msg_memb_pred,
@@ -188,6 +189,64 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 
     return code;
   }
+
+
+  Instr* database_full_check_code {
+    phys_keys_by_table = group_by(physical_foreign_keys, $.origin);
+    ord_tables = group_by(keys(phys_keys_by_table), arity(database.name, logical_rel_var($)));
+
+    code = ();
+
+    for tv <- isort(lookup(ord_tables, 1, [])):
+      surr_var = ivar32(0);
+      it_var = table_it_var(0, 1);
+      foreign_keys = lookup(phys_keys_by_table, tv, []);
+
+      if foreign_keys != []:
+        conds = ({
+          args = match (fk.type)
+            unary_unary       = (just(surr_var)),
+            unary_binary(i?)  = (maybe(surr_var, j == i) : j < 2),
+            unary_ternary(i?) = (maybe(surr_var, j == i) : j < 3);
+          return table_contains(fk.target, args);
+        } : fk <- isort(foreign_keys));
+
+        cond = and_then((neg(c) : c <- conds));
+
+        code = (code |
+          get_table_iter(it_var, tv, (nothing)),
+          repeat((
+            break_if(is_out_of_range(it_var)),
+            set_ivar32(surr_var, get_tuple_field(it_var, 0)),
+            do_if(cond, ret_val(false)),
+            move_forward(it_var)
+          ))
+        );
+      ;
+    ;
+
+    return (code | ret_val(true));
+  }
+
+  // public boolean fullCheck() {
+  //   int i0, i1;
+
+  //   UnaryTable.Iter uit = operator_B.getIter();
+  //   while (!uit.done()) {
+  //     i0 = uit.get();
+  //     if (!code_B1.contains1(i0) || !name_B.contains1(i0))
+  //       return false;
+  //   }
+
+  //   BinaryTable.Iter bit = code_B0.getIter();
+  //   while (!bit.done()) {
+  //     i0 = bit.get1();
+  //     if (!operator_B.contains(i0))
+  //       return false;
+  //   }
+
+  //   return true;
+  // }
 
 
   ## COMPILATION OF METHODS FOR BOTH TYPES OF AUTOMATA IS ALMOST IDENTICAL, CAN WE SHARE SOME CODE HERE?

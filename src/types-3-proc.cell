@@ -154,7 +154,7 @@ type BoolNatOp      = is_symb(ObjExpr),
                       has_elem(set: ObjExpr, elt: ObjExpr),
                       has_field(record: ObjExpr, field: SymbObj),
                       contains(coll: ObjExpr, entry: ObjExpr+),
-                      table_contains(table: AnyTableVar, tuple: IntVar+);
+                      table_contains(table: AnyTableVar, tuple: Maybe[Int32Var]+);
 
 type IntNatOp       = get_int_val(ObjExpr),
                       minus(IntExpr),
@@ -169,9 +169,6 @@ type IntNatOp       = get_int_val(ObjExpr),
                       float_bits(FloatExpr),
                       mantissa(FloatExpr),
                       dec_exp(FloatExpr),
-                      lookup_value(store: AnyValueStoreId, value: AtomicExpr),
-                      lookup_value_ex(store: ValueStoreId, value: AtomicExpr),
-                      get_tuple_field(iter: TableItVar, field: Nat),
                       rand_nat(IntExpr),  // Non-deterministic
                       unique_nat,         // Non-deterministic
                       ticks;              // Impure
@@ -179,7 +176,10 @@ type IntNatOp       = get_int_val(ObjExpr),
 type Int32NatOp     = bool_to_bit(BoolExpr),
                       get_size(ObjExpr),
                       cast_int32(IntExpr),
-                      add32(Int32Expr, Int32Expr);
+                      add32(Int32Expr, Int32Expr),
+                      lookup_value(store: AnyValueStoreId, value: AtomicExpr),
+                      lookup_value_ex(store: ValueStoreId, value: AtomicExpr),
+                      get_tuple_field(iter: TableItVar, field: Nat);
 
 type FloatNatOp     = float_value(ObjExpr),
                       neg_float(FloatExpr),
@@ -368,13 +368,13 @@ type BasicInstr     = init_stream(StreamVar),
                       init_table(table_var: TableVar, table: Table),
                       cleanup_table(table_var: TableVar, table: Table),
 
-                      set_table(relvar: RelVar, table: Table, state: AtomicExpr, perm: Nat+),
+                      // set_table(relvar: RelVar, table: Table, state: AtomicExpr, perm: Nat+),
 
-                      get_table_iter(it_var: TableItVar, table: AnyTableVar, args: Maybe[IntVar]+),
-                      queue_deletes(table_var: TableVar, args: Maybe[IntVar]+),
-                      queue_insert_value(res_var: IntVar, store: ValueStoreId, value: AtomicExpr), // Ownership transfer: <value>
-                      lookup_or_queue_insert_value(res_var: IntVar, store: ValueStoreId, value: AtomicExpr), // Ownership transfer: <value>
-                      queue_insert_tuple(table_var: TableVar, tuple: IntVar+),
+                      get_table_iter(it_var: TableItVar, table: AnyTableVar, args: Maybe[Int32Var]+),
+                      queue_deletes(table_var: TableVar, args: Maybe[Int32Var]+),
+                      queue_insert_value(res_var: Int32Var, store: ValueStoreId, value: AtomicExpr), // Ownership transfer: <value>
+                      lookup_or_queue_insert_value(res_var: Int32Var, store: ValueStoreId, value: AtomicExpr), // Ownership transfer: <value>
+                      queue_insert_tuple(table_var: TableVar, tuple: Int32Var+),
 
                       immediate_insert_or_add_ref(res_var: Int32Var, store: ValueStoreId, value: AtomicExpr),
                       immediate_insert_tuple(table_var: TableVar, tuple: Int32Var+);
@@ -510,6 +510,7 @@ type StaticBlock = static_block(
                     cleanup_code:     Instr*,
                     copy_state_code:  Instr*,
                     set_state_code:   Instr*,
+                    full_check_code:  Instr*,
                     methods:          [MethodId -> CompiledMethod],
                     updates:          [UpdateId -> CompiledUpdate],
                     msg_memb_pred:    Maybe[MembTestPredId], ## REPLACE THE MAYBE WITH A NULL OBJECT?

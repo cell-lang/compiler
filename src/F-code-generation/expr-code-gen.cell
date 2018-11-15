@@ -135,7 +135,7 @@ implicit program           : Program,
     eval_code, args_aliases, var_gen = opt_eval_info(set_args, init_var_gen);
 
     res_var, ret_var_gen = next_bool_var(init_var_gen);
-    surr_vars, var_gen = next_int_vars(ret_var_gen, |set_args|);
+    surr_vars, var_gen = next_int32_vars(ret_var_gen, |set_args|);
     it_var, var_gen = next_table_it_var(var_gen, |table_args|);
 
     surr_args = (apply(mi, surr_vars($)) : mi <- filtered_idxs);
@@ -152,14 +152,14 @@ implicit program           : Program,
           set_bvar(res_var, neg(is_out_of_range(it_var)))
         );
       else
-        table_code = (set_bvar(res_var, table_contains(tv, nonempty(surr_vars))));
+        table_code = (set_bvar(res_var, table_contains(tv, (just(v) : v <- nonempty(surr_vars)))));
       ;
 
       for e @ j <- reverse(args_aliases):
         store_id = table_col_store_id(tv, rat(unfiltered_idxs, j));
         surr_var = rat(surr_vars, j);
         table_code = (
-          set_ivar(surr_var, lookup_value(store_id, e)),
+          set_ivar32(surr_var, lookup_value(store_id, e)),
           do_if_not(are_eq(int_obj(surr_var), int_obj(-1)), table_code)
         );
       ;
@@ -209,7 +209,7 @@ implicit program           : Program,
       res_var, ret_var_gen = next_obj_var(init_var_gen);
       args_eval_code, args_aliases, var_gen = opt_eval_info(set_args, ret_var_gen);
 
-      surr_vars, var_gen = next_int_vars(var_gen, nat(arity-1));
+      surr_vars, var_gen = next_int32_vars(var_gen, nat(arity-1));
       it_var, var_gen = next_table_it_var(var_gen, arity);
 
       all_surr_args_ref = (
@@ -239,7 +239,7 @@ implicit program           : Program,
           store_id = table_col_store_id(tv, nat(arg_idx));
           surr_var = surr_vars(j);
           return (
-            set_ivar(surr_var, lookup_value(store_id, e)),
+            set_ivar32(surr_var, lookup_value(store_id, e)),
             check(neg(is_eq(surr_var, -1)))
           );
         } : e @ j <- args_aliases));

@@ -128,7 +128,7 @@ implicit program           : Program,
 
 
   StmtCompInfo delete_stmt_opt_code(RelVar rel_var, Maybe[ObjExpr]+ log_args_aliases, Maybe[Type]+ log_args_types, VarGen init_var_gen) {
-    args_surrs : Maybe[IntVar]*;
+    args_surrs : Maybe[Int32Var]*;
 
     args_perm = relvar_cols_perm(rel_var);
     phys_args_aliases = (log_args_aliases(i) : i <- args_perm);
@@ -138,7 +138,7 @@ implicit program           : Program,
     args_surrs = ();
     for a <- phys_args_aliases:
       if a != nothing:
-        surr, var_gen = next_int_var(var_gen);
+        surr, var_gen = next_int32_var(var_gen);
         args_surrs = (args_surrs | just(surr));
       else
         args_surrs = (args_surrs | nothing);
@@ -156,7 +156,7 @@ implicit program           : Program,
           store_id = table_col_store_id(tv, i);
           arg_surr = value_unsafe(args_surrs(i));
           table_code = (
-            set_ivar(arg_surr, lookup_value(store_id, value(a))),
+            set_ivar32(arg_surr, lookup_value(store_id, value(a))),
             do_if_not(is_eq(arg_surr, -1), table_code)
           );
         ;
@@ -182,7 +182,7 @@ implicit program           : Program,
     table_args = (log_args_aliases(i) : i <- args_perm);
 
     arity = |table_args|;
-    surr_vars, var_gen = next_int_vars(init_var_gen, arity);
+    surr_vars, var_gen = next_int32_vars(init_var_gen, arity);
     fail if surr_vars == ();
     is_new_val_vars, var_gen = next_bool_vars(var_gen, arity);
 

@@ -100,7 +100,7 @@ implicit program           : Program,
 
     args_eval_code, args_aliases, var_gen = opt_eval_info(set_args, init_var_gen);
 
-    surr_vars, var_gen = next_int_vars(var_gen, |set_args|);
+    surr_vars, var_gen = next_int32_vars(var_gen, |set_args|);
     it_var, var_gen = next_table_it_var(var_gen, |table_args|);
 
     surr_args = (apply(mi, surr_vars($)) : mi <- filtered_idxs);
@@ -115,7 +115,7 @@ implicit program           : Program,
 
     // Iterating through all candidate tables
     for tv <- isort(candidate_tables):
-      if surr_args :: Just[IntVar]+:
+      if surr_args :: Just[Int32Var]+:
         plain_surr_args = (value(a) : a <- surr_args);
         vars_setup_code = (
           lookup_surrogate(v, table_col_store_id(tv, i), plain_surr_args(i))
@@ -123,7 +123,7 @@ implicit program           : Program,
         );
         code = (
           do_if(
-            table_contains(tv, plain_surr_args),
+            table_contains(tv, (just(a) : a <- plain_surr_args)),
             vars_setup_code & action_code
           )
         );
@@ -144,7 +144,7 @@ implicit program           : Program,
         store_id = table_col_store_id(tv, rat(unfiltered_idxs, i));
         surr_var = rat(surr_vars, i);
         code = (
-          set_ivar(surr_var, lookup_value(store_id, e)),
+          set_ivar32(surr_var, lookup_value(store_id, e)),
           do_if_not(is_eq(surr_var, -1), code)
         );
       ;

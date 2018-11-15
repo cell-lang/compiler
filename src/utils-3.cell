@@ -81,7 +81,7 @@ type CodeOutcome = fails, returns, breaks_loop, exits_block, falls_through;
     has_elem()                = retrieve(expr.set) & retrieve(expr.elt),
     has_field()               = retrieve(expr.record),
     contains()                = retrieve(expr.coll) & seq_union((retrieve(e) : e <- expr.entry)),
-    table_contains()          = seq_union((retrieve(e) : e <- expr.tuple)),
+    table_contains()          = seq_union((retrieve(value(a)) : a <- expr.tuple, a != nothing)),
     is_member()               = retrieve(expr.obj),
     state_is_def()            = [],
     neg(e?)                   = retrieve(e),
@@ -111,9 +111,10 @@ type CodeOutcome = fails, returns, breaks_loop, exits_block, falls_through;
   float_bits(e?)        = retrieve(e),
   mantissa(e?)          = retrieve(e),
   dec_exp(e?)           = retrieve(e),
-  lookup_value()        = retrieve(expr.value),
-  lookup_value_ex()     = retrieve(expr.value),
-  get_tuple_field()     = [],
+  ## MOVED TO Int32NatOp (WHICH IS NOT EVEN HERE. WHY?)
+  // lookup_value()        = retrieve(expr.value),
+  // lookup_value_ex()     = retrieve(expr.value),
+  // get_tuple_field()     = [],
   rand_nat(e?)          = retrieve(e),
   unique_nat            = [],
   ticks                 = [];
