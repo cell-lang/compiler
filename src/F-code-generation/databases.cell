@@ -8,22 +8,22 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
     msg_memb_pred = if msg_types != [] then just(memb_test_preds_map[ne_union_type(msg_types)]) else nothing;
 
     return static_block(
-      name:             database.name,
-      links:            database.links,
-      state_vars:       [v -> info.type : v, info <- database.state_vars],
-      value_stores:     value_stores,
-      tables:           tables_info,
-      foreign_keys:     physical_foreign_keys,
-      nested_blocks:    database.nested_dbs,
-      init_code:        database_init_code,
-      cleanup_code:     database_cleanup_code,
-      copy_state_code:  database_copy_state_code,
-      set_state_code:   database_set_state_code,
-      full_check_code:  database_full_check_code,
-      methods:          methods,
-      updates:          handlers & updates,
-      msg_memb_pred:    msg_memb_pred,
-      state_memb_pred:  memb_test_preds_map[type_ref(schema_type_symbol(untag(database.name)))]
+      name:                     database.name,
+      links:                    database.links,
+      state_vars:               [v -> info.type : v, info <- database.state_vars],
+      value_stores:             value_stores,
+      tables:                   tables_info,
+      foreign_keys:             physical_foreign_keys,
+      nested_blocks:            database.nested_dbs,
+      init_code:                database_init_code,
+      cleanup_code:             database_cleanup_code,
+      copy_state_code:          database_copy_state_code,
+      set_state_code:           database_set_state_code,
+      foreign_keys_check_code:  database_foreign_keys_check_code,
+      methods:                  methods,
+      updates:                  handlers & updates,
+      msg_memb_pred:            msg_memb_pred,
+      state_memb_pred:          memb_test_preds_map[type_ref(schema_type_symbol(untag(database.name)))]
     );
   }
 
@@ -191,7 +191,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
   }
 
 
-  Instr* database_full_check_code {
+  Instr* database_foreign_keys_check_code {
     rel_auto_id = database.name;
 
     phys_keys_by_table = group_by(physical_foreign_keys, $.origin);
@@ -247,7 +247,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
       ;
     ;
 
-    return (code | ret_val(true));
+    return code;
   }
 
   // public boolean fullCheck() {
