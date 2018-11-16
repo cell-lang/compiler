@@ -204,7 +204,7 @@ ObjNatOp lookup_field(ObjExpr e, SymbObj f)       = lookup_field(record: e, fiel
 ObjNatOp get_tag(ObjExpr e)                       = :get_tag(e);
 ObjNatOp get_inner_obj(ObjExpr e)                 = :get_inner_obj(e);
 ObjNatOp get_curr_obj(<SetItVar, SeqItVar> it)    = :get_curr_obj(it);
-ObjNatOp get_curr_arg(BinRelItVar v, <0..1> a)    = get_curr_arg(var: v, arg: a);
+ObjNatOp get_curr_arg(BinRelItVar v,  <0..1> a)   = get_curr_arg(var: v, arg: a);
 ObjNatOp get_curr_arg(TernRelItVar v, <0..2> a)   = get_curr_arg(var: v, arg: a);
 ObjNatOp rand_elem(ObjExpr s)                     = :rand_elem(s);
 
@@ -321,6 +321,9 @@ Instr get_iter(BinRelItVar v, AtomicExpr r, (Maybe[AtomicExpr], Maybe[AtomicExpr
 
 Instr get_iter(TernRelItVar v, AtomicExpr r, (Maybe[AtomicExpr], Maybe[AtomicExpr], Maybe[AtomicExpr]) as) =
   get_tern_rel_iter(var: v, src: r, args: as);
+
+Instr get_any_rel_iter(SetItVar v, AtomicExpr r, Maybe[AtomicExpr]* as) =
+  if as == (nothing) then get_iter(v, r) else undefined;
 
 Instr get_any_rel_iter(BinRelItVar v, AtomicExpr r, Maybe[AtomicExpr]* as) =
   get_iter(v, r, if |as| == 2 then as else undefined);
@@ -452,7 +455,6 @@ Instr send_msg(AnyDBVar v, DBSymbol t, AtomicExpr m, Bool r) = send_msg(db_var: 
 Instr send_msg(AnyDBVar v, DBSymbol t, AtomicExpr m, Bool r, BoolVar rv) = send_msg(db_var: v, type: t, msg: m, is_root: r, res_var: rv);
 Instr try_update(DBSymbol t, UpdateId id, AtomicExpr* as) = try_update(type: t, update_id: id, args: as);
 
-Instr set_state(AnyDBVar v, AtomicExpr e, DBSymbol t) = set_state(db_var: v, state: e, type: t);
 Instr set_state(BoolVar rv, AnyDBVar v, AtomicExpr e, DBSymbol t) = set_state(res_var: rv, db_var: v, state: e, type: t);
 
 Instr invoke_auto_method(WriteObjVar rv, AutoSymbol t, MethodId id, AtomicExpr* as) =
@@ -639,6 +641,7 @@ Instr check(BoolExpr e) = do_if_not(e, terminate);
 Instr check_is_bool(ObjExpr e) = check(is_bool(e));
 
 Instr get_curr_obj(WriteObjVar v, <SetItVar, SeqItVar> it) = set_var(v, get_curr_obj(it));
+Instr get_curr_arg(WriteObjVar v, SetItVar     it, Nat a)  = set_var(v, if a == 0 then get_curr_obj(it) else undefined);
 Instr get_curr_arg(WriteObjVar v, BinRelItVar  it, Nat a)  = set_var(v, get_curr_arg(it, if a :: <0..1> then a else undefined));
 Instr get_curr_arg(WriteObjVar v, TernRelItVar it, Nat a)  = set_var(v, get_curr_arg(it, if a :: <0..2> then a else undefined));
 

@@ -103,20 +103,24 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 
     state_var = fn_arg(0);
     tmp_var = lvar(0);
+    bool_var = bvar(0);
     log_args_vars = (lvar(nat(i+1)) : i < 3);
     surr_vars = (ivar32(i) : i < 3);
-    set_it_var = set_it_var(0);
-    bin_rel_it_var = bin_rel_it_var(0);
-    tern_rel_it_var = tern_rel_it_var(0);
+    it_vars = [1 -> set_it_var(0), 2 -> bin_rel_it_var(0), 3 -> tern_rel_it_var(0)];
 
-    code = ();
+    code = (
+      do_if(is_eq(state_var, empty_rel), ret_val(true)),
+      do_if(neg(is_ne_bin_rel(state_var)), ret_val(false))
+    );
 
     // Member variables
-    for v <- isort(keys(database.state_vars)):
+    for v, info <- isort(database.state_vars):
+      pred = memb_test_preds_map(info.type, !!);
       instr = do_if(
         has_field(state_var, object(bare_id(v))),
         ( // lookup_field(v, state_var, object(bare_id(v)))  ## REFERENCE COUNTING BUG HERE...
           lookup_field(tmp_var, state_var, object(bare_id(v))),
+          do_if_not(is_member(pred, tmp_var), ret_val(false)),
           set_var(v, tmp_var)
         )
       );
@@ -129,6 +133,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
       arity = arity(rel_auto_id, v);
       cols_perm = rel_var_cols_perm(rel_auto_id, v);
       phys_args_vars = (log_args_vars(i) : i <- cols_perm);
+      it_var = it_vars[arity]; // Need to use [] instead of () because of the typechecker...
 
       // Physical tables the logical relation is partitioned into
       phys_tables = physical_tables(rel_auto_id, v);
@@ -137,7 +142,9 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
         table_var = only(phys_tables);
         stores_ids = (table_col_store_id(rel_auto_id, table_var, i) : i < arity);
         core_loop_code = (
-          (immediate_insert_or_add_ref(surr_vars(i), stores_ids(i), phys_args_vars(i)) : i < arity) |
+        ) & (
+          immediate_insert_or_add_ref(surr_vars(i), stores_ids(i), phys_args_vars(i)) : i < arity
+        ) & (
           immediate_insert_tuple(table_var, nonempty(take(surr_vars, arity)))
         );
 
@@ -162,14 +169,42 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
         core_loop_code = (execute_block(block_body));
       ;
 
-      loop_body = (break_if(is_out_of_range(bin_rel_it_var))) &
-                  (get_curr_arg(log_args_vars(i), bin_rel_it_var, i) : i < arity) &
-                  core_loop_code & (move_forward(bin_rel_it_var));
+      signatures = database.rel_vars(v).signatures;
+
+      arg_type_is_unique = ({
+        types = [s(i) : s <- signatures];
+        a_type = an_elem(types);
+        return not (t <- types : not is_eq(t, a_type));
+      } : i < arity);
+
+      mono_args = ((i, an_elem([s(i) : s <- signatures])) : i < arity, arg_type_is_unique(i));
+      args_types_conds = (is_member(memb_test_preds_map(t, !!), log_args_vars(i)) : i, t <- mono_args);
+
+      poly_args = (i : i < arity, not arg_type_is_unique(i));
+      if poly_args != ():
+        poly_conds = (
+          and_then((is_member(memb_test_preds_map(s(i), !!), log_args_vars(i))  : i <- poly_args))
+        : s <- isort(signatures));
+        args_types_conds = (args_types_conds | or_else(poly_conds));
+      ;
+
+      core_loop_code = (do_if_not(and_then(nonempty(args_types_conds)), ret_val(false))) & core_loop_code;
+
+      loop_body = (break_if(is_out_of_range(it_var))) &
+                  (get_curr_arg(log_args_vars(i), it_var, i) : i < arity) &
+                  core_loop_code & (move_forward(it_var));
+
+      rel_check_cond = match (arity)
+        1   = is_ne_set(tmp_var),
+        2   = is_ne_bin_rel(tmp_var),
+        3   = is_ne_tern_rel(tmp_var);
+      rel_check_cond = or_else((is_eq(tmp_var, empty_rel), rel_check_cond));
 
       instr = do_if(
         has_field(state_var, object(bare_id(v))),
         ( lookup_field(tmp_var, state_var, object(bare_id(v))),
-          get_iter(bin_rel_it_var, tmp_var, (nothing, nothing)),
+          do_if(neg(rel_check_cond), ret_val(false)),
+          get_any_rel_iter(it_var, tmp_var, (nothing : i < arity)),
           repeat(loop_body)
         )
       );
@@ -181,13 +216,17 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
     nested_dbs = rand_sort(keys(database.nested_dbs));
     for db <- nested_dbs:
       db_type = database.nested_dbs[db];
-      code = (code |
-        lookup_field(tmp_var, state_var, object(bare_id(db))),
-        set_state(db, tmp_var, db_type)
+      instr = do_if(
+        has_field(state_var, object(bare_id(db))),
+        ( lookup_field(tmp_var, state_var, object(bare_id(db))),
+          set_state(bool_var, db, tmp_var, db_type),
+          do_if_not(bool_var, ret_val(false))
+        )
       );
+      code = (code | instr);
     ;
 
-    return code;
+    return (code | ret_val(true));
   }
 
 
