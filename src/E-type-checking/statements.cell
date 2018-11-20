@@ -310,9 +310,14 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   }
 
 
-  [TypeCheckingError] typecheck_restore_state_ctrl_stmt(StdVar res_var, <LocAutoVar, LocDBVar> auto_var, Expr state, [EnvVar -> Type] env) {
+  [TypeCheckingError] typecheck_restore_state_ctrl_stmt(StdVar res_var, LocDBVar auto_var, Expr state, [EnvVar -> Type] env) {
+    return typecheck(state, type_map(atom_type, type_any), env);
+  }
+
+
+  [TypeCheckingError] typecheck_restore_state_ctrl_stmt(StdVar res_var, LocAutoVar auto_var, Expr state, [EnvVar -> Type] env) {
     auto = automaton_by_id(var_type(auto_var));
-    return typecheck(state, state_type_workaround(auto), env);
+    return typecheck(state, state_type(auto), env);
   }
 }
 

@@ -217,17 +217,24 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
 ////////////////////////////////////////////////////////////////////////////////
 
 implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptions {
+  [NeType] rel_auto_runtime_checked_types(Database db) {
+    exprs_types = retrieve_from_nested_exprs(db, retrieve_types);
+    method_args_types = [t : m <- db.methods, t, unused_var <~ m.args];
+    msg_type = [ne_union_type([h.type : h <- db.handlers]) if db.handlers != []];
+    memb_vars_types = [info.type : unused_var, info <- db.state_vars];
+    rel_vars_types = [t : unused_var, info <- db.rel_vars, s <- info.signatures, t <~ s];
+    return union([exprs_types, method_args_types, msg_type, memb_vars_types, rel_vars_types]);
+  }
+
+
   [NeType] runtime_checked_root_types =
     [low_level_repr_type(r) : unused_var, rs <- optimized_tagged_records, r <~ rs] &
     union([retrieve_types(fd.expr) : fd <- program.fndefs]) &
     union([retrieve_from_nested_exprs(pd.body, retrieve_types) : pd <- program.proc_defs]) &
+    union([rel_auto_runtime_checked_types(db) : db <- program.data_bases]) &
     union([retrieve_from_nested_exprs(a, retrieve_types) : a <- program.auto_defs]) &
-    union([retrieve_from_nested_exprs(db, retrieve_types) : db <- program.data_bases]) &
     [info.type : a <- program.auto_defs, unused_var, info <- a.inputs] &
     [t : a <- program.auto_defs, m <- a.methods, t, unused_var <~ m.args] &
-    [t : db <- program.data_bases, m <- db.methods, t, unused_var <~ m.args] &
-    [ne_union_type(ts) : db <- program.data_bases, ts = [h.type : h <- db.handlers], ts != []] &
-    [type_ref(schema_type_symbol(untag(db.name))) : db <- program.data_bases] &
     [deep_state_type(a) : a <- program.auto_defs];
 
 
