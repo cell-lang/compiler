@@ -62,6 +62,7 @@ ParsingRule keyword_or        = rule_keyword(:or);
 ParsingRule keyword_print     = rule_keyword(:print);
 ParsingRule keyword_protocol  = rule_keyword(:protocol);
 ParsingRule keyword_reactive  = rule_keyword(:reactive);
+ParsingRule keyword_reduce    = rule_keyword(:reduce);
 ParsingRule keyword_return    = rule_keyword(:return);
 ParsingRule keyword_sans      = rule_keyword(:sans);
 ParsingRule keyword_schema    = rule_keyword(:schema);
@@ -134,6 +135,7 @@ ParsingRule rule_declaration =
     (:impl_block_1,         rule_impl_block_1),
     (:impl_block_2,         rule_impl_block_2),
     (:proc_def,             rule_proc_def),
+    (:aggr_fn_def,          rule_aggr_fn_def),
     (:db_def,               rule_db_def),
     (:auto_def,             rule_auto_def),
     (:std_auto_method,      rule_std_auto_method_def),
@@ -147,6 +149,39 @@ ParsingRule rule_declaration =
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
+
+ParsingRule rule_aggr_fn_def =
+  rule_seq((
+    keyword_reduce,
+    rule_type,
+    rule_lc_id,
+    par_rule_seq((
+      rule_type,
+      rule_double_dot,
+      rule_lc_id
+    )),
+    rep_rule(
+      rule_seq((
+        rule_type,
+        rule_lc_id,
+        rule_equals,
+        rule_expr,
+        rule_colon,
+        rule_lc_id,
+        rule_lc_id,
+        rule_right_arrow,
+        rule_expr,
+        rule_semicolon
+      )),
+      true
+    ),
+    rule_seq((
+      keyword_return,
+      optional_rule_seq((rule_expr, rule_pipe)),
+      rule_expr,
+      rule_semicolon
+    ))
+  ));
 
 ParsingRule rule_prot_decl =
   rule_seq((
@@ -838,12 +873,10 @@ ParsingRule rule_head_clause =
   ));
 
 ParsingRule rule_iter_clause =
-  rep_rule(
-    rule_seq((comma_sep_seq(rule_id), rule_left_arrow, rule_iter_clause_src)),
-    rule_pipe,
-    true,
-    false
-  );
+  rep_rule(rule_single_iter_clause, rule_pipe, true, false);
+
+ParsingRule rule_single_iter_clause =
+  rule_seq((comma_sep_seq(rule_id), rule_left_arrow, rule_iter_clause_src));
 
 ParsingRule rule_iter_clause_src = rule_choice(((:proj, rule_projection), (:expr, rule_ref_expr)));
 
@@ -946,6 +979,8 @@ ParsingRule rule_expr_0 =
     (:match_expr,         rule_match_expr),
     (:proc,               rule_proc_expr),
 
+    (:aggr_fn_call,       rule_aggr_fn_call),
+
     (:call_lookalike,     rule_seq((rule_id, par_rule(comma_sep_seq(rule_ref_expr))))),
     (:impl_args_call,     rule_impl_args_call_expr),
 
@@ -954,6 +989,17 @@ ParsingRule rule_expr_0 =
     (:plain_lc_id,        rule_id),
     (:cls_par,            atomic_rule(qual_var)),
     (:data,               rule_seq((rule_hash, brace_rule(rule_data_expr))))
+  ));
+
+ParsingRule rule_aggr_fn_call =
+  rule_seq((
+    rule_id,
+    par_rule_seq((
+      rule_expr,
+      rule_colon,
+      rule_single_iter_clause,
+      optional_rule_seq((keyword_if, rule_expr))
+    ))
   ));
 
 ParsingRule rule_proc_expr =

@@ -1,4 +1,3 @@
-
 type SynParTypeSymbol = par_type_symbol(symbol: BasicTypeSymbol, params: SynType+);
 type SynTypeSymbol    = BasicTypeSymbol, SynParTypeSymbol;
 
@@ -80,6 +79,8 @@ type SynSizeExpr      = size_expr(coll: SynExpr);
 
 type SynCallLookalike = call_lookalike(target: SynExpr, args: SynExpr+);
 
+type SynAggrFnCall    = aggr_fn_call(id: Symbol, expr: SynExpr, clause: SynIterClause, cond: Expr?);
+
 type SynRelMembTest   = rel_memb_test(target: SynExpr, args: Maybe[SynExpr]+);
 type SynRelLookup     = rel_lookup(target: Symbol+, args: Maybe[SynExpr]+);
 
@@ -140,7 +141,9 @@ type SynPtrn    = ptrn_symbol,
                   ptrn_var(var: StdVar, ptrn: SynPtrn),
                   ptrn_union(SynPtrn+);
 
-type SynClause  = iter_clause(vars: StdVar+, src: <SynExpr, SynProj>),
+type SynIterClause = iter_clause(vars: StdVar+, src: <SynExpr, SynProj>);
+
+type SynClause  = SynIterClause,
                   seq_clause(vars: Maybe[Symbol]+, idx_var: Maybe[Symbol], src: SynExpr),
                   and_clause(SynClause+),
                   or_clause(SynClause+),
@@ -246,6 +249,23 @@ type ImplBlock    = impl_block(args: ImplArgDecl+, fn_defs: SynFnDef+);
 type ProtDecl     = prot_decl(types: Symbol+, methods: (FnSymbol, SynType+, SynType)+);
 
 type TypeVarDecl  = typevar_decl(type_vars: Symbol+, prot_types: Symbol++);
+
+////////////////////////////////////////////////////////////////////////////////
+
+type AggrFunctDecl  = aggr_funct_decl(
+                        type:         SynType,
+                        name:         Symbol,
+                        elt_type:     SynType,
+                        elt_name:     Symbol,
+                        state_vars: (
+                          type:       SynType,
+                          name:       Symbol,
+                          init_value: SynExpr,
+                          merge_op:   (Symbol, Symbol, SynExpr)
+                        )+,
+                        final_value:  SynExpr,
+                        null_value:   SynExpr?
+                      );
 
 ////////////////////////////////////////////////////////////////////////////////
 
