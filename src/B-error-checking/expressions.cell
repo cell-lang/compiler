@@ -35,6 +35,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg], actual_ar
     call_lookalike()    = if not expr.target :: IdChain
                             then join((expr_wf_errors(e, def_vars) : e <- (expr.target) & expr.args))
                             else (),
+    aggr_fn_call()      = (), ## IMPLEMENT IMPLEMENT IMPLEMENT
     rel_memb_test()     = join((expr_wf_errors(value(e), def_vars) : e <- expr.args, e != nothing)),
     rel_lookup()        = join((expr_wf_errors(value(a), def_vars) : a <- expr.args, a != nothing)),
     and()               = expr_wf_errors(expr.left, def_vars) & expr_wf_errors(expr.right, def_vars),
@@ -111,6 +112,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg], actual_ar
     call_lookalike()    = if expr :: <call_lookalike(target: IdChain, args: SynExpr+)> ## BAD BAD: WORKING AROUND TYPE CHECKING "BUG"
                             then call_lookalike_local_wf_errors(expr, def_vars)
                             else (wrong_pseudocall_arity(expr) if not in(|expr.args|, [1, 2])),
+    aggr_fn_call()      = (), ## IMPLEMENT IMPLEMENT IMPLEMENT
     rel_memb_test()     = rel_memb_test_local_wf_errors(expr, def_vars),
     rel_lookup()        = rel_lookup_local_wf_errors(expr, def_vars),
     unary_op_call()     |

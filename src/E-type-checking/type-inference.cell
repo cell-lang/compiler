@@ -42,6 +42,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     cast_expr()           = expr.type,
     accessor()            = accessor_expr_type(expr.expr, expr.field, env),
     accessor_test()       = type_bool,
+    aggr_fn_call()        = aggr_fn_call_expr_type(expr, env),
     auto_method_call()    = auto_method_call_expr_type(expr, env),
     db_method_call()      = db_method_call_expr_type(expr, env),
     if_expr()             = if_expr_type(expr.cond, expr.then, expr.else, env),
@@ -58,29 +59,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     output_is_set()       = type_bool;
 
 
-  Type memb_var_type(MembVar var) = match (context)
-    data_base() = context.state_vars[var].type;
-
-
-  Type qual_memb_var_type(QualMembVar var) {
-    db_type = var_type(var.db_var);
-    db = automaton_by_id(db_type);
-    return db.state_vars[var.memb_var].type;
-  }
-
-
-  Type qual_signal_var_type(QualSignalVar var) {
-    auto_type = var_type(var.auto_var);
-    auto = automaton_by_id(auto_type);
-    memb_var = var.memb_var;
-    if auto.outputs(memb_var, *):
-      return auto.outputs[memb_var].type;
-    elif auto.state(memb_var, *):
-      return auto.state[memb_var].type;
-    else
-      ## WHAT ELSE IS ACCESSIBLE FROM INSIDE A PROCEDURE?
-      return auto.inputs[memb_var].type;
-    ;
+  Type aggr_fn_call_expr_type(AggrFnCallExpr expr, [EnvVar -> Type] env) {
+    return empty_type; ## IMPLEMENT IMPLEMENT IMPLEMENT
   }
 
 
