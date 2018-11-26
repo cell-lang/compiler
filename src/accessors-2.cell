@@ -1,4 +1,4 @@
-type Context = Function, Procedure, Automaton, Database;
+type Context = null_context, Function, Procedure, Automaton, Database;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -7,6 +7,9 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
     signatures = merge_values([[family_id(fd.id) -> signature(fd)] : fd <- program.fndefs]);
     return [id -> preprocess_signatures(ss) : id, ss <- signatures];
   }
+
+
+  [PlainAggrFnId, AggrFunct] aggr_functs = [plain_id(f.id), f : f <- program.aggr_fn_defs];
 
 
   (NeType*, Maybe[NeType]) procedure_signature(ProcSymbol name) {
@@ -32,8 +35,6 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
       : auto_or_db <- program.auto_defs | auto_or_db <- program.data_bases
     ];
   }
-
-
 }
 
 ////////////////////////////////////////////////////////////////////////////////

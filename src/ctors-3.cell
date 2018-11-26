@@ -98,6 +98,11 @@ MembTestPredId memb_test(Nat n)             = :memb_test(n);
 MembTestPredId memb_test(Atom a1, Atom a2)  = :memb_test(a1, a2);
 MembTestPredId memb_test(Atom a, Nat n)     = :memb_test(a, n);
 
+SubAggrFnId red_var_init(AggrFnId f, StdVar v)    = :red_var_init(f, v);
+SubAggrFnId red_vars_merge(AggrFnId f, StdVar v)  = :red_vars_merge(f, v);
+SubAggrFnId final_value_yield(AggrFnId f)         = :final_value_yield(f);
+SubAggrFnId null_value(AggrFnId f)                = :null_value(f);
+
 AtomicExpr empty_seq = :empty_seq;
 AtomicExpr empty_rel = :empty_rel;
 
@@ -348,7 +353,9 @@ Instr set_var(<WriteObjVar, LocOptTagRecVar> v, RefObjExpr e)  = set_rc_var(var:
 
 Instr init_memb_var(<MembVar, SignalVar, PrevVarValue, MembObjVar, PendingInputVar, PendingStateVar> v, <blank, undefined> s) = init_memb_var(var: v, new_state: s);
 Instr reset_memb_var(<SignalVar, PrevVarValue, MembVar, PendingInputVar> v, <blank, undefined> s) = reset_memb_var(var: v, new_state: s);
-Instr clear_loc_var(LocVar v)                             = :clear_loc_var(v);
+
+Instr clear_loc_var(LocVar v) = :clear_loc_var(v);
+Instr nullify_var(<StdVar, LocVar, LocOptTagRecVar> v) = :nullify_var(v);
 
 Instr make_var_undef(SignalVar v) = reset_memb_var(v, :undefined);
 Instr make_var_undef(LocVar v)      = clear_loc_var(v);
@@ -490,7 +497,7 @@ Instr queue_insert_tuple(TableVar v, Int32Var+ t) = queue_insert_tuple(table_var
 Instr immediate_insert_or_add_ref(Int32Var sv, ValueStoreId s, AtomicExpr v) = immediate_insert_or_add_ref(res_var: sv, store: s, value: v);
 Instr immediate_insert_tuple(TableVar v, Int32Var+ as) = immediate_insert_tuple(table_var: v, tuple: as);
 
-Instr push_call_info(ObjFnName f, ObjExpr* as) = push_call_info(fn_name: f, args: as);
+Instr push_call_info(<FnId, ProcSymbol> f, ObjExpr* as) = push_call_info(fn_name: f, args: as);
 Instr pop_call_info = :pop_call_info;
 
 Instr log_runtime_failure(Bool b, String f, NzNat l, Maybe[String] t, (<StdVar, ImplArg>, ObjExpr)* vs) =

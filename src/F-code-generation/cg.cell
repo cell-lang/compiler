@@ -13,7 +13,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
       typedefs:       program.typedefs,
       opt_reprs:      optimized_tagged_records,
       bool_procs:     memb_test_preds,
-      procs:          fndefs & proc_defs & dispatch_functions & conversion_functions,
+      procs:          fndefs & proc_defs & dispatch_functions & aggregate_functions & conversion_functions,
       react_blocks:   react_blocks,
       static_blocks:  static_blocks,
       int_seqs:       int_seqs
@@ -212,6 +212,110 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
       cached:         false
     );
   }
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  [ObjProcDef] aggregate_functions {
+    return union([
+      [final_value_yield_proc(f), null_value_proc(f)] &
+      union([[red_var_init_proc(f, v), red_vars_merge_proc(f, v)] : v, unused_var <- f.red_vars])
+    : f <- program.aggr_fn_defs]);
+
+
+    ObjProcDef final_value_yield_proc(AggrFunct aggr_fn) {
+      repr = opt_repr(aggr_fn.type);
+      env = [v -> info.type : v, info <- aggr_fn.red_vars];
+      red_vars = ord_red_vars(aggr_fn);
+      args_types = (aggr_fn.red_vars(v).type : v <- red_vars);
+      args = (low_level_arg(v, opt_repr(args_types(i))) : v @ i <- red_vars);
+      surrs = [v -> obj_expr(args(i)) : v @ i <~ red_vars];
+      return obj_proc_def(
+        name:           final_value_yield(aggr_fn.id),
+        args:           args,
+        cls_args:       (),
+        impl_args:      [],
+        ret_val_repr:   repr,
+        type:           fn_type(args_types, (), aggr_fn.type),
+        loc_auto_vars:  [],
+        loc_db_vars:    [],
+        body:           proc_body(aggr_fn.final_value, repr, surrs, env),
+        cached:         false
+      );
+    }
+
+
+    ObjProcDef null_value_proc(AggrFunct aggr_fn) {
+      type = aggr_fn.type;
+      repr = opt_repr(type);
+      return obj_proc_def(
+        name:           null_value(aggr_fn.id),
+        args:           (),
+        cls_args:       (),
+        impl_args:      [],
+        ret_val_repr:   repr,
+        type:           fn_type((), (), type),
+        loc_auto_vars:  [],
+        loc_db_vars:    [],
+        body:           proc_body(aggr_fn.null_value, repr, [], []),
+        cached:         false
+      );
+    }
+
+
+    ObjProcDef red_var_init_proc(AggrFunct aggr_fn, StdVar red_var) {
+      elt_repr = opt_repr(aggr_fn.elt_type);
+      info = aggr_fn.red_vars(red_var);
+      var_type = info.type;
+      var_repr = opt_repr(var_type);
+      arg = low_level_arg(aggr_fn.elt_var, elt_repr);
+      surrs = [aggr_fn.elt_var -> obj_expr(arg)];
+      env = [aggr_fn.elt_var -> aggr_fn.elt_type];
+      return obj_proc_def(
+        name:           red_var_init(aggr_fn.id, red_var),
+        args:           (arg),
+        cls_args:       (),
+        impl_args:      [],
+        ret_val_repr:   var_repr,
+        type:           fn_type((aggr_fn.elt_type), (), var_type),
+        loc_auto_vars:  [],
+        loc_db_vars:    [],
+        body:           proc_body(info.init_value, var_repr, surrs, env),
+        cached:         false
+      );
+    }
+
+    ObjProcDef red_vars_merge_proc(AggrFunct aggr_fn, StdVar red_var) {
+      info = aggr_fn.red_vars(red_var);
+      var_type = info.type;
+      var_repr = opt_repr(var_type);
+      var1, var2, aggr_expr = info.merge_op;
+      args = (low_level_arg(v, var_repr) : v <- (var1, var2));
+      surrs = [v -> obj_expr(args(i)) : v @ i <~ (var1, var2)];
+      env = [var1 -> var_type, var2 -> var_type];
+      return obj_proc_def(
+        name:           red_vars_merge(aggr_fn.id, red_var),
+        args:           args,
+        cls_args:       (),
+        impl_args:      [],
+        ret_val_repr:   var_repr,
+        type:           fn_type((var_type, var_type), (), var_type),
+        loc_auto_vars:  [],
+        loc_db_vars:    [],
+        body:           proc_body(aggr_expr, var_repr, surrs, env),
+        cached:         false
+      );
+    }
+
+
+    Instr+ proc_body(Expr expr, AnyLowLevelRepr repr, [SurrExpr -> ObjExpr] surrs, [StdVar -> Type] env) {
+      let context = :null_context, surrogates = surrs, var_subst_map = [], cls_var_subst_map = [], typed_vars = []:
+        body, surr, unused_var = match (expr)
+          do_expr() = do_expr_opt_eval_code(expr, repr, env, blank_var_gen),
+          _         = opt_eval_code(expr, env, blank_var_gen);
+      ;
+      return (body | ret_val(low_level_expr(repr, surr)));
+    }
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -323,20 +427,6 @@ implicit typedefs : [TypeName -> NeType] {
       return (join(cases_code) | terminate(true));
     ;
   }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-
-ObjProcArg low_level_arg(<StdVar, FnArg> var, AnyLowLevelRepr repr) {
-  id = untag(var);
-  return match (repr)
-    bool                = bool_arg(id),
-    int                 = int_arg(id),
-    float               = float_arg(id),
-    opt_tag_rec_repr()  = opt_tag_rec_fn_arg(id, repr.tag, repr.index),
-    symbol              |
-    object              = var;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

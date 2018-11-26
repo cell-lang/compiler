@@ -15,6 +15,7 @@ implicit filename : String, lines : Nat** {
       impl_block_1        = build_impl_block_1_ast(inner_match),
       impl_block_2        = build_impl_block_2_ast(inner_match),
       proc_def            = build_proc_def_ast(inner_match),
+      aggr_fn_def         = build_aggr_fn_def_ast(inner_match),
       db_def              = build_db_def_ast(inner_match),
       auto_def            = build_auto_def_ast(inner_match),
       std_auto_method     = build_std_method_def_ast(inner_match),
@@ -507,6 +508,46 @@ implicit filename : String, lines : Nat** {
     }
   }
 
+  AggrFunctDecl build_aggr_fn_def_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 6;
+
+    type = build_type_ast(nodes(1));
+    name = get_lowercase_id(nodes(2));
+    arg_nodes = rule_seq_nodes(block_node(nodes(3)));
+    assert |arg_nodes| == 3;
+    elt_type = build_type_ast(arg_nodes(0));
+    elt_name = get_lowercase_id(arg_nodes(2));
+    red_vars = (build_red_var_ast(n) : n <- rep_rule_nodes(nodes(4)));
+    null_value = build_expr_ast(rule_seq_node(nodes(5), 1));
+    final_value = build_expr_ast(rule_seq_node(nodes(5), 3));
+
+    return aggr_funct_decl(
+      type:         type,
+      name:         name,
+      elt_type:     elt_type,
+      elt_name:     elt_name,
+      red_vars:     nonempty(red_vars),
+      null_value:   null_value,
+      final_value:  final_value
+    );
+
+    (type: SynType, name: Symbol, init_value: SynExpr, merge_op: (Symbol, Symbol, SynExpr))
+    build_red_var_ast(RuleMatch mtc) {
+      nodes = rule_seq_nodes(mtc);
+      assert |nodes| == 10;
+
+      type = build_type_ast(nodes(0));
+      name = get_lowercase_id(nodes(1));
+      init_value = build_expr_ast(nodes(3));
+      var1 = get_lowercase_id(nodes(5));
+      var2 = get_lowercase_id(nodes(6));
+      expr = build_expr_ast(nodes(8));
+
+      return (type: type, name: name, init_value: init_value, merge_op: (var1, var2, expr));
+    }
+  }
+
   SynArg* build_fn_args_ast(RuleMatch mtc) = if mtc != null_match then (build_fn_arg_ast(m) : m <- rep_rule_nodes(block_node(mtc))) else (); ## MAYBE rep_rule_nodes (AND seq_rule_nodes) SHOULD RETURN THE EMPTY SEQUENCE WHEN INVOKED WITH A null_match PARAMETER
 
   SynArg build_fn_arg_ast(RuleMatch mtc) {
@@ -760,6 +801,7 @@ implicit filename : String, lines : Nat** {
       if_else             = build_if_else_expr_ast(inner_match),
       match_expr          = build_match_expr_ast(inner_match),
       proc                = build_proc_expr_ast(inner_match),
+      aggr_fn_call        = build_aggr_fn_call_ast(inner_match),
       call_lookalike      = build_call_lookalike_expr_ast(inner_match),
       impl_args_call      = build_impl_args_call_expr_ast(inner_match),
       plain_lc_id         = build_plain_lc_id_ast(inner_match),
@@ -769,12 +811,28 @@ implicit filename : String, lines : Nat** {
     return attach_src_code_info(expr, mtc);
   }
 
+  SynAggrFnCall build_aggr_fn_call_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 2;
+    fn_name = get_lowercase_id(nodes(0));
+    nodes = rule_seq_nodes(block_node(nodes(1)));
+    assert |nodes| == 4;
+    expr = build_expr_ast(nodes(0));
+    iter = build_single_iter_clause_ast(nodes(2));
+    fail if not iter :: SynIterClause;
+    cond_node = nodes(3);
+    return aggr_fn_call(
+      fn_name:  fn_name,
+      expr:     expr,
+      clause:   iter,
+      cond:     build_expr_ast(rule_seq_node(cond_node, 1)) if cond_node != null_match
+    );
+  }
 
   SynExpr build_plain_lc_id_ast(RuleMatch mtc) {
     id = get_lowercase_id(mtc);
     return if id == :undefined then :undefined else const_or_var(id);
   }
-
 
   SynSizeExpr build_size_expr_ast(RuleMatch mtc) {
     nodes = rule_seq_nodes(mtc);
@@ -783,7 +841,6 @@ implicit filename : String, lines : Nat** {
     return syn_size_expr(target);
   }
 
-
   SynCallLookalike build_call_lookalike_expr_ast(RuleMatch mtc) {
     nodes = rule_seq_nodes(mtc);
     assert |nodes| == 2;
@@ -791,7 +848,6 @@ implicit filename : String, lines : Nat** {
     args = (build_expr_ast(n) : n <- rep_rule_nodes(block_node(nodes(1))));
     return syn_call_lookalike(const_or_var(target), nonempty(args));
   }
-
 
   SynRelLookup build_rel_lookup_ast(RuleMatch mtc) {
     nodes = rule_seq_nodes(mtc);
@@ -1593,16 +1649,16 @@ implicit filename : String, lines : Nat** {
   }
 
   SynClause build_iter_clause_ast(RuleMatch mtc) {
-    atomic_cls = (build_atomic_iter_clause(n) : n <- rep_rule_nodes(mtc));
+    atomic_cls = (build_single_iter_clause_ast(n) : n <- rep_rule_nodes(mtc));
     return syn_or_clause(nonempty(atomic_cls));
+  }
 
-    SynClause build_atomic_iter_clause(RuleMatch mtc) {
-      nodes = rule_seq_nodes(mtc);
-      assert |nodes| == 3;
-      vars = (var(get_lowercase_id(n)) : n <- rep_rule_nodes(nodes(0)));
-      expr_or_proj = build_iter_clause_src(nodes(2));
-      return syn_iter_clause(nonempty(vars), expr_or_proj);
-    }
+  SynClause build_single_iter_clause_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 3;
+    vars = (var(get_lowercase_id(n)) : n <- rep_rule_nodes(nodes(0)));
+    expr_or_proj = build_iter_clause_src(nodes(2));
+    return syn_iter_clause(nonempty(vars), expr_or_proj);
 
     <SynExpr, SynProj> build_iter_clause_src(RuleMatch mtc) {
       label = get_rule_name(mtc);

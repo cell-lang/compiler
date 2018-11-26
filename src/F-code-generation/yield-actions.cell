@@ -27,6 +27,11 @@ type YieldAction        = YieldValueAction, SetYieldAction, RelYieldAction, Relv
 YieldValueAction yield_value_action(AnyLocVar v, Expr e, Instr+ is) =
   yield_value_action(var: v, expr: e, instrs: is);
 
+CondYieldAction cond_yield_action(Expr c, YieldAction a) = cond_yield_action(cond: c, next: a);
+
+RelvarYieldAction relvar_yield_action(StdVar+ vs, AnyRelVar r, Maybe[Expr]+ as, YieldAction a) =
+  relvar_yield_action(vars: vs, relvar: r, args: as, next: a);
+
 YieldAction yield_actions(YieldAction+ actions) =
   if |actions| != 1 then :yield_actions(actions) else only(actions);
 
@@ -121,7 +126,7 @@ implicit program           : Program,
           lookup_surrogate(v, table_col_store_id(tv, i), plain_surr_args(i))
           : v @ i <- perm_vars
         );
-        code = (
+        table_code = (
           do_if(
             table_contains(tv, (just(a) : a <- plain_surr_args)),
             vars_setup_code & action_code
@@ -134,7 +139,7 @@ implicit program           : Program,
         );
         vars_setup_code = (set_var(v, lookup_exprs(i)) : v @ i <- perm_vars);
         loop_code = (break_if(is_out_of_range(it_var))) & vars_setup_code & action_code & (move_forward(it_var));
-        code = (
+        table_code = (
           get_table_iter(it_var, tv, nonempty(surr_args)),
           repeat(nonempty(loop_code))
         );
@@ -143,14 +148,16 @@ implicit program           : Program,
       for e @ i <- reverse(args_aliases):
         store_id = table_col_store_id(tv, rat(unfiltered_idxs, i));
         surr_var = rat(surr_vars, i);
-        code = (
+        table_code = (
           set_ivar32(surr_var, lookup_value(store_id, e)),
-          do_if_not(is_eq(surr_var, -1), code)
+          do_if_not(is_eq(surr_var, -1), table_code)
         );
       ;
+
+      code = code & table_code;
     ;
 
-    return args_eval_code & code;
+    return code;
   }
 
 

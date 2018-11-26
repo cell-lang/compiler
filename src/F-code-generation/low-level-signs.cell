@@ -90,6 +90,18 @@ LocOptTagRecVar low_level_var(OptTagRecRepr repr, StdVar var) =
   opt_tag_rec_var(untag(var), repr.tag, repr.index);
 
 
+ObjProcArg low_level_arg(<StdVar, FnArg> var, AnyLowLevelRepr repr) {
+  id = untag(var);
+  return match (repr)
+    bool                = bool_arg(id),
+    int                 = int_arg(id),
+    float               = float_arg(id),
+    opt_tag_rec_repr()  = opt_tag_rec_fn_arg(id, repr.tag, repr.index),
+    symbol              |
+    object              = var;
+}
+
+
 AnyTypeExpr low_level_expr(LowLevelRepr repr, ObjExpr expr) =
   bool      = bool_value(expr),
   int       = get_int_val(expr),

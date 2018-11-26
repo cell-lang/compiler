@@ -34,6 +34,21 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context {
   ////////////////////////////////////////////////////////////////////////////////
   ////////////////////////////////////////////////////////////////////////////////
 
+  ## CHECK THESE FUNCTIONS, THEY MIGHT BE REDUNDANT
+
+  Type memb_var_type(MembVar var) = match (context)
+    data_base() = context.state_vars[var].type;
+
+
+  Type qual_memb_var_type(QualMembVar var) {
+    db_type = var_type(var.db_var);
+    db = automaton_by_id(db_type);
+    return db.state_vars[var.memb_var].type;
+  }
+
+  ////////////////////////////////////////////////////////////////////////////////
+  ////////////////////////////////////////////////////////////////////////////////
+
   NzNat arity(AnyRelVar rel_var) = arity(this_db_symbol, unqualified(rel_var));
 
   [[+Nat]] relvar_keys(AnyRelVar relvar) =
@@ -69,6 +84,11 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context {
 
 
   // The arguments must be in the logical order, not in the physical one
-  [+TableVar] overlapping_physical_tables(AnyRelVar var, Maybe[Type]+ log_args_types) =
+  [+TableVar] overlapping_physical_tables(RelVar var, Maybe[Type]+ log_args_types) =
     overlapping_physical_tables(rel_auto_type(var), unqualified(var), log_args_types);
+
+  [+QualTableVar] overlapping_physical_tables(QualRelVar var, Maybe[Type]+ log_args_types) {
+    table_vars = overlapping_physical_tables(rel_auto_type(var), unqualified(var), log_args_types);
+    return [qual_table_var(var.db_var, v) : v <- table_vars];
+  }
 }

@@ -109,6 +109,7 @@ implicit program           : Program,
     // cast_expr()         = undefined,
     accessor()          = accessor_opt_eval_info(expr.expr, expr.field, var_gen),
     accessor_test()     = accessor_test_opt_eval_info(expr.expr, expr.field, var_gen),
+    aggr_fn_call()      = aggr_fn_call_opt_eval_info(expr, var_gen),
     auto_method_call()  = auto_method_call_opt_eval_info(expr, var_gen),
     db_method_call()    = db_method_call_opt_eval_info(expr, var_gen),
     if_expr()           = if_expr_opt_eval_info(expr, var_gen),
@@ -279,6 +280,74 @@ implicit program           : Program,
 
     code = (args_eval_code | invoke_method_instr);
     return (code, res_var, ret_var_gen);
+  }
+
+
+  // aggr_fn_call(fn_id: PlainAggrFnId, expr: Expr, clause: RelvarClause, cond: Expr?);
+  (Instr*, ObjExpr, VarGen) aggr_fn_call_opt_eval_info(AggrFnCallExpr expr, VarGen init_var_gen) {
+    aggr_fns = [f : f <- aggr_functs(expr.fn_id, ?)];
+    elt_type = subexpr_type(expr.expr);
+    aggr_fn = only([f : f <- aggr_fns, is_subset(elt_type, f.elt_type)]);
+
+    res_var, ret_var_gen = next_var(opt_repr(aggr_fn.type), init_var_gen);
+    var_is_first, var_gen = next_bool_var(ret_var_gen);
+
+    red_vars = aggr_fn.red_vars;
+    ord_red_vars = isort(keys(red_vars));
+    red_vars_reprs = [v -> opt_repr(info.type) : v, info <- red_vars];
+
+    // For each of the physical representations we've to deal with, we'll set
+    // aside a temporary variable to be used to store the result of <expr.expr>
+    tmp_vars_by_repr = [];
+    for r <- isort(values(red_vars_reprs)):
+      tmp_var, var_gen = next_var(r, var_gen);
+      tmp_vars_by_repr = tmp_vars_by_repr & [r -> tmp_var];
+    ;
+
+    // For each reduction variables, we reserve an accumulator
+    red_vars_accs = [];
+    for v <- ord_red_vars:
+      phys_var, var_gen = next_var(red_vars_reprs(v), var_gen);
+      red_vars_accs = red_vars_accs & [v -> phys_var];
+    ;
+
+    input_repr = opt_repr(aggr_fn.elt_type);
+    input_var, var_gen = next_var(input_repr, var_gen);
+
+    bottom_actions = ({
+      repr = red_vars_reprs(v);
+      tmp_var = tmp_vars_by_repr(repr);
+      acc_var = red_vars_accs(v);
+      init_fn = red_var_init(aggr_fn.id, v);
+      merge_fn = red_vars_merge(aggr_fn.id, v);
+      code = branch(
+        var_is_first,
+        ( call_proc(acc_var, init_fn, (input_var), ()),
+          set_bvar(var_is_first, false) if i == |ord_red_vars| - 1
+        ),
+        ( call_proc(tmp_var, init_fn, (input_var), ()),
+          call_proc(acc_var, merge_fn, (acc_var, tmp_var), ())
+        )
+      );
+      return yield_value_action(input_var, expr.expr, (code));
+    } : v @ i <- ord_red_vars);
+
+    action = yield_actions(nonempty(bottom_actions));
+    action = cond_yield_action(expr.cond, action) if expr.cond?;
+    cls = expr.clause;
+    action = relvar_yield_action(cls.vars, cls.rel_var, cls.args, action);
+
+    code = (set_bvar(var_is_first, true)) &
+           (fake_init_var(red_vars_accs(v)) : v <- ord_red_vars) &
+           ( yield_action_opt_code(action, var_gen) |
+             branch(
+               var_is_first,
+               (call_proc(res_var, null_value(aggr_fn.id), (), ())),
+               (call_proc(res_var, final_value_yield(aggr_fn.id), (red_vars_accs(v) : v <- ord_red_vars), ()))
+             )
+           );
+
+    return (code, obj_expr(res_var), ret_var_gen);
   }
 
 
@@ -1578,6 +1647,14 @@ Instr+ store_result(Instr* code, ObjExpr surr_expr, AnyLocVar res_var) {
 
 (LocOptTagRecVar, VarGen) next_var(OptTagRecRepr repr, VarGen gen) =
   next_opt_tag_rec_var(gen, repr.tag, repr.index);
+
+
+Instr fake_init_var(LocBoolVar  var) = set_bvar(var, false);
+Instr fake_init_var(LocIntVar   var) = set_ivar(var, 0);
+Instr fake_init_var(LocFloatVar var) = set_fvar(var, float_lit((0), false, 0));
+
+Instr fake_init_var(StdVar var) = undefined;
+Instr fake_init_var(<LocVar, LocOptTagRecVar> var) = nullify_var(var);
 
 
 Instr set_any_var(LocBoolVar  var, ObjExpr expr) = set_bvar(var, bool_value(expr));

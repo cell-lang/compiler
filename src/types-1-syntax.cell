@@ -47,7 +47,7 @@ type SynExpr  = undefined, LeafObj, FloatLit, FnArg, ConstOrVar, ClsPar, PrevVar
                 SynSeqExpr, SynSetExpr, SynMapExpr, SynBinRelExpr, SynTernRelExpr, SynTagObjExpr,
                 SynImplArgsCall, SynUnaryOpCall, SynBinaryOpCall, SynBuiltInCall,
                 SynSizeExpr,
-                SynCallLookalike, SynRelMembTest, SynRelLookup,
+                SynCallLookalike, SynAggrFnCall, SynRelMembTest, SynRelLookup,
                 SynBoolExpr, SynCmpExpr,
                 SynMembExpr, SynCastExpr,
                 SynAccExpr, SynAccTestExpr,
@@ -79,7 +79,7 @@ type SynSizeExpr      = size_expr(coll: SynExpr);
 
 type SynCallLookalike = call_lookalike(target: SynExpr, args: SynExpr+);
 
-type SynAggrFnCall    = aggr_fn_call(id: Symbol, expr: SynExpr, clause: SynIterClause, cond: Expr?);
+type SynAggrFnCall    = aggr_fn_call(fn_name: Symbol, expr: SynExpr, clause: SynIterClause, cond: SynExpr?);
 
 type SynRelMembTest   = rel_memb_test(target: SynExpr, args: Maybe[SynExpr]+);
 type SynRelLookup     = rel_lookup(target: Symbol+, args: Maybe[SynExpr]+);
@@ -257,14 +257,14 @@ type AggrFunctDecl  = aggr_funct_decl(
                         name:         Symbol,
                         elt_type:     SynType,
                         elt_name:     Symbol,
-                        state_vars: (
+                        red_vars: (
                           type:       SynType,
                           name:       Symbol,
                           init_value: SynExpr,
                           merge_op:   (Symbol, Symbol, SynExpr)
                         )+,
-                        final_value:  SynExpr,
-                        null_value:   SynExpr?
+                        null_value:   SynExpr,
+                        final_value:  SynExpr
                       );
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -365,7 +365,7 @@ type SchemaDef      = schema_def(
 
 ////////////////////////////////////////////////////////////////////////////////
 
-type PrgDecl        = Typedef, ParTypedef, SynFnDef, ImplBlock, ProtDecl, TypeVarDecl,
-                      SynProcDef, ReactAutoDef, SchemaDef, AutoMethodDef, HandlerDef, UsingBlock;
+type PrgDecl        = Typedef, ParTypedef, SynFnDef, ImplBlock, ProtDecl, TypeVarDecl, SynProcDef,
+                      AggrFunctDecl, ReactAutoDef, SchemaDef, AutoMethodDef, HandlerDef, UsingBlock;
 
 type SynPrg         = syn_prg(parsed_src_files: [String -> PrgDecl*]);

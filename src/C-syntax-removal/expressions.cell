@@ -25,6 +25,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
     builtin_call()        = builtin_call(expr.name, (desugar_expr(e, def_vars) : e <- expr.args)),
     size_expr()           = size_expr(desugar_expr(expr.coll, def_vars)),
     call_lookalike()      = desugar_call_lookalike(expr.target, expr.args, def_vars),
+    aggr_fn_call()        = desugar_aggr_fn_call(expr, def_vars),
     rel_memb_test()       = desugar_rel_memb_test(expr.target, expr.args, def_vars),
     rel_lookup()          = desugar_rel_lookup(expr.target, expr.args, def_vars),
     and()                 = and_expr(desugar_expr(expr.left, def_vars), desugar_expr(expr.right, def_vars)),
@@ -51,12 +52,24 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
 
   //////////////////////////////////////////////////////////////////////////////
 
+  Expr desugar_aggr_fn_call(SynAggrFnCall expr, [StdVar] def_vars) {
+    id = aggr_fn_id(expr.fn_name);
+    clause = desugar_clause(expr.clause, def_vars);
+    fail if not clause :: RelvarClause;
+    new_vars = def_vars & set(clause.vars);
+    return aggr_fn_call(
+      fn_id:    id,
+      expr:     desugar_expr(expr.expr, new_vars),
+      clause:   clause,
+      cond:     desugar_expr(expr.cond, new_vars) if expr.cond?
+    );
+  }
+
   Expr desugar_do_expr(SynStmt+ syn_body, (Atom, SynType)* syn_typed_vars, [StdVar] def_vars) {
     body = desugar_stmts(syn_body, def_vars);
     typed_vars = merge(([var(v) -> desugar_plain_type(t)] : v, t <- syn_typed_vars));
     return do_expr(body, typed_vars);
   }
-
 
   Expr desugar_call_lookalike(<StdVar, MembVar, AnySignalVar, QualMembVar, SymbChainAcc> var, Expr+ args) {
     arity = |args|;

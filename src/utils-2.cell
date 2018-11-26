@@ -156,6 +156,8 @@ Bool is_param_type(FnType type) = (t <~ type.args : is_param_type(t)) or is_para
     cast_expr()           = retrieve(expr.expr),
     accessor()            = retrieve(expr.expr),
     accessor_test()       = retrieve(expr.expr),
+    aggr_fn_call()        = retrieve(expr.expr) & retrieve_from_nested_exprs(expr.clause, retrieve) &
+                            if expr.cond? then retrieve(expr.cond) else [],
     auto_method_call()    = seq_union((retrieve(a) : a <- expr.args)),
     db_method_call()      = seq_union((retrieve(a) : a <- expr.args)),
     if_expr()             = retrieve(expr.cond) & retrieve(expr.then) & retrieve(expr.else),
@@ -386,6 +388,7 @@ Bool is_pattern_any(Pattern ptrn) =
   return [expr] if expr :: Var;
   return match (expr)
     fn_call()       = union([extern_vars(e) : e <- set(expr.args) & set(expr.cls_args) & values(expr.impl_args)]),
+    aggr_fn_call()  = aggr_fn_call_extern_vars(expr),
     ex_qual()       = comp_extern_vars((expr.cond), expr.source),
     set_comp()      = comp_extern_vars((expr.expr), expr.source),
     map_comp()      = comp_extern_vars((expr.key_expr, expr.value_expr), expr.source),
@@ -396,6 +399,15 @@ Bool is_pattern_any(Pattern ptrn) =
     do_expr()       = stmts_extern_vars(expr.body),
     match_expr()    = match_expr_extern_vars(expr.exprs, expr.cases),
     _               = retrieve_from_nested_exprs(expr, extern_vars);
+}
+
+
+[Var] aggr_fn_call_extern_vars(AggrFnCallExpr expr) {
+  source_vars = clause_extern_vars(expr.clause);
+  new_vars = new_vars(expr.clause);
+  expr_vars = extern_vars(expr.expr);
+  cond_vars = if expr.cond? then extern_vars(expr.cond) else [];
+  return source_vars & ((expr_vars & cond_vars) - new_vars);
 }
 
 

@@ -197,6 +197,21 @@ Expr* exprs_cluster(TernRelCompExpr expr, Nat offset) =
     tern_rel_comp(($b(0), $b(1), $b(2)), $a)
   );
 
+
+// aggr_fn_call(fn_id: PlainAggrFnId, expr: Expr, clause: RelvarClause, cond: Expr?);
+Expr* exprs_cluster(AggrFnCallExpr expr, Nat offset) =
+  exprs_cluster(
+    expr.clause,
+    (expr.expr, expr.cond if expr.cond?),
+    offset,
+    aggr_fn_call(
+      fn_id:  expr.fn_id,
+      expr:   $b(0),
+      clause: if $a :: RelvarClause then $a else undefined,
+      cond:   $b(1) if |$b| == 2
+    )
+  );
+
 ////////////////////////////////////////////////////////////////////////////////
 /////////////////////////// More complex expressions ///////////////////////////
 
@@ -395,7 +410,7 @@ Expr reconstruct(Expr+ cluster, Nat offset) {
 
 type RecExpr  = SetExpr, SeqExpr, TupleExpr, SeqTailExpr,
                 MapExpr, BinRelExpr, TernRelExpr, TagObjExpr,
-                FnCallExpr, ClsCall, BuiltinCall,
+                FnCallExpr, ClsCall, BuiltinCall, AggrFnCallExpr,
                 SizeExpr,
                 UnaryPseudoCall, RelMembTest, RelLookup,
                 RelVarMembTest, RelVarLookup,
@@ -456,6 +471,14 @@ Expr replace_nested(RecExpr expr, (Expr -> Expr) replace) =
   cast_expr()         = cast_expr(replace(expr.expr), expr.type),
   accessor()          = accessor(replace(expr.expr), expr.field),
   accessor_test()     = accessor_test(replace(expr.expr), expr.field),
+  aggr_fn_call()      = aggr_fn_call(
+                          fn_id:    expr.fn_id,
+                          expr:     replace(expr.expr),
+                          clause:   { cls = replace_nested(expr.clause, replace);
+                                      return if cls :: RelvarClause then cls else undefined;
+                                    },
+                          cond:     replace(expr.cond) if expr.cond?
+                        ),
   auto_method_call()  = auto_method_call(
                           var:  expr.var if expr.var?,
                           name: expr.name,
