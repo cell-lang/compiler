@@ -283,14 +283,18 @@ implicit program           : Program,
   }
 
 
-  // aggr_fn_call(fn_id: PlainAggrFnId, expr: Expr, clause: RelvarClause, cond: Expr?);
+  // aggr_fn_call(fn_id: PlainAggrFnId, expr: Expr, clause: RelvarClause, cond: Expr?, extra_args: Expr*);
   (Instr*, ObjExpr, VarGen) aggr_fn_call_opt_eval_info(AggrFnCallExpr expr, VarGen init_var_gen) {
-    aggr_fns = [f : f <- aggr_functs(expr.fn_id, ?)];
+    aggr_fns = [f : f <- aggr_functs(expr.fn_id, ?), |f.extra_args| == |expr.extra_args|];
     elt_type = subexpr_type(expr.expr);
     aggr_fn = only([f : f <- aggr_fns, is_subset(elt_type, f.elt_type)]);
 
     res_var, ret_var_gen = next_var(opt_repr(aggr_fn.type), init_var_gen);
     var_is_first, var_gen = next_bool_var(ret_var_gen);
+
+    extra_args_code, extra_args_surrs, var_gen = opt_eval_info(expr.extra_args, var_gen);
+    extra_args_reprs = (opt_repr(t) : unused_var, t <- aggr_fn.extra_args);
+    extra_args = (low_level_expr(r, e) : e, r <- zip(extra_args_surrs, extra_args_reprs));
 
     red_vars = aggr_fn.red_vars;
     ord_red_vars = isort(keys(red_vars));
@@ -322,11 +326,11 @@ implicit program           : Program,
       merge_fn = red_vars_merge(aggr_fn.id, v);
       code = branch(
         var_is_first,
-        ( call_proc(acc_var, init_fn, (input_var), ()),
+        ( call_proc(acc_var, init_fn, (input_var) & extra_args, ()),
           set_bvar(var_is_first, false) if i == |ord_red_vars| - 1
         ),
-        ( call_proc(tmp_var, init_fn, (input_var), ()),
-          call_proc(acc_var, merge_fn, (acc_var, tmp_var), ())
+        ( call_proc(tmp_var, init_fn, (input_var) & extra_args, ()),
+          call_proc(acc_var, merge_fn, (acc_var, tmp_var) & extra_args, ())
         )
       );
       return yield_value_action(input_var, expr.expr, (code));
@@ -337,13 +341,20 @@ implicit program           : Program,
     cls = expr.clause;
     action = relvar_yield_action(cls.vars, cls.rel_var, cls.args, action);
 
-    code = (set_bvar(var_is_first, true)) &
+    code = extra_args_code &
+           (set_bvar(var_is_first, true)) &
            (fake_init_var(red_vars_accs(v)) : v <- ord_red_vars) &
            ( yield_action_opt_code(action, var_gen) |
              branch(
                var_is_first,
-               (call_proc(res_var, null_value(aggr_fn.id), (), ())),
-               (call_proc(res_var, final_value_yield(aggr_fn.id), (red_vars_accs(v) : v <- ord_red_vars), ()))
+               (call_proc(res_var, null_value(aggr_fn.id), extra_args, ())),
+               (call_proc(
+                  res_var,
+                  final_value_yield(aggr_fn.id),
+                  (red_vars_accs(v) : v <- ord_red_vars) & extra_args,
+                  ()
+                 )
+               )
              )
            );
 

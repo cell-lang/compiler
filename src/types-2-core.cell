@@ -191,7 +191,13 @@ type CastExpr       = cast_expr(expr: Expr, type: NeType);
 type AccExpr        = accessor(expr: Expr, field: SymbObj);      ## SHOULD <field> BE AN OBJECT OR JUST A PLAIN SYMBOL?
 type AccTestExpr    = accessor_test(expr: Expr, field: SymbObj); ## DITTO
 
-type AggrFnCallExpr = aggr_fn_call(fn_id: PlainAggrFnId, expr: Expr, clause: RelvarClause, cond: Expr?);
+type AggrFnCallExpr = aggr_fn_call(
+                        fn_id:      PlainAggrFnId,
+                        expr:       Expr,
+                        clause:     RelvarClause,
+                        cond:       Expr?,
+                        extra_args: Expr*
+                      );
 
 type AutoMethodCall = auto_method_call(var: AnyAutoVar?, name: MethodSymbol, args: Expr*);
 type DBMethodCall   = db_method_call(var: AnyDBVar?, name: MethodSymbol, args: Expr*);
@@ -341,6 +347,7 @@ type AggrFunct  = aggr_funct(
                     type:        NeType,
                     elt_type:    NeType,
                     elt_var:     StdVar,
+                    extra_args:  (StdVar, NeType)*,
                     red_vars:    [StdVar -> (type: NeType, init_value: Expr, merge_op: (StdVar, StdVar, Expr))],
                     null_value:  Expr,
                     final_value: Expr

@@ -510,23 +510,29 @@ implicit filename : String, lines : Nat** {
 
   AggrFunctDecl build_aggr_fn_def_ast(RuleMatch mtc) {
     nodes = rule_seq_nodes(mtc);
-    assert |nodes| == 6;
+    assert |nodes| == 5;
 
-    type = build_type_ast(nodes(1));
-    name = get_lowercase_id(nodes(2));
-    arg_nodes = rule_seq_nodes(block_node(nodes(3)));
-    assert |arg_nodes| == 3;
-    elt_type = build_type_ast(arg_nodes(0));
-    elt_name = get_lowercase_id(arg_nodes(2));
-    red_vars = (build_red_var_ast(n) : n <- rep_rule_nodes(nodes(4)));
-    null_value = build_expr_ast(rule_seq_node(nodes(5), 1));
-    final_value = build_expr_ast(rule_seq_node(nodes(5), 3));
+    type = build_type_ast(nodes(0));
+    name = get_lowercase_id(nodes(1));
+    args_nodes = rule_seq_nodes(block_node(nodes(2)));
+    assert |args_nodes| == 4;
+    elt_type = build_type_ast(args_nodes(0));
+    elt_name = get_lowercase_id(args_nodes(2));
+    extra_args = ({
+      extra_args_nodes = rule_seq_nodes(n);
+      assert |extra_args_nodes| == 3;
+      return (build_type_ast(extra_args_nodes(1)), get_lowercase_id(extra_args_nodes(2)));
+    } : n <- rep_rule_nodes(args_nodes(3)));
+    red_vars = (build_red_var_ast(n) : n <- rep_rule_nodes(nodes(3)));
+    null_value = build_expr_ast(rule_seq_node(nodes(4), 1));
+    final_value = build_expr_ast(rule_seq_node(nodes(4), 3));
 
     return aggr_funct_decl(
       type:         type,
       name:         name,
       elt_type:     elt_type,
       elt_name:     elt_name,
+      extra_args:   extra_args,
       red_vars:     nonempty(red_vars),
       null_value:   null_value,
       final_value:  final_value
@@ -816,16 +822,18 @@ implicit filename : String, lines : Nat** {
     assert |nodes| == 2;
     fn_name = get_lowercase_id(nodes(0));
     nodes = rule_seq_nodes(block_node(nodes(1)));
-    assert |nodes| == 4;
+    assert |nodes| == 5;
     expr = build_expr_ast(nodes(0));
     iter = build_single_iter_clause_ast(nodes(2));
     fail if not iter :: SynIterClause;
     cond_node = nodes(3);
+    extra_args = (build_expr_ast(rule_seq_node(n, 1)) : n <- rep_rule_nodes(nodes(4)));
     return aggr_fn_call(
-      fn_name:  fn_name,
-      expr:     expr,
-      clause:   iter,
-      cond:     build_expr_ast(rule_seq_node(cond_node, 1)) if cond_node != null_match
+      fn_name:    fn_name,
+      expr:       expr,
+      clause:     iter,
+      cond:       build_expr_ast(rule_seq_node(cond_node, 1)) if cond_node != null_match,
+      extra_args: extra_args
     );
   }
 

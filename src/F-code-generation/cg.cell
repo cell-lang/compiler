@@ -216,10 +216,22 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
   //////////////////////////////////////////////////////////////////////////////
 
   [ObjProcDef] aggregate_functions {
-    return union([
-      [final_value_yield_proc(f), null_value_proc(f)] &
-      union([[red_var_init_proc(f, v), red_vars_merge_proc(f, v)] : v, unused_var <- f.red_vars])
-    : f <- program.aggr_fn_defs]);
+    return union([{
+      res_procs = [final_value_yield_proc(f), null_value_proc(f)];
+      init_procs = [red_var_init_proc(f, v) : v, unused_var <- f.red_vars];
+      merge_procs = [red_vars_merge_proc(f, v) : v, unused_var <- f.red_vars];
+      return res_procs & init_procs & merge_procs;
+    } : f <- program.aggr_fn_defs]);
+
+
+    ObjProcArg* extra_args(AggrFunct aggr_fn) = (low_level_arg(v, opt_repr(t)) : v, t <- aggr_fn.extra_args);
+
+    NeType* extra_args_types(AggrFunct aggr_fn) = (t : unused_var, t <- aggr_fn.extra_args);
+
+    [SurrExpr -> ObjExpr] extra_surrs(AggrFunct aggr_fn) =
+      [v -> obj_expr(low_level_arg(v, opt_repr(t))) : v, t <~ aggr_fn.extra_args];
+
+    [StdVar -> NeType] extra_env(AggrFunct aggr_fn) = [v -> t : v, t <~ aggr_fn.extra_args];
 
 
     ObjProcDef final_value_yield_proc(AggrFunct aggr_fn) {
@@ -229,16 +241,17 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
       args_types = (aggr_fn.red_vars(v).type : v <- red_vars);
       args = (low_level_arg(v, opt_repr(args_types(i))) : v @ i <- red_vars);
       surrs = [v -> obj_expr(args(i)) : v @ i <~ red_vars];
+      body = proc_body(aggr_fn.final_value, repr, surrs & extra_surrs(aggr_fn), env & extra_env(aggr_fn));
       return obj_proc_def(
         name:           final_value_yield(aggr_fn.id),
-        args:           args,
+        args:           args & extra_args(aggr_fn),
         cls_args:       (),
         impl_args:      [],
         ret_val_repr:   repr,
-        type:           fn_type(args_types, (), aggr_fn.type),
+        type:           fn_type(args_types & extra_args_types(aggr_fn), (), aggr_fn.type),
         loc_auto_vars:  [],
         loc_db_vars:    [],
-        body:           proc_body(aggr_fn.final_value, repr, surrs, env),
+        body:           body,
         cached:         false
       );
     }
@@ -247,16 +260,17 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
     ObjProcDef null_value_proc(AggrFunct aggr_fn) {
       type = aggr_fn.type;
       repr = opt_repr(type);
+      body = proc_body(aggr_fn.null_value, repr, extra_surrs(aggr_fn), extra_env(aggr_fn));
       return obj_proc_def(
         name:           null_value(aggr_fn.id),
-        args:           (),
+        args:           extra_args(aggr_fn),
         cls_args:       (),
         impl_args:      [],
         ret_val_repr:   repr,
-        type:           fn_type((), (), type),
+        type:           fn_type(extra_args_types(aggr_fn), (), type),
         loc_auto_vars:  [],
         loc_db_vars:    [],
-        body:           proc_body(aggr_fn.null_value, repr, [], []),
+        body:           body,
         cached:         false
       );
     }
@@ -270,16 +284,17 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
       arg = low_level_arg(aggr_fn.elt_var, elt_repr);
       surrs = [aggr_fn.elt_var -> obj_expr(arg)];
       env = [aggr_fn.elt_var -> aggr_fn.elt_type];
+      body = proc_body(info.init_value, var_repr, surrs & extra_surrs(aggr_fn), env & extra_env(aggr_fn));
       return obj_proc_def(
         name:           red_var_init(aggr_fn.id, red_var),
-        args:           (arg),
+        args:           (arg) & extra_args(aggr_fn),
         cls_args:       (),
         impl_args:      [],
         ret_val_repr:   var_repr,
-        type:           fn_type((aggr_fn.elt_type), (), var_type),
+        type:           fn_type((aggr_fn.elt_type) & extra_args_types(aggr_fn), (), var_type),
         loc_auto_vars:  [],
         loc_db_vars:    [],
-        body:           proc_body(info.init_value, var_repr, surrs, env),
+        body:           body,
         cached:         false
       );
     }
@@ -292,16 +307,17 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
       args = (low_level_arg(v, var_repr) : v <- (var1, var2));
       surrs = [v -> obj_expr(args(i)) : v @ i <~ (var1, var2)];
       env = [var1 -> var_type, var2 -> var_type];
+      body = proc_body(aggr_expr, var_repr, surrs & extra_surrs(aggr_fn), env & extra_env(aggr_fn));
       return obj_proc_def(
         name:           red_vars_merge(aggr_fn.id, red_var),
-        args:           args,
+        args:           args & extra_args(aggr_fn),
         cls_args:       (),
         impl_args:      [],
         ret_val_repr:   var_repr,
-        type:           fn_type((var_type, var_type), (), var_type),
+        type:           fn_type((var_type, var_type) & extra_args_types(aggr_fn), (), var_type),
         loc_auto_vars:  [],
         loc_db_vars:    [],
-        body:           proc_body(aggr_expr, var_repr, surrs, env),
+        body:           body,
         cached:         false
       );
     }

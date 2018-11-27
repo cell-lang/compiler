@@ -58,10 +58,11 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
     fail if not clause :: RelvarClause;
     new_vars = def_vars & set(clause.vars);
     return aggr_fn_call(
-      fn_id:    id,
-      expr:     desugar_expr(expr.expr, new_vars),
-      clause:   clause,
-      cond:     desugar_expr(expr.cond, new_vars) if expr.cond?
+      fn_id:      id,
+      expr:       desugar_expr(expr.expr, new_vars),
+      clause:     clause,
+      cond:       desugar_expr(expr.cond, new_vars) if expr.cond?,
+      extra_args: (desugar_expr(e, def_vars) : e <- expr.extra_args)
     );
   }
 

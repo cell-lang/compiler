@@ -152,13 +152,13 @@ ParsingRule rule_declaration =
 
 ParsingRule rule_aggr_fn_def =
   rule_seq((
-    keyword_reduce,
     rule_type,
     rule_lc_id,
     par_rule_seq((
       rule_type,
       rule_double_dot,
-      rule_lc_id
+      rule_lc_id,
+      rep_rule_seq((rule_comma, rule_type, rule_lc_id))
     )),
     rep_rule(
       rule_seq((
@@ -999,7 +999,8 @@ ParsingRule rule_aggr_fn_call =
       rule_ref_expr,
       rule_colon,
       rule_single_iter_clause,
-      optional_rule_seq((keyword_if, rule_ref_expr))
+      optional_rule_seq((keyword_if, rule_ref_expr)),
+      rep_rule_seq((rule_comma, rule_ref_expr))
     ))
   ));
 

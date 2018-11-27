@@ -79,7 +79,13 @@ type SynSizeExpr      = size_expr(coll: SynExpr);
 
 type SynCallLookalike = call_lookalike(target: SynExpr, args: SynExpr+);
 
-type SynAggrFnCall    = aggr_fn_call(fn_name: Symbol, expr: SynExpr, clause: SynIterClause, cond: SynExpr?);
+type SynAggrFnCall    = aggr_fn_call(
+                          fn_name:    Symbol,
+                          expr:       SynExpr,
+                          clause:     SynIterClause,
+                          cond:       SynExpr?,
+                          extra_args: SynExpr*
+                        );
 
 type SynRelMembTest   = rel_memb_test(target: SynExpr, args: Maybe[SynExpr]+);
 type SynRelLookup     = rel_lookup(target: Symbol+, args: Maybe[SynExpr]+);
@@ -257,6 +263,7 @@ type AggrFunctDecl  = aggr_funct_decl(
                         name:         Symbol,
                         elt_type:     SynType,
                         elt_name:     Symbol,
+                        extra_args:   (SynType, Symbol)*,
                         red_vars: (
                           type:       SynType,
                           name:       Symbol,

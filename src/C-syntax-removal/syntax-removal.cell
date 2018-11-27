@@ -23,27 +23,30 @@ implicit syn_prg : SynPrg {
         else unique_aggr_fn_id(decl.name, value(unique_id));
       elt_type = desugar_plain_type(decl.elt_type);
       elt_var = var(decl.elt_name);
+      extra_args = ((var(s), desugar_plain_type(t)) : t, s <- decl.extra_args);
+      extra_args_vars = [s : s, unused_var <~ extra_args];
       red_vars = [
         var(v.name) -> (
           type:       desugar_plain_type(v.type),
-          init_value: desugar_aggr_fn_expr(v.init_value, [elt_var]),
+          init_value: desugar_aggr_fn_expr(v.init_value, extra_args_vars & [elt_var]),
           merge_op: {
             v1, v2, e = v.merge_op;
             v1 = var(v1);
             v2 = var(v2);
-            e = desugar_aggr_fn_expr(e, [v1, v2]);
+            e = desugar_aggr_fn_expr(e, extra_args_vars & [v1, v2]);
             return (v1, v2, e);
           }
         ) : v <~ decl.red_vars
       ];
-      null_value = desugar_aggr_fn_expr(decl.null_value, []);
-      final_value = desugar_aggr_fn_expr(decl.final_value, keys(red_vars));
+      null_value = desugar_aggr_fn_expr(decl.null_value, extra_args_vars);
+      final_value = desugar_aggr_fn_expr(decl.final_value, extra_args_vars & keys(red_vars));
       return aggr_funct(
-        id:       id,
-        type:     type,
-        elt_type: elt_type,
-        elt_var:  elt_var,
-        red_vars: red_vars,
+        id:           id,
+        type:         type,
+        elt_type:     elt_type,
+        elt_var:      elt_var,
+        extra_args:   extra_args,
+        red_vars:     red_vars,
         null_value:   null_value,
         final_value:  final_value
       );

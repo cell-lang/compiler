@@ -198,17 +198,18 @@ Expr* exprs_cluster(TernRelCompExpr expr, Nat offset) =
   );
 
 
-// aggr_fn_call(fn_id: PlainAggrFnId, expr: Expr, clause: RelvarClause, cond: Expr?);
+// aggr_fn_call(fn_id: PlainAggrFnId, expr: Expr, clause: RelvarClause, cond: Expr?, extra_args: Expr*);
 Expr* exprs_cluster(AggrFnCallExpr expr, Nat offset) =
   exprs_cluster(
     expr.clause,
-    (expr.expr, expr.cond if expr.cond?),
+    expr.extra_args & (expr.expr, expr.cond if expr.cond?),
     offset,
     aggr_fn_call(
-      fn_id:  expr.fn_id,
-      expr:   $b(0),
-      clause: if $a :: RelvarClause then $a else undefined,
-      cond:   $b(1) if |$b| == 2
+      fn_id:      expr.fn_id,
+      expr:       $b(|expr.extra_args|),
+      clause:     if $a :: RelvarClause then $a else undefined,
+      cond:       $b(|expr.extra_args| + 1) if expr.cond?,
+      extra_args: take($b, |expr.extra_args|)
     )
   );
 
@@ -472,12 +473,13 @@ Expr replace_nested(RecExpr expr, (Expr -> Expr) replace) =
   accessor()          = accessor(replace(expr.expr), expr.field),
   accessor_test()     = accessor_test(replace(expr.expr), expr.field),
   aggr_fn_call()      = aggr_fn_call(
-                          fn_id:    expr.fn_id,
-                          expr:     replace(expr.expr),
-                          clause:   { cls = replace_nested(expr.clause, replace);
-                                      return if cls :: RelvarClause then cls else undefined;
-                                    },
-                          cond:     replace(expr.cond) if expr.cond?
+                          fn_id:      expr.fn_id,
+                          expr:       replace(expr.expr),
+                          clause:     { cls = replace_nested(expr.clause, replace);
+                                        return if cls :: RelvarClause then cls else undefined;
+                                      },
+                          cond:       replace(expr.cond) if expr.cond?,
+                          extra_args: (replace(e) : e <- expr.extra_args)
                         ),
   auto_method_call()  = auto_method_call(
                           var:  expr.var if expr.var?,
