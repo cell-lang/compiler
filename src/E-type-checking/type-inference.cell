@@ -60,7 +60,14 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
 
   Type aggr_fn_call_expr_type(AggrFnCallExpr expr, [EnvVar -> Type] env) {
-    return empty_type; ## IMPLEMENT IMPLEMENT IMPLEMENT
+    equiv_clause = expr.clause;
+    equiv_clause = and_clause(equiv_clause, filter_clause(expr.cond)) if expr.cond?;
+    iter_tree = full_iter_tree(equiv_clause, env);
+    elt_type = elt_type(iter_tree, expr.expr);
+    return empty_type if elt_type == empty_type;
+    aggr_fns = aggr_functs(expr.fn_id, |expr.extra_args|);
+    aggr_fn = only([f : f <- aggr_fns, is_subset(elt_type, f.elt_type)]);
+    return aggr_fn.type;
   }
 
 
@@ -1087,6 +1094,14 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////
+
+  ## NOT SURE ABOUT THIS, IT'S A BIT OF A HACK
+  Type elt_type(IterTree tree, Expr expr) =
+    match (set_comp_type(tree, expr))
+      empty_rel_type    = empty_type,
+      ne_set_type() t?  = t.elem_type,
+      union_type(ts?)   = union_type([if t == empty_rel_type then empty_type else t.elem_type : t <- ts]);
+
 
   SetType set_comp_type(IterTree tree, Expr expr) =
     never         = empty_rel_type,

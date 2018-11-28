@@ -285,7 +285,7 @@ implicit program           : Program,
 
   // aggr_fn_call(fn_id: PlainAggrFnId, expr: Expr, clause: RelvarClause, cond: Expr?, extra_args: Expr*);
   (Instr*, ObjExpr, VarGen) aggr_fn_call_opt_eval_info(AggrFnCallExpr expr, VarGen init_var_gen) {
-    aggr_fns = [f : f <- aggr_functs(expr.fn_id, ?), |f.extra_args| == |expr.extra_args|];
+    aggr_fns = aggr_functs(expr.fn_id, |expr.extra_args|);
     elt_type = subexpr_type(expr.expr);
     aggr_fn = only([f : f <- aggr_fns, is_subset(elt_type, f.elt_type)]);
 

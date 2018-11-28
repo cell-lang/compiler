@@ -15,6 +15,7 @@ type TypeCheckingError =
   may_not_have_field(type: Type, field: SymbObj),
   invalid_var_type(var: Var, actual_type: Type, expected_type: Type),
   no_disp_fn_found(name: FnFamilyId, arity: NzNat, signatures: [+FnType], par_types: Maybe[Type]*),
+  no_disp_aggr_fn_found(name: PlainAggrFnId, signatures: [+AggrFnType], elt_type: Type, extra_args_types: Type*),
   no_disp_db_method(name: MethodSymbol, args_types: Type*, exp_ret_type: Type, signatures: [FnType]),
   no_disp_db_update(name: UpdateSymbol, args_types: Type*, signatures: [+NeType*]),
   no_matching_relvar(name: AnyRelVar, args_types: Maybe[Type]+, signatures: [+NeType+]),
@@ -100,6 +101,9 @@ TypeCheckingError invalid_var_type(Var v, Type at, Type et) = invalid_var_type(v
 
 TypeCheckingError no_disp_fn_found(FnFamilyId n, NzNat a, [+FnType] ss, Maybe[Type]+ ts) =
   no_disp_fn_found(name: n, arity: a, signatures: ss, par_types: ts);
+
+TypeCheckingError no_disp_aggr_fn_found(PlainAggrFnId n, [+AggrFnType] ss, Type t, Type* ts) =
+  no_disp_aggr_fn_found(name: n, signatures: ss, elt_type: t, extra_args_types: ts);
 
 TypeCheckingError no_disp_db_method(MethodSymbol n, Type* ats, Type rt, [FnType] ss) =
   no_disp_db_method(name: n, args_types: ats, exp_ret_type: rt, signatures: ss);
@@ -256,6 +260,7 @@ String* create_error_msg(TypeCheckingError err) =
                                           "  Actual type:   " & user_repr(err.actual_type)
                                         ),
   no_disp_fn_found()                  = no_disp_fn_found_err_msg(err.name, err.arity, err.signatures, err.par_types),
+  no_disp_aggr_fn_found()             = no_disp_aggr_fn_found_err_msg(err.name, err.signatures, err.elt_type, err.extra_args_types),
   no_disp_db_method()                 = no_disp_db_method_err_msg(err.name, err.args_types, err.exp_ret_type, err.signatures),
   no_disp_db_update()                 = no_disp_db_update_err_msg(err.name, err.args_types, err.signatures),
   no_matching_relvar()                = no_matching_relvar_err_msg(err.name, err.args_types, err.signatures),
@@ -370,6 +375,13 @@ String* no_disp_fn_found_err_msg(FnFamilyId name, NzNat arity, [+FnType] signatu
   ("  " & user_repr(s) : s <- rand_sort(signatures)) &
   ("Actual types:") &
   ("  " & if t != nothing then user_repr(value(t)) else "CLOSURE" : t <- par_types);
+
+
+String* no_disp_aggr_fn_found_err_msg(PlainAggrFnId name, [+AggrFnType] signatures, Type elt_type, Type* extra_args_types) =
+  ("No suitable aggregate function found: " & user_repr(name) & ". Possible function signatures",) &
+  ("  " & user_repr(s) : s <- rand_sort(signatures)) &
+  ("Actual types:", "  " & user_repr(elt_type) & "..") &
+  ("  " & user_repr(t) : t <- extra_args_types);
 
 
 String* no_disp_db_method_err_msg(MethodSymbol name, Type* args_types, Type exp_ret_type, [FnType] signatures) =

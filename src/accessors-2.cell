@@ -9,7 +9,12 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
   }
 
 
-  [PlainAggrFnId, AggrFunct] aggr_functs = [plain_id(f.id), f : f <- program.aggr_fn_defs];
+  [+AggrFunct] aggr_functs(PlainAggrFnId id, Nat extra_arity) {
+    return nonempty([f : f <- aggr_functs(id, extra_arity, ?)]);
+
+    [PlainAggrFnId, Nat, AggrFunct] aggr_functs =
+      [plain_id(f.id), |f.extra_args|, f : f <- program.aggr_fn_defs];
+  }
 
 
   (NeType*, Maybe[NeType]) procedure_signature(ProcSymbol name) {

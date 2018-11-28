@@ -232,6 +232,9 @@ String user_repr(FnSymbol fn_symb, Nat arity) =
   op_symbol(op?)        = user_repr(op);
 
 
+String user_repr(PlainAggrFnId id) = aggr_fn_id(s?) = _print_(s);
+
+
 String user_repr(ConvFnId) = undefined;
 
 
@@ -246,6 +249,10 @@ String cls_type_user_repr(Type+ arg_types, Type ret_type) =
 
 String user_repr(FnType type) = append((user_repr(t) : t <- type.args), ", ") & " -> " & user_repr(type.ret_type);
 
+String user_repr(AggrFnType type) {
+  args_reprs = (user_repr(type.elt_type) & "..",) & (user_repr(t) : t <- type.extra_args_types);
+  return append(args_reprs, " ") & " -> " & user_repr(type.ret_type);
+}
 
 ## BUG BUG BUG: THIS IS PROBABLY ALL WRONG...
 String user_repr(Pattern ptrn) =

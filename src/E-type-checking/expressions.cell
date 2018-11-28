@@ -86,7 +86,28 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
 
   [TypeCheckingError] pre_typecheck_aggr_fn_call(AggrFnCallExpr expr, [EnvVar -> Type] env) {
-    return []; ## IMPLEMENT IMPLEMENT IMPLEMENT
+    equiv_clause = expr.clause;
+    equiv_clause = and_clause(equiv_clause, filter_clause(expr.cond)) if expr.cond?;
+    errs = typecheck(equiv_clause, env);
+    return errs if errs != [];
+
+    iter_tree = full_iter_tree(equiv_clause, env);
+    errs = pre_typecheck(iter_tree, expr.expr);
+    return errs if errs != [];
+
+    errs = seq_union((typecheck(e, type_any, env) : e <- expr.extra_args));
+    return errs if errs != [];
+
+    elt_type = elt_type(iter_tree, expr.expr);
+    aggr_fns = aggr_functs(expr.fn_id, |expr.extra_args|);
+    for f <- isort(aggr_fns):
+      if is_subset(elt_type, f.elt_type):
+        return union([typecheck(e, right(f.extra_args(i)), env) : e @ i <~ expr.extra_args]);
+      ;
+    ;
+
+    extra_args_types = (expr_type(e, env) : e <- expr.extra_args);
+    return [no_disp_aggr_fn_found(expr.fn_id, [signature(f) : f <- aggr_fns], elt_type, extra_args_types)];
   }
 
 
@@ -444,14 +465,6 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     return errs if errs != [];
     iter_tree = full_iter_tree(source, env);
     return seq_union((pre_typecheck(iter_tree, e) : e <- exprs));
-
-
-    [TypeCheckingError] pre_typecheck(IterTree tree, Expr expr) =
-      never         = [], ## CAN WE DO BETTER HERE?
-      once(e?)      = typecheck(expr, type_any, e),
-      repeated(t?)  = pre_typecheck(t, expr),
-      any(ts?)      = union([pre_typecheck(t, expr) : t <- ts]),
-      all(ts?)      = seq_union((pre_typecheck(t, expr) : t <- ts));
   }
 
 
@@ -491,4 +504,13 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
     return typecheck(expr.expr, type_any, new_env);
   }
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  [TypeCheckingError] pre_typecheck(IterTree tree, Expr expr) =
+    never         = [], ## CAN WE DO BETTER HERE?
+    once(e?)      = typecheck(expr, type_any, e),
+    repeated(t?)  = pre_typecheck(t, expr),
+    any(ts?)      = union([pre_typecheck(t, expr) : t <- ts]),
+    all(ts?)      = seq_union((pre_typecheck(t, expr) : t <- ts));
 }
