@@ -195,7 +195,7 @@ TypeCheckingError add_anchor_if_needed(TypeCheckingError err, Any anchor) =
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-String* create_error_msgs(<Function, Database, Method, Update, Handler, Automaton, Procedure> decl, [+TypeCheckingError] errs) {
+String* create_error_msgs(<Function, AggrFunct, Database, Method, Update, Handler, Automaton, Procedure> decl, [+TypeCheckingError] errs) {
   err_msgs = join(intermix((indent_lines(create_error_msg(e)) : e <- rand_sort(errs)), ("")));
   fname, sl, el = source_code_location(decl);
   loc_msg = "File " & fname & " line" & if sl == el then " " & printed(sl) else "s " & printed(sl) & "-" & printed(el);
@@ -203,11 +203,12 @@ String* create_error_msgs(<Function, Database, Method, Update, Handler, Automato
 }
 
 
-String source_file(<Function, Database, Method, Update, Handler, Automaton, Procedure> fn) = source_code_location(fn)(0);
+String source_file(<Function, AggrFunct, Database, Method, Update, Handler, Automaton, Procedure> fn) =
+  source_code_location(fn)(0);
 
 
 ## THERE'S AN ALMOST IDENTICAL FUNCTION IN WELL-FORMEDNESS CHECKING
-(String, NzNat, NzNat) source_code_location(<Function, Database, Method, Update, Handler, Automaton, Procedure> decl) {
+(String, NzNat, NzNat) source_code_location(<Function, AggrFunct, Database, Method, Update, Handler, Automaton, Procedure> decl) {
   maybe_data = fetch(decl);
   if maybe_data != nothing:
     data = value(maybe_data);
