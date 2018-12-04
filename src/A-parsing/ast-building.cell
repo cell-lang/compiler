@@ -1990,9 +1990,18 @@ implicit filename : String, lines : Nat** {
     nodes = rule_seq_nodes(mtc);
     assert |nodes| == 5;
     name = get_lowercase_id(nodes(0));
-    col_types = (build_type_ast(n) : n <- rep_rule_nodes(block_node(nodes(1))));
+    args_nodes = rule_seq_nodes(block_node(nodes(1)));
+    assert |args_nodes| == 2;
+    if args_nodes(0) != null_match:
+      col_types = (build_type_ast(rule_seq_node(args_nodes(0), 0)));
+      symmetric = true;
+    else
+      col_types = ();
+      symmetric = false;
+    ;
+    col_types = col_types & (build_type_ast(n) : n <- rep_rule_nodes(args_nodes(1)));
     attrs = (build_attr_relvar_ast(n) : n <- rep_rule_nodes(nodes(3)));
-    return relvars_decl(name, nonempty(col_types), (), attrs);
+    return relvars_decl(name, nonempty(col_types), (), symmetric, attrs);
 
 
     (Atom, SynType, AttrCard, Bool) build_attr_relvar_ast(RuleMatch mtc) {
@@ -2018,7 +2027,16 @@ implicit filename : String, lines : Nat** {
     nodes = rule_seq_nodes(mtc);
     assert |nodes| == 4;
     name = get_lowercase_id(nodes(0));
-    col_types = (build_type_ast(n) : n <- rep_rule_nodes(block_node(nodes(1))));
+    args_nodes = rule_seq_nodes(block_node(nodes(1)));
+    assert |args_nodes| == 2;
+    if args_nodes(0) != null_match:
+      col_types = (build_type_ast(rule_seq_node(args_nodes(0), 0)));
+      symmetric = true;
+    else
+      col_types = ();
+      symmetric = false;
+    ;
+    col_types = col_types & (build_type_ast(n) : n <- rep_rule_nodes(args_nodes(1)));
     keys = ();
     if nodes(2) != null_match:
       for an <- rep_rule_nodes(block_node(nodes(2))):
@@ -2028,7 +2046,7 @@ implicit filename : String, lines : Nat** {
         keys = (keys | nonempty(key_cols));
       ;
     ;
-    return relvars_decl(name, nonempty(col_types), keys, ());
+    return relvars_decl(name, nonempty(col_types), keys, symmetric, ());
   }
 
   SchemaDef build_db_def_ast(RuleMatch mtc) {

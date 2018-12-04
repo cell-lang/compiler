@@ -236,12 +236,13 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
     tables = sort_by_key(keys(phys_keys_by_table), arity(rel_auto_id, logical_rel_var($)));
 
     code = ();
-
     for tv <- tables:
-      arity = arity(rel_auto_id, logical_rel_var(tv));
+      log_rel_var = logical_rel_var(tv);
+      arity = arity(rel_auto_id, log_rel_var);
+      symmetric = symmetric(rel_auto_id, log_rel_var);
 
       surr_vars = (ivar32(i) : i < 3);
-      it_var = table_it_var(0, arity);
+      it_var = table_it_var(0, arity, symmetric);
       foreign_keys = lookup(phys_keys_by_table, tv, []);
 
       if foreign_keys != []:
@@ -252,8 +253,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
             unary_ternary(i?) = (maybe(surr_vars(0), j == i) : j < 3),
             binary_unary(i?)  = (just(surr_vars(i))),
             ternary_unary(i?) = (just(surr_vars(i))),
-            binary_ternary    = (just(surr_vars(0)), just(surr_vars(0)), nothing);
-            ternary_binary    = (just(surr_vars(0)), just(surr_vars(0)));
+            binary_ternary    = (just(surr_vars(0)), just(surr_vars(1)), nothing),
+            ternary_binary    = (just(surr_vars(0)), just(surr_vars(1)));
           return table_contains(fk.target, args);
         } : fk <- isort(foreign_keys));
 
@@ -576,10 +577,11 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-[[+(TableVar, Nat)]] column_clusters([TableVar, NzNat] relvars, [BlockForeignKey] foreign_keys) {
-  init_clusters = union([associations(k) : k <- foreign_keys]);
+[[+(TableVar, Nat)]] column_clusters([TableVar, NzNat, Bool] tables, [BlockForeignKey] foreign_keys) {
+  init_clusters = union([associations(k) : k <- foreign_keys]) &
+                  [[(v, 0), (v, 1)] : v, unused_var, s <- tables, s];
   non_trivial_clusters = merge_intersecting(init_clusters);
-  all_cols = [(r, i) : r, a <- relvars, i <~ (i : i < a)];
+  all_cols = [(r, i) : r, a, unused_var <- tables, i <~ (i : i < a)];
   rem_cols = all_cols - union(non_trivial_clusters);
   final_clusters = non_trivial_clusters & [[c] : c <- rem_cols];
   assert union(final_clusters) == all_cols;
@@ -607,8 +609,13 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 
   [(TableVar, Nat) -> ValueStoreId] table_col_value_store_map {
     auto_id = database.name;
-    table_vars_arity = [r, arity(auto_id, logical_rel_var(r)) : r <- physical_tables(auto_id)];
-    clusters = column_clusters(table_vars_arity, physical_foreign_keys);
+    table_vars = [
+      t, arity(auto_id, r), s
+      : t <- physical_tables(auto_id),
+        r = logical_rel_var(t),
+        s = database.rel_vars(r).symmetric
+    ];
+    clusters = column_clusters(table_vars, physical_foreign_keys);
     ord_clusters = isort(clusters);
     return [c -> value_store_id(i) : cs @ i <~ ord_clusters, c <- cs];
   }
@@ -629,8 +636,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
         log_cols_types = (ne_union_superset([ts(i) : ts <- table_signatures(auto_id, tv)]) : i < arity);
         phys_cols_types = (log_cols_types(i) : i <- applied_perm);
 
-        return table(value_stores, keys, phys_cols_types, applied_perm);
-      } : rv, unused_var <- database.rel_vars, tv <- physical_tables(auto_id, rv)
+        return table(value_stores, keys, phys_cols_types, applied_perm, info.symmetric);
+      } : rv, info <- database.rel_vars, tv <- physical_tables(auto_id, rv)
     ];
   }
 }

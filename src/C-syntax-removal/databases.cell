@@ -55,7 +55,7 @@ implicit syn_prg : SynPrg, artifact : SchemaDef {
   } : k <- db_foreign_keys, tgt <~ k.targets, (r?, as?) ?= tgt];
 
 
-  [RelVar -> (signatures: [+NeType+], keys: [[+Nat]])] desugared_relvars {
+  [RelVar -> (signatures: [+NeType+], keys: [[+Nat]], symmetric: Bool)] desugared_relvars {
     root_relvars_sgns = [
       [rel_var(v.name) -> (desugar_plain_type(t) : t <- v.col_types)] : v <- db_rel_vars
     ];
@@ -78,10 +78,12 @@ implicit syn_prg : SynPrg, artifact : SchemaDef {
     ];
 
     relvars_keys = merge(root_relvars_keys & attr_relvars_keys);
-
     assert keys(relvars_sgns) == keys(relvars_keys);
 
-    return [v -> (signatures: ss, keys: relvars_keys[v]) : v, ss <- relvars_sgns];
+    symm_relvars = [rel_var(v.name) : v <- db_rel_vars, v.symmetric] &
+                   [rel_var(arv.name) : rv <- db_rel_vars, rv.symmetric, arv <~ rv.attributes];
+
+    return [v -> (signatures: ss, keys: relvars_keys(v), symmetric: symm_relvars(v)) : v, ss <- relvars_sgns];
 
     // root_relvars = [[
     //   rel_var(v.name) -> (

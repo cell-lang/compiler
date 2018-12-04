@@ -83,7 +83,7 @@ SeqItVar seq_it_var(Nat n)          = :seq_it_var(n);
 BinRelItVar bin_rel_it_var(Nat n)   = :bin_rel_it_var(n);
 TernRelItVar tern_rel_it_var(Nat n) = :tern_rel_it_var(n);
 
-TableItVar table_it_var(Nat id, NzNat a) = table_it_var(id: id, arity: a);
+TableItVar table_it_var(Nat id, NzNat a, Bool s) = table_it_var(id: id, arity: a, symmetric: s);
 
 TableVar table_var(Symbol s)        = :table_var(s);
 TableVar table_var(Symbol s, Nat n) = :unique_table_var(s, n);
@@ -488,7 +488,7 @@ Instr get_table_iter(TableItVar v, AnyTableVar t, Maybe[Int32Var]+ as) {
   return get_table_iter(it_var: v, table: t, args: as);
 }
 
-Instr queue_deletes(TableVar tv, Maybe[Int32Var]+ as) = queue_deletes(table_var: tv, args: as);
+Instr queue_deletes(TableVar tv, Maybe[Int32Var]+ as, Bool s) = queue_deletes(table_var: tv, args: as, symmetric: s);
 
 Instr queue_insert_value(Int32Var v, ValueStoreId s, AtomicExpr e) = queue_insert_value(res_var: v, store: s, value: e);
 Instr lookup_or_queue_insert_value(Int32Var v, ValueStoreId s, AtomicExpr e) = lookup_or_queue_insert_value(res_var: v, store: s, value: e);
@@ -541,9 +541,9 @@ ValueStoreId value_store_id(Nat n)  = :value_store_id(n);
 NestedValueStoreId nested_value_store_id(AnyDBVar v, ValueStoreId id) =
   nested_value_store_id(db_var: v, store_id: id);
 
-Table table(ValueStoreId+ vs, [[+Nat]] ks, NeType+ ts, Nat+ p) {
+Table table(ValueStoreId+ vs, [[+Nat]] ks, NeType+ ts, Nat+ p, Bool s) {
   assert |vs| == |ts| and |vs| == |p|;
-  return table(value_stores: vs, keys: ks, col_types: ts, applied_perm: p);
+  return table(value_stores: vs, keys: ks, col_types: ts, applied_perm: p, symmetric: s);
 }
 
 ForeignKeyType unary_binary(Nat i)  = if i :: <0..1> then :unary_binary(i)  else undefined;
