@@ -54,6 +54,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
       cls_call()          = seq_union((typecheck(e, t, env) : e, t <- zip(expr.args, closures[expr.name].in_types))),
       builtin_call()      = pre_typecheck_builtin_call(expr.name, expr.args, env),
       size_expr()         = typecheck(expr.coll, type_coll, env),
+      rel_var_size_expr() = pre_typecheck_rel_var_size_expr(expr.rel_var, expr.args, env),
       unary_pseudo_call() = pre_typecheck_unary_pseudo_call(expr.target, expr.arg, env),
       rel_memb_test()     = pre_typecheck_rel_memb_test(expr.rel, expr.args, env),
       rel_lookup()        = pre_typecheck_rel_lookup(expr, env),
@@ -296,6 +297,11 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
       return [] if not (t @ i <~ args_types : t != nothing and not is_subset(value(t), s(i)));
     ;
     return [no_matching_relvar(rel_var, args_types, sgns)];
+  }
+
+
+  [TypeCheckingError] pre_typecheck_rel_var_size_expr(AnyRelVar rel_var, Maybe[Expr]+ args, [EnvVar -> Type] env) {
+    return pre_typecheck_relvar_memb_test(rel_var, args, env); ## BAD BAD BAD
   }
 
 

@@ -923,8 +923,18 @@ ParsingRule rule_expr_1b  = rule_seq((rule_expr_0, rep_rule(rule_chainable_expr)
 ParsingRule rule_dot_or_rel_memb_test =
   rule_choice((
     (:dot_test,   rule_seq((rule_dot, rule_lc_id, rule_question_mark))),
-    (:rel_test,   par_rule(comma_sep_seq(rule_choice(((:any, rule_asterisk), (:value, rule_ref_expr))))))
+    (:rel_test,   rule_rel_args)
   ));
+
+ParsingRule rule_rel_args =
+  par_rule(
+    comma_sep_seq(
+      rule_choice((
+        (:any, rule_asterisk),
+        (:value, rule_ref_expr)
+      ))
+    )
+  );
 
 ParsingRule rule_chainable_expr =
   rule_choice((
@@ -935,6 +945,7 @@ ParsingRule rule_chainable_expr =
 
 ParsingRule rule_expr_0 =
   rule_choice((
+    (:rel_size,           rule_seq((rule_pipe, dot_sep_seq(rule_lc_id), rule_rel_args, rule_pipe))),
     (:size,               rule_seq((rule_pipe, rule_ref_expr, rule_pipe))),
 
     (:def_test,           rule_seq((rule_lc_id, rule_dot, rule_lc_id, rule_question_mark, rule_question_mark))),

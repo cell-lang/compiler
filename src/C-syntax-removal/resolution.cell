@@ -155,11 +155,23 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
     return min_by(relvar_resols & expr_resols, resol_priority);
   }
 
+
   ## DOES IT REALLY NEED THE SECOND PARAMETER, def_vars?
   [AnyRelVar] resolve_by_priority_as_rel_var(Atom+ symbols, [Var] def_vars) {
     pre_resols = resolve_symbol_chain(symbols, def_vars);
     resols = [r : r <- pre_resols, r :: AnyRelVar];
     assert |resols| <= 1;
+    return min_by(resols, resol_priority);
+  }
+
+
+  [<AnyRelVar, SymbChainExpr, AutoMethodCall, FnCallExpr, DBMethodCall>]
+  resolve_by_priority_as_expr_or_rel_var(Atom+ symbols, [Var] def_vars) {
+    pre_resols = resolve_symbol_chain(symbols, def_vars);
+    resols = union([{
+      maybe_expr = try_resolve_as_expr(r);
+      return [value(maybe_expr) if maybe_expr != nothing, r if r :: AnyRelVar];
+    } : r <- pre_resols]);
     return min_by(resols, resol_priority);
   }
 

@@ -96,6 +96,7 @@ implicit program           : Program,
     cls_call()          = cls_call_opt_eval_info(expr.name, expr.args, var_gen),
     builtin_call()      = builtin_call_opt_eval_info(expr, var_gen),
     size_expr()         = size_expr_opt_eval_info(expr.coll, var_gen),
+    rel_var_size_expr() = rel_var_size_expr_opt_eval_info(expr.rel_var, expr.args, var_gen),
     unary_pseudo_call() = unary_pseudo_call_opt_eval_info(expr.target, expr.arg, var_gen),
     rel_memb_test()     = rel_memb_test_opt_eval_info(expr.rel, expr.args, var_gen),
     rel_lookup()        = rel_lookup_opt_eval_info(expr, var_gen),
@@ -122,6 +123,48 @@ implicit program           : Program,
     tern_rel_comp()     = tern_rel_comp_opt_eval_info(expr, var_gen),
     seq_comp()          = seq_comp_opt_eval_info(expr, var_gen),
     range_comp()        = range_comp_opt_eval_info(expr, var_gen);
+
+
+  (Instr*, ObjExpr, VarGen) rel_var_size_expr_opt_eval_info(AnyRelVar rel_var, Maybe[Expr]+ args, VarGen init_var_gen) {
+    args_perm = relvar_cols_perm(rel_var);
+    table_args = (args(i) : i <- args_perm);
+
+    filtered_idxs = nonempty(idxs_into_filtered_seq((a != nothing : a <- table_args)));
+    unfiltered_idxs = (i : a @ i <- table_args, a != nothing);
+
+    set_args = (value(a) : a <- table_args, a != nothing);
+    eval_code, args_aliases, var_gen = opt_eval_info(set_args, init_var_gen);
+
+    res_var, ret_var_gen = next_int32_var(init_var_gen);
+    surr_vars, var_gen = next_int32_vars(ret_var_gen, |set_args|);
+    it_var, var_gen = next_table_it_var(var_gen, |table_args|, symmetric(rel_var));
+
+    surr_args = (apply(mi, surr_vars($)) : mi <- filtered_idxs);
+
+    // Selecting the candidate tables among those the relation is partitioned into
+    log_args_types = (apply(a, subexpr_type) : a <- args);
+    candidate_tables = overlapping_physical_tables(rel_var, log_args_types);
+
+    symmetric = symmetric(rel_var);
+
+    code = eval_code;
+    for t @ i <- isort(candidate_tables):
+      count_expr = get_count(t, surr_args, symmetric);
+      count_expr = add32(res_var, count_expr) if i > 0;
+      table_code = (set_ivar32(res_var, count_expr));
+      for e @ j <- reverse(args_aliases):
+        store_id = table_col_store_id(t, rat(unfiltered_idxs, j));
+        surr_var = rat(surr_vars, j);
+        table_code = (
+          set_ivar32(surr_var, lookup_value(store_id, e)),
+          branch(neg(are_eq(int_obj(surr_var), int_obj(-1))), table_code, (set_ivar32(res_var, 0) if i == 0))
+        );
+      ;
+      code = code & table_code;
+    ;
+
+    return (code, int_obj(res_var), ret_var_gen);
+  }
 
 
   // relvar_memb_test(rel_var: AnyRelVar, args: Maybe[Expr]+);

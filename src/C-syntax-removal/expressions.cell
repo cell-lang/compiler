@@ -23,7 +23,8 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
     unary_op_call()       = fn_call(fn_family_id(op_symbol(expr.op), 1), (desugar_expr(expr.expr, def_vars)), ()),
     binary_op_call()      = fn_call(fn_family_id(op_symbol(expr.op), 2), (desugar_expr(expr.left_arg, def_vars), desugar_expr(expr.right_arg, def_vars)), ()),
     builtin_call()        = builtin_call(expr.name, (desugar_expr(e, def_vars) : e <- expr.args)),
-    size_expr()           = size_expr(desugar_expr(expr.coll, def_vars)),
+    size_expr()           = desugar_size_expr(expr.coll, def_vars),
+    rel_var_size_expr()   = desugar_rel_var_size_expr(expr, def_vars),
     call_lookalike()      = desugar_call_lookalike(expr.target, expr.args, def_vars),
     aggr_fn_call()        = desugar_aggr_fn_call(expr, def_vars),
     rel_memb_test()       = desugar_rel_memb_test(expr.target, expr.args, def_vars),
@@ -136,6 +137,26 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
         return rel_memb_test(target, (just(a) : a <- args));
       ;
     ;
+  }
+
+
+  Expr desugar_size_expr(SynExpr coll_expr, [StdVar] def_vars) {
+    if coll_expr :: IdChain:
+      symbs = destructure_id_chain(coll_expr);
+      resol = only(resolve_by_priority_as_expr_or_rel_var(symbs, def_vars));
+      if resol :: AnyRelVar:
+        arity = relvar_arity(resol);
+        return rel_var_size_expr(resol, (nothing : i < arity));
+      ;
+    ;
+    return size_expr(desugar_expr(coll_expr, def_vars));
+  }
+
+
+  Expr desugar_rel_var_size_expr(SynRelVarSizeExpr expr, [StdVar] def_vars) {
+    rel_var = only(resolve_by_priority_as_rel_var(expr.rel_var_path, def_vars));
+    args = (apply(a, desugar_expr($, def_vars)) : a <- expr.args);
+    return rel_var_size_expr(rel_var, args);
   }
 
 

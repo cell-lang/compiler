@@ -735,21 +735,11 @@ implicit filename : String, lines : Nat** {
         expr = syn_accessor_test(expr, field);
       else
         assert label == :rel_test;
-        args = (build_arg_ast(n) : n <- rep_rule_nodes(block_node(content)));
+        args = build_rel_args_asts(content);
         expr = syn_rel_memb_test(expr, nonempty(args));
       ;
     ;
     return attach_src_code_info(expr, mtc);
-
-    Maybe[SynExpr] build_arg_ast(RuleMatch mtc) {
-      label = get_rule_name(mtc);
-      if label == :value:
-        return just(build_expr_ast(get_rule_match(mtc)));
-      else
-        assert label == :any;
-        return nothing;
-      ;
-    }
   }
 
   SynExpr build_expr_1b_ast(RuleMatch mtc) {
@@ -774,10 +764,25 @@ implicit filename : String, lines : Nat** {
     return attach_src_code_info(expr, mtc);
   }
 
+  Maybe[SynExpr]+ build_rel_args_asts(RuleMatch mtc) {
+    return (build_arg_ast(n) : n <- nonempty(rep_rule_nodes(block_node(mtc))));
+
+    Maybe[SynExpr] build_arg_ast(RuleMatch mtc) {
+      label = get_rule_name(mtc);
+      if label == :value:
+        return just(build_expr_ast(get_rule_match(mtc)));
+      else
+        assert label == :any;
+        return nothing;
+      ;
+    }
+  }
+
   SynExpr build_expr_0_ast(RuleMatch mtc) {
     inner_match = get_rule_match(mtc);
     expr = match (get_rule_name(mtc))
       size                = build_size_expr_ast(inner_match),
+      rel_size            = build_rel_var_size_expr_ast(inner_match),
       rel_lookup          = build_rel_lookup_ast(inner_match),
       def_test            = build_def_test_ast(inner_match),
       tag_obj             = build_tag_obj_expr_ast(inner_match),
@@ -847,6 +852,14 @@ implicit filename : String, lines : Nat** {
     assert |nodes| == 3;
     target = build_expr_ast(nodes(1));
     return syn_size_expr(target);
+  }
+
+  SynRelVarSizeExpr build_rel_var_size_expr_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 4;
+    path = (get_lowercase_id(n) : n <- rep_rule_nodes(nodes(1)));
+    args = build_rel_args_asts(nodes(2));
+    return syn_rel_var_size_expr(nonempty(path), nonempty(args));
   }
 
   SynCallLookalike build_call_lookalike_expr_ast(RuleMatch mtc) {

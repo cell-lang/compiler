@@ -13,7 +13,7 @@ Expr* exprs_cluster(<ExprRef, CastExpr>, Nat) = undefined;
 ///////////////////// Order of subexpression doesn't matter ////////////////////
 
 type RecExprGroup1  = SeqExpr, SetExpr, TupleExpr, TagObjExpr, ClsCall,
-                      BuiltinCall, SizeExpr, UnaryPseudoCall, NotExpr, EqExpr,
+                      BuiltinCall, SizeExpr, RelVarSizeExpr, UnaryPseudoCall, NotExpr, EqExpr,
                       MembExpr, AccExpr, AccTestExpr, RelVarMembTest;
 
 
@@ -31,7 +31,8 @@ Expr* exprs_cluster(RecExprGroup1 expr, Nat offset) =
   membership()        = expr_cluster(expr.obj, offset, membership($, expr.type)),
   accessor()          = expr_cluster(expr.expr, offset, accessor($, expr.field)),
   accessor_test()     = expr_cluster(expr.expr, offset, accessor_test($, expr.field)),
-  relvar_memb_test()  = maybe_exprs_cluster(expr.args, offset, relvar_memb_test(expr.rel_var, nonempty($)));
+  relvar_memb_test()  = maybe_exprs_cluster(expr.args, offset, relvar_memb_test(expr.rel_var, nonempty($))),
+  rel_var_size_expr() = maybe_exprs_cluster(expr.args, offset, rel_var_size_expr(expr.rel_var, nonempty($)));
 
 
 // rel_memb_test(rel: Expr, args: Maybe[Expr]+);
@@ -412,7 +413,7 @@ Expr reconstruct(Expr+ cluster, Nat offset) {
 type RecExpr  = SetExpr, SeqExpr, TupleExpr, SeqTailExpr,
                 MapExpr, BinRelExpr, TernRelExpr, TagObjExpr,
                 FnCallExpr, ClsCall, BuiltinCall, AggrFnCallExpr,
-                SizeExpr,
+                SizeExpr, RelVarSizeExpr,
                 UnaryPseudoCall, RelMembTest, RelLookup,
                 RelVarMembTest, RelVarLookup,
                 AndExpr, OrExpr, NotExpr,
@@ -463,6 +464,7 @@ Expr replace_nested(RecExpr expr, (Expr -> Expr) replace) =
   rel_memb_test()     = rel_memb_test(replace(expr.rel), (apply(a, replace) : a <- expr.args)),
   rel_lookup()        = rel_lookup(replace(expr.rel), (replace(a) : a <- expr.set_args), expr.unknown_arg_idx),
   relvar_memb_test()  = relvar_memb_test(expr.rel_var, (apply(a, replace) : a <- expr.args)),
+  rel_var_size_expr() = rel_var_size_expr(expr.rel_var, (apply(a, replace) : a <- expr.args)),
   relvar_lookup()     = relvar_lookup(expr.rel_var, (replace(a) : a <- expr.set_args), expr.unknown_arg_idx),
   and_expr()          = and_expr(replace(expr.left), replace(expr.right)),
   or_expr()           = or_expr(replace(expr.left), replace(expr.right)),
