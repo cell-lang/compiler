@@ -49,10 +49,12 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context {
   ////////////////////////////////////////////////////////////////////////////////
   ////////////////////////////////////////////////////////////////////////////////
 
-  NzNat arity(AnyRelVar rel_var) = arity(this_db_symbol, unqualified(rel_var));
+  NzNat arity(RelVar rel_var) = arity(this_db_symbol, rel_var);
 
 
-  Bool symmetric(AnyRelVar rel_var) = symmetric(this_db_symbol, unqualified(rel_var));
+  Bool symmetric(AnyRelVar rel_var) =
+    rel_var()       = symmetric(this_db_symbol, rel_var),
+    qual_rel_var()  = symmetric(var_type(rel_var.db_var), unqualified(rel_var));
 
 
   [[+Nat]] relvar_keys(AnyRelVar relvar) =
