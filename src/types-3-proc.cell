@@ -120,7 +120,8 @@ type AnyLocVar      = LocBoolVar, LocIntVar, LocFloatVar, LocOptTagRecVar, LocVa
 
 type TableVar       = table_var(Symbol), unique_table_var(Symbol, Nat);
 type QualTableVar   = qual_table_var(db_var: AnyDBVar, table_var: TableVar);
-type AnyTableVar    = TableVar, QualTableVar;
+type CaptTableVar   = capt_table_var(TableVar);
+type AnyTableVar    = TableVar, QualTableVar, CaptTableVar;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -314,7 +315,7 @@ type BasicInstr     = init_stream(StreamVar),
 
                       no_op,
 
-                      call_proc(var: AnyWriteVar?, name: ObjFnName, args: AnyTypeExpr*, cls_args: BoundCls*),
+                      call_proc(var: AnyWriteVar?, name: ObjFnName, args: AnyTypeExpr*, cls_args: AnyLambdaExpr*),
                       call_cls(var: WriteObjVar, cls_var: AnyClsVar, args: AtomicExpr+),
 
                       push_call_info(fn_name: <FnId, ProcSymbol>, args: ObjExpr*),
@@ -417,7 +418,14 @@ type AnyClsVar      = ClsVar, CaptClsVar;
 
 type ClsDef         = cls_def(arity: NzNat, body: Instr+);
 
-type BoundCls       = AnyClsVar, bound_cls(cls: ClsDef, capt_vars: ObjExpr*, capt_cls_vars: AnyClsVar*);
+type LambdaExpr     = lambda_expr(
+                        cls:            ClsDef,
+                        capt_auto:      Maybe[DBSymbol],
+                        capt_vars:      ObjExpr*,
+                        capt_cls_vars:  AnyClsVar*
+                      );
+
+type AnyLambdaExpr  = AnyClsVar, LambdaExpr;
 
 type ObjProcArg     = StdVar, FnArg, LocBoolVar, BoolFnArg, LocIntVar, IntFnArg, LocFloatVar,
                       FloatFnArg, LocOptTagRecVar, OptTagRecFnArg;
@@ -460,7 +468,8 @@ type UpdateId   = main_handler, handler_id(Nat), update_id(symbol: UpdateSymbol,
 
 type ValueStoreId       = value_store_id(Nat);
 type NestedValueStoreId = nested_value_store_id(db_var: AnyDBVar, store_id: ValueStoreId);
-type AnyValueStoreId    = ValueStoreId, NestedValueStoreId;
+type CaptValueStoreId   = capt_value_store_id(ValueStoreId);
+type AnyValueStoreId    = ValueStoreId, NestedValueStoreId, CaptValueStoreId;
 
 type Table  = table(
                 value_stores: ValueStoreId+,

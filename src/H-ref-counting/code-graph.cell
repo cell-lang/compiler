@@ -2,7 +2,7 @@ type NodeInfo       = std_node(<BasicInstr, JumpInstr>),
                       branch_node(BoolExpr),
                       nat_switch_node(IntExpr),
                       symb_switch_node(value: ObjExpr, cases: [+SymbObj]+),
-                      set_cls_par_node(var: ImplArg, cls: BoundCls);
+                      set_cls_par_node(var: ImplArg, cls: AnyLambdaExpr);
 
 type CodeTree       = std_node(Nat),
                       branch_node(idx: Nat, if_body: CodeTree+, else_body: CodeTree*),
@@ -17,7 +17,7 @@ type RCNodeInfo     = std_node(Instr*),
                       branch_node(cond: BoolExpr, if_post_instrs: Instr*, else_post_instrs: Instr*),
                       nat_switch_node(index: IntExpr, cases_instrs: Instr*+),
                       symb_switch_node(value: ObjExpr, cases: [+SymbObj]+, cases_instrs: Instr*+, else_instrs: Instr*),
-                      set_cls_par_node(var: ImplArg, cls: BoundCls, post_instrs: Instr*);
+                      set_cls_par_node(var: ImplArg, cls: AnyLambdaExpr, post_instrs: Instr*);
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -26,7 +26,7 @@ NodeInfo std_node(<BasicInstr, JumpInstr> i)          = :std_node(i);
 NodeInfo branch_node(BoolExpr e)                      = :branch_node(e);
 NodeInfo nat_switch_node(IntExpr e)                   = :nat_switch_node(e);
 NodeInfo symb_switch_node(ObjExpr e, [+SymbObj]+ cs)  = symb_switch_node(value: e, cases: cs);
-NodeInfo set_cls_par_node(ImplArg var, BoundCls cls)  = set_cls_par_node(var: var, cls: cls);
+NodeInfo set_cls_par_node(ImplArg var, AnyLambdaExpr cls)  = set_cls_par_node(var: var, cls: cls);
 
 
 CodeTree std_node(Nat i)                                      = :std_node(i);
@@ -43,7 +43,7 @@ RCNodeInfo std_node(Instr* instrs)                              = :std_node(inst
 RCNodeInfo branch_node(BoolExpr c, Instr* iis, Instr* eis)      = branch_node(cond: c, if_post_instrs: iis, else_post_instrs: eis);
 RCNodeInfo rc_nat_switch_node(IntExpr e, Instr*+ is)            = nat_switch_node(index: e, cases_instrs: is);
 RCNodeInfo rc_symb_switch_node(ObjExpr e, [+SymbObj]+ cs, Instr*+ cis, Instr* eis) = symb_switch_node(value: e, cases: cs, cases_instrs: cis, else_instrs: eis);
-RCNodeInfo set_cls_par_node(ImplArg v, BoundCls c, Instr* is)   = set_cls_par_node(var: v, cls: c, post_instrs: is);
+RCNodeInfo set_cls_par_node(ImplArg v, AnyLambdaExpr c, Instr* is)  = set_cls_par_node(var: v, cls: c, post_instrs: is);
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////

@@ -55,8 +55,6 @@ YieldAction yield_action(Clause cls, YieldAction next) =
 implicit program           : Program,
          typedefs          : [TypeName -> NeType],
          context           : Context,
-         var_subst_map     : [StdVar -> CaptVar],
-         cls_var_subst_map : [ClsVar -> CaptClsVar],
          cluster           : Expr+,
          types             : Type+,
          environments      : [EnvVar -> Type]+,
@@ -123,24 +121,24 @@ implicit program           : Program,
       if surr_args :: Just[Int32Var]+:
         plain_surr_args = (value(a) : a <- surr_args);
         vars_setup_code = (
-          lookup_surrogate(v, table_col_store_id(tv, i), plain_surr_args(i))
+          lookup_surrogate(v, substitute(table_col_store_id(tv, i)), plain_surr_args(i))
           : v @ i <- perm_vars
         );
         table_code = (
           do_if(
-            table_contains(tv, (just(a) : a <- plain_surr_args)),
+            table_contains(substitute(tv), (just(a) : a <- plain_surr_args)),
             vars_setup_code & action_code
           )
         );
       else
         lookup_exprs = (
-          lookup_surrogate(table_col_store_id(tv, i), get_tuple_field(it_var, i))
+          lookup_surrogate(substitute(table_col_store_id(tv, i)), get_tuple_field(it_var, i))
           : i <- blank_idxs
         );
         vars_setup_code = (set_var(v, lookup_exprs(i)) : v @ i <- perm_vars);
         loop_code = (break_if(is_out_of_range(it_var))) & vars_setup_code & action_code & (move_forward(it_var));
         table_code = (
-          get_table_iter(it_var, tv, nonempty(surr_args)),
+          get_table_iter(it_var, substitute(tv), nonempty(surr_args)),
           repeat(nonempty(loop_code))
         );
       ;

@@ -32,7 +32,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
     nested_dbs = database.nested_dbs;
 
     vars_pre_init_code = rand_sort([init_memb_var(v, :blank) : v, unused_var <- state_vars]);
-    let context = database, var_subst_map = [], cls_var_subst_map = [], typed_vars = [], surrogates = []:
+    let context = database, typed_vars = [], surrogates = []:
       vars_init_code = join(({
           eval_code, surr, unused_var = opt_eval_code(d.init_value, [], blank_var_gen);
           return (eval_code | set_var(v, surr));
@@ -348,7 +348,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 
     Instr* method_body(Method method) {
       env = [if a != nothing then value(a) else fn_arg(i) -> t : t, a @ i <~ method.args];
-      let context = database, var_subst_map = [], cls_var_subst_map = [], typed_vars = [], surrogates = []:
+      let context = database, typed_vars = [], surrogates = []:
         eval_code, surr, unused_var = opt_eval_code(method.expr, env, blank_var_gen);
       ;
       return (eval_code | ret_val(surr));
@@ -386,8 +386,6 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
         [v -> t : t, v <~ update.args],
         blank_var_gen,
         context           = database,
-        var_subst_map     = [],
-        cls_var_subst_map = [],
         typed_vars        = [],
         surrogates        = [],
         exp_break_surrs   = nothing,
@@ -420,8 +418,6 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
         [var(:self) -> handler.type],
         blank_var_gen,
         context           = database,
-        var_subst_map     = [],
-        cls_var_subst_map = [],
         typed_vars        = [],
         surrogates        = [],
         exp_break_surrs   = nothing,

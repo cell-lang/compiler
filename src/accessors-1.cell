@@ -65,6 +65,20 @@ DBMethodCall apply_args(PreDBCall pre_call, Expr* args) =
 
 ////////////////////////////////////////////////////////////////////////////////
 
+Artifact closure_artifact(Artifact artifact) =
+  null_artifact             |
+  syn_proc_def()            |
+  react_auto_def()          |
+  schema_def()              |
+  auto_method_def()         = :null_artifact,
+  handler_def()             |
+  nested_fn_def()           |
+  top_level_fn_def()        |
+  using_block_method_def()  |
+  using_block_update_def()  = artifact;
+
+////////////////////////////////////////////////////////////////////////////////
+
 [[+TypeVar -> Atom]] typevar_bindings(TypeVarDecl decl) =
   [nonempty_map(merge(([type_var(v) -> t] : v, t <- zip(decl.type_vars, types)))) : types <~ decl.prot_types];
 

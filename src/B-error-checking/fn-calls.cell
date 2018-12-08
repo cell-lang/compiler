@@ -17,38 +17,50 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg], actual_ar
     exp_arg_arities = arg_arities(fn_id);
     exp_impl_args = fn_impl_args(fn_id);
 
-    pos_arg_errs = join((actual_arg_wf_errors(a, exp_arg_arities(i), def_vars) : a @ i <- args));
-    all_impl_arg_errs = [impl_args_wf_errors(fn_id, redef_impl_args, enps, def_vars) : enps <- exp_impl_args];
+    pos_arg_errs = join(({
+      exp_arity = exp_arg_arities(i);
+      return if exp_arity == 0
+        then expr_wf_errors(a, def_vars)
+        else cls_arg_wf_errors(a, exp_arity, def_vars);
+    } : a @ i <- args));
 
+    all_impl_arg_errs = [impl_args_wf_errors(fn_id, redef_impl_args, enps, def_vars) : enps <- exp_impl_args];
     impl_arg_errs = if in((), all_impl_arg_errs) then () else join(rand_sort(all_impl_arg_errs));
 
     return pos_arg_errs & impl_arg_errs;
 
 
-    ExprWFError* actual_arg_wf_errors(SynExpr actual_arg, Nat exp_arity, [DefVar] def_vars) {
-      if exp_arity == 0 or not actual_arg :: ConstOrVar:
-        new_arg_arity = if exp_arity != 0 then exp_arity else actual_arg_arity;
-        return expr_wf_errors(actual_arg, def_vars, actual_arg_arity=new_arg_arity);
-      ;
-
+    ExprWFError* cls_arg_wf_errors(SynExpr actual_arg, NzNat exp_arity, [DefVar] def_vars) {
       //  Here the function expects a closure. The parameter can be:
       //    1) A normal expression, implicitly defining a constant functions
       //    2) The name of a an existing closure
       //    3) The name of a function
       //    4) A closure expression
 
-      symb = match (actual_arg) const_or_var(a?) = a;
-      resols = resolve_by_priority_as_cls_expr(symb, exp_arity, std_vars(def_vars));
-      return (invalid_expr(actual_arg) if |resols| != 1) if resols != [];
+      // Choosing which types of artifacts are reachable from within the closure body
+      cls_artifact = closure_artifact(artifact);
 
-      ## BAD BAD BAD: ENCODING THE MAXIMUM ARITY OF THE CLOSURES.
-      ## SHOULD ALSO CHECK THAT NO FUNCTION HAS BEEN DISCARDED BECAUSE IT HAS IMPLICIT ARGUMENTS
-      arities = [i : i <~ (nz_nat(i+1) : i < 20), resolve_by_priority_as_cls_expr(symb, i, std_vars(def_vars)) != []];
-      if arities == []:
-        return (undef_var_or_const(symb));
-      else
-        return (wrong_cls_arg_arity(actual_arg, exp_arity, arities));
+      // Choosing which types of variables are visible from within the closure body
+      cls_vars = std_vars(def_vars); ## ADD IMPLICIT ARGUMENTS?
+
+      // If the argument is a simple symbol, it can refer to a closure
+      // or a function and it needs special processing
+      if actual_arg :: ConstOrVar:
+        symb = match (actual_arg) const_or_var(a?) = a;
+        resols = resolve_by_priority_as_cls_expr(symb, exp_arity, cls_vars, artifact=cls_artifact);
+        return (invalid_expr(actual_arg) if |resols| != 1) if resols != [];
+
+        ## BAD BAD BAD: ENCODING THE MAXIMUM ARITY OF THE CLOSURES.
+        ## SHOULD ALSO CHECK THAT NO FUNCTION HAS BEEN DISCARDED BECAUSE IT HAS IMPLICIT ARGUMENTS
+        arities = [i : i <~ (nz_nat(i+1) : i < 20), resolve_by_priority_as_cls_expr(symb, i, cls_vars) != []];
+        if arities == []:
+          return (undef_var_or_const(symb));
+        else
+          return (wrong_cls_arg_arity(actual_arg, exp_arity, arities));
+        ;
       ;
+
+      return expr_wf_errors(actual_arg, cls_vars, actual_arg_arity=exp_arity, artifact=cls_artifact);
     }
 
 

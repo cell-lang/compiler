@@ -282,7 +282,7 @@ implicit flow_map : NodeId**, live_vars_after_map : [TrkVar]*, entry_vars_states
   }
 
 
-  RCNodeInfo rc_set_cls_par_node(ImplArg var, BoundCls cls, NodeId next_node, VarsState exit_state) {
+  RCNodeInfo rc_set_cls_par_node(ImplArg var, AnyLambdaExpr cls, NodeId next_node, VarsState exit_state) {
     next_node_entry_state = entry_vars_state(next_node);
     post_instrs = gen_state_switch_code(exit_state, next_node_entry_state);
     return set_cls_par_node(var, cls, post_instrs);
@@ -323,7 +323,11 @@ Instr ref_count_closures_single_instruction(Instr instr) =
 
 AtomicExpr ref_count_closure(AtomicExpr expr) = expr; ## NOT THE BEST NAME IN THIS CASE...
 
-BoundCls ref_count_closure(BoundCls cls) =
+AnyLambdaExpr ref_count_closure(AnyLambdaExpr cls) =
   cls_var()       |
   capt_cls_var()  = cls,
-  bound_cls()     = bound_cls(cls_def(cls.cls.arity, add_ref_counting(cls.cls.body)), cls.capt_vars, cls.capt_cls_vars);
+  lambda_expr()   = lambda_expr(
+                      cls_def(cls.cls.arity, add_ref_counting(cls.cls.body)),
+                      cls.capt_vars,
+                      cls.capt_cls_vars
+                    );

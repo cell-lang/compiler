@@ -254,11 +254,20 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
   }
 
 
-  AnyClsExpr desugar_cls_arg(SynExpr syn_arg, NzNat exp_arity, [StdVar] def_vars) =
-    if syn_arg :: ConstOrVar
-      then only(resolve_by_priority_as_cls_expr(match (syn_arg) const_or_var(a?) = a, exp_arity, def_vars))
+  AnyClsExpr desugar_cls_arg(SynExpr syn_arg, NzNat exp_arity, [StdVar] def_vars) {
+    // Choosing which types of artifacts are reachable from within the closure body
+    cls_artifact = closure_artifact(artifact);
+
+    // Choosing which types of variables are visible from within the closure body
+    cls_vars = std_vars(def_vars); ## ADD IMPLICIT ARGUMENTS?
+
+    if syn_arg :: ConstOrVar:
+      symb = match (syn_arg) const_or_var(a?) = a;
+      return only(resolve_by_priority_as_cls_expr(symb, exp_arity, cls_vars, artifact=cls_artifact));
     else
-      cls_expr(exp_arity, desugar_expr(syn_arg, def_vars));
+      return cls_expr(exp_arity, desugar_expr(syn_arg, cls_vars, artifact=cls_artifact));
+    ;
+  }
 
 
   Expr desugar_ex_qual_expr(SynClause+ source, SynExpr cond, [StdVar] def_vars) {

@@ -909,7 +909,7 @@ implicit {
 
   ///////////////////////////////////////////////////////////////////////////////
 
-  String* compile_call_proc_to_c(Maybe[ObjVar] var, ObjFnName name, <ObjExpr, BoundCls>* params, Maybe[Nat] block_id) {
+  String* compile_call_proc_to_c(Maybe[ObjVar] var, ObjFnName name, <ObjExpr, AnyLambdaExpr>* params, Maybe[Nat] block_id) {
     pars_info = (gen_par_info(p) : p <- params);
     code_frags, args = unzip(pars_info);
     call_code = if var != nothing
@@ -920,7 +920,7 @@ implicit {
 
     (String*, FnCallParam) gen_par_info(ObjExpr p) = ((), p);
 
-    (String*, FnCallParam) gen_par_info(BoundCls p) =
+    (String*, FnCallParam) gen_par_info(AnyLambdaExpr p) =
       cls_var()       |
       capt_cls_var()  = ((), p),
       // fn_ref()    = {
@@ -934,7 +934,7 @@ implicit {
       //   ];
       //   return (code, par_var);
       // },
-      bound_cls()     = {
+      lambda_expr()     = {
         ## BAD: THE FIRST LINES OF CODE ARE THE SAME AS ABOVE...
         par_id = _counter_(:any_value_will_do);
         par_var = cls_var(par_id);

@@ -93,6 +93,8 @@ TableVar table_var(RelVar v, Nat n) = rel_var(s?) = table_var(s, n);
 
 QualTableVar qual_table_var(AnyDBVar db, TableVar v) = qual_table_var(db_var: db, table_var: v);
 
+CaptTableVar capt_table_var(TableVar v) = :capt_table_var(v);
+
 MembTestPredId memb_test(Atom a)            = :memb_test(a);
 MembTestPredId memb_test(Nat n)             = :memb_test(n);
 MembTestPredId memb_test(Atom a1, Atom a2)  = :memb_test(a1, a2);
@@ -428,8 +430,8 @@ Instr* opt_symb_switch(ObjExpr expr, [([+SymbObj], Instr+)] cases, Instr* else_c
   return (symb_switch(expr, cases, else_code));
 }
 
-Instr call_proc(AnyWriteVar v, ObjFnName n, AnyTypeExpr* as, BoundCls* cas) = call_proc(var: v, name: n, args: as, cls_args: cas);
-Instr call_proc(ObjFnName n, AnyTypeExpr* as, BoundCls* cas) = call_proc(name: n, args: as, cls_args: cas);
+Instr call_proc(AnyWriteVar v, ObjFnName n, AnyTypeExpr* as, AnyLambdaExpr* cas) = call_proc(var: v, name: n, args: as, cls_args: cas);
+Instr call_proc(ObjFnName n, AnyTypeExpr* as, AnyLambdaExpr* cas) = call_proc(name: n, args: as, cls_args: cas);
 
 Instr call_cls(WriteObjVar v, AnyClsVar cv, AtomicExpr+ as) = call_cls(var: v, cls_var: cv, args: as);
 
@@ -512,7 +514,8 @@ CaptClsVar capt_cls_var(Nat n) = :capt_cls_var(n);
 
 ClsDef cls_def(NzNat a, Instr+ b) = cls_def(arity: a, body: b);
 
-BoundCls bound_cls(ClsDef c, ObjExpr* vs, AnyClsVar* cs) = bound_cls(cls: c, capt_vars: vs, capt_cls_vars: cs);
+LambdaExpr lambda_expr(ClsDef c, Maybe[DBSymbol] a, ObjExpr* vs, AnyClsVar* cs) =
+  lambda_expr(cls: c, capt_auto: a, capt_vars: vs, capt_cls_vars: cs);
 
 ClsProcArg cls(ClsVar v, NzNat a) = cls(var: v, arity: a);
 
@@ -543,6 +546,8 @@ ValueStoreId value_store_id(Nat n)  = :value_store_id(n);
 
 NestedValueStoreId nested_value_store_id(AnyDBVar v, ValueStoreId id) =
   nested_value_store_id(db_var: v, store_id: id);
+
+CaptValueStoreId capt_value_store_id(ValueStoreId id) = :capt_value_store_id(id);
 
 Table table(ValueStoreId+ vs, [[+Nat]] ks, NeType+ ts, Nat+ p, Bool s) {
   assert |vs| == |ts| and |vs| == |p|;

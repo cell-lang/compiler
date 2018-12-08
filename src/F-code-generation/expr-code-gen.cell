@@ -1,8 +1,6 @@
 implicit program           : Program,
          typedefs          : [TypeName -> NeType],
          context           : Context,
-         var_subst_map     : [StdVar -> CaptVar],
-         cls_var_subst_map : [ClsVar -> CaptClsVar],
          cluster           : Expr+,
          types             : Type+,
          environments      : [EnvVar -> Type]+,
@@ -149,11 +147,11 @@ implicit program           : Program,
 
     code = eval_code;
     for t @ i <- isort(candidate_tables):
-      count_expr = get_count(t, surr_args, symmetric);
+      count_expr = get_count(substitute(t), surr_args, symmetric);
       count_expr = add32(res_var, count_expr) if i > 0;
       table_code = (set_ivar32(res_var, count_expr));
       for e @ j <- reverse(args_aliases):
-        store_id = table_col_store_id(t, rat(unfiltered_idxs, j));
+        store_id = substitute(table_col_store_id(t, rat(unfiltered_idxs, j)));
         surr_var = rat(surr_vars, j);
         table_code = (
           set_ivar32(surr_var, lookup_value(store_id, e)),
@@ -190,17 +188,18 @@ implicit program           : Program,
 
     code = (eval_code | set_bvar(res_var, false));
     for tv @ i <- isort(candidate_tables):
+      subst_table_var = substitute(tv);
       if (a <~ table_args : a == nothing):
         table_code = (
-          get_table_iter(it_var, tv, surr_args),
+          get_table_iter(it_var, subst_table_var, surr_args),
           set_bvar(res_var, neg(is_out_of_range(it_var)))
         );
       else
-        table_code = (set_bvar(res_var, table_contains(tv, (just(v) : v <- nonempty(surr_vars)))));
+        table_code = (set_bvar(res_var, table_contains(subst_table_var, (just(v) : v <- nonempty(surr_vars)))));
       ;
 
       for e @ j <- reverse(args_aliases):
-        store_id = table_col_store_id(tv, rat(unfiltered_idxs, j));
+        store_id = substitute(table_col_store_id(tv, rat(unfiltered_idxs, j)));
         surr_var = rat(surr_vars, j);
         table_code = (
           set_ivar32(surr_var, lookup_value(store_id, e)),
@@ -280,7 +279,7 @@ implicit program           : Program,
       for tv @ k <- isort(candidate_tables):
         args_lookup_code = join(({
           arg_idx = j + bit(j >= unknown_arg_idx);
-          store_id = table_col_store_id(tv, nat(arg_idx));
+          store_id = substitute(table_col_store_id(tv, nat(arg_idx)));
           surr_var = surr_vars(j);
           return (
             set_ivar32(surr_var, lookup_value(store_id, e)),
@@ -288,10 +287,10 @@ implicit program           : Program,
           );
         } : e @ j <- args_aliases));
 
-        res_store_id = table_col_store_id(tv, unknown_arg_idx);
+        res_store_id = substitute(table_col_store_id(tv, unknown_arg_idx));
 
         lookup_code = (
-          get_table_iter(it_var, tv, all_surr_args),
+          get_table_iter(it_var, substitute(tv), all_surr_args),
           branch(
             neg(is_out_of_range(it_var)),
             (lookup_surrogate(res_var, res_store_id, get_tuple_field(it_var, unknown_arg_idx))),
@@ -1611,17 +1610,15 @@ implicit program           : Program,
 implicit program           : Program,
          typedefs          : [TypeName -> NeType],
          context           : Context,
-         var_subst_map     : [StdVar -> CaptVar],
-         cls_var_subst_map : [ClsVar -> CaptClsVar],
          options           : CompOptions {
 
-  BoundCls opt_comp_cls(AnyClsExpr expr, ClsType type, [EnvVar -> Type] env, [SurrExpr -> ObjExpr] surrs) =
+  AnyLambdaExpr opt_comp_cls(AnyClsExpr expr, ClsType type, [EnvVar -> Type] env, [SurrExpr -> ObjExpr] surrs) =
     cls_var()   = lookup(cls_var_subst_map, expr, expr),
     fn_ptr(fn?) = opt_comp_cls(arity(expr), fn_call(fn, (fn_arg(i) : i < arity(expr)), ()), type, env, surrs),
     cls_expr()  = opt_comp_cls(expr.arity, expr.expr, type, env, surrs);
 
 
-  BoundCls opt_comp_cls(NzNat arity, Expr expr, ClsType type, [EnvVar -> Type] env, [SurrExpr -> ObjExpr] surrs) {
+  AnyLambdaExpr opt_comp_cls(NzNat arity, Expr expr, ClsType type, [EnvVar -> Type] env, [SurrExpr -> ObjExpr] surrs) {
     loc_vars = set((fn_arg(i) : i < arity));
     ext_vars = isort(extern_vars(expr) - set((fn_arg(i) : i < arity)));
     fail if not ext_vars :: StdVar*;
@@ -1638,12 +1635,21 @@ implicit program           : Program,
     capt_env = [v -> env(v, !!) : v <~ ext_vars];
     new_env = args_env & capt_env;
 
-    let var_subst_map = subst_map, cls_var_subst_map = cls_subst_map, surrogates = [], typed_vars = []:
+    new_ctx = lambda_ctx(subst_map, cls_subst_map);
+    let context = new_ctx, surrogates = [], typed_vars = []:
       eval_code, surr, unused_var = opt_eval_code(expr, new_env, blank_var_gen);
     ;
     body = (eval_code | ret_val(surr));
 
-    return bound_cls(cls_def(arity, body), capt_vars, capt_cls_vars);
+    capt_context = match (context)
+      null_context  |
+      function()    |
+      procedure()   |
+      automaton()   = nothing,
+      data_base()   = just(context.name),
+      lambda_ctx()  = undefined; ## IMPLEMENT IMPLEMENT IMPLEMENT
+
+    return lambda_expr(cls_def(arity, body), capt_context, capt_vars, capt_cls_vars);
   }
 }
 
