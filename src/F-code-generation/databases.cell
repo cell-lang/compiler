@@ -3,6 +3,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
     methods = compiled_database_methods(database.methods);
     updates = compiled_database_updates(database.updates);
     handlers = compiled_database_handlers(database.handlers);
+    accessors = compiled_database_methods(generated_accessors);
 
     msg_types = [h.type : h <- database.handlers];
     msg_memb_pred = if msg_types != [] then just(memb_test_preds_map[ne_union_type(msg_types)]) else nothing;
@@ -21,11 +22,11 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
       set_state_code:           database_set_state_code,
       foreign_keys_check_code:  database_foreign_keys_check_code,
       methods:                  methods,
+      accessors:                accessors,
       updates:                  handlers & updates,
       msg_memb_pred:            msg_memb_pred
     );
   }
-
 
   Instr* database_init_code {
     state_vars = database.state_vars;
@@ -426,6 +427,195 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 
       return (execute_block(nonempty(code)));
     }
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+implicit program : Program, typedefs : [TypeName -> NeType], database : Database, options : CompOptions {
+  [Method] generated_accessors {
+    methods = [bare_id(m.name), arity(m) : m <- database.methods];
+
+    memb_var_accessors = [
+      state_var_accessor(v) : v, unused_var <- database.state_vars, not methods(bare_id(v), 0)
+    ];
+
+    unary_rel_accessors = [
+      unary_rel_accessor(v)
+      : v, unused_var <- database.rel_vars,
+        arity(database.name, v) == 1,
+        not methods(bare_id(v), 0)
+    ];
+
+    unary_rel_memb_tests = [
+      unary_rel_memb_test(v)
+      : v, unused_var <- database.rel_vars,
+        arity(database.name, v) == 1,
+        not methods(bare_id(v), 1)
+    ];
+
+    bin_rel_accessors = [
+      bin_rel_accessor(v)
+      : v, unused_var <- database.rel_vars,
+        arity(database.name, v) == 2,
+        not methods(bare_id(v), 0)
+    ];
+
+    bin_rel_indexed_accessors = [
+      bin_rel_indexed_accessor(v)
+      : v, info <- database.rel_vars,
+        arity(database.name, v) == 2,
+        info.keys([0]),
+        not methods(bare_id(v), 1)
+    ];
+
+    bin_rel_memb_tests = [
+      bin_rel_memb_test(v)
+      : v, unused_var <- database.rel_vars,
+        arity(database.name, v) == 2,
+        ## info.keys == []
+        not methods(bare_id(v), 2)
+    ];
+
+    tern_rel_accessors = [
+      tern_rel_accessor(v)
+      : v, unused_var <- database.rel_vars,
+        arity(database.name, v) == 3,
+        not methods(bare_id(v), 0)
+    ];
+
+    tern_rel_indexed_accessors = [
+      tern_rel_indexed_accessor(v)
+      : v, info <- database.rel_vars,
+        arity(database.name, v) == 3,
+        info.keys([0, 1]),
+        not methods(bare_id(v), 2)
+    ];
+
+    tern_rel_memb_tests = [
+      tern_rel_memb_test(v)
+      : v, unused_var <- database.rel_vars,
+        arity(database.name, v) == 3,
+        ## info.keys == []
+        not methods(bare_id(v), 3)
+    ];
+
+    return union([
+      memb_var_accessors,
+      unary_rel_accessors,
+      unary_rel_memb_tests,
+      bin_rel_accessors,
+      bin_rel_indexed_accessors,
+      bin_rel_memb_tests,
+      tern_rel_accessors,
+      tern_rel_indexed_accessors,
+      tern_rel_memb_tests
+    ]);
+
+
+    Method state_var_accessor(MembVar var) =
+      method(method_symbol(bare_id(var)), (), database.state_vars(var).type, var);
+
+
+    Method unary_rel_accessor(RelVar rel_var) =
+      method(
+        method_symbol(bare_id(rel_var)),
+        (),
+        type_set(ne_union_superset([only_unsafe(s) : s <- database.rel_vars(rel_var).signatures])),
+        set_comp(var(:x), relvar_clause((var(:x)), rel_var, (nothing)))
+      );
+
+
+    Method unary_rel_memb_test(RelVar rel_var) =
+      method(
+        method_symbol(bare_id(rel_var)),
+        (( ne_union_superset([only_unsafe(s) : s <- database.rel_vars(rel_var).signatures]),
+           just(var(:id))
+        )),
+        type_bool,
+        relvar_memb_test(rel_var, (just(var(:id))))
+      );
+
+
+    Method bin_rel_accessor(RelVar rel_var) =
+      method(
+        method_symbol(bare_id(rel_var)),
+        (),
+        type_set(
+          ne_tuple_type((
+            ne_union_superset([s(0) : s <- database.rel_vars(rel_var).signatures]),
+            ne_union_superset([s(1) : s <- database.rel_vars(rel_var).signatures])
+          ))
+        ),
+        set_comp(
+          tuple_expr((var(:x), var(:y))),
+          relvar_clause((var(:x), var(:y)), rel_var, (nothing, nothing))
+        )
+      );
+
+
+    Method bin_rel_indexed_accessor(RelVar rel_var) =
+      method(
+        method_symbol(bare_id(rel_var)),
+        (( ne_union_superset([s(0) : s <- database.rel_vars(rel_var).signatures]),
+           just(var(:x))
+        )),
+        ne_union_superset([s(1) : s <- database.rel_vars(rel_var).signatures]),
+        relvar_lookup(rel_var, (var(:x)), 1)
+      );
+
+
+    Method bin_rel_memb_test(RelVar rel_var) =
+      method(
+        method_symbol(bare_id(rel_var)),
+        ( (ne_union_superset([s(0) : s <- database.rel_vars(rel_var).signatures]), just(var(:x))),
+          (ne_union_superset([s(1) : s <- database.rel_vars(rel_var).signatures]), just(var(:y)))
+        ),
+        type_bool,
+        relvar_memb_test(rel_var, (just(var(:x)), just(var(:y))))
+      );
+
+
+    Method tern_rel_accessor(RelVar rel_var) =
+      method(
+        method_symbol(bare_id(rel_var)),
+        (),
+        type_set(
+          ne_tuple_type((
+            ne_union_superset([s(0) : s <- database.rel_vars(rel_var).signatures]),
+            ne_union_superset([s(1) : s <- database.rel_vars(rel_var).signatures]),
+            ne_union_superset([s(2) : s <- database.rel_vars(rel_var).signatures])
+          ))
+        ),
+        set_comp(
+          tuple_expr((var(:x), var(:y), var(:z))),
+          relvar_clause((var(:x), var(:y), var(:z)), rel_var, (nothing, nothing, nothing))
+        )
+      );
+
+
+    Method tern_rel_indexed_accessor(RelVar rel_var) =
+      method(
+        method_symbol(bare_id(rel_var)),
+        ( (ne_union_superset([s(0) : s <- database.rel_vars(rel_var).signatures]), just(var(:x))),
+          (ne_union_superset([s(1) : s <- database.rel_vars(rel_var).signatures]), just(var(:y)))
+        ),
+        ne_union_superset([s(2) : s <- database.rel_vars(rel_var).signatures]),
+        relvar_lookup(rel_var, (var(:x), var(:y)), 2)
+      );
+
+
+    Method tern_rel_memb_test(RelVar rel_var) =
+      method(
+        method_symbol(bare_id(rel_var)),
+        ( (ne_union_superset([s(0) : s <- database.rel_vars(rel_var).signatures]), just(var(:x))),
+          (ne_union_superset([s(1) : s <- database.rel_vars(rel_var).signatures]), just(var(:y))),
+          (ne_union_superset([s(2) : s <- database.rel_vars(rel_var).signatures]), just(var(:z)))
+        ),
+        type_bool,
+        relvar_memb_test(rel_var, (just(var(:x)), just(var(:y)), just(var(:z))))
+      );
   }
 }
 

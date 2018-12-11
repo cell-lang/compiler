@@ -32,9 +32,7 @@ ReactBlock remove_dead_code(ReactBlock block) =
     state_is_def_code:    block.state_is_def_code,
     copy_state_code:      remove_dead_code(block.copy_state_code),
     set_state_code:       remove_dead_code(block.set_state_code),
-    methods:              [ id -> compiled_method(m.args_vars, m.args_types, m.args_memb_preds, m.ret_type, remove_dead_code(m.code))
-                            : id, m <- block.methods
-                          ],
+    methods:              [id -> remove_dead_code(m) : id, m <- block.methods],
     const_data:           block.const_data,
     time_rules_count:     block.time_rules_count,
     state_memb_pred:      block.state_memb_pred
@@ -55,16 +53,20 @@ StaticBlock remove_dead_code(StaticBlock block) =
     copy_state_code:          remove_dead_code(block.copy_state_code),
     set_state_code:           remove_dead_code(block.set_state_code),
     foreign_keys_check_code:  remove_dead_code(block.foreign_keys_check_code),
-    methods:                  [ id -> compiled_method(
-                                  m.args_vars,
-                                  m.args_types,
-                                  m.args_memb_preds,
-                                  m.ret_type,
-                                  remove_dead_code(m.code)
-                                ) : id, m <- block.methods
-                              ],
+    methods:                  [id -> remove_dead_code(m) : id, m <- block.methods],
+    accessors:                [id -> remove_dead_code(m) : id, m <- block.accessors],
     updates:                  [id -> compiled_update(u.args_vars, remove_dead_code(u.body)) : id, u <- block.updates],
     msg_memb_pred:            block.msg_memb_pred
+  );
+
+
+CompiledMethod remove_dead_code(CompiledMethod method) =
+  compiled_method(
+    method.args_vars,
+    method.args_types,
+    method.args_memb_preds,
+    method.ret_type,
+    remove_dead_code(method.code)
   );
 
 ////////////////////////////////////////////////////////////////////////////////
