@@ -243,10 +243,11 @@ implicit program           : Program,
       return set_table_args == set_table_args_2;
     };
 
-    return after_perm_eval_info(rel_var, nonempty(set_table_args), unknown_table_arg_idx, var_gen);
+    is_unique = (k <- relvar_keys(rel_var) : not k(unknown_arg_idx));
+    return after_perm_eval_info(rel_var, nonempty(set_table_args), unknown_table_arg_idx, is_unique, var_gen);
 
 
-    (Instr*, ObjExpr, VarGen) after_perm_eval_info(AnyRelVar rel_var, Expr+ set_args, Nat unknown_arg_idx, VarGen init_var_gen) {
+    (Instr*, ObjExpr, VarGen) after_perm_eval_info(AnyRelVar rel_var, Expr+ set_args, Nat unknown_arg_idx, Bool is_unique, VarGen init_var_gen) {
       arity = nz_nat(|set_args| + 1);
 
       res_var, ret_var_gen = next_obj_var(init_var_gen);
@@ -293,7 +294,10 @@ implicit program           : Program,
           get_table_iter(it_var, substitute(tv), all_surr_args),
           branch(
             neg(is_out_of_range(it_var)),
-            (lookup_surrogate(res_var, res_store_id, get_tuple_field(it_var, unknown_arg_idx))),
+            ( lookup_surrogate(res_var, res_store_id, get_tuple_field(it_var, unknown_arg_idx)),
+              move_forward(it_var) if not is_unique,
+              do_if_not(is_out_of_range(it_var), terminate) if not is_unique
+            ),
             // If the lookup on this table fails we keep going, unless this is the last table left
             code
           )
@@ -1061,7 +1065,7 @@ implicit program           : Program,
     elif is_subset(target_type, type_set):
       expr_surr = bool_obj(has_elem(target_surr, arg_surr));
 
-    elif is_subset(target_type, type_map):
+    elif is_subset(target_type, type_bin_rel):
       type = types(expr_id);
       return ((terminate), :invalid_var, init_var_gen) if type == empty_type;
       repr = opt_repr(type);
