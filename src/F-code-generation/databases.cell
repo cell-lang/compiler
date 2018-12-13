@@ -3,7 +3,9 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
     methods = compiled_database_methods(database.methods);
     updates = compiled_database_updates(database.updates);
     handlers = compiled_database_handlers(database.handlers);
-    accessors = compiled_database_methods(generated_accessors);
+    accessors = if options.generate_accessors
+                  then compiled_database_methods(generated_accessors)
+                  else [];
 
     msg_types = [h.type : h <- database.handlers];
     msg_memb_pred = if msg_types != [] then just(memb_test_preds_map[ne_union_type(msg_types)]) else nothing;
