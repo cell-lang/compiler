@@ -73,6 +73,7 @@ NzNat nz_nat(Int n) = if n :: NzNat then n else undefined;
 T+        nonempty(T* seq)            = if seq != () then seq else undefined;
 [+T]      nonempty([T] set)           = if set != [] then set else undefined;
 [+K -> V] nonempty_map([K -> V] map)  = if map != [] then map else undefined;
+[+A, B]   nonempty_rel([A, B] rel)    = if rel != [] then rel else undefined;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -265,7 +266,7 @@ Maybe[B] maybe_lookup([A -> B] map, A key) = if map(key, *) then just(map[key]) 
 
 Bool is_key(Any key, [Any -> Any] map) = map(key, *);
 
-[]    keys([]) = [];
+[]   keys([]) = [];
 [+A] keys([+A -> B] map) = [k : k, unused_var <- map];
 
 [K -> [+V]] merge_values([[K -> V]] maps) {
@@ -647,3 +648,8 @@ Int pow(Int b, Nat e) {
   ;
   return res;
 }
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+[A, B] merge_rels([[A, B]] rels) = [a, b : r <- rels, a, b <- r];

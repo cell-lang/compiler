@@ -29,19 +29,58 @@ implicit syn_prg : SynPrg, artifact : SchemaDef {
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////
 
-  [ForeignKey] desugared_implicit_foreign_keys = union([{
-      base_relvar = rel_var(rv.name);
-      attr_relvar = rel_var(arv.name);
+  [ForeignKey] desugared_implicit_foreign_keys {
+    relvar_decls_by_name = group_by(db_rel_vars, $.name);
+    return union([desugared_keys(ds) : unused_var, ds <- relvar_decls_by_name]);
+
+
+    [ForeignKey] desugared_keys([+RelVarsDecl] decls) {
+      if |decls| == 1:
+        // Monomorphic relation
+        return desugared_keys(only(decls));
+      ;
+      if only([|d.col_types| : d <- decls]) != 1:
+        // Multiple polymorphic relations with arity two or greater. Signatures must be disjoint
+        return union([desugared_keys(d) : d <- decls]);
+      ;
+      // Multiple polymorphic unary relations. Signatures can overlap
+      decls_by_root_type = [desugar_plain_type(only_unsafe(d.col_types)) -> d : d <- decls];
+      tree = type_tree(keys(decls_by_root_type), typedefs = typedefs);
+      return desugared_keys(tree, decls_by_root_type, []);
+    }
+
+
+    [ForeignKey] desugared_keys(TypeTree tree, [NeType -> RelVarsDecl] decls_by_root_type, [AttrRelVar] inherited_attributes) =
+      union([{
+        decl = decls_by_root_type(root_type);
+        rem_type = neat_difference(root_type, keys(subtrees), typedefs = typedefs);
+        attrs = inherited_attributes & set(decl.attributes);
+        decl_keys = if rem_type != empty_type
+          then desugared_keys(decl.name, (rem_type), attrs)
+          else [];
+        subdecls_keys = desugared_keys(subtrees, decls_by_root_type, attrs);
+        return decl_keys & subdecls_keys;
+      } : root_type, subtrees <- tree]);
+
+
+    [ForeignKey] desugared_keys(RelVarsDecl decl) =
+      desugared_keys(decl.name, (desugar_plain_type(t) : t <- decl.col_types), set(decl.attributes));
+
+
+    [ForeignKey] desugared_keys(Symbol name, NeType+ col_types, [AttrRelVar] attributes) {
+      base_relvar = rel_var(name);
       args_names = (:a, :b);
-      typed_base_args = ((just(args_names(i)), just(desugar_plain_type(t))) : t @ i <- rv.col_types);
+      typed_base_args = ((just(args_names(i)), just(t)) : t @ i <- col_types);
       typed_attr_args = (typed_base_args | (nothing, nothing));
       untyped_base_args = (v : v, unused_var <- typed_base_args);
       untyped_attr_args = (v : v, unused_var <- typed_attr_args);
-      return [
-        foreign_key((base_relvar, typed_base_args), (attr_relvar, untyped_attr_args)),
-        foreign_key((attr_relvar, typed_attr_args), (base_relvar, untyped_base_args))
-      ];
-    } : rv <- db_rel_vars, arv <~ rv.attributes]);
+      return union([
+        [ foreign_key((base_relvar, typed_base_args), (attr_relvar, untyped_attr_args)),
+          foreign_key((attr_relvar, typed_attr_args), (base_relvar, untyped_base_args))
+        ] : a <- attributes, attr_relvar = rel_var(a.name)
+      ]);
+    }
+  }
 
 
   [ForeignKey] desugared_foreign_keys = [{
@@ -56,16 +95,13 @@ implicit syn_prg : SynPrg, artifact : SchemaDef {
 
 
   [RelVar -> (signatures: [+NeType+], keys: [[+Nat]], symmetric: Bool)] desugared_relvars {
-    root_relvars_sgns = [
-      [rel_var(v.name) -> (desugar_plain_type(t) : t <- v.col_types)] : v <- db_rel_vars
-    ];
+    relvar_decls_by_name : [Symbol -> [+RelVarsDecl]];
+    relvars_sgns : [RelVar -> [+NeType+]];
 
-    attr_relvars_sgns = [
-      [rel_var(arv.name) -> (desugar_plain_type(t) : t <- (rv.col_types | arv.type))]
-      : rv <- db_rel_vars, arv <~ rv.attributes
-    ];
-
-    relvars_sgns = merge_values(root_relvars_sgns & attr_relvars_sgns);
+    relvar_decls_by_name = group_by(db_rel_vars, $.name);
+    relvars_sgns = group_by_left_arg(
+      merge_rels([desugared_signatures(ds) : unused_var, ds <- relvar_decls_by_name])
+    );
 
     root_relvars_keys = [[rel_var(v.name) -> [set(k) : k <~ v.keys] : v <- db_rel_vars]];
 
@@ -85,19 +121,42 @@ implicit syn_prg : SynPrg, artifact : SchemaDef {
 
     return [v -> (signatures: ss, keys: relvars_keys(v), symmetric: symm_relvars(v)) : v, ss <- relvars_sgns];
 
-    // root_relvars = [[
-    //   rel_var(v.name) -> (
-    //     types:  (desugar_plain_type(t) | t <- v.col_types),
-    //     keys:   v.keys
-    //   )] | v <- db_rel_vars
-    // ];
 
-    // attr_relvars = [[
-    //   rel_var(arv.name) -> (
-    //     types:  (desugar_plain_type(t) | t <- (rv.col_types || arv.type)),
-    //     keys:   if arv.cardinality.multiple then [] else rv.keys
-    //   )] | rv <- db_rel_vars, arv <~ rv.attributes
-    // ];
+    [+RelVar, NeType+] desugared_signatures([+RelVarsDecl] decls) {
+      if |decls| == 1:
+        // Monomorphic relation
+        return desugared_signatures(only(decls));
+      ;
+      if only([|d.col_types| : d <- decls]) != 1:
+        // Multiple polymorphic relations with arity two or greater. Signatures must be disjoint
+        return nonempty_rel(merge_rels([desugared_signatures(d) : d <- decls]));
+      ;
+      // Multiple polymorphic unary relations. Signatures can overlap
+      decls_by_root_type = [desugar_plain_type(only_unsafe(d.col_types)) -> d : d <- decls];
+      tree = type_tree(keys(decls_by_root_type), typedefs = typedefs);
+      return nonempty_rel(desugared_signatures(tree, decls_by_root_type, []));
+    }
+
+
+    [+RelVar, NeType+] desugared_signatures(RelVarsDecl decl) {
+      root_sgn = (desugar_plain_type(t) : t <- decl.col_types);
+      return [rel_var(decl.name) -> root_sgn] &
+             [rel_var(a.name) -> (root_sgn | desugar_plain_type(a.type)) : a <~ decl.attributes];
+    }
+
+
+    [RelVar, NeType+] desugared_signatures(TypeTree tree, [NeType -> RelVarsDecl] decls_by_root_type, [AttrRelVar] inherited_attributes) =
+      merge_rels([{
+        decl = decls_by_root_type(root_type);
+        rem_type = neat_difference(root_type, keys(subtrees), typedefs = typedefs);
+        attrs = inherited_attributes & set(decl.attributes);
+        decl_sgns = if rem_type != empty_type
+          then [rel_var(decl.name) -> (rem_type)] &
+               [rel_var(a.name) -> (rem_type, desugar_plain_type(a.type)) : a <- attrs]
+          else [];
+        subsgns = desugared_signatures(subtrees, decls_by_root_type, attrs);
+        return merge_rels([decl_sgns, subsgns]);
+      } : root_type, subtrees <- tree]);
   }
 
 
