@@ -52,6 +52,12 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
 
 
   [CoreWFError] database_errors(Database database) {
+    rel_var_errs = union(
+      [rel_var_errors(v, info.signatures, info.keys, info.symmetric) : v, info <- database.rel_vars]
+    );
+
+    foreign_key_errs = union([foreign_key_errors(database, f) : f <- database.foreign_keys]);
+
     method_errs = union([
       [overlapping_signatures(m1, m2) : m1, m2 <- symmetric_cart_prod(ms), overlap(m1, m2)]
       : unused_var, ms <- group_by(database.methods, ($.name, arity($)))
@@ -67,8 +73,23 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
       : h1, h2 <- symmetric_cart_prod(database.handlers), not are_ptype_disjoint(h1.type, h2.type)
     ];
 
-    errs = method_errs & updates_errs & handler_errs;
+    errs = rel_var_errs & foreign_key_errs & method_errs & updates_errs & handler_errs;
     return [error_cluster(database, errs) if errs != []];
+  }
+
+
+  [CoreWFError] rel_var_errors(RelVar rel_var, [+NeType+] signatures, [[+Nat]] keys, Bool symmetric) {
+    arities = [|s| : s <- signatures];
+    return [multiple_rel_var_arities(rel_var, arities)] if |arities| != 1;
+    return [
+      overlapping_rel_var_signatures(rel_var, s1, s2)
+      : s1, s2 <- symmetric_cart_prod(signatures), not are_ptype_disjoint(s1, s2)
+    ];
+  }
+
+
+  [CoreWFError] foreign_key_errors(Database database, ForeignKey key) {
+    return []; ## IMPLEMENT IMPLEMENT IMPLEMENT
   }
 
   //////////////////////////////////////////////////////////////////////////////

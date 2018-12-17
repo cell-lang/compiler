@@ -36,6 +36,14 @@ implicit typedefs : [TypeName -> NeType] {
     are_disjoint(pseudotype(t1, typedefs), pseudotype(t2, typedefs));
 
 
+  Bool are_ptype_disjoint(NeType+ ts1, NeType+ ts2) {
+    assert |ts1| == |ts2|;
+    for t @ i <- ts1:
+      return true if are_ptype_disjoint(t, ts2(i));
+    ;
+    return false;
+  }
+
   // ## FIND BETTER NAME
   // Bool unsafe_is_eq(AnyType t1, AnyType t2):
   //   Type,     Type      = is_eq(t1, t2),

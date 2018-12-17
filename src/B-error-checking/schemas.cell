@@ -30,9 +30,10 @@ implicit syn_prg : SynPrg, type_arity_map : [BasicTypeSymbol -> [+Nat]] {
       return (schema_def_duplicates_type(db_def, nonempty(confl_tdefs)));
     ;
 
-    state_vars = (d : d <- db_def.decls, d :: StateVarDecl);
-    rel_vars   = (d : d <- db_def.decls, d :: RelVarsDecl);
-    nested_dbs = (d : d <- db_def.decls, d :: NestedDBDecl);
+    state_vars   = (d : d <- db_def.decls, d :: StateVarDecl);
+    rel_vars     = (d : d <- db_def.decls, d :: RelVarsDecl);
+    nested_dbs   = (d : d <- db_def.decls, d :: NestedDBDecl);
+    foreign_keys = (d : d <- db_def.decls, d :: ForeignKeyDecl);
 
     // Starting with state variables and nested automata, whose names cannot be overloaded
     non_overloadable_decls = sort(state_vars & nested_dbs, _print_($a.name) < _print_($b.name));
@@ -53,12 +54,47 @@ implicit syn_prg : SynPrg, type_arity_map : [BasicTypeSymbol -> [+Nat]] {
     std_relvars_by_name = merge_values([[rv.name -> rv] : rv <~ rel_vars]);
     attr_relvar_by_name = merge_values([[arv.name -> (rv, i)] : rv <~ rel_vars, arv @ i <~ rv.attributes]);
     all_relvar_names = rand_sort(keys(std_relvars_by_name) & keys(attr_relvar_by_name));
-    return join(({
+    errs = join(({
         std_relvars = lookup(std_relvars_by_name, n, []);
         attr_relvars = lookup(attr_relvar_by_name, n, []);
         return relvars_overloading_errors(std_relvars, attr_relvars);
       } : n <- all_relvar_names
     ));
+    return errs if errs != ();
+
+    // Checking foreign keys
+    return join((foreign_key_decl_wf_errors(db_def.name, k) : k <- foreign_keys));
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  ExprWFError* foreign_key_decl_wf_errors(Symbol name, ForeignKeyDecl key) {
+    // Checking that all relations involved exist and have the right arity
+    info = db_interfaces(db_symbol(name), !!);
+    rels = (key.targets | (key.src_rel, (left(a) : a <- key.src_args)));
+    errs = ();
+    for r, as <- rels:
+      if not info.rel_vars(r, *):
+        errs = (errs | undef_rel_var(key, r));
+      elif |as| != info.rel_vars(r):
+        errs = (errs | invalid_foreign_key_relvar_arity(key, r));
+      ;
+      if not (a <~ as : a != nothing):
+        errs = (errs | empty_args_list(key, r));
+      ;
+    ;
+    return errs if errs != ();
+
+    // Checking that there are no duplicate or undefined arguments
+    args = (value(n) : n, unused_var <- key.src_args, n != nothing);
+    dupl_args = duplicates(args);
+    return (duplicate_foreign_key_args(key, dupl_args)) if dupl_args != [];
+    args = set(args);
+    errs = [undef_foreign_key_var(key, s) : unused_var, as <~ key.targets, a <~ as, just(s?) ?= a, not args(s)];
+    return isort(errs) if errs != [];
+
+    // Checking all types
+    return join((plain_type_wf_errors(value(t), type_arity_map) : unused_var, t <- key.src_args, t != nothing));
   }
 
   //////////////////////////////////////////////////////////////////////////////
@@ -145,6 +181,36 @@ implicit syn_prg : SynPrg, type_arity_map : [BasicTypeSymbol -> [+Nat]] {
     all_key_sets = std_relvars_keys & attr_relvars_keys;
     return (incomp_relvar_decls(std_relvars, attr_relvars)) if |all_key_sets| != 1;
 
+    // Checking that their signatures are compatible, and that there are no duplicate attributes
+    arity = only(all_arities);
+    ord_relvars = isort(std_relvars);
+    sgns = ((desugar_plain_type(t) : t <- v.col_types) : v <- ord_relvars);
+    attrs = ((a.name : a <- v.attributes) : v <- ord_relvars);
+    errs = ();
+    let typedefs = typedefs:
+      for r1 @ i1 <- ord_relvars; i2 = i1+1 .. |ord_relvars|:
+        r2 = ord_relvars(i2);
+        if not are_ptype_disjoint(sgns(i1), sgns(i2)):
+          if arity == 1:
+            type1 = only_unsafe(sgns(i1));
+            type2 = only_unsafe(sgns(i2));
+            if not is_neat_subset(type1, type2) or is_neat_subset(type2, type1):
+              errs = (errs | incomp_relvar_decls([r1, r2], []));
+            ;
+          else
+            errs = (errs | incomp_relvar_decls([r1, r2], []));
+          ;
+        ;
+
+        for a1 @ j1 <- r1.attributes; j2 = j1 .. |r2.attributes|:
+          a2 = r2.attributes(j2);
+          errs = (errs | duplicate_schema_decl(a1, a2)) if a1.name == a2.name;
+        ;
+      ;
+    ;
+    return errs;
+
+
     // ord_std_relvars = rand_sort(std_relvars);
     // ord_attr_relvars = rand_sort(attr_relvars);
 
@@ -160,7 +226,5 @@ implicit syn_prg : SynPrg, type_arity_map : [BasicTypeSymbol -> [+Nat]] {
 
     ## WHAT IS IT THAT I SHOULD DO HERE? DOES THIS CHECK MAKE ANY SENSE AT ALL?
     ## AND IF IT DOES MAKE SENSE, SHOULD IT BE DONE HERE OR IN LEVEL 2?
-
-    return ();
   }
 }

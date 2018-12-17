@@ -35,7 +35,12 @@ type SchemaSpecWFError  = schema_def_duplicates_type(schema_def: SchemaDef, tdef
                           duplicate_schema_decl(<SchemaItemDecl, AttrRelVar>, <SchemaItemDecl, AttrRelVar>),
                           invalid_relvar_arity(RelVarsDecl),
                           invalid_relvar_keys(RelVarsDecl),
-                          incomp_relvar_decls(relvars: [RelVarsDecl], attr_relvars: [(RelVarsDecl, Nat)]);
+                          incomp_relvar_decls(relvars: [RelVarsDecl], attr_relvars: [(RelVarsDecl, Nat)]),
+                          undef_rel_var(key: ForeignKeyDecl, rel_var: Symbol),
+                          invalid_foreign_key_relvar_arity(key: ForeignKeyDecl, rel_var: Symbol),
+                          undef_foreign_key_var(key: ForeignKeyDecl, var: Symbol),
+                          empty_args_list(key: ForeignKeyDecl, rel_var: Symbol),
+                          duplicate_foreign_key_args(key: ForeignKeyDecl, dupl_args: [+Symbol]);
 
 type AutoSpecWFError    = auto_type_conflict(name: Atom, tdefs: AnyTypedef+),
                           auto_schema_conflict(name: Atom, schema_def: SchemaDef),
@@ -208,6 +213,11 @@ SchemaSpecWFError duplicate_schema_decl(<SchemaItemDecl, AttrRelVar> d1, <Schema
 SchemaSpecWFError invalid_relvar_arity(RelVarsDecl d) = :invalid_relvar_arity(d);
 SchemaSpecWFError invalid_relvar_keys(RelVarsDecl d) = :invalid_relvar_keys(d);
 SchemaSpecWFError incomp_relvar_decls([RelVarsDecl] rvs, [(RelVarsDecl, Nat)] arvs) = incomp_relvar_decls(relvars: rvs, attr_relvars: arvs);
+SchemaSpecWFError undef_rel_var(ForeignKeyDecl k, Symbol v) = undef_rel_var(key: k, rel_var: v);
+SchemaSpecWFError invalid_foreign_key_relvar_arity(ForeignKeyDecl k, Symbol v) = invalid_foreign_key_relvar_arity(key: k, rel_var: v);
+SchemaSpecWFError undef_foreign_key_var(ForeignKeyDecl k, Symbol v) = undef_foreign_key_var(key: k, var: v);
+SchemaSpecWFError empty_args_list(ForeignKeyDecl k, Symbol v) = empty_args_list(key: k, rel_var: v);
+SchemaSpecWFError duplicate_foreign_key_args(ForeignKeyDecl k, [+Symbol] as) = duplicate_foreign_key_args(key: k, dupl_args: as);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -346,11 +356,16 @@ Any anchor_obj(TypeWFError err)     = :none;
 
 
 Any anchor_obj(SchemaSpecWFError err) =
-  schema_def_duplicates_type()  = :none,
-  duplicate_schema_decl()       = :none,
-  invalid_relvar_arity(d?)      = d,
-  invalid_relvar_keys(d?)       = d,
-  incomp_relvar_decls()         = :none;
+  schema_def_duplicates_type()        = :none,
+  duplicate_schema_decl()             = :none,
+  invalid_relvar_arity(d?)            = d,
+  invalid_relvar_keys(d?)             = d,
+  incomp_relvar_decls()               = :none,
+  undef_rel_var()                     |
+  invalid_foreign_key_relvar_arity()  |
+  undef_foreign_key_var()             |
+  empty_args_list()                   |
+  duplicate_foreign_key_args()        = err.key;
 
 
 Any anchor_obj(AutoSpecWFError err) =
@@ -703,7 +718,12 @@ String* basic_err_msg(SchemaSpecWFError err) =
   duplicate_schema_decl(d1?, d2?) = ("Duplicate declaration" & if d1.name? then ": " & _print_(d1.name) else ""),
   invalid_relvar_arity(d?)        = ("Invalid arity: " & _print_(d.name)),
   invalid_relvar_keys(d?)         = ("Invalid keys: " & _print_(d.name)),
-  incomp_relvar_decls()           = incomp_relvar_decls_basic_err_msg(err.relvars, err.attr_relvars);
+  incomp_relvar_decls()           = incomp_relvar_decls_basic_err_msg(err.relvars, err.attr_relvars),
+  undef_rel_var()                 = ("Undefined relation variable: " & printed(err.rel_var)),
+  invalid_foreign_key_relvar_arity()  = ("Wrong relation variable arity: " & printed(err.rel_var)),
+  undef_foreign_key_var()         = ("Undefined variable: " & printed(err.var)),
+  empty_args_list()               = ("Empty arguments list: " & printed(err.rel_var)),
+  duplicate_foreign_key_args()    = ("Duplicate arguments in foreign key declaration: " & append((printed(a) : a <- isort(err.dupl_args)), " "));
 
 
 String* basic_err_msg(AutoSpecWFError err) =

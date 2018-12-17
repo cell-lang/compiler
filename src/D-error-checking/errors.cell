@@ -7,6 +7,8 @@ type AnyReactAutoVar = SignalVar, NestedAutoVar, NestedDBVar;
 type CoreWFError  = error_cluster(AnyAuto, [+CoreWFError]),
                     recursively_defined_auto_or_db(AnyAuto),
                     overlapping_signatures(SgnDecl, SgnDecl),
+                    multiple_rel_var_arities(rel_var: RelVar, arities: [+Nat]),
+                    overlapping_rel_var_signatures(rel_var: RelVar, signatures: (NeType+, NeType+)),
                     dependency_loop(signal: AnyReactAutoVar, deps: [AnyReactAutoVar]),
                     invalid_auto_var(var: Var, signal: SignalVar, expr: <Expr, TimeRule>),
                     invalid_nested_auto_input_var(var: Var, auto_id: NestedAutoVar, input_id: Atom, expr: Expr),
@@ -23,6 +25,8 @@ type CoreWFError  = error_cluster(AnyAuto, [+CoreWFError]),
 CoreWFError error_cluster(AnyAuto db, [+CoreWFError] es) = :error_cluster(db, es);
 CoreWFError recursively_defined_auto_or_db(AnyAuto db) = :recursively_defined_auto_or_db(db);
 CoreWFError overlapping_signatures(SgnDecl f1, SgnDecl f2) = :overlapping_signatures(f1, f2);
+CoreWFError multiple_rel_var_arities(RelVar v, [+Nat] as) = multiple_rel_var_arities(rel_var: v, arities: as);
+CoreWFError overlapping_rel_var_signatures(RelVar v, NeType+ s1, NeType+ s2) = overlapping_rel_var_signatures(rel_var: v, signatures: (s1, s2));
 CoreWFError invalid_auto_var(Var v, SignalVar s, <Expr, TimeRule> e) = invalid_auto_var(var: v, signal: s, expr: e);
 CoreWFError dependency_loop(AnyReactAutoVar s, [+AnyReactAutoVar] ds) = dependency_loop(signal: s, deps: ds);
 CoreWFError invalid_nested_auto_input_var(Var v, NestedAutoVar a, Atom i, Expr e) = invalid_nested_auto_input_var(var: v, auto_id: a, input_id: i, expr: e);
@@ -40,6 +44,8 @@ String* error_message(CoreWFError err) =
   error_cluster(db?, es?)             = error_cluster_error_message(db, es),
   recursively_defined_auto_or_db(db?) = recursively_defined_auto_or_db_error_message(db),
   overlapping_signatures(f1?, f2?)    = overlapping_signatures_error_message(f1, f2),
+  multiple_rel_var_arities()          = multiple_rel_var_arities_error_message(err.rel_var, err.arities),
+  overlapping_rel_var_signatures()    = overlapping_rel_var_signatures_error_message(err.rel_var, err.signatures),
   dependency_loop()                   = dependency_loop_error_message(err.signal, err.deps),
   invalid_auto_var()                  = invalid_auto_var_error_message(err.var, err.signal, err.expr),
   invalid_nested_auto_input_var()     = invalid_nested_auto_input_var_error_message(err.var, err.auto_id, err.input_id, err.expr),
@@ -57,6 +63,19 @@ String* overlapping_signatures_error_message(SgnDecl d1, SgnDecl d2) = (
   "Overlapping argument types in polymorphic " & artifact_type_name(d1) & ": " & artifact_name(d1),
   "    " & source_code_location_string(source_code_location(d1)),
   "    " & source_code_location_string(source_code_location(d2))
+);
+
+
+String* multiple_rel_var_arities_error_message(RelVar rel_var, [+Nat] arities) = (
+  "Polymorphic relation variables " & user_repr(rel_var) & " have different arities: "
+                                          & append((printed(a) : a <- isort(arities)))
+);
+
+
+String* overlapping_rel_var_signatures_error_message(RelVar rel_var, (NeType+, NeType+) signatures) = (
+  "Some signatures of polymorphic relation variable " & user_repr(rel_var) & " overlap:",
+  "    " & append((user_repr(t) : t <- left(signatures)), ", "),
+  "    " & append((user_repr(t) : t <- right(signatures)), ", ")
 );
 
 
