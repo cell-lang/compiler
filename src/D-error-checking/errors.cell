@@ -9,6 +9,11 @@ type CoreWFError  = error_cluster(AnyAuto, [+CoreWFError]),
                     overlapping_signatures(SgnDecl, SgnDecl),
                     multiple_rel_var_arities(rel_var: RelVar, arities: [+Nat]),
                     overlapping_rel_var_signatures(rel_var: RelVar, signatures: (NeType+, NeType+)),
+                    no_signature_match(key: ForeignKey, rel_var: RelVar, signatures: [+NeType+], args: Maybe[NeType]+),
+                    multiple_signature_matches(key: ForeignKey, rel_var: RelVar, signatures: [+NeType+], args: Maybe[NeType]+),
+                    no_exact_signature_match(key: ForeignKey, rel_var: RelVar, signature: NeType+, args: Maybe[NeType]+),
+                    unsupported_foreign_key_type(key: ForeignKey),
+                    foreign_key_symmetry_mismatch(key: ForeignKey),
                     dependency_loop(signal: AnyReactAutoVar, deps: [AnyReactAutoVar]),
                     invalid_auto_var(var: Var, signal: SignalVar, expr: <Expr, TimeRule>),
                     invalid_nested_auto_input_var(var: Var, auto_id: NestedAutoVar, input_id: Atom, expr: Expr),
@@ -27,6 +32,11 @@ CoreWFError recursively_defined_auto_or_db(AnyAuto db) = :recursively_defined_au
 CoreWFError overlapping_signatures(SgnDecl f1, SgnDecl f2) = :overlapping_signatures(f1, f2);
 CoreWFError multiple_rel_var_arities(RelVar v, [+Nat] as) = multiple_rel_var_arities(rel_var: v, arities: as);
 CoreWFError overlapping_rel_var_signatures(RelVar v, NeType+ s1, NeType+ s2) = overlapping_rel_var_signatures(rel_var: v, signatures: (s1, s2));
+CoreWFError no_signature_match(ForeignKey k, RelVar v, [+NeType+] ss, Maybe[NeType]+ as) = no_signature_match(key: k, rel_var: v, signatures: ss, args: as);
+CoreWFError multiple_signature_matches(ForeignKey k, RelVar v, [+NeType+] ss, Maybe[NeType]+ as) = multiple_signature_matches(key: k, rel_var: v, signatures: ss, args: as);
+CoreWFError no_exact_signature_match(ForeignKey k, RelVar v, NeType+ s, Maybe[NeType]+ as) = no_exact_signature_match(key: k, rel_var: v, signature: s, args: as);
+CoreWFError unsupported_foreign_key_type(ForeignKey k) = unsupported_foreign_key_type(key: k);
+CoreWFError foreign_key_symmetry_mismatch(ForeignKey k) = foreign_key_symmetry_mismatch(key: k);
 CoreWFError invalid_auto_var(Var v, SignalVar s, <Expr, TimeRule> e) = invalid_auto_var(var: v, signal: s, expr: e);
 CoreWFError dependency_loop(AnyReactAutoVar s, [+AnyReactAutoVar] ds) = dependency_loop(signal: s, deps: ds);
 CoreWFError invalid_nested_auto_input_var(Var v, NestedAutoVar a, Atom i, Expr e) = invalid_nested_auto_input_var(var: v, auto_id: a, input_id: i, expr: e);
@@ -46,6 +56,11 @@ String* error_message(CoreWFError err) =
   overlapping_signatures(f1?, f2?)    = overlapping_signatures_error_message(f1, f2),
   multiple_rel_var_arities()          = multiple_rel_var_arities_error_message(err.rel_var, err.arities),
   overlapping_rel_var_signatures()    = overlapping_rel_var_signatures_error_message(err.rel_var, err.signatures),
+  no_signature_match()                = no_signature_match_error_message(err.key, err.rel_var, err.signatures, err.args),
+  multiple_signature_matches()        = multiple_signature_matches_error_message(err.key, err.rel_var, err.signatures, err.args),
+  no_exact_signature_match()          = no_exact_signature_match_error_message(err.key, err.rel_var, err.signature, err.args),
+  unsupported_foreign_key_type()      = unsupported_foreign_key_type_error_message(err.key),
+  foreign_key_symmetry_mismatch()     = foreign_key_symmetry_mismatch_error_message(err.key),
   dependency_loop()                   = dependency_loop_error_message(err.signal, err.deps),
   invalid_auto_var()                  = invalid_auto_var_error_message(err.var, err.signal, err.expr),
   invalid_nested_auto_input_var()     = invalid_nested_auto_input_var_error_message(err.var, err.auto_id, err.input_id, err.expr),
@@ -76,6 +91,44 @@ String* overlapping_rel_var_signatures_error_message(RelVar rel_var, (NeType+, N
   "Some signatures of polymorphic relation variable " & user_repr(rel_var) & " overlap:",
   "    " & append((user_repr(t) : t <- left(signatures)), ", "),
   "    " & append((user_repr(t) : t <- right(signatures)), ", ")
+);
+
+
+String* no_signature_match_error_message(ForeignKey key, RelVar rel_var, [+NeType+] signatures, Maybe[NeType]+ args) = (
+  "Foreign key does not match any signature of " & user_repr(rel_var),
+  "    " & user_repr(key),
+  "Available signatures:"
+) & ("    " & append((user_repr(t) : t <- s), ", ") : s <- isort(signatures)) & (
+  "Arguments types: " & append((if a != nothing then user_repr(value(a)) else "_" : a <- args), ", "),
+);
+
+
+String* multiple_signature_matches_error_message(ForeignKey key, RelVar rel_var, [+NeType+] signatures, Maybe[NeType]+ args) = (
+  "Foreign key matches multiple signatures of " & user_repr(rel_var),
+  "    " & user_repr(key),
+  "Available signatures:"
+) & ("    " & append((user_repr(t) : t <- s), ", ") : s <- isort(signatures)) & (
+  "Arguments types: " & append((if a != nothing then user_repr(value(a)) else "_" : a <- args), ", "),
+);
+
+
+String* no_exact_signature_match_error_message(ForeignKey key, RelVar rel_var, NeType+ signature, Maybe[NeType]+ args) = (
+  "Foreign key does not match exactly any signature for " & user_repr(rel_var),
+  "    " & user_repr(key),
+  "  Signature:       " & append((user_repr(t) : t <- signature), ", "),
+  "  Arguments types: " & append((if a != nothing then user_repr(value(a)) else "_" : a <- args), ", ")
+);
+
+
+String* unsupported_foreign_key_type_error_message(ForeignKey key) = (
+  "Unsupported foreign key type:",
+  "    " & user_repr(key)
+);
+
+
+String* foreign_key_symmetry_mismatch_error_message(ForeignKey key) = (
+  "Unsupported foreign key. Either one of source and target is symmetric, and the other is not:",
+  "    " & user_repr(key)
 );
 
 

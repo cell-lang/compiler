@@ -303,3 +303,23 @@ Nat* reverse_perm(Nat* p) = array_map(reverse(merge(([i -> n] : n @ i <- p))));
   ;
   return set(split_sets);
 }
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+[+T] aggregated_elements([+T] elts, (T T -> Maybe[T]) aggr) {
+  return aggregate(isort(elts), aggr);
+
+  [+T] aggregate(T+ elts, (T T -> Maybe[T]) aggr) {
+    for e @ i <- elts:
+      for j = i+1 .. |elts|:
+        aggr_elt = aggr(e, elts(j));
+        if aggr_elt != nothing:
+          new_elts = ((x : x @ k <- elts, k != i and k != j) | value(aggr_elt));
+          return aggregate(new_elts, aggr);
+        ;
+      ;
+    ;
+    return set(elts);
+  }
+}

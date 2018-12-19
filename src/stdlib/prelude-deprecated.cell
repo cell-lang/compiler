@@ -43,6 +43,24 @@ Stack[T] replace_top(Stack[T] stack, T new_top) =
 // Replace this with === or ~=
 Bool is_eq(T x, Maybe[T] maybe) = maybe == :just(x);
 
+
+Bool all(Maybe[A]+ maybes, B+ values, (A B -> Bool) p) {
+  assert |maybes| == |values|;
+  for m @ i <- maybes:
+    return false if m != nothing and not p(value(m), values(i));
+  ;
+  return true;
+}
+
+
+Bool any(Maybe[A]+ maybes, B+ values, (A B -> Bool) p) {
+  assert |maybes| == |values|;
+  for m @ i <- maybes:
+    return true if m != nothing and p(value(m), values(i));
+  ;
+  return false;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 
 <success(T)> success(T r) = :success(r);

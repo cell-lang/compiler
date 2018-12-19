@@ -190,11 +190,12 @@ implicit syn_prg : SynPrg, type_arity_map : [BasicTypeSymbol -> [+Nat]] {
     let typedefs = typedefs:
       for r1 @ i1 <- ord_relvars; i2 = i1+1 .. |ord_relvars|:
         r2 = ord_relvars(i2);
-        if not are_ptype_disjoint(sgns(i1), sgns(i2)):
+        are_disjoint = are_ptype_disjoint(sgns(i1), sgns(i2));
+        if not are_disjoint:
           if arity == 1:
             type1 = only_unsafe(sgns(i1));
             type2 = only_unsafe(sgns(i2));
-            if not is_neat_subset(type1, type2) or is_neat_subset(type2, type1):
+            if not is_neat_subset(type1, type2) and not is_neat_subset(type2, type1):
               errs = (errs | incomp_relvar_decls([r1, r2], []));
             ;
           else
@@ -204,7 +205,12 @@ implicit syn_prg : SynPrg, type_arity_map : [BasicTypeSymbol -> [+Nat]] {
 
         for a1 @ j1 <- r1.attributes; j2 = j1 .. |r2.attributes|:
           a2 = r2.attributes(j2);
-          errs = (errs | duplicate_schema_decl(a1, a2)) if a1.name == a2.name;
+          if a1.name == a2.name:
+            ## FIX THE BUG IN THE COMPILER AND REPLACE THE {...} WITH (...)
+            if not are_disjoint or not {a1.cardinality == a2.cardinality} or not {a1.unique == a2.unique}:
+              errs = (errs | incomp_relvar_decls([], [(r1, j1), (r2, j2)]));
+            ;
+          ;
         ;
       ;
     ;

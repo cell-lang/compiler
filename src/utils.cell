@@ -310,3 +310,18 @@ String user_repr(Operator) =
   lower_eq      = "(_<=_)",
   greater_eq    = "(_>=_)",
   brackets      = "(_[_])";
+
+
+String user_repr(ForeignKey key) {
+  src_args_list = (
+    match (mv, mt)
+      just(v?),   just(t?)  = printed(v) & " : " & user_repr(t),
+      just(v?),   nothing   = printed(v),
+      nothing,    just(t?)  = user_repr(t),
+      nothing,    nothing   = "_"
+    : mv, mt <- right(key.source)
+  );
+  tgt_args_list = (if a != nothing then printed(value(a)) else "_" : a <- right(key.target));
+  return user_repr(left(key.source)) & "(" & append(src_args_list, ", ") & ") -> " &
+         user_repr(left(key.target)) & "(" & append(tgt_args_list, ", ") & ")";
+}

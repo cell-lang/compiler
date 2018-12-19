@@ -35,33 +35,43 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
   //////////////////////////////////////////////////////////////////////////////
 
   ## MOVE SOMEWHERE ELSE?
-  [TableVar -> [+NeType+]] physical_tables_signatures(Database database) {
-    tables : (TableVar, [+NeType+])*;
+  ## THIS SPLITS RELATIONS MORE THAN IT'S PROBABLY NECESSARY
+  [TableVar -> [+NeType+]] physical_tables_signatures(Database database) = merge([
+    if |info.signatures| != 1
+      then [table_var(v, i) -> [s] : s @ i <~ isort(info.signatures)]
+      else [table_var(v) -> [only(info.signatures)]]
+    : v, info <- database.rel_vars
+  ]);
 
-    ## TRY TO IMPLEMENT THIS FUNCTION IN NEO
-    rel_vars = database.rel_vars;
-    foreign_keys = group_by(database.foreign_keys, left($.source));
 
-    tables = ();
-    for rv <- isort(keys(rel_vars)):
-      rv_info = rel_vars(rv);
-      split_sgns = [rv_info.signatures];
-      keys = rv_info.keys;
+  ## THIS ONE IS BUGGY
+  // [TableVar -> [+NeType+]] physical_tables_signatures(Database database) {
+  //   tables : (TableVar, [+NeType+])*;
 
-      frn_keys_types = [(t : unused_var, t <- right(fk.source)) : fk <- lookup(foreign_keys, rv, [])];
-      for ts <- isort(frn_keys_types):
-        split_sgns = split_sets_by_pred(split_sgns, signature_overlaps_partial_signature($, ts));
-      ;
+  //   ## TRY TO IMPLEMENT THIS FUNCTION IN NEO
+  //   rel_vars = database.rel_vars;
+  //   foreign_keys = group_by(database.foreign_keys, left($.source));
 
-      if |split_sgns| > 1:
-        for s @ i <- isort(split_sgns):
-          tables = (tables | (table_var(rv, i), s));
-        ;
-      else
-        tables = (tables | (table_var(rv), only(split_sgns)));
-      ;
-    ;
+  //   tables = ();
+  //   for rv <- isort(keys(rel_vars)):
+  //     rv_info = rel_vars(rv);
+  //     split_sgns = [rv_info.signatures];
+  //     keys = rv_info.keys;
 
-    return [v -> ss : v, ss <~ tables];
-  }
+  //     frn_keys_types = [(t : unused_var, t <- right(fk.source)) : fk <- lookup(foreign_keys, rv, [])];
+  //     for ts <- isort(frn_keys_types):
+  //       split_sgns = split_sets_by_pred(split_sgns, signature_overlaps_partial_signature($, ts));
+  //     ;
+
+  //     if |split_sgns| > 1:
+  //       for s @ i <- isort(split_sgns):
+  //         tables = (tables | (table_var(rv, i), s));
+  //       ;
+  //     else
+  //       tables = (tables | (table_var(rv), only(split_sgns)));
+  //     ;
+  //   ;
+
+  //   return [v -> ss : v, ss <~ tables];
+  // }
 }

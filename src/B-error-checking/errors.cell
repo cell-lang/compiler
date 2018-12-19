@@ -352,123 +352,123 @@ ExprSpecWFError annotated_syn_stmt_error(ExprWFError er, SynStmt s) = annotated_
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-Any anchor_obj(TypeWFError err)     = :none;
+Any* anchor_objs(TypeWFError err)     = ();
 
 
-Any anchor_obj(SchemaSpecWFError err) =
-  schema_def_duplicates_type()        = :none,
-  duplicate_schema_decl()             = :none,
-  invalid_relvar_arity(d?)            = d,
-  invalid_relvar_keys(d?)             = d,
-  incomp_relvar_decls()               = :none,
+Any* anchor_objs(SchemaSpecWFError err) =
+  schema_def_duplicates_type()        = (),
+  duplicate_schema_decl()             = (),
+  invalid_relvar_arity(d?)            = (d),
+  invalid_relvar_keys(d?)             = (d),
+  incomp_relvar_decls()               = isort(err.relvars) & left(unzip(isort(err.attr_relvars))),
   undef_rel_var()                     |
   invalid_foreign_key_relvar_arity()  |
   undef_foreign_key_var()             |
   empty_args_list()                   |
-  duplicate_foreign_key_args()        = err.key;
+  duplicate_foreign_key_args()        = (err.key);
 
 
-Any anchor_obj(AutoSpecWFError err) =
-  auto_type_conflict()      = :none,
-  auto_schema_conflict()    = :none,
-  auto_prot_conflict()      = :none,
-  duplicate_pos_input()     = :none,
-  undef_pos_input()         = :none,
-  undef_def_output()        = :none,
-  wrong_num_of_pos_inputs() = err.decl,
-  duplicate_actual_inputs() = err.decl;
+Any* anchor_objs(AutoSpecWFError err) =
+  auto_type_conflict()      = (),
+  auto_schema_conflict()    = (),
+  auto_prot_conflict()      = (),
+  duplicate_pos_input()     = (),
+  undef_pos_input()         = (),
+  undef_def_output()        = (),
+  wrong_num_of_pos_inputs() = (err.decl),
+  duplicate_actual_inputs() = (err.decl);
 
 
-Any anchor_obj(ExprSpecWFError err) =
-  already_def_var(v?)                     = v,
-  undef_var_or_const(a?)                  = :none,
-  not_an_object()                         = err.expr,
-  not_a_signal()                          = :none,
-  ambiguous_expr()                        = err.expr,
-  invalid_expr()                          = err.expr,
-  wrong_builtin_arity()                   = :none,
-  invalid_impl_arg()                      = :none,
-  missing_impl_arg()                      = :none,
-  undef_impl_cls_arg(p?)                  = :none,
-  duplicate_impl_args()                   = err.expr,
-  wrong_fn_arity()                        = err.expr,
-  wrong_arity()                           = err.expr,
-  wrong_rel_test_arity()                  = err.expr,
-  wrong_rel_lookup_arity()                = err.target,
-  wrong_pseudocall_arity()                = err.expr,
-  unknown_function()                      = err.expr,
-  unknown_function_or_method()            = err.expr,
-  undefined_operator()                    = err.expr,
-  wrong_cls_arg_arity()                   = err.expr,
-  wrong_cls_call_arity()                  = err.expr,
-  impl_args_not_allowed()                 = err.expr,
-  not_a_scalar_var()                      = :none,
-  dupl_var_mult_asgnm()                   = :none,
-  diff_var_sets_in_ptrn_union(ps?)        = head(ps),
-  iter_clause_wrong_arity()               = :none,
-  invalid_case_arity()                    = :none,
+Any* anchor_objs(ExprSpecWFError err) =
+  already_def_var(v?)                     = (v),
+  undef_var_or_const(a?)                  = (),
+  not_an_object()                         = (err.expr),
+  not_a_signal()                          = (),
+  ambiguous_expr()                        = (err.expr),
+  invalid_expr()                          = (err.expr),
+  wrong_builtin_arity()                   = (),
+  invalid_impl_arg()                      = (),
+  missing_impl_arg()                      = (),
+  undef_impl_cls_arg(p?)                  = (),
+  duplicate_impl_args()                   = (err.expr),
+  wrong_fn_arity()                        = (err.expr),
+  wrong_arity()                           = (err.expr),
+  wrong_rel_test_arity()                  = (err.expr),
+  wrong_rel_lookup_arity()                = (err.target),
+  wrong_pseudocall_arity()                = (err.expr),
+  unknown_function()                      = (err.expr),
+  unknown_function_or_method()            = (err.expr),
+  undefined_operator()                    = (err.expr),
+  wrong_cls_arg_arity()                   = (err.expr),
+  wrong_cls_call_arity()                  = (err.expr),
+  impl_args_not_allowed()                 = (err.expr),
+  not_a_scalar_var()                      = (),
+  dupl_var_mult_asgnm()                   = (),
+  diff_var_sets_in_ptrn_union(ps?)        = (head(ps)),
+  iter_clause_wrong_arity()               = (),
+  invalid_case_arity()                    = (),
 
-  ro_vars_asgnm()                         = :none,
-  wrong_return(s?)                        = s,
-  return_in_let_body(s?)                  = s,
-  vars_redef()                            = err.anchor,
-  undef_update_var()                      = err.stmt,
-  wrong_proc_arity()                      = err.stmt,
-  uncaught_ret_val(s?)                    = s,
-  proc_has_no_ret_val(s?)                 = s,
-  undef_proc(s?)                          = s,
+  ro_vars_asgnm()                         = (),
+  wrong_return(s?)                        = (s),
+  return_in_let_body(s?)                  = (s),
+  vars_redef()                            = (err.anchor),
+  undef_update_var()                      = (err.stmt),
+  wrong_proc_arity()                      = (err.stmt),
+  uncaught_ret_val(s?)                    = (s),
+  proc_has_no_ret_val(s?)                 = (s),
+  undef_proc(s?)                          = (s),
   proc_call_not_allowed()                 = undefined,
-  break_outside_loop(s?)                  = s,
-  break_in_let_body(s?)                   = s,
-  missing_ret_stmt(ss?)                   = head(ss),
-  unreachable_stmt(s?)                    = s,
+  break_outside_loop(s?)                  = (s),
+  break_in_let_body(s?)                   = (s),
+  missing_ret_stmt(ss?)                   = (head(ss)),
+  unreachable_stmt(s?)                    = (s),
 
-  unknown_auto()                          = :none,
-  undef_react_auto_var()                  = :none,
-  unknown_input()                         = :none,
-  unknown_output()                        = :none,
-  unknown_db_field()                      = :none,
-  not_a_discrete_signal()                 = :none,
-  not_a_memb_copy_var()                   = :none,
-  invalid_signal_copy_context()           = :none,
-  not_a_copiable_signal()                 = :none,
-  duplicate_tracked_signal()              = :none,
-  unknown_state_var()                     = :none,
-  no_discrete_signals_in_expr()           = :none,
-  discrete_signals_in_countinuous_rule()  = :none,
+  unknown_auto()                          = (),
+  undef_react_auto_var()                  = (),
+  unknown_input()                         = (),
+  unknown_output()                        = (),
+  unknown_db_field()                      = (),
+  not_a_discrete_signal()                 = (),
+  not_a_memb_copy_var()                   = (),
+  invalid_signal_copy_context()           = (),
+  not_a_copiable_signal()                 = (),
+  duplicate_tracked_signal()              = (),
+  unknown_state_var()                     = (),
+  no_discrete_signals_in_expr()           = (),
+  discrete_signals_in_countinuous_rule()  = (),
 
-  conflicting_auto_decls()                = :none,
+  conflicting_auto_decls()                = (),
 
-  undef_static_auto_var()                 = :none,
-  wrong_auto_var_arity()                  = :none,
-  wrong_auto_arg_type()                   = :none,
+  undef_static_auto_var()                 = (),
+  wrong_auto_var_arity()                  = (),
+  wrong_auto_arg_type()                   = (),
 
-  db_has_no_handlers()                    = :none,
-  not_a_nested_db_var()                   = :none,
-  unknown_nested_db_var()                 = :none,
-  unknown_update()                        = :none,
-  invalid_update_arity()                  = :none,
-  not_a_memb_var()                        = :none,
-  unknown_memb_var()                      = :none,
-  invalid_rel_var_arity()                 = :none,
-  not_a_rel_var()                         = :none,
-  unknown_rel_var()                       = :none,
+  db_has_no_handlers()                    = (),
+  not_a_nested_db_var()                   = (),
+  unknown_nested_db_var()                 = (),
+  unknown_update()                        = (),
+  invalid_update_arity()                  = (),
+  not_a_memb_var()                        = (),
+  unknown_memb_var()                      = (),
+  invalid_rel_var_arity()                 = (),
+  not_a_rel_var()                         = (),
+  unknown_rel_var()                       = (),
 
-  undef_auto_var()                        = :none,
+  undef_auto_var()                        = (),
 
-  anchored_errors()                       = err.anchor,
+  anchored_errors()                       = (err.anchor),
 
-  annotated_syn_expr_error()              = err.expr,
-  annotated_syn_stmt_error()              = err.stmt;
+  annotated_syn_expr_error()              = (err.expr),
+  annotated_syn_stmt_error()              = (err.stmt);
 
 ////////////////////////////////////////////////////////////////////////////////
 
 ExprWFError attach_anchor_obj_if_needed(ExprWFError error, <SynExpr, SynStmt> anchor) {
-  obj = anchor_obj(error);
-  att = fetch(obj);
-  return error if att != nothing;
-  new_att = fetch(anchor);
-  return error if new_att == nothing;
+  objs = anchor_objs(error);
+  attrs = (fetch(o) : o <- objs);
+  return error if (a <~ attrs : a != nothing);
+  new_attr = fetch(anchor);
+  return error if new_attr == nothing;
   return annotated_error(error, anchor);
 
   ExprWFError annotated_error(ExprWFError error, SynExpr anchor) = annotated_syn_expr_error(error, anchor);
@@ -688,10 +688,12 @@ String* typevar_decl_err_msg(TypeVarDecl decl, TypeVarDeclError+ errors) =
 
 String* create_error_msg(ExprWFError err) {
   msg = basic_err_msg(err);
-  loc = artifact_source_code_location(anchor_obj(err));
-  if loc != nothing:
-    start_line = left(left(value(loc)));
-    msg = (l & " (line " & printed(start_line) & ")" : l <- msg);
+  locs = (artifact_source_code_location(a) : a <- anchor_objs(err));
+  locs = (value(l) : l <- locs, l != nothing);
+  if locs != ():
+    start_lines = append((printed(left(left(l))) : l <- locs), " ");
+    loc_str = "line" & {if |locs| > 1 then "s" else ""} & " " & start_lines;
+    msg = (l & if i == 0 then " (" & loc_str & ")" else "" : l @ i <- msg);
   ;
   return msg;
 }
@@ -746,7 +748,7 @@ String* incomp_relvar_decls_basic_err_msg([RelVarsDecl] relvars, [(RelVarsDecl, 
     parent_relvar, idx = an_elem(nonempty(attr_relvars));
     name = parent_relvar.attributes(idx).name;
   ;
-  return ("Overloaded relation variables declarations are incompatible: " & _print_(name));
+  return ("Overloaded relation variable declarations are incompatible: " & _print_(name));
 }
 
 ////////////////////////////////////////////////////////////////////////////////

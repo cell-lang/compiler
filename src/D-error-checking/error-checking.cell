@@ -89,7 +89,137 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
 
 
   [CoreWFError] foreign_key_errors(Database database, ForeignKey key) {
-    return []; ## IMPLEMENT IMPLEMENT IMPLEMENT
+    src_rel = left(key.source);
+    src_rel_info = database.rel_vars(src_rel);
+    src_args, src_args_types = unzip(right(key.source));
+
+    fail if src_args_types == ();
+    src_sgns = [s : s <- src_rel_info.signatures, not are_disjoint(s, src_args_types)];
+    return [no_signature_match(key, src_rel, src_rel_info.signatures, src_args_types)] if src_sgns == [];
+    aggr_sgns = aggregated_elements(src_sgns, aggregated_signature);
+    return [multiple_signature_matches(key, src_rel, src_sgns, src_args_types)] if |aggr_sgns| != 1;
+    sgn = only(aggr_sgns);
+    if not match_exactly(sgn, src_args_types):
+      return [no_exact_signature_match(key, src_rel, sgn, src_args_types)];
+    ;
+
+    tgt_rel = left(key.target);
+    tgt_rel_info = database.rel_vars(tgt_rel);
+    tgt_args = right(key.target);
+
+    for src_sgn <- isort(src_sgns):
+      // Types of all variables when the key is applied to this specific signature of the source relation
+      src_type_map = [value(a) -> src_sgn(i) : a @ i <~ src_args, a != nothing];
+      tgt_args_types = (apply(a, src_type_map($)) : a <- tgt_args);
+      // Signatures of the target that are not disjoint with the image of the source signature
+      tgt_sgns = [s : s <- tgt_rel_info.signatures, not are_disjoint(s, tgt_args_types)];
+      if tgt_sgns == []:
+        return [no_signature_match(key, tgt_rel, tgt_rel_info.signatures, tgt_args_types)];
+      elif |tgt_sgns| != 1:
+        ## REALLY BAD ERROR MESSAGE. FIX
+        return [multiple_signature_matches(key, tgt_rel, tgt_sgns, tgt_args_types)];
+      ;
+      tgt_sgn = only(tgt_sgns);
+      if not is_subsignature(tgt_args_types, tgt_sgn):
+        ## REALLY BAD ERROR MESSAGE. FIX
+        return [no_exact_signature_match(key, tgt_rel, tgt_sgn, tgt_args_types)];
+      ;
+    ;
+
+    is_supported = match (src_args, tgt_args)
+      // unary -> unary
+      (just()),                     (just())                    = true,
+
+      // unary -> binary
+      (just()),                     (just(),  nothing)          = true,
+      (just()),                     (nothing, just())           = true,
+
+      // unary -> ternary
+      (just()),                     (just(), nothing, nothing)  = true,
+      (just()),                     (nothing, just(), nothing)  = true,
+      (just()),                     (nothing, nothing, just())  = true,
+
+      // binary -> unary
+      (just(), nothing),            (just())                    = true,
+      (nothing, just()),            (just())                    = true,
+
+      // ternary -> unary
+      (just(), nothing, nothing),   (just())                    = true,
+      (nothing, just(), nothing),   (just())                    = true,
+      (nothing, nothing, just()),   (just())                    = true,
+
+      // binary -> ternary
+      (just(s1?), just(s2?)), (just(t1?), just(t2?), nothing)   = s1 == t1 and s2 == t2,
+
+      // ternary -> binary
+      (just(s1?), just(s2?), nothing),  (just(t1?), just(t2?))  = s1 == t1 and s2 == t2,
+
+      _,                        _                               = false;
+
+    return [unsupported_foreign_key_type(key)] if not is_supported;
+
+    ## ARE THESE THE ONLY CASES WHERE WE EXPECT TABLES TO HAVE MATCHING SYMMETRIES?
+    symmetry_is_fine = match (src_args, tgt_args)
+      (just(), just()),           (just(), just(), nothing) = src_rel_info.symmetric == tgt_rel_info.symmetric,
+      (just(), just(), nothing),  (just(), just())          = src_rel_info.symmetric == tgt_rel_info.symmetric,
+      _,                          _                         = true;
+
+    return [foreign_key_symmetry_mismatch(key)] if not symmetry_is_fine;
+
+    ## IS THERE ANYTHING ELSE I'M SUPPOSED TO CHECK HERE?
+
+    return [];
+
+
+    Maybe[NeType+] aggregated_signature(NeType+ types1, NeType+ types2) {
+      assert |types1| == |types2|;
+      diff_idx = :none;
+      for t1 @ i <- types1:
+        t2 = types2(i);
+        if not is_eq(t1, t2):
+          return nothing if diff_idx != :none;
+          diff_idx = i;
+        ;
+      ;
+      // Works fine even if <diff_idx == :none>
+      return just((if i != diff_idx then t else ne_union_type([t, types2(i)]) : t @ i <- types1));
+    }
+
+
+    // ## THESE ARE NOT SUPPOSED TO COMPILE, BUT THEY DO...
+    // Bool are_disjoint(NeType+ types1, Maybe[NeType]+ types2)    = any(types2, types1, are_ptype_disjoint);
+    // Bool match_exactly(NeType+ types1, Maybe[NeType]+ types2)   = all(types2, types1, is_eq);
+    // Bool is_subsignature(Maybe[NeType]+ types2, NeType+ types1) = all(types2, types1, is_subset);
+
+
+    Bool are_disjoint(NeType+ types1, Maybe[NeType]+ types2) {
+      assert |types1| == |types2|;
+      for t1 @ i <- types1:
+        t2 = types2(i);
+        return true if t2 != nothing and are_ptype_disjoint(t1, value(t2));
+      ;
+      return false;
+    }
+
+
+    Bool match_exactly(NeType+ types1, Maybe[NeType]+ types2) {
+      assert |types1| == |types2|;
+      for t1 @ i <- types1:
+        t2 = types2(i);
+        return false if t2 != nothing and not is_eq(t1, value(t2));
+      ;
+      return true;
+    }
+
+
+    Bool is_subsignature(Maybe[NeType]+ types2, NeType+ types1) {
+      assert |types1| == |types2|;
+      for t1 @ i <- types1:
+        t2 = types2(i);
+        return false if t2 != nothing and not is_subset(value(t2), t1);
+      ;
+      return true;
+    }
   }
 
   //////////////////////////////////////////////////////////////////////////////
