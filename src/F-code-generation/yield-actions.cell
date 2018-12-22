@@ -110,6 +110,8 @@ implicit program           : Program,
 
     action_code = yield_action_opt_code(action.next, var_gen);
 
+    symmetric = symmetric(action.relvar);
+
     // Selecting the candidate tables among those the relation is partitioned into
     log_args_types = (apply(a, subexpr_type) : a <- action.args);
     candidate_tables = overlapping_physical_tables(action.relvar, log_args_types);
@@ -118,19 +120,20 @@ implicit program           : Program,
 
     // Iterating through all candidate tables
     for tv <- isort(candidate_tables):
-      if surr_args :: Just[Int32Var]+:
-        plain_surr_args = (value(a) : a <- surr_args);
-        vars_setup_code = (
-          lookup_surrogate(v, substitute(table_col_store_id(tv, i)), plain_surr_args(i))
-          : v @ i <- perm_vars
-        );
-        table_code = (
-          do_if(
-            table_contains(substitute(tv), (just(a) : a <- plain_surr_args)),
-            vars_setup_code & action_code
-          )
-        );
-      else
+      assert (a <~ surr_args : a == nothing);
+      // if surr_args :: Just[Int32Var]+:
+      //   plain_surr_args = (value(a) : a <- surr_args);
+      //   vars_setup_code = (
+      //     lookup_surrogate(v, substitute(table_col_store_id(tv, i)), plain_surr_args(i))
+      //     : v @ i <- perm_vars
+      //   );
+      //   table_code = (
+      //     do_if(
+      //       table_contains(substitute(tv), (just(a) : a <- plain_surr_args), symmetric),
+      //       vars_setup_code & action_code
+      //     )
+      //   );
+      // else
         lookup_exprs = (
           lookup_surrogate(substitute(table_col_store_id(tv, i)), get_unknown_arg(it_var, j))
           : i @ j <- blank_idxs
@@ -141,7 +144,7 @@ implicit program           : Program,
           get_table_iter(it_var, substitute(tv), nonempty(surr_args)),
           repeat(nonempty(loop_code))
         );
-      ;
+      // ;
 
       for e @ i <- reverse(args_aliases):
         store_id = table_col_store_id(tv, rat(unfiltered_idxs, i));

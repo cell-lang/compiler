@@ -182,6 +182,8 @@ implicit program           : Program,
 
     surr_args = (apply(mi, surr_vars($)) : mi <- filtered_idxs);
 
+    symmetric = symmetric(rel_var);
+
     // Selecting the candidate tables among those the relation is partitioned into
     log_args_types = (apply(a, subexpr_type) : a <- args);
     candidate_tables = overlapping_physical_tables(rel_var, log_args_types);
@@ -195,7 +197,8 @@ implicit program           : Program,
           set_bvar(res_var, neg(is_out_of_range(it_var)))
         );
       else
-        table_code = (set_bvar(res_var, table_contains(subst_table_var, (just(v) : v <- nonempty(surr_vars)))));
+        surr_args = (just(v) : v <- nonempty(surr_vars));
+        table_code = (set_bvar(res_var, table_contains(subst_table_var, surr_args, symmetric)));
       ;
 
       for e @ j <- reverse(args_aliases):

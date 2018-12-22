@@ -13,7 +13,7 @@ type CoreWFError  = error_cluster(AnyAuto, [+CoreWFError]),
                     multiple_signature_matches(key: ForeignKey, rel_var: RelVar, signatures: [+NeType+], args: Maybe[NeType]+),
                     no_exact_signature_match(key: ForeignKey, rel_var: RelVar, signature: NeType+, args: Maybe[NeType]+),
                     unsupported_foreign_key_type(key: ForeignKey),
-                    foreign_key_symmetry_mismatch(key: ForeignKey),
+                    foreign_key_symmetry_mismatch(key: ForeignKey, src_is_sym: Bool),
                     dependency_loop(signal: AnyReactAutoVar, deps: [AnyReactAutoVar]),
                     invalid_auto_var(var: Var, signal: SignalVar, expr: <Expr, TimeRule>),
                     invalid_nested_auto_input_var(var: Var, auto_id: NestedAutoVar, input_id: Atom, expr: Expr),
@@ -36,7 +36,7 @@ CoreWFError no_signature_match(ForeignKey k, RelVar v, [+NeType+] ss, Maybe[NeTy
 CoreWFError multiple_signature_matches(ForeignKey k, RelVar v, [+NeType+] ss, Maybe[NeType]+ as) = multiple_signature_matches(key: k, rel_var: v, signatures: ss, args: as);
 CoreWFError no_exact_signature_match(ForeignKey k, RelVar v, NeType+ s, Maybe[NeType]+ as) = no_exact_signature_match(key: k, rel_var: v, signature: s, args: as);
 CoreWFError unsupported_foreign_key_type(ForeignKey k) = unsupported_foreign_key_type(key: k);
-CoreWFError foreign_key_symmetry_mismatch(ForeignKey k) = foreign_key_symmetry_mismatch(key: k);
+CoreWFError foreign_key_symmetry_mismatch(ForeignKey k, Bool s) = foreign_key_symmetry_mismatch(key: k, src_is_sym: s);
 CoreWFError invalid_auto_var(Var v, SignalVar s, <Expr, TimeRule> e) = invalid_auto_var(var: v, signal: s, expr: e);
 CoreWFError dependency_loop(AnyReactAutoVar s, [+AnyReactAutoVar] ds) = dependency_loop(signal: s, deps: ds);
 CoreWFError invalid_nested_auto_input_var(Var v, NestedAutoVar a, Atom i, Expr e) = invalid_nested_auto_input_var(var: v, auto_id: a, input_id: i, expr: e);
@@ -60,7 +60,7 @@ String* error_message(CoreWFError err) =
   multiple_signature_matches()        = multiple_signature_matches_error_message(err.key, err.rel_var, err.signatures, err.args),
   no_exact_signature_match()          = no_exact_signature_match_error_message(err.key, err.rel_var, err.signature, err.args),
   unsupported_foreign_key_type()      = unsupported_foreign_key_type_error_message(err.key),
-  foreign_key_symmetry_mismatch()     = foreign_key_symmetry_mismatch_error_message(err.key),
+  foreign_key_symmetry_mismatch()     = foreign_key_symmetry_mismatch_error_message(err.key, err.src_is_sym),
   dependency_loop()                   = dependency_loop_error_message(err.signal, err.deps),
   invalid_auto_var()                  = invalid_auto_var_error_message(err.var, err.signal, err.expr),
   invalid_nested_auto_input_var()     = invalid_nested_auto_input_var_error_message(err.var, err.auto_id, err.input_id, err.expr),
@@ -121,15 +121,20 @@ String* no_exact_signature_match_error_message(ForeignKey key, RelVar rel_var, N
 
 
 String* unsupported_foreign_key_type_error_message(ForeignKey key) = (
-  "Unsupported foreign key type:",
-  "    " & user_repr(key)
+  "Unsupported foreign key type: " & user_repr(key)
 );
 
 
-String* foreign_key_symmetry_mismatch_error_message(ForeignKey key) = (
-  "Unsupported foreign key. Either one of source and target is symmetric, and the other is not:",
-  "    " & user_repr(key)
-);
+String* foreign_key_symmetry_mismatch_error_message(ForeignKey key, Bool src_is_sym) {
+  src_neg = if src_is_sym then "" else "not ";
+  tgt_neg = if src_is_sym then " not" else "";
+  src_repr = user_repr(left(key.source));
+  tgt_repr = user_repr(left(key.target));
+  return (
+    "Unsupported foreign key type: " & user_repr(key),
+    src_repr & " is " & src_neg & "symmetric, while " & tgt_repr & " is" & tgt_neg
+  );
+}
 
 
 String* recursively_defined_auto_or_db_error_message(AnyAuto auto_or_db) {
@@ -147,7 +152,7 @@ String* recursively_defined_auto_or_db_error_message(AnyAuto auto_or_db) {
 String* error_cluster_error_message(AnyAuto decl, [+CoreWFError] errs) =
   ( "Error" & plural(errs) & " in automaton definition: " & user_repr(decl.name),
     source_code_location_string(source_code_location(decl))) &
-  ("    " & l : l <- join((error_message(e) : e <- rand_sort(errs))));
+  ("  " & l : l <- join(((error_message(e) | "") : e <- rand_sort(errs))));
 
 
 String* dependency_loop_error_message(AnyReactAutoVar signal, [AnyReactAutoVar]  deps) = (

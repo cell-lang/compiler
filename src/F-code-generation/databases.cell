@@ -242,36 +242,50 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
     for tv <- tables:
       log_rel_var = logical_rel_var(tv);
       arity = arity(rel_auto_id, log_rel_var);
-      symmetric = symmetric(rel_auto_id, log_rel_var);
+      src_is_sym = symmetric(rel_auto_id, log_rel_var);
 
       surr_vars = (ivar32(i) : i < 3);
-      it_var = table_it_var(0, arity, symmetric);
+      it_var = table_it_var(0, arity, src_is_sym);
       foreign_keys = lookup(phys_keys_by_table, tv, []);
 
       if foreign_keys != []:
         conds = ({
-          args = match (fk.type)
-            unary_unary       = (just(surr_vars(0))),
-            unary_binary(i?)  = (maybe(surr_vars(0), j == i) : j < 2),
-            unary_ternary(i?) = (maybe(surr_vars(0), j == i) : j < 3),
-            binary_unary(i?)  = (just(surr_vars(i))),
-            ternary_unary(i?) = (just(surr_vars(i))),
-            binary_ternary    = (just(surr_vars(0)), just(surr_vars(1)), nothing),
-            ternary_binary    = (just(surr_vars(0)), just(surr_vars(1)));
-          return table_contains(fk.target, args);
+          tgt_is_sym, args_sets = match (fk.type)
+            unary_unary             = (false, ((just(0)))),
+            unary_binary(i?)        = (false, ((maybe(0, j == i) : j < 2))),
+            unary_ternary(i?)       = (false, ((maybe(0, j == i) : j < 3))),
+            binary_unary(i?)        = (false, ((just(i)))),
+            ternary_unary(i?)       = (false, ((just(i)))),
+            binary_ternary          = (false, ((just(0), just(1), nothing))),
+            ternary_binary          = (false, ((just(0), just(1)))),
+            unary_sym_binary        = (true,  ((just(0), nothing))),
+            unary_sym_ternary       = (true,  ((just(0), nothing, nothing))),
+            sym_binary_unary        = (true,  ((just(0)), (just(1)))),
+            sym_ternary_unary       = (true,  ((just(0)), (just(1)))),
+            sym_binary_sym_ternary  = (true,  ((just(0), just(1), nothing))),
+            sym_ternary_sym_binary  = (true,  ((just(0), just(1))));
+          return and(
+            (table_contains(fk.target, (apply(a, surr_vars($)) : a <- as), tgt_is_sym) : as <- args_sets)
+          );
         } : fk <- isort(foreign_keys));
 
-        cond = and_then((neg(c) : c <- conds));
+        cond = or((neg(c) : c <- conds));
 
         surr_vars_used = isort(union([
           match (fk.type)
-            unary_unary       = [0],
-            unary_binary(i?)  = [0],
-            unary_ternary(i?) = [0],
-            binary_unary(i?)  = [i],
-            ternary_unary(i?) = [i],
-            binary_ternary    = [0, 1],
-            ternary_binary    = [0, 1]
+            unary_unary             = [0],
+            unary_binary(i?)        = [0],
+            unary_ternary(i?)       = [0],
+            binary_unary(i?)        = [i],
+            ternary_unary(i?)       = [i],
+            binary_ternary          = [0, 1],
+            ternary_binary          = [0, 1],
+            unary_sym_binary        = [0],
+            unary_sym_ternary       = [0],
+            sym_binary_unary        = [0, 1],
+            sym_ternary_unary       = [0, 1],
+            sym_binary_sym_ternary  = [0, 1],
+            sym_ternary_sym_binary  = [0, 1]
           : fk <- foreign_keys
         ]));
 
@@ -719,6 +733,12 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
     origin_args = (a : a, t <- typed_origin_args);
     target_relvar, target_args = key.target;
 
+    rev_origin_perm = reverse_perm(rel_var_cols_perm(database.name, origin_relvar));
+    rev_target_perm = reverse_perm(rel_var_cols_perm(database.name, target_relvar));
+
+    origin_symmetric = symmetric(database.name, origin_relvar);
+    target_symmetric = symmetric(database.name, target_relvar);
+
     assert match (origin_args, target_args)
       (just(s1?)),              (just(s2?))                     = s1 == s2,
       (just(s1?)),              (just(s2?), nothing)            = s1 == s2,
@@ -738,25 +758,45 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 
       _,                        _                               = false;
 
-    rev_origin_perm = reverse_perm(rel_var_cols_perm(database.name, origin_relvar));
-    rev_target_perm = reverse_perm(rel_var_cols_perm(database.name, target_relvar));
+    assert match (origin_args, target_args)
+      (_),        (_, _)      = not origin_symmetric,
+      (_),        (_, _, _)   = not origin_symmetric,
+      (_, _),     (_)         = not target_symmetric,
+      (_, _, _),  (_)         = not target_symmetric,
+      (_, _),     (_, _, _)   = origin_symmetric == target_symmetric,
+      (_, _, _),  (_, _)      = origin_symmetric == target_symmetric,
+      _,          _           = not origin_symmetric and not target_symmetric;
 
-    key_type = match (origin_args, target_args)
-      (just()),           (just())          = :unary_unary,
-      (just()),           (just(), nothing) = unary_binary(rev_target_perm(0)),
-      (just()),           (nothing, just()) = unary_binary(rev_target_perm(1)),
-      (just()),           (_, _, _) as?     = { idx = only_unsafe((i : a @ i <- as, a != nothing));
-                                                return unary_ternary(rev_target_perm(idx));
-                                              },
+    if origin_symmetric or target_symmetric:
+      key_type = match (origin_args, target_args)
+        (_),                        (_, _)      = :unary_sym_binary,
+        (_),                        (_, _, _)   = :unary_sym_ternary,
+        (_, _),                     (_)         = :sym_binary_unary,
+        (nothing, nothing, just()), (just())    = { assert rev_origin_perm == (0, 1, 2);
+                                                    return ternary_unary(2);
+                                                  },
+        (_, _, _),                  (_)         = :sym_ternary_unary,
+        (_, _),                     (_, _, _)   = :sym_binary_sym_ternary,
+        (_, _, _),                  (_, _)      = :sym_ternary_sym_binary;
 
-      (just(),  nothing), (just())          = binary_unary(rev_origin_perm(0)),
-      (nothing, just()),  (just())          = binary_unary(rev_origin_perm(1)),
-      (just(),  just()),  (_, _, _)         = :binary_ternary,
+    else
+      key_type = match (origin_args, target_args)
+        (just()),           (just())          = :unary_unary,
+        (just()),           (just(), nothing) = unary_binary(rev_target_perm(0)),
+        (just()),           (nothing, just()) = unary_binary(rev_target_perm(1)),
+        (just()),           (_, _, _) as?     = { idx = only_unsafe((i : a @ i <- as, a != nothing));
+                                                  return unary_ternary(rev_target_perm(idx));
+                                                },
 
-      (_, _, _) oas?,     (just() ta?)      = { idx = only_unsafe((i : a @ i <- oas, a == ta));
-                                                return ternary_unary(rev_origin_perm(idx));
-                                              },
-      (_, _, _),          (_, _)            = :ternary_binary;
+        (just(),  nothing), (just())          = binary_unary(rev_origin_perm(0)),
+        (nothing, just()),  (just())          = binary_unary(rev_origin_perm(1)),
+        (just(),  just()),  (_, _, _)         = :binary_ternary,
+
+        (_, _, _) oas?,     (just() ta?)      = { idx = only_unsafe((i : a @ i <- oas, a == ta));
+                                                  return ternary_unary(rev_origin_perm(idx));
+                                                },
+        (_, _, _),          (_, _)            = :ternary_binary;
+    ;
 
     return key_type;
   }
@@ -778,13 +818,19 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 
   [[+(TableVar, Nat)]] associations(BlockForeignKey foreign_key) {
     idx_assocs = match (foreign_key.type)
-      unary_unary         = [0 -> 0],
-      unary_binary(i?)    |
-      unary_ternary(i?)   = [0 -> i],
-      binary_unary(i?)    |
-      ternary_unary(i?)   = [i -> 0],
-      binary_ternary      |
-      ternary_binary      = [0 -> 0, 1 -> 1];
+      unary_unary             = [0 -> 0],
+      unary_binary(i?)        |
+      unary_ternary(i?)       = [0 -> i],
+      binary_unary(i?)        |
+      ternary_unary(i?)       = [i -> 0],
+      binary_ternary          |
+      ternary_binary          = [0 -> 0, 1 -> 1],
+      unary_sym_binary        |
+      unary_sym_ternary       |
+      sym_binary_unary        |
+      sym_ternary_unary       |
+      sym_binary_sym_ternary  |
+      sym_ternary_sym_binary  = [0 -> 0];
 
     return [[(foreign_key.origin, i), (foreign_key.target, j)] : i, j <- idx_assocs];
   }

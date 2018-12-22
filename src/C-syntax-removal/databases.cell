@@ -68,6 +68,9 @@ implicit syn_prg : SynPrg, artifact : SchemaDef {
 
 
     [ForeignKey] desugared_keys(Symbol name, NeType+ col_types, [AttrRelVar] attributes) {
+      // If we don't take care to handle the no-attributes case here
+      // the code that follows would crash for ternary relations
+      return [] if attributes == [];
       base_relvar = rel_var(name);
       args_names = (:a, :b);
       typed_base_args = ((just(args_names(i)), just(t)) : t @ i <- col_types);
