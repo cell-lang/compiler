@@ -154,7 +154,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
 
 
   Expr desugar_rel_var_size_expr(SynRelVarSizeExpr expr, [StdVar] def_vars) {
-    rel_var = only(resolve_by_priority_as_rel_var(expr.rel_var_path, def_vars));
+    rel_var = only(resolve_by_priority_as_rel_var(expr.rel_var_path, |expr.args|, def_vars));
     args = (apply(a, desugar_expr($, def_vars)) : a <- expr.args);
     return rel_var_size_expr(rel_var, args);
   }
@@ -166,7 +166,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
 
     args = (apply(a, desugar_expr($, def_vars)) : a <- syn_args);
     if syn_target :: IdChain:
-      target = only(resolve_by_priority_as_memb_test_target(destructure_id_chain(syn_target), def_vars));
+      target = only(resolve_by_priority_as_memb_test_target(destructure_id_chain(syn_target), |syn_args|, def_vars));
     else
       target = desugar_expr(syn_target, def_vars);
     ;
@@ -184,7 +184,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
 
 
   Expr desugar_rel_lookup(Atom+ symbols, Maybe[SynExpr]+ syn_args, [StdVar] def_vars) {
-    target = only(resolve_by_priority_as_memb_test_target(symbols, def_vars));
+    target = only(resolve_by_priority_as_memb_test_target(symbols, |syn_args|, def_vars));
     args = (desugar_expr(value(a), def_vars) : a <- syn_args, a != nothing);
     target_arg_idx = only_unsafe((i : a @ i <- syn_args, a == nothing));
     return desugar(target, args, target_arg_idx);
@@ -406,7 +406,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
     Clause desugar_iter_clause(StdVar+ vars, SynExpr syn_src_expr, [StdVar] def_vars) {
       if syn_src_expr :: IdChain:
         symbols = destructure_id_chain(syn_src_expr);
-        resols = resolve_by_priority_as_memb_test_target(symbols, def_vars);
+        resols = resolve_by_priority_as_memb_test_target(symbols, |vars|, def_vars);
         if |resols| == 1:
           resol = only(resols);
           if resol :: AnyRelVar:

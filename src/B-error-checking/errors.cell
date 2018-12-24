@@ -33,6 +33,7 @@ type TypeWFError        = invalid_int_range(<syn_int_range(min: Int, max: Int)>)
 
 type SchemaSpecWFError  = schema_def_duplicates_type(schema_def: SchemaDef, tdefs: AnyTypedef+),
                           duplicate_schema_decl(<SchemaItemDecl, AttrRelVar>, <SchemaItemDecl, AttrRelVar>),
+                          diff_types_in_sym_cols(RelVarsDecl),
                           invalid_relvar_arity(RelVarsDecl),
                           invalid_relvar_keys(RelVarsDecl),
                           incomp_relvar_decls(relvars: [RelVarsDecl], attr_relvars: [(RelVarsDecl, Nat)]),
@@ -77,7 +78,7 @@ type ExprSpecWFError    = already_def_var(Var),
                           duplicate_impl_args(expr: SynImplArgsCall, bad_args: [+ImplArg]),
                           wrong_fn_arity(expr: SynImplArgsCall, actual_arities: [+Nat]),
                           wrong_arity(expr: <call_lookalike(target: IdChain, args: SynExpr+)>, actual_arities: [+Nat]),
-                          wrong_rel_test_arity(expr: SynRelMembTest, actual_arities: [+Nat]),
+                          wrong_rel_arity(expr: SynExpr, rel_path: Maybe[Symbol+], actual_arities: [+Nat]),
                           wrong_rel_lookup_arity(target: Atom+, actual_arities: [+Nat]),
                           wrong_pseudocall_arity(expr: SynCallLookalike),
                           unknown_function(expr: SynImplArgsCall),
@@ -210,6 +211,7 @@ TypeWFError type_vars_not_allowed(SynType t, TypeVar v)               = type_var
 
 SchemaSpecWFError schema_def_duplicates_type(SchemaDef s, AnyTypedef+ ts) = schema_def_duplicates_type(schema_def: s, tdefs: ts);
 SchemaSpecWFError duplicate_schema_decl(<SchemaItemDecl, AttrRelVar> d1, <SchemaItemDecl, AttrRelVar> d2) = :duplicate_schema_decl(d1, d2);
+SchemaSpecWFError diff_types_in_sym_cols(RelVarsDecl d) = :diff_types_in_sym_cols(d);
 SchemaSpecWFError invalid_relvar_arity(RelVarsDecl d) = :invalid_relvar_arity(d);
 SchemaSpecWFError invalid_relvar_keys(RelVarsDecl d) = :invalid_relvar_keys(d);
 SchemaSpecWFError incomp_relvar_decls([RelVarsDecl] rvs, [(RelVarsDecl, Nat)] arvs) = incomp_relvar_decls(relvars: rvs, attr_relvars: arvs);
@@ -279,7 +281,7 @@ ExprSpecWFError undef_impl_cls_arg(ClsPar p)                            = :undef
 ExprSpecWFError duplicate_impl_args(SynImplArgsCall c, [+ImplArg] ps)   = duplicate_impl_args(expr: c, bad_args: ps);
 ExprSpecWFError wrong_fn_arity(SynImplArgsCall c, [+Nat] as)            = wrong_fn_arity(expr: c, actual_arities: as);
 ExprSpecWFError wrong_arity(<call_lookalike(target: IdChain, args: SynExpr+)> c, [+Nat] as) = wrong_arity(expr: c, actual_arities: as);
-ExprSpecWFError wrong_rel_test_arity(SynRelMembTest e, [+Nat] as)       = wrong_rel_test_arity(expr: e, actual_arities: as);
+ExprSpecWFError wrong_rel_arity(SynExpr e, Maybe[Symbol+] ss, [+Nat] as) = wrong_rel_arity(expr: e, rel_path: ss, actual_arities: as);
 ExprSpecWFError wrong_rel_lookup_arity(Atom+ t, [+Nat] as)              = wrong_rel_lookup_arity(target: t, actual_arities: as);
 ExprSpecWFError wrong_pseudocall_arity(SynCallLookalike c)              = wrong_pseudocall_arity(expr: c);
 ExprSpecWFError unknown_function(SynImplArgsCall c)                     = unknown_function(expr: c);
@@ -358,6 +360,7 @@ Any* anchor_objs(TypeWFError err)     = ();
 Any* anchor_objs(SchemaSpecWFError err) =
   schema_def_duplicates_type()        = (),
   duplicate_schema_decl()             = (),
+  diff_types_in_sym_cols(d?)          = (d),
   invalid_relvar_arity(d?)            = (d),
   invalid_relvar_keys(d?)             = (d),
   incomp_relvar_decls()               = isort(err.relvars) & left(unzip(isort(err.attr_relvars))),
@@ -393,7 +396,7 @@ Any* anchor_objs(ExprSpecWFError err) =
   duplicate_impl_args()                   = (err.expr),
   wrong_fn_arity()                        = (err.expr),
   wrong_arity()                           = (err.expr),
-  wrong_rel_test_arity()                  = (err.expr),
+  wrong_rel_arity()                       = (err.expr),
   wrong_rel_lookup_arity()                = (err.target),
   wrong_pseudocall_arity()                = (err.expr),
   unknown_function()                      = (err.expr),
@@ -718,6 +721,7 @@ String* basic_err_msg(TypeWFError err) =
 String* basic_err_msg(SchemaSpecWFError err) =
   schema_def_duplicates_type()    = ("A type with the same name already exists: " & user_repr(type_symbol(err.schema_def.name))),
   duplicate_schema_decl(d1?, d2?) = ("Duplicate declaration" & if d1.name? then ": " & _print_(d1.name) else ""),
+  diff_types_in_sym_cols(d?)      = ("Symmetric arguments must be of the same type: " & printed(d.name)),
   invalid_relvar_arity(d?)        = ("Invalid arity: " & _print_(d.name)),
   invalid_relvar_keys(d?)         = ("Invalid keys: " & _print_(d.name)),
   incomp_relvar_decls()           = incomp_relvar_decls_basic_err_msg(err.relvars, err.attr_relvars),
@@ -792,10 +796,9 @@ String* basic_err_msg(ExprSpecWFError err) =
                                     ", actual arity: " & append((printed(a) : a <- rand_sort(err.actual_arities)), ", ")
                                   );
                                 },
-  wrong_rel_test_arity()      = { msg = "Wrong number of arguments";
-                                  target = err.expr.target;
-                                  if target :: IdChain:
-                                    symbols = destructure_id_chain(target);
+  wrong_rel_arity()           = { msg = "Wrong number of arguments";
+                                  if err.rel_path != nothing:
+                                    symbols = value(err.rel_path);
                                     msg = msg & ": " & append((_print_(s) : s <- symbols), ".") & "(..), a";
                                   else
                                     msg = msg & ". A";

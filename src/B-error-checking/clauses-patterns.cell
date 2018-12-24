@@ -25,13 +25,21 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg], actual_ar
 
     if src_expr :: IdChain:
       symbols = destructure_id_chain(src_expr);
-      resols = resolve_by_priority_as_memb_test_target(symbols, def_vars);
+      resols = resolve_by_priority_as_memb_test_target(symbols, |vars|, def_vars);
       if |resols| == 1:
         resol = only(resols);
         if resol :: AnyRelVar:
           relvar_arity = relvar_arity(resol);
           return (iter_clause_wrong_arity(vars, [relvar_arity]) if |vars| != relvar_arity);
         ;
+      elif resols == []:
+        ## BAD BAD BAD: USING A FIXED MAXIMUM ARITY
+        // Now passing and empty set of defined vars, so we avoid unary or binary pseudocalls
+        valid_arities = set((nat(a+1) : a < 20, resolve_by_priority_as_memb_test_target(symbols, nz_nat(a+1), []) != []));
+        return (wrong_rel_arity(src_expr, just(symbols), valid_arities)) if valid_arities != [];
+      else
+        assert |resols| > 1;
+        return (ambiguous_expr(src_expr, resols));
       ;
     ;
 

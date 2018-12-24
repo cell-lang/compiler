@@ -125,8 +125,12 @@ implicit syn_prg : SynPrg, type_arity_map : [BasicTypeSymbol -> [+Nat]] {
     );
     return type_errs if type_errs != ();
 
+    return (diff_types_in_sym_cols(decl)) if decl.symmetric and decl.col_types(0) != decl.col_types(1);
+
     keys = [set(k) : k <~ decl.keys];
-    valid_keys = valid_key_sets_by_arity[arity];
+    valid_keys = if decl.symmetric
+      then sym_rel_vars_valid_key_sets_by_arity(arity, !!)
+      else valid_key_sets_by_arity(arity, !!);
     return (invalid_relvar_keys(decl)) if keys != [] and not valid_keys(keys);
 
     errs = (duplicate_schema_decl(decl, non_overloadable_decls_by_name[decl.name])
@@ -146,19 +150,24 @@ implicit syn_prg : SynPrg, type_arity_map : [BasicTypeSymbol -> [+Nat]] {
     ;
 
     return errs;
+
+
+    [Nat -> [[[Nat]]]] valid_key_sets_by_arity = [
+      1 -> [],
+      2 -> [[[0]], [[1]], [[0], [1]]],
+      3 -> {
+        bin_keys = combinations(2, 3);
+        bin_key_sets = [k : k <- power_set(bin_keys), k != []];
+        mixed_key_sets = [[nonempty(k), nonempty([0, 1, 2] - k)] : ks <- bin_key_sets, |ks| == 1, k = only(ks)];
+        return bin_key_sets & mixed_key_sets;
+      }
+    ];
+
+    [Nat -> [[[Nat]]]] sym_rel_vars_valid_key_sets_by_arity = [
+      2 -> [],
+      3 -> [[[0, 1]], [[0, 1], [2]]]
+    ];
   }
-
-
-  [Nat -> [[[Nat]]]] valid_key_sets_by_arity = [
-    1 -> [],
-    2 -> [[[0]], [[1]], [[0], [1]]],
-    3 -> {
-      bin_keys = combinations(2, 3);
-      bin_key_sets = [k : k <- power_set(bin_keys), k != []];
-      mixed_key_sets = [[nonempty(k), nonempty([0, 1, 2] - k)] : ks <- bin_key_sets, |ks| == 1, k = only(ks)];
-      return bin_key_sets & mixed_key_sets;
-    }
-  ];
 
   //////////////////////////////////////////////////////////////////////////////
 
