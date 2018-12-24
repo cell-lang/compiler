@@ -587,8 +587,11 @@ implicit filename : String, lines : Nat** {
   ////////////////////////////////////////////////////////////////////////////////
 
   SynExpr try_to_rewrite_seq_expr_into_log_expr(SynExpr expr) =
-    seq_expr((and() e? | or() e?))  = e,
-    _                               = expr;
+    seq_expr((and() e?))  |
+    seq_expr((or()  e?))  |
+    seq_expr((eq()  e?))  |
+    seq_expr((neq() e?))  = e,
+    _                     = expr;
 
   SynExpr convert_seq_expr_to_grouping(SynExpr expr) =
     seq_expr((binary_op_call() e?)) = e,

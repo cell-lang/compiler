@@ -110,7 +110,9 @@ implicit syn_prg : SynPrg, type_arity_map : [BasicTypeSymbol -> [+Nat]] {
 
   ExprWFError* schema_decl_wf_errors(NestedDBDecl decl) {
     db_type = db_symbol(decl.type);
-    return (unknown_auto(db_type) if not db_defs_by_id(db_type, *));
+    return () if db_defs_by_id(db_type, *);
+    is_std_type = type_arity_map(type_symbol(decl.type), *);
+    return (if is_std_type then uninitialized_memb_var(decl) else unknown_auto(db_type));
   }
 
   //////////////////////////////////////////////////////////////////////////////
@@ -146,6 +148,9 @@ implicit syn_prg : SynPrg, type_arity_map : [BasicTypeSymbol -> [+Nat]] {
       ;
       if i > 0 and attributes(i-1).name == arv.name:
         errs = (errs | duplicate_schema_decl(arv, attributes(i-1)));
+      ;
+      if arity == 2 and arv.cardinality.multiple and arv.unique:
+        errs = (errs | invalid_ternary_multiple_unique(arv));
       ;
     ;
 
@@ -183,12 +188,20 @@ implicit syn_prg : SynPrg, type_arity_map : [BasicTypeSymbol -> [+Nat]] {
 
     // Checking that the set of keys is the same
     std_relvars_keys = [[set(k) : k <~ rv.keys] : rv <- std_relvars];
-    attr_relvars_keys = [
-      [set((i : i < |rv.col_types|)) if not rv.attributes(idx).cardinality.multiple]
-      : arv_info <- attr_relvars, (rv?, idx?) ?= arv_info
-    ];
+    attr_relvars_keys = [{
+      rv, idx = arv_info;
+      arv = rv.attributes(idx);
+      return [
+        set((i : i < |rv.col_types|)) if not arv.cardinality.multiple,
+        [|rv.col_types|] if arv.unique
+      ];
+    } : arv_info <- attr_relvars];
     all_key_sets = std_relvars_keys & attr_relvars_keys;
     return (incomp_relvar_decls(std_relvars, attr_relvars)) if |all_key_sets| != 1;
+
+    // Checking that either none or all of them are symmetric
+    symmetric = [rv.symmetric : rv <- std_relvars] & [left(arv).symmetric : arv <- attr_relvars];
+    return (incomp_symmetries(std_relvars, attr_relvars)) if |symmetric| != 1;
 
     // Checking that their signatures are compatible, and that there are no duplicate attributes
     arity = only(all_arities);
@@ -216,7 +229,7 @@ implicit syn_prg : SynPrg, type_arity_map : [BasicTypeSymbol -> [+Nat]] {
           a2 = r2.attributes(j2);
           if a1.name == a2.name:
             ## FIX THE BUG IN THE COMPILER AND REPLACE THE {...} WITH (...)
-            if not are_disjoint or not {a1.cardinality == a2.cardinality} or not {a1.unique == a2.unique}:
+            if not are_disjoint or {a1.cardinality != a2.cardinality} or {a1.unique != a2.unique}:
               errs = (errs | incomp_relvar_decls([], [(r1, j1), (r2, j2)]));
             ;
           ;

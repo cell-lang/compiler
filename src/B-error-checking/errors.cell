@@ -36,12 +36,15 @@ type SchemaSpecWFError  = schema_def_duplicates_type(schema_def: SchemaDef, tdef
                           diff_types_in_sym_cols(RelVarsDecl),
                           invalid_relvar_arity(RelVarsDecl),
                           invalid_relvar_keys(RelVarsDecl),
+                          invalid_ternary_multiple_unique(attr_relvar: AttrRelVar),
                           incomp_relvar_decls(relvars: [RelVarsDecl], attr_relvars: [(RelVarsDecl, Nat)]),
                           undef_rel_var(key: ForeignKeyDecl, rel_var: Symbol),
                           invalid_foreign_key_relvar_arity(key: ForeignKeyDecl, rel_var: Symbol),
                           undef_foreign_key_var(key: ForeignKeyDecl, var: Symbol),
                           empty_args_list(key: ForeignKeyDecl, rel_var: Symbol),
-                          duplicate_foreign_key_args(key: ForeignKeyDecl, dupl_args: [+Symbol]);
+                          duplicate_foreign_key_args(key: ForeignKeyDecl, dupl_args: [+Symbol]),
+                          uninitialized_memb_var(decl: NestedDBDecl),
+                          incomp_symmetries(relvars: [RelVarsDecl], attr_relvars: [(RelVarsDecl, Nat)]);
 
 type AutoSpecWFError    = auto_type_conflict(name: Atom, tdefs: AnyTypedef+),
                           auto_schema_conflict(name: Atom, schema_def: SchemaDef),
@@ -214,12 +217,15 @@ SchemaSpecWFError duplicate_schema_decl(<SchemaItemDecl, AttrRelVar> d1, <Schema
 SchemaSpecWFError diff_types_in_sym_cols(RelVarsDecl d) = :diff_types_in_sym_cols(d);
 SchemaSpecWFError invalid_relvar_arity(RelVarsDecl d) = :invalid_relvar_arity(d);
 SchemaSpecWFError invalid_relvar_keys(RelVarsDecl d) = :invalid_relvar_keys(d);
+SchemaSpecWFError invalid_ternary_multiple_unique(AttrRelVar d) = invalid_ternary_multiple_unique(attr_relvar: d);
 SchemaSpecWFError incomp_relvar_decls([RelVarsDecl] rvs, [(RelVarsDecl, Nat)] arvs) = incomp_relvar_decls(relvars: rvs, attr_relvars: arvs);
 SchemaSpecWFError undef_rel_var(ForeignKeyDecl k, Symbol v) = undef_rel_var(key: k, rel_var: v);
 SchemaSpecWFError invalid_foreign_key_relvar_arity(ForeignKeyDecl k, Symbol v) = invalid_foreign_key_relvar_arity(key: k, rel_var: v);
 SchemaSpecWFError undef_foreign_key_var(ForeignKeyDecl k, Symbol v) = undef_foreign_key_var(key: k, var: v);
 SchemaSpecWFError empty_args_list(ForeignKeyDecl k, Symbol v) = empty_args_list(key: k, rel_var: v);
 SchemaSpecWFError duplicate_foreign_key_args(ForeignKeyDecl k, [+Symbol] as) = duplicate_foreign_key_args(key: k, dupl_args: as);
+SchemaSpecWFError uninitialized_memb_var(NestedDBDecl d) = uninitialized_memb_var(decl: d);
+SchemaSpecWFError incomp_symmetries([RelVarsDecl] rvs, [(RelVarsDecl, Nat)] arvs) = incomp_symmetries(relvars: rvs, attr_relvars: arvs);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -363,12 +369,15 @@ Any* anchor_objs(SchemaSpecWFError err) =
   diff_types_in_sym_cols(d?)          = (d),
   invalid_relvar_arity(d?)            = (d),
   invalid_relvar_keys(d?)             = (d),
+  invalid_ternary_multiple_unique()   = (err.attr_relvar),
   incomp_relvar_decls()               = isort(err.relvars) & left(unzip(isort(err.attr_relvars))),
   undef_rel_var()                     |
   invalid_foreign_key_relvar_arity()  |
   undef_foreign_key_var()             |
   empty_args_list()                   |
-  duplicate_foreign_key_args()        = (err.key);
+  duplicate_foreign_key_args()        = (err.key),
+  uninitialized_memb_var()            = (err.decl),
+  incomp_symmetries()                 = isort(err.relvars) & isort([left(arv) : arv <- err.attr_relvars]);
 
 
 Any* anchor_objs(AutoSpecWFError err) =
@@ -724,12 +733,20 @@ String* basic_err_msg(SchemaSpecWFError err) =
   diff_types_in_sym_cols(d?)      = ("Symmetric arguments must be of the same type: " & printed(d.name)),
   invalid_relvar_arity(d?)        = ("Invalid arity: " & _print_(d.name)),
   invalid_relvar_keys(d?)         = ("Invalid keys: " & _print_(d.name)),
+  invalid_ternary_multiple_unique() = ("Multivalued attributes of binary relations cannot be unique. Attribute: " & printed(err.attr_relvar.name)),
   incomp_relvar_decls()           = incomp_relvar_decls_basic_err_msg(err.relvars, err.attr_relvars),
   undef_rel_var()                 = ("Undefined relation variable: " & printed(err.rel_var)),
   invalid_foreign_key_relvar_arity()  = ("Wrong relation variable arity: " & printed(err.rel_var)),
   undef_foreign_key_var()         = ("Undefined variable: " & printed(err.var)),
   empty_args_list()               = ("Empty arguments list: " & printed(err.rel_var)),
-  duplicate_foreign_key_args()    = ("Duplicate arguments in foreign key declaration: " & append((printed(a) : a <- isort(err.dupl_args)), " "));
+  duplicate_foreign_key_args()    = ("Duplicate arguments in foreign key declaration: " & append((printed(a) : a <- isort(err.dupl_args)), " ")),
+  uninitialized_memb_var()        = ("Uninitialized member variable: " & printed(err.decl.name)),
+  incomp_symmetries()             = { name = only(
+                                        [v.name : v <- err.relvars] &
+                                        [left(v).attributes(right(v)).name : v <- err.attr_relvars]
+                                      );
+                                      return ("Some forms of relation variable " & printed(name) & " are symmetric, while other are not");
+                                    };
 
 
 String* basic_err_msg(AutoSpecWFError err) =
