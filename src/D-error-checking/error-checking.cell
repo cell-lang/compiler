@@ -11,7 +11,7 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
   [CoreWFError] core_wf_errors {
     fndefs_families = group_by(program.fndefs, family_id($.id));
     functions_errs = union([function_family_errors(fs) : unused_var, fs <- fndefs_families]);
-    return typedefs_errors & functions_errs & databases_errors & automata_errors;
+    return typedefs_errors & functions_errs & aggregate_functions_errors & databases_errors & automata_errors;
   }
 
   //////////////////////////////////////////////////////////////////////////////
@@ -37,6 +37,15 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
     Bool overlap(Function f1, Function f2) =
       not (a1, a2 <~ zip(f1.args, f2.args) : are_ptype_disjoint(right(a1), right(a2)));
   }
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  [CoreWFError] aggregate_functions_errors = [
+    overlapping_signatures(f1, f2)
+    : unused_var, fs <- group_by(program.aggr_fn_defs, (plain_id($.id), |$.extra_args|)),
+      f1, f2 <- symmetric_cart_prod(fs),
+      not are_ptype_disjoint(f1.elt_type, f2.elt_type)
+  ];
 
   //////////////////////////////////////////////////////////////////////////////
 

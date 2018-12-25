@@ -1,4 +1,4 @@
-type SgnDecl = Function, Method, Update, Handler;
+type SgnDecl = Function, AggrFunct, Method, Update, Handler;
 
 type AnyAuto = Database, Automaton;
 
@@ -212,14 +212,16 @@ String source_code_location_string((String, NzNat, NzNat) loc_info) {
 ////////////////////////////////////////////////////////////////////////////////
 
 String artifact_type_name(SgnDecl) =
-  function()  = "function",
-  method()    = "method",
-  update()    = "update",
-  handler()   = "message handler";
+  function()    = "function",
+  aggr_funct()  = "aggregate function",
+  method()      = "method",
+  update()      = "update",
+  handler()     = "message handler";
 
 
 String artifact_name(SgnDecl decl) =
-  function()  = user_repr(decl.id),
-  method()    |
-  update()    = user_repr(decl.name, |decl.args|),
-  handler()   = "";
+  function()    = user_repr(decl.id),
+  aggr_funct()  = user_repr(plain_id(decl.id)),
+  method()      |
+  update()      = user_repr(decl.name, |decl.args|),
+  handler()     = "";

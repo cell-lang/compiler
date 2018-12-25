@@ -1,10 +1,11 @@
 implicit syn_prg : SynPrg {
   WFError* prg_wf_errors {
-    tdefs       = [d : unused_var, ds <- syn_prg.parsed_src_files, d <~ ds, typedef() ?= d];
-    par_tdefs   = [d : unused_var, ds <- syn_prg.parsed_src_files, d <~ ds, par_typedef() ?= d];
-    schemas     = [d : unused_var, ds <- syn_prg.parsed_src_files, d <~ ds, schema_def() ?= d];
-    prot_decls  = [d : unused_var, ds <- syn_prg.parsed_src_files, d <~ ds, prot_decl() ?= d];
-    tvar_decls  = [d : unused_var, ds <- syn_prg.parsed_src_files, d <~ ds, typevar_decl() ?= d];
+    tdefs         = [d : unused_var, ds <- syn_prg.parsed_src_files, d <~ ds, typedef()         ?= d];
+    par_tdefs     = [d : unused_var, ds <- syn_prg.parsed_src_files, d <~ ds, par_typedef()     ?= d];
+    schemas       = [d : unused_var, ds <- syn_prg.parsed_src_files, d <~ ds, schema_def()      ?= d];
+    prot_decls    = [d : unused_var, ds <- syn_prg.parsed_src_files, d <~ ds, prot_decl()       ?= d];
+    tvar_decls    = [d : unused_var, ds <- syn_prg.parsed_src_files, d <~ ds, typevar_decl()    ?= d];
+    aggr_fn_decls = [d : unused_var, ds <- syn_prg.parsed_src_files, d <~ ds, aggr_funct_decl() ?= d];
 
     errs = typedefs_preliminary_wf_errors(tdefs, par_tdefs);
     return rand_sort(errs) if errs != [];
@@ -13,6 +14,11 @@ implicit syn_prg : SynPrg {
 
     errs = typedefs_wf_errors(tdefs, par_tdefs, type_arity_map);
     return rand_sort(errs) if errs != [];
+
+    ## FUNCTION SIGNATURES SHOULD BE CHECKED HERE, BEFORE CHECKING AGGREGATE FUNCTIONS AND SCHEMAS
+
+    errs = join((aggr_funct_decl_wf_errors(f) : f <- isort(aggr_funct_decls)));
+    return errs if errs != [];
 
     errs = schemas_wf_errors(schemas, type_arity_map);
     return rand_sort(errs) if errs != [];
@@ -60,6 +66,49 @@ implicit syn_prg : SynPrg {
 
     return rand_sort(standalone_fndef_errs) & impl_block_fndef_errs & rand_sort(proc_def_errs) &
            auto_meth_errs & db_meth_errs & update_errs & handler_errs;
+  }
+
+
+  WFError* aggr_funct_decl_wf_errors(AggrFunctDecl decl) {
+    // Checking the types of the argument and the return type
+    types = (decl.type, decl.elt_type) & (left(a) : a <- decl.extra_args);
+    errs = join((plain_type_wf_errors(t) : t <- types));
+
+    // Duplicate argument names
+    args_names = ((right(a) : a <- decl.extra_args) | decl.elt_name);
+    dupls = duplicates(args_names);
+    errs = (errs | dupl_par_names(dupls, [])) if dupls != [];
+    taken_names = set(args_names);
+
+    // Duplicate aggregate variable names
+    vars_names = (v.name : v <- decl.red_vars);
+    dupls = duplicates(vars_names) & [v : v <~ vars_names, taken_names(v)];
+    errs = (errs | dupl_aggr_fn_vars(isort(dupls), decl)) if dupls != [];
+    taken_names = taken_names & set(vars_names);
+
+    let artifact = :null_artifact, impl_args = [], actual_arg_arity = 0:
+      // Return value expressions
+      res_vars = [var(a) : unused_var, a <~ decl.extra_args] & [var(v.name) : v <~ decl.red_vars];
+      errs = errs & expr_wf_errors(decl.null_value, res_vars) & expr_wf_errors(decl.final_value, res_vars);
+
+      // Reduction variables
+      extra_args_vars = [var(a) : unused_var, a <~ decl.extra_args];
+      init_vars = [var(decl.elt_name)] & extra_args_vars;
+      errs = errs & join(({
+        type_errs = plain_type_wf_errors(v.type);
+        init_errs = expr_wf_errors(v.init_value, init_vars);
+        merge_arg1, merge_arg2, merge_expr = v.merge_op;
+        dupl_var_names = (
+          merge_arg1 if taken_names(merge_arg1),
+          merge_arg2 if merge_arg2 == merge_arg1 or taken_names(merge_arg2)
+        );
+        dupl_errs = (dupl_aggr_fn_vars(dupl_var_names, v) if dupl_var_names != ());
+        merge_errs = expr_wf_errors(merge_expr, [var(merge_arg1), var(merge_arg2)] & extra_args_vars);
+        return type_errs & init_errs & merge_errs & dupl_errs;
+      } : v <- decl.red_vars));
+    ;
+
+    return (aggr_fn_decl_errs(decl, errs) if errs != ());
   }
 
 

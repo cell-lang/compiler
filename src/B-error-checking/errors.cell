@@ -20,7 +20,8 @@ type WFError            = dupl_typedef((AnyTypedef, AnyTypedef)),
                           protocol_redef(type: Atom, protocols: [+ProtDecl]),
                           protocol_errors(prot: ProtDecl, errors: ProtWFError+),
                           dupl_auto_defs(defs: [+ReactAutoDef]),
-                          typevar_decl_errs(decl: TypeVarDecl, errors: TypeVarDeclError+);
+                          typevar_decl_errs(decl: TypeVarDecl, errors: TypeVarDeclError+),
+                          aggr_fn_decl_errs(decl: AggrFunctDecl, errors: AggrFnWFError+);
 
 type TypeWFError        = invalid_int_range(<syn_int_range(min: Int, max: Int)>),
                           undef_type_var(TypeVar),
@@ -86,6 +87,8 @@ type ExprSpecWFError    = already_def_var(Var),
                           wrong_pseudocall_arity(expr: SynCallLookalike),
                           unknown_function(expr: SynImplArgsCall),
                           unknown_function_or_method(expr: <call_lookalike(target: IdChain, args: SynExpr+)>),
+                          unknown_aggr_funct(expr: SynAggrFnCall),
+                          invalid_aggr_funct_arity(expr: SynAggrFnCall, arities: [+NzNat]),
                           undefined_operator(expr: <SynUnaryOpCall, SynBinaryOpCall>),
                           wrong_cls_arg_arity(expr: ConstOrVar, exp_arity: NzNat, arities: [+Nat]),
                           wrong_cls_call_arity(expr: SynImplArgsCall, exp_arity: Nat),
@@ -161,9 +164,12 @@ type ProcDefSpecWFError = builtin_proc_redef,
                           dup_auto_or_db_var(name: Atom),
                           undef_auto_or_db(var: Atom, type: Atom);
 
+type AggrFnSpecWFError  = dupl_aggr_fn_vars(names: Atom+, anchor: Any);
+
 type ExprWFError        = TypeWFError, SchemaSpecWFError, AutoSpecWFError, ExprSpecWFError;
 type FnDefWFError       = ExprWFError, GenDefSpecWFError, FnDefSpecWFError;
 type ProcDefWFError     = ExprWFError, GenDefSpecWFError, ProcDefSpecWFError;
+type AggrFnWFError      = ExprWFError, GenDefSpecWFError, AggrFnSpecWFError;
 
 type ProtWFError        = TypeWFError, ProtSpecWFError;
 
@@ -198,6 +204,7 @@ WFError protocol_redef(Atom t, [+ProtDecl] ps)                  = protocol_redef
 WFError protocol_errors(ProtDecl p, ProtWFError+ es)            = protocol_errors(prot: p, errors: es);
 WFError dupl_auto_defs([+ReactAutoDef] ds)                      = dupl_auto_defs(defs: ds);
 WFError typevar_decl_errs(TypeVarDecl d, TypeVarDeclError+ es)  = typevar_decl_errs(decl: d, errors: es);
+WFError aggr_fn_decl_errs(AggrFunctDecl d, AggrFnWFError+ es)   = aggr_fn_decl_errs(decl: d, errors: es);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -272,6 +279,10 @@ ProcDefSpecWFError undef_auto_or_db(Atom v, Atom t) = undef_auto_or_db(var: v, t
 
 ////////////////////////////////////////////////////////////////////////////////
 
+AggrFnSpecWFError dupl_aggr_fn_vars(Atom+ ns, Any a) = dupl_aggr_fn_vars(names: ns, anchor: a);
+
+////////////////////////////////////////////////////////////////////////////////
+
 ExprSpecWFError already_def_var(Var v)                                  = :already_def_var(v);
 ExprSpecWFError undef_var_or_const(Atom v)                              = :undef_var_or_const(v);
 ExprSpecWFError not_an_object(SynExpr e, <SymbChainExpr, ClsVar, AnyAutoVar, AnyDBVar, AnyRelVar, FnFamilyId, PreCall> r) = not_an_object(expr: e, resols: [r]);
@@ -293,6 +304,8 @@ ExprSpecWFError wrong_pseudocall_arity(SynCallLookalike c)              = wrong_
 ExprSpecWFError unknown_function(SynImplArgsCall c)                     = unknown_function(expr: c);
 ExprSpecWFError unknown_function_or_method(<call_lookalike(target: IdChain, args: SynExpr+)> c) = unknown_function_or_method(expr: c);
 ExprSpecWFError undefined_operator(<SynUnaryOpCall, SynBinaryOpCall> e) = undefined_operator(expr: e);
+ExprSpecWFError unknown_aggr_funct(SynAggrFnCall e)                     = unknown_aggr_funct(expr: e);
+ExprSpecWFError invalid_aggr_funct_arity(SynAggrFnCall e, [+NzNat] as)  = invalid_aggr_funct_arity(expr: e, arities: as);
 ExprSpecWFError wrong_cls_arg_arity(ConstOrVar e, NzNat ea, [+Nat] as)  = wrong_cls_arg_arity(expr: e, exp_arity: ea, arities: as);
 ExprSpecWFError wrong_cls_call_arity(SynImplArgsCall c, Nat ea)         = wrong_cls_call_arity(expr: c, exp_arity: ea);
 ExprSpecWFError impl_args_not_allowed(SynImplArgsCall c)                = impl_args_not_allowed(expr: c);
@@ -410,6 +423,8 @@ Any* anchor_objs(ExprSpecWFError err) =
   wrong_pseudocall_arity()                = (err.expr),
   unknown_function()                      = (err.expr),
   unknown_function_or_method()            = (err.expr),
+  unknown_aggr_funct()                    = (err.expr),
+  invalid_aggr_funct_arity()              = (err.expr),
   undefined_operator()                    = (err.expr),
   wrong_cls_arg_arity()                   = (err.expr),
   wrong_cls_call_arity()                  = (err.expr),
@@ -567,7 +582,13 @@ String* create_error_msg(WFError err) =
   protocol_redef()                    = protocol_redef_err_msg(err.type, err.protocols),
   protocol_errors()                   = protocol_errs_msg(err.prot, err.errors),
   dupl_auto_defs()                    = dupl_auto_defs_err_msg(err.defs),
-  typevar_decl_errs()                 = typevar_decl_err_msg(err.decl, err.errors);
+  typevar_decl_errs()                 = typevar_decl_err_msg(err.decl, err.errors),
+  aggr_fn_decl_errs()                 = aggr_fn_decl_err_msg(err.decl, err.errors);
+
+
+String* aggr_fn_decl_err_msg(AggrFunctDecl decl, AggrFnWFError+ errors) =
+  ("Aggregate function declaration errors: " & printed(decl.name), source_code_loc_str(decl)) &
+  ("  " & l : l <- join((create_error_msg(e) : e <- errors)));
 
 
 String* dupl_typedef_error_msg(AnyTypedef td1, AnyTypedef td2) = (
@@ -834,6 +855,10 @@ String* basic_err_msg(ExprSpecWFError err) =
                                     return ("Unknown method: " & user_repr(method_symbol(last(symbs))));
                                   ;
                                 },
+  unknown_aggr_funct()        = ("Undefined aggregate function: " & printed(err.expr.fn_name)),
+  invalid_aggr_funct_arity()  = ( "Invalid aggregate function arity: " & printed(err.expr.fn_name) &
+                                  "(..). Valid arities: " & append((printed(a) : a <- isort(err.arities)), ", ")
+                                ),
   undefined_operator()        = ("Undefined operator: " & user_repr(err.expr.op)),
   wrong_cls_arg_arity()       = ( "Closure has wrong arity: " & user_repr(err.expr) &
                                   ", expected arity: " & printed(err.exp_arity) &
@@ -993,6 +1018,10 @@ String* create_error_msg(ProcDefSpecWFError err) =
   wrong_main_proc_arity = ("Main procedure can only have one parameter"),
   dup_auto_or_db_var()  = ("Duplicate automaton variable: " & _print_(err.name)),
   undef_auto_or_db()    = ("Automaton is not defined: " & upper_camel_case(err.type));
+
+
+String* create_error_msg(AggrFnSpecWFError err) =
+  dupl_aggr_fn_vars()   = ("Duplicate variables: " & append((printed(n) : n <- err.names), ", "));
 
 ////////////////////////////////////////////////////////////////////////////////
 

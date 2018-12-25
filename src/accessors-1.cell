@@ -137,6 +137,14 @@ implicit syn_prg : SynPrg {
   [ProtDecl]      prot_decls        = [d : d <- all_syn_decls, prot_decl()        ?= d];
 
 
+  [AggrFunctDecl] aggr_funct_decls_by_name(Symbol name) {
+    return if aggr_fns_map(name, *) then aggr_fns_map(name, !!) else [];
+
+    [Symbol -> [+AggrFunctDecl]] aggr_fns_map =
+      group_by(aggr_funct_decls, $.name);
+  }
+
+
   [BasicTypeSymbol -> [+Nat]] type_arity_map =
     merge_values(
       [[td.name -> 0]         : td <- syn_tdefs] &

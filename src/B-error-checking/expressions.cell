@@ -36,7 +36,8 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg], actual_ar
     call_lookalike()    = if not expr.target :: IdChain
                             then join((expr_wf_errors(e, def_vars) : e <- (expr.target) & expr.args))
                             else (),
-    aggr_fn_call()      = (), ## IMPLEMENT IMPLEMENT IMPLEMENT
+    aggr_fn_call()      = clauses_exprs_wf_errors((expr.clause), (expr.expr, expr.cond if expr.cond?), def_vars) &
+                          join((expr_wf_errors(e, def_vars) : e <- expr.extra_args)),
     rel_memb_test()     = join((expr_wf_errors(value(e), def_vars) : e <- expr.args, e != nothing)),
     rel_lookup()        = join((expr_wf_errors(value(a), def_vars) : a <- expr.args, a != nothing)),
     and()               = expr_wf_errors(expr.left, def_vars) & expr_wf_errors(expr.right, def_vars),
@@ -129,15 +130,13 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg], actual_ar
     _                   = ();
 
 
-  // type SynAggrFnCall    = aggr_fn_call(
-  //                           fn_name:    Symbol,
-  //                           expr:       SynExpr,
-  //                           clause:     SynIterClause,
-  //                           cond:       SynExpr?,
-  //                           extra_args: SynExpr*
-  //                         );
   ExprWFError* aggr_fn_call_wf_errors(SynAggrFnCall expr, [DefVar] def_vars) {
-    fail;
+    decls = aggr_funct_decls_by_name(expr.fn_name);
+    arities = [nz_nat(1 + |d.extra_args|) : d <- decls];
+    return (
+      unknown_aggr_funct(expr) if decls == [],
+      invalid_aggr_funct_arity(expr, arities) if arities != [] and not arities(1 + |expr.extra_args|)
+    );
   }
 
 
