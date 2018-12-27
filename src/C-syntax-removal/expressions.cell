@@ -522,7 +522,8 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
   Statement desugar_insert_entry((var: Atom, args: SynExpr+, iter: SynCollIter?) entry, Bool force, [StdVar] def_vars) {
     args_vars = def_vars & if entry.iter? then syn_new_vars(entry.iter) else [];
     args = (desugar_expr(e, args_vars) : e <- entry.args);
-    stmt = insert_stmt(rel_var(entry.var), args, force);
+    var = rel_var(entry.var);
+    stmt = if force then update_stmt(var, args) else insert_stmt(var, args);
     stmt = foreach_stmt(desugar(entry.iter, def_vars), (stmt)) if entry.iter?;
     return stmt;
 
@@ -545,12 +546,12 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
         return desugar_insert_entry(entry, false, def_vars);
       else
         attr_rel_args = (args | desugar_expr(attr.value, def_vars));
-        attr_stmt = insert_stmt(rel_var(attr.name), attr_rel_args, false);
+        attr_stmt = insert_stmt(rel_var(attr.name), attr_rel_args);
         attr_stmt = if_stmt(desugar_expr(attr.cond, def_vars), (attr_stmt), ()) if attr.cond?;
         return attr_stmt;
       ;
     } : attr <- stmt.attrs);
-    return (insert_stmt(relvar, args, false)) & attrs_inserts;
+    return (insert_stmt(relvar, args)) & attrs_inserts;
   }
 
 

@@ -37,7 +37,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
       try_update_stmt()   = typecheck_try_update_stmt(stmt.name, stmt.args, env),
       set_memb_var_stmt() = typecheck_set_memb_var_stmt(stmt.var, stmt.value, env),
       delete_stmt()       = typecheck_delete_stmt(stmt.var, stmt.args, env),
-      insert_stmt()       = typecheck_insert_stmt(stmt, env),
+      insert_stmt()       = typecheck_insert_stmt(stmt.var, stmt.args, env),
+      update_stmt()       = typecheck_standalone_insert_stmt(stmt.var, stmt.args, env),
 
       return_stmt         = [],
       proc_call_stmt()    = typecheck_proc_call_stmt(
@@ -267,17 +268,22 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   }
 
 
-  [TypeCheckingError] typecheck_insert_stmt(InsertStmt stmt, [EnvVar -> Type] env) {
-    errs = seq_union((typecheck(a, type_any, env) : a <- stmt.args));
+  [TypeCheckingError] typecheck_insert_stmt(RelVar var, Expr+ args, [EnvVar -> Type] env) {
+    return typecheck_standalone_insert_stmt(var, args, env);
+  }
+
+
+  [TypeCheckingError] typecheck_standalone_insert_stmt(RelVar var, Expr+ args, [EnvVar -> Type] env) {
+    errs = seq_union((typecheck(a, type_any, env) : a <- args));
     return errs if errs != [];
-    args_types = (expr_type(a, env) : a <- stmt.args);
+    args_types = (expr_type(a, env) : a <- args);
     database = cast_database(context);
-    sgns = database.rel_vars[stmt.var].signatures;
-    agg_sgns = relvar_aggregated_signatures(database.name, stmt.var);
+    sgns = database.rel_vars[var].signatures;
+    agg_sgns = relvar_aggregated_signatures(database.name, var);
     for s <- rand_sort(sgns) & rand_sort(agg_sgns):
       return [] if all((is_subset(at, ft) : at, ft <- zip(args_types, s)));
     ;
-    return [no_matching_relvar(stmt.var, (just(a) : a <- args_types), sgns)];
+    return [no_matching_relvar(var, (just(a) : a <- args_types), sgns)];
   }
 
   //////////////////////////////////////////////////////////////////////////////

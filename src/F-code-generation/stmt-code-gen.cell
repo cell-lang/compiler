@@ -73,9 +73,8 @@ implicit program           : Program,
     try_update_stmt()     = try_update_stmt_opt_code(stmt.name, stmt.args, env, var_gen),
     set_memb_var_stmt()   = set_memb_var_stmt_opt_code(stmt.var, stmt.value, env, var_gen),
     delete_stmt()         = delete_stmt_opt_code(stmt.var, stmt.args, env, var_gen),
-    insert_stmt()         = if stmt.force
-                              then forced_insert_stmt_opt_code(stmt.var, stmt.args, env, var_gen)
-                              else insert_stmt_opt_code(stmt.var, stmt.args, env, var_gen),
+    insert_stmt()         = insert_stmt_opt_code(stmt.var, stmt.args, env, var_gen),
+    update_stmt()         = update_stmt_opt_code(stmt.var, stmt.args, env, var_gen),
 
     set_input_ctrl_stmt()         = set_input_ctrl_stmt_opt_code(stmt.var, stmt.input, stmt.value, env, var_gen),
     clear_input_ctrl_stmt()       = clear_input_ctrl_stmt_opt_code(stmt.var, stmt.input, env, var_gen),
@@ -164,6 +163,17 @@ implicit program           : Program,
   }
 
 
+  StmtCompInfo insert_stmt_opt_code([(rel_var: RelVar, args: Expr+)] insertions, [EnvVar -> Type] env, VarGen init_var_gen) {
+    code = ();
+    for is <- isort(insertions):
+      ins_code, surrs, break_surrs, var_gen = insert_stmt_opt_code(is.rel_var, is.args, env, init_var_gen);
+      assert surrs == just(surrogates) and break_surrs == [] and var_gen == init_var_gen;
+      code = code & ins_code;
+    ;
+    return (code, just(surrogates), [], init_var_gen);
+  }
+
+
   StmtCompInfo insert_stmt_opt_code(RelVar rel_var, Expr+ args, [EnvVar -> Type] env, VarGen init_var_gen) {
     args_eval_code, args_aliases, var_gen = opt_eval_code(args, env, init_var_gen);
     info = insert_stmt_opt_code(rel_var, nonempty(args_aliases), (expr_type(a, env) : a <- args), var_gen);
@@ -221,7 +231,7 @@ implicit program           : Program,
   }
 
 
-  StmtCompInfo forced_insert_stmt_opt_code(RelVar rel_var, Expr+ args, [EnvVar -> Type] env, VarGen init_var_gen) {
+  StmtCompInfo update_stmt_opt_code(RelVar rel_var, Expr+ args, [EnvVar -> Type] env, VarGen init_var_gen) {
     args_eval_code, args_aliases, var_gen = opt_eval_code(args, env, init_var_gen);
     args_types = (expr_type(a, env) : a <- args);
     info = insert_stmt_opt_code(rel_var, nonempty(args_aliases), args_types, var_gen);
