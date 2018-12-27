@@ -125,13 +125,20 @@ implicit {
       } : e <- entries));
 
 
-    // insert_with_attrs_stmt(
-    //   relvar: Symbol,
-    //   args:   SynExpr+,
-    //   attrs:  (name: Symbol, value: SynExpr, cond: SynExpr?, iter: SynCollIter?)+
-    // )
     ExprWFError* insert_with_attrs_stmt_wf_errors(SynInsertWithAttrsStmt stmt, [DefVar] vars) {
-      return (); ## IMPLEMENT IMPLEMENT IMPLEMENT
+      errs = join((expr_wf_errors(a, vars) : a <- stmt.args));
+      return errs if errs != ();
+      for a <- stmt.attrs:
+        if a.iter?:
+          errs = iter_wf_errors(a.iter, vars);
+          return errs if errs != ();
+        ;
+        attr_vars = vars & if a.iter? then syn_new_vars(a.iter) else [];
+        errs = expr_wf_errors(a.value, attr_vars);
+        errs = errs & expr_wf_errors(a.cond, attr_vars) if a.cond?;
+        return errs if errs != ();
+      ;
+      return ();
     }
 
 
@@ -158,7 +165,7 @@ implicit {
     set_memb_var_stmt()       = set_memb_var_stmt_local_wf_errors(stmt.var, stmt.value, ro_vars, rw_vars),
     delete_stmt()             = join((delete_or_insert_stmt_local_wf_errors(e.var, |e.args|) : e <- stmt.entries)),
     insert_stmt()             = join((delete_or_insert_stmt_local_wf_errors(e.var, |e.args|) : e <- stmt.entries)),
-    insert_with_attrs_stmt()  = insert_with_attrs_stmt_wf_errors(stmt, ro_vars, rw_vars),
+    insert_with_attrs_stmt()  = insert_with_attrs_stmt_local_wf_errors(stmt),
 
     set_input_ctrl_stmt()     |
     clear_input_ctrl_stmt()   = set_or_clear_input_ctrl_stmt_local_wf_errors(stmt.var, stmt.input, ro_vars, rw_vars),
@@ -230,8 +237,14 @@ implicit {
   }
 
 
-  ExprWFError* insert_with_attrs_stmt_wf_errors(SynInsertWithAttrsStmt stmt, [DefVar] ro_vars, [StdVar] rw_vars) {
-    return (); ## IMPLEMENT IMPLEMENT IMPLEMENT
+  ExprWFError* insert_with_attrs_stmt_local_wf_errors(SynInsertWithAttrsStmt stmt) {
+    errs = delete_or_insert_stmt_local_wf_errors(stmt.relvar, |stmt.args|);
+    return errs if errs != ();
+    for a <- stmt.attrs:
+      errs = delete_or_insert_stmt_local_wf_errors(a.name, nz_nat(1 + |stmt.args|));
+      return errs if errs != ();
+    ;
+    return ();
   }
 
 
