@@ -18,7 +18,7 @@ implicit syn_prg : SynPrg {
     ## FUNCTION SIGNATURES SHOULD BE CHECKED HERE, BEFORE CHECKING AGGREGATE FUNCTIONS AND SCHEMAS
 
     errs = join((aggr_funct_decl_wf_errors(f) : f <- isort(aggr_funct_decls)));
-    return errs if errs != [];
+    return errs if errs != ();
 
     errs = schemas_wf_errors(schemas, type_arity_map);
     return rand_sort(errs) if errs != [];
@@ -132,7 +132,6 @@ implicit syn_prg : SynPrg {
 
   WFError* handler_def_wf_errors(HandlerDef handler_def) {
     errs = plain_type_wf_errors(handler_def.type);
-
     db_symb = db_symbol(handler_def.target);
     if db_defs_by_id(db_symb, *):
       body = handler_def.body;
