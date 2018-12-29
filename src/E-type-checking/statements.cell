@@ -10,6 +10,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     return [];
   }
 
+  //////////////////////////////////////////////////////////////////////////////
 
   [TypeCheckingError] typecheck(Statement stmt, Type exp_type, [EnvVar -> Type] env) {
     errs = typecheck_without_annotations(stmt, exp_type, env);
@@ -100,7 +101,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     nvars = |iter.vars|;
     exp_src_type = if nvars == 1 then type_seq else type_seq(type_tuple(nvars));
     errs_seq = typecheck(iter.src_expr, exp_src_type, env);
-    return typecheck_seq_foreach(iter, body, exp_type, env) if errs_seq == [];
+    return typecheck_loop_body(body, seq_loop_vars(iter, env), exp_type, env) if errs_seq == [];
     return errs_seq if iter.idx_var? or nvars > 3;
 
     if |iter.vars| == 1:
@@ -110,7 +111,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
         errs_any = typecheck(iter.src_expr, ne_union_type([type_seq, type_set]), env);
         return if errs_any != [] then errs_any else errs_seq & errs_set;
       ;
-      return typecheck_set_foreach(iter, body, exp_type, env);
+      return typecheck_loop_body(body, set_loop_vars(iter, env), exp_type, env);
 
     elif |iter.vars| == 2:
       errs_rel = typecheck(iter.src_expr, type_bin_rel, env);
@@ -119,7 +120,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
         errs_any = typecheck(iter.src_expr, ne_union_type([type_seq, type_bin_rel]), env);
         return if errs_any != [] then errs_any else errs_seq & errs_rel;
       ;
-      return typecheck_bin_rel_foreach(iter, body, exp_type, env);
+      return typecheck_loop_body(body, bin_rel_loop_vars(iter, env), exp_type, env);
 
     else
       assert |iter.vars| == 3;
@@ -129,44 +130,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
         errs_any = typecheck(iter.src_expr, ne_union_type([type_seq, type_tern_rel]), env);
         return if errs_any != [] then errs_any else errs_seq & errs_rel;
       ;
-      return typecheck_tern_rel_foreach(iter, body, exp_type, env);
+      return typecheck_loop_body(body, tern_rel_loop_vars(iter, env), exp_type, env);
     ;
-
-
-    [TypeCheckingError] typecheck_seq_foreach(CollValueIter iter, Statement+ body, Type exp_type, [EnvVar -> Type] env) {
-      elem_type = seq_elem_supertype(expr_type(iter.src_expr, env));
-      if |iter.vars| == 1:
-        var = only(iter.vars);
-        loop_vars = [value(var) -> elem_type if var != nothing];
-      else
-        field_types = tuple_field_supertypes(elem_type, |iter.vars|);
-        loop_vars = [value(v) -> field_types(i) : v @ i <~ iter.vars, v != nothing];
-      ;
-      loop_vars = loop_vars & [iter.idx_var -> type_nat] if iter.idx_var?;
-      return typecheck_loop_body(body, loop_vars, exp_type, env);
-    }
-
-
-    [TypeCheckingError] typecheck_set_foreach(CollValueIter iter, Statement+ body, Type exp_type, [EnvVar -> Type] env) {
-      elem_type = set_elem_supertype(expr_type(iter.src_expr, env));
-      var = only_unsafe(iter.vars);
-      loop_vars = [value(var) -> elem_type if var != nothing];
-      return typecheck_loop_body(body, loop_vars, exp_type, env);
-    }
-
-
-    [TypeCheckingError] typecheck_bin_rel_foreach(CollValueIter iter, Statement+ body, Type exp_type, [EnvVar -> Type] env) {
-      args_types = bin_rel_args_supertypes(expr_type(iter.src_expr, env));
-      loop_vars = [value(v) -> args_types(i) : v @ i <~ iter.vars, v != nothing];
-      return typecheck_loop_body(body, loop_vars, exp_type, env);
-    }
-
-
-    [TypeCheckingError] typecheck_tern_rel_foreach(CollValueIter iter, Statement+ body, Type exp_type, [EnvVar -> Type] env) {
-      args_types = tern_rel_args_supertypes(expr_type(iter.src_expr, env));
-      loop_vars = [value(v) -> args_types(i) : v @ i <~ iter.vars, v != nothing];
-      return typecheck_loop_body(body, loop_vars, exp_type, env);
-    }
 
 
     [TypeCheckingError] typecheck_loop_body(Statement+ body, [EnvVar -> Type] loop_vars, Type exp_type, [EnvVar -> Type] env) {

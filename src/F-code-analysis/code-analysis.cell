@@ -1,0 +1,109 @@
+implicit program : Program, typedefs : [TypeName -> NeType] {
+  [<Handler, Update> -> [+AnalysisError]] analysis_errors {
+    return [
+      artifact -> errs
+      : auto <- program.data_bases,
+        artifact <- auto.handlers | artifact <- auto.updates,
+        errs = analysis_errors(artifact, context = auto),
+        errs != []
+    ];
+  }
+}
+
+
+implicit program : Program, typedefs : [TypeName -> NeType], context : Database {
+  [AnalysisError] analysis_errors(Handler handler) {
+    // type Handler  = handler(type: NeType, body: Statement*);
+    env = [var(:this) -> handler.type];
+    return analyse(handler.body, env, typed_vars = []);
+  }
+
+
+  [AnalysisError] analysis_errors(Update update) {
+    // type Update   = update(name: UpdateSymbol, args: (NeType, StdVar)*, body: Statement*);
+    env = [v -> t : t, v <~ update.args];
+    return analyse(update.body, env, typed_vars = []);
+  }
+}
+
+
+implicit program : Program, typedefs : [TypeName -> NeType], context : Database, typed_vars : [StdVar -> NeType] {
+  [AnalysisError] analyse(Statement* stmts, [EnvVar -> Type] env) {
+    curr_reqrs = [];
+    curr_env = env;
+    for s <- stmts:
+      curr_reqrs = update_insert_requirement(s, curr_reqrs, curr_env);
+      curr_env = update_env(s, curr_env);
+    ;
+    prob_stmts = [s : unused_var_1, unused_var_2, s <- curr_reqrs];
+    return [
+      possible_foreign_key_violation(s, nonempty([v : v, unused_var <- curr_reqrs(?, ?, s)]))
+      : s <- prob_stmts
+    ];
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  [RelVar, Expr+, InsertStmt] update_insert_requirement(Statement stmt, [RelVar, Expr+, InsertStmt] reqrs, [EnvVar -> Type] env) {
+    return match (stmt)
+      insert_stmt()   |
+      foreach_stmt()  = update_reqrs(stmt, reqrs, env),
+      _               = reqrs;
+
+
+    // insert_stmt(var: RelVar, args: Expr+);
+    [RelVar, Expr+, InsertStmt] update_reqrs(InsertStmt stmt, [RelVar, Expr+, InsertStmt] reqrs, [EnvVar -> Type] env) {
+      rel_auto = cast_database(context);
+      args_types = (expr_type(a, env) : a <- stmt.args);
+      return reqrs if not args_types :: NeType+;
+      req_ins_rel_vars = required_insertions(rel_auto.name, stmt.var, args_types);
+      rel_var = stmt.var;
+      arity = |stmt.args|;
+      if req_ins_rel_vars != []:
+        new_reqrs = [v, as, s : v, as, s <- reqrs | v, as, s <- [v, stmt.args, stmt : v <- req_ins_rel_vars]];
+      else
+        new_reqrs = reqrs;
+      ;
+      if arity > 1:
+        key_args = take(stmt.args, arity - 1);
+        new_reqrs = [v, as, s : v, as, s <- new_reqrs, v != rel_var or as != key_args] if new_reqrs(rel_var, key_args, *);
+      ;
+      return new_reqrs;
+    }
+
+
+    // foreach_stmt(iter: CollValueIter, body: Statement+);
+    // coll_value_iter(vars: Maybe[StdVar]+, idx_var: StdVar?, src_expr: Expr);
+    [RelVar, Expr+, InsertStmt] update_reqrs(ForeachStmt[Statement] stmt, [RelVar, Expr+, InsertStmt] reqrs, [EnvVar -> Type] env) {
+      coll_type = expr_type(stmt.iter.src_expr, env);
+      return reqrs if coll_type == empty_type or (x <- [[], ()] : type_contains_obj(coll_type, x));
+      loop_env = env & loop_vars(stmt.iter, env);
+      return update_reqrs(stmt.body, reqrs, loop_env);
+    }
+
+
+    [RelVar, Expr+, InsertStmt] update_reqrs(Statement+ stmts, [RelVar, Expr+, InsertStmt] reqrs, [EnvVar -> Type] env) {
+      curr_reqrs = [];
+      curr_env = env;
+      for s <- stmts:
+        curr_reqrs = update_insert_requirement(s, curr_reqrs, curr_env);
+        curr_env = update_env(s, curr_env);
+      ;
+      // The body of the statement must have already been checked, so no insert requirement
+      // that comes up in the body of the statement (as opposed to coming from the parent
+      // block(s) of code) can remain unsatisfied at this point
+      assert not (v, as, unused_var <- curr_reqrs : not reqrs(v, as, *));
+      return curr_reqrs;
+    }
+  }
+}
+
+// body: (
+//   insert_stmt(var: rel_var(user), args: (accessor(expr: var(this), field: object(user)))),
+//   foreach_stmt(
+//     body: (
+//       insert_stmt(var: rel_var(score), args: (accessor(expr: var(this), field: object(user)), var(s)))
+//     ),
+//     iter:
+//       coll_value_iter(vars: (just(var(s))), src_expr: accessor(expr: var(this), field: object(scores)))
+//   )

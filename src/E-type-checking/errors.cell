@@ -195,31 +195,6 @@ TypeCheckingError add_anchor_if_needed(TypeCheckingError err, Any anchor) =
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-String* create_error_msgs(<Function, AggrFunct, Database, Method, Update, Handler, Automaton, Procedure> decl, [+TypeCheckingError] errs) {
-  err_msgs = join(intermix((indent_lines(create_error_msg(e)) : e <- rand_sort(errs)), ("")));
-  fname, sl, el = source_code_location(decl);
-  loc_msg = "File " & fname & " line" & if sl == el then " " & printed(sl) else "s " & printed(sl) & "-" & printed(el);
-  return (loc_msg) & err_msgs;
-}
-
-
-String source_file(<Function, AggrFunct, Database, Method, Update, Handler, Automaton, Procedure> fn) =
-  source_code_location(fn)(0);
-
-
-## THERE'S AN ALMOST IDENTICAL FUNCTION IN WELL-FORMEDNESS CHECKING
-(String, NzNat, NzNat) source_code_location(<Function, AggrFunct, Database, Method, Update, Handler, Automaton, Procedure> decl) {
-  maybe_data = fetch(decl);
-  if maybe_data != nothing:
-    data = value(maybe_data);
-    return data if data :: (String, NzNat, NzNat);
-  ;
-  err_msg = "CANNOT DETERMINE LOCATION OF OFFENDING CODE";
-  err_msg = err_msg & ": " & printed(value(maybe_data)) if maybe_data != nothing;
-  return (err_msg, 1, 1);
-}
-
-
 String* create_error_msg(TypeCheckingError err) =
   obj_does_not_belong_to_type()       = ("Object " & printed(err.obj) & " does not belong to type " & user_repr(err.type)),
   unexpected_coll_expr()              = { s1, s2 = match (err.coll_type)

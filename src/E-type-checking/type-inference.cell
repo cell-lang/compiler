@@ -964,6 +964,57 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
     return new_env & generate_env(ptrn, type);
   }
+
+
+  //////////////////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////
+
+  [EnvVar -> Type] loop_vars(CollValueIter iter, [EnvVar -> Type] env) {
+    src_type = expr_type(iter.src_expr, env);
+    if is_subset(src_type, type_seq):
+      return seq_loop_vars(iter, env);
+    elif is_subset(src_type, type_set):
+      return set_loop_vars(iter, env);
+    elif is_subset(src_type, type_bin_rel):
+      return bin_rel_loop_vars(iter, env);
+    else
+      assert is_subset(src_type, type_tern_rel);
+      return tern_rel_loop_vars(iter, env);
+    ;
+  }
+
+
+  [EnvVar -> Type] seq_loop_vars(CollValueIter iter, [EnvVar -> Type] env) {
+    elem_type = seq_elem_supertype(expr_type(iter.src_expr, env));
+    if |iter.vars| == 1:
+      var = only(iter.vars);
+      loop_vars = [value(var) -> elem_type if var != nothing];
+    else
+      field_types = tuple_field_supertypes(elem_type, |iter.vars|);
+      loop_vars = [value(v) -> field_types(i) : v @ i <~ iter.vars, v != nothing];
+    ;
+    loop_vars = loop_vars & [iter.idx_var -> type_nat] if iter.idx_var?;
+    return loop_vars;
+  }
+
+
+  [EnvVar -> Type] set_loop_vars(CollValueIter iter, [EnvVar -> Type] env) {
+    elem_type = set_elem_supertype(expr_type(iter.src_expr, env));
+    var = only_unsafe(iter.vars);
+    return [value(var) -> elem_type if var != nothing];
+  }
+
+
+  [EnvVar -> Type] bin_rel_loop_vars(CollValueIter iter, [EnvVar -> Type] env) {
+    args_types = bin_rel_args_supertypes(expr_type(iter.src_expr, env));
+    return [value(v) -> args_types(i) : v @ i <~ iter.vars, v != nothing];
+  }
+
+
+  [EnvVar -> Type] tern_rel_loop_vars(CollValueIter iter, [EnvVar -> Type] env) {
+    args_types = tern_rel_args_supertypes(expr_type(iter.src_expr, env));
+    return [value(v) -> args_types(i) : v @ i <~ iter.vars, v != nothing];
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
