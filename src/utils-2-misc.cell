@@ -18,6 +18,63 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
+// ## THESE ARE NOT SUPPOSED TO COMPILE, BUT THEY DO...
+// Bool are_disjoint(NeType+ types1, Maybe[NeType]+ types2)    = any(types2, types1, are_ptype_disjoint);
+// Bool match_exactly(NeType+ types1, Maybe[NeType]+ types2)   = all(types2, types1, is_eq);
+// Bool is_subsignature(Maybe[NeType]+ types2, NeType+ types1) = all(types2, types1, is_subset);
+
+implicit typedefs : [TypeName -> NeType] {
+  Bool are_disjoint(NeType+ types1, Maybe[NeType]+ types2) {
+    assert |types1| == |types2|;
+    for t1 @ i <- types1:
+      t2 = types2(i);
+      return true if t2 != nothing and are_ptype_disjoint(t1, value(t2));
+    ;
+    return false;
+  }
+
+
+  Bool match_exactly(NeType+ types1, Maybe[NeType]+ types2) {
+    assert |types1| == |types2|;
+    for t1 @ i <- types1:
+      t2 = types2(i);
+      return false if t2 != nothing and not is_eq(t1, value(t2));
+    ;
+    return true;
+  }
+
+
+  Bool is_subsignature(Maybe[NeType]+ types2, NeType+ types1) {
+    assert |types1| == |types2|;
+    for t1 @ i <- types1:
+      t2 = types2(i);
+      return false if t2 != nothing and not is_subset(value(t2), t1);
+    ;
+    return true;
+  }
+
+
+  ## BAD: THERE'S SOME REDUNDANCY HERE..
+  Bool overlap(NeType+ signature, Maybe[NeType]+ partial_signature) {
+    assert |signature| == |partial_signature|;
+    for t2 @ i <- partial_signature:
+      return false if t2 != nothing and are_ptype_disjoint(signature(i), value(t2));
+    ;
+    return true;
+  }
+
+  Bool is_subset_signature(NeType+ signature, Maybe[NeType]+ partial_signature) {
+    assert |signature| == |partial_signature|;
+    for mst @ i <- partial_signature:
+      return false if mst != nothing and not is_subset(signature(i), value(mst));
+    ;
+    return true;
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
 implicit typedefs : [TypeName -> NeType] {
 
   Bool is_neat_subset(NeType subset, NeType superset) =

@@ -1,21 +1,4 @@
 implicit program : Program, typedefs : [TypeName -> NeType] {
-  // type ForeignKey = foreign_key(
-  //                     source: (RelVar, (Maybe[Symbol], Maybe[NeType])+),
-  //                     target: (RelVar, Maybe[Symbol]+)
-  //                   );
-
-  // type Database = data_base(
-  //                   name:         DBSymbol,
-  //                   links:        DBSymbol*,
-  //                   state_vars:   [MembVar -> (type: NeType, init_value: Expr)],
-  //                   rel_vars:     [RelVar -> (signatures: [+NeType+], keys: [[+Nat]], symmetric: Bool)],
-  //                   foreign_keys: [ForeignKey],
-  //                   nested_dbs:   [NestedDBVar -> DBSymbol],
-  //                   methods:      [Method],
-  //                   updates:      [Update],
-  //                   handlers:     [Handler]
-  //                 );
-
   [RelVar] required_insertions(DBSymbol rel_auto_id, RelVar rel_var, NeType+ args_types) {
     global_map = required_insertions_map;
     if global_map(rel_auto_id, *):
@@ -60,8 +43,115 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
   }
 
 
-  // tgt_keys = rel_auto.rel_vars(tgt_rel_var).keys;
-  // multivalued = match (src_args, tgt_args)
-  //   (just()),         (just(), nothing)           = keys([0]),
-  //   (just(), just()), (just(), just(), nothing)   = keys([0, 1]);
+  Bool is_one_to_one_attribute(DBSymbol rel_auto_id, RelVar rel_var) {
+    return global_map(rel_auto_id, !!)(rel_var);
+
+
+    [DBSymbol -> [RelVar]] global_map = [
+      rel_auto.name -> [
+        v : v, unused_var <- rel_auto.rel_vars, is_one_to_one_attribute(rel_auto, v)
+      ] : rel_auto <- program.data_bases
+    ];
+
+
+    Bool is_one_to_one_attribute(Database rel_auto, RelVar rel_var) {
+      info = rel_auto.rel_vars(rel_var);
+      foreign_keys = rel_auto.foreign_keys;
+      return false if info.symmetric;
+      arity = only([|s| : s <- info.signatures]);
+      if arity == 2 and info.keys == [[0]]:
+        for cand_rel_var, cand_info <- isort(rel_auto.rel_vars):
+          cand_arity = only([|s| : s <- cand_info.signatures]);
+          if cand_arity == 1:
+            // Foreign keys that go from the entity or relationship to the attribute
+            down_keys = [k : k <- foreign_keys, is_std_attr_key(k, cand_rel_var, rel_var)];
+
+            // Foreign keys that go from the attribute to the entity or relationship
+            up_keys = [k : k <- foreign_keys, is_mand_attr_key(k, rel_var, cand_rel_var)];
+
+            if down_keys != [] and up_keys != []:
+              ## SHOULD CHECK THAT ALL THE SIGNATURES (OF THE ATTRIBUTE, NOT NECESSARILY THE MASTER)
+              ## ARE COVERED BY THE KEYS
+
+              all_signatures_covered = (s <- info.signatures : {
+                // For each signature of the attribute relation variable, there must
+                // be a pair of keys (one for each direction) that cover it entirely
+                // for k <- up_keys:
+                  // src, src_args, src_types, tgt, tgt_args = unpack(key);
+
+                fail;
+              });
+              return true if all_signatures_covered;
+            ;
+          ;
+        ;
+      ;
+      return false;
+    }
+  }
 }
+
+
+Bool is_std_attr_key(ForeignKey key, RelVar exp_src, RelVar exp_tgt) {
+  src, src_args, src_types, tgt, tgt_args = unpack(key);
+  return false if src != exp_src or tgt != exp_tgt;
+  return match (src_args, tgt_args)
+    (just(), nothing),  (just())  = true,
+    _,                  _         = false;
+}
+
+
+Bool is_mand_attr_key(ForeignKey key, RelVar exp_src, RelVar exp_tgt) {
+  src, src_args, src_types, tgt, tgt_args = unpack(key);
+  return false if src != exp_src or tgt != exp_tgt;
+  return match (src_args, tgt_args)
+    (just()), (just(), nothing)   = true,
+    _,        _                   = false;
+}
+
+
+## MOVE TO methods-2.cell
+(RelVar, Maybe[Symbol]+, Maybe[NeType]+, RelVar, Maybe[Symbol]+) unpack(ForeignKey key) {
+  src, src_info = key.source;
+  src_args, src_types = unzip(src_info);
+  tgt, tgt_args = key.target;
+  return (src, nonempty(src_args), nonempty(src_types), tgt, tgt_args);
+}
+
+// type ForeignKey = foreign_key(
+//                     source: (RelVar, (Maybe[Symbol], Maybe[NeType])+),
+//                     target: (RelVar, Maybe[Symbol]+)
+//                   );
+
+// type Database = data_base(
+//                   name:         DBSymbol,
+//                   links:        DBSymbol*,
+//                   state_vars:   [MembVar -> (type: NeType, init_value: Expr)],
+//                   rel_vars:     [RelVar -> (signatures: [+NeType+], keys: [[+Nat]], symmetric: Bool)],
+//                   foreign_keys: [ForeignKey],
+//                   nested_dbs:   [NestedDBVar -> DBSymbol],
+//                   methods:      [Method],
+//                   updates:      [Update],
+//                   handlers:     [Handler]
+//                 );
+
+
+
+// // Foreign keys where the relation appears as the origin/source
+// // and the target is a unary relation
+// keys_as_src = [k : k <- foreign_keys, left(k.source) == rel_var, |right(k.target)| == 1];
+
+// // Foreign keys where the relation appears as the target
+// // and the origin/source is a unary relation
+// keys_as_tgt = [k : k <- foreign_keys, left(k.target) == rel_var, |right(k.source)| == 1];
+
+// targets = [left(k.target) : k <- keys_as_src];
+// sources = [left(k.source) : k <- keys_as_tgt];
+
+// // Possible candidate as "masters" for this relation are relations
+// // that are linked to this one by a bidirectional foreign key
+// candidate_masters = intersection(targets, sources);
+// for cm <- candidate_masters:
+// sgns = info.signatures;
+// for fk <- rel_auto.foreign_keys:
+// ;
