@@ -41,14 +41,38 @@ implicit program           : Program,
     env = init_env;
     surrs = just(surrogates);
     break_surrs = [];
-    for s <- stmts:
-      fail if surrs == nothing;
-      stmt_code, surrs, stmt_break_surrs, var_gen = stmt_opt_code(s, env, var_gen, surrogates = value(surrs));
-      code = code & stmt_code;
-      break_surrs = break_surrs & stmt_break_surrs;
-      env = update_env(s, env);
+    for os <- stmts:
+      for s <- preprocessed_statements(os, env):
+        fail if surrs == nothing;
+        stmt_code, surrs, stmt_break_surrs, var_gen = stmt_opt_code(s, env, var_gen, surrogates = value(surrs));
+        code = code & stmt_code;
+        break_surrs = break_surrs & stmt_break_surrs;
+        env = update_env(s, env);
+      ;
     ;
     return (code, surrs, break_surrs, var_gen);
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  Statement+ preprocessed_statements(Statement stmt, [EnvVar -> Type] env) =
+    delete_stmt() = insert_cascade_deletes(stmt, env),
+    _             = (stmt);
+
+
+  // type DeleteStmt = delete_stmt(var: RelVar, args: Maybe[Expr]+);
+  Statement+ insert_cascade_deletes(DeleteStmt stmt, [EnvVar -> Type] env) {
+    rel_auto = cast_database(context);
+    attrs = [v : v <- rel_auto.attr_map(stmt.var, ?)];
+    attr_args = (stmt.args | nothing);
+    args_types = (apply(a, expr_type($, env)) : a <- attr_args);
+    stmts = (stmt);
+    for a <- isort(attrs):
+      if any_signature_overlaps_partial_signature(rel_auto.rel_vars(a).signatures, args_types):
+        stmts = (stmts | delete_stmt(a, attr_args));
+      ;
+    ;
+    return stmts;
   }
 
   //////////////////////////////////////////////////////////////////////////////

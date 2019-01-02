@@ -11,11 +11,15 @@ implicit syn_prg : SynPrg, artifact : SchemaDef {
     updates  = [desugar_update(u)    : u <- lookup(updates_by_db, artifact.name, [])];
     handlers = [desugar_handler(h)   : h <- lookup(handlers_by_db, artifact.name, [])];
 
+    rel_var_decls = [d : d <~ artifact.decls, relvars_decl() ?= d];
+    attr_map = [rel_var(r.name), rel_var(a.name) : r <- rel_var_decls, a <~ r.attributes];
+
     db = data_base(
       name:         db_symbol(artifact.name),
       links:        (db_symbol(id) : id <- artifact.links),
       state_vars:   state_vars,
       rel_vars:     desugared_relvars,
+      attr_map:     attr_map,
       foreign_keys: desugared_foreign_keys & desugared_implicit_foreign_keys,
       nested_dbs:   db_vars_types,
       methods:      methods,
