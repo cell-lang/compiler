@@ -36,6 +36,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Database,
     for s <- stmts:
       errs = match (s)
         insert_stmt()     |
+        delete_stmt()     |
         assignment_stmt() = analyse(s, curr_reqrs, curr_env),
         _                 = [];
       return errs if errs != [];
@@ -60,6 +61,13 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Database,
     ;
     return [];
   }
+
+
+  // type DeleteStmt = delete_stmt(var: RelVar, args: Maybe[Expr]+);
+  [AnalysisError] analyse(DeleteStmt stmt, [RelVar, Expr+, InsertStmt] reqrs, [EnvVar -> Type] env) = [
+    deleting_one_to_one_attribute(stmt, master_rel_var(context.name, stmt.var))
+      if is_one_to_one_attribute(context.name, stmt.var)
+  ];
 
 
   [AnalysisError] analyse(AssignmentStmt stmt, [RelVar, Expr+, InsertStmt] reqrs, [EnvVar -> Type] env) {
