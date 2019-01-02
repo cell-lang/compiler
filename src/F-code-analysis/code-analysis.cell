@@ -13,14 +13,6 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-type InsertionState = insertion_state(
-                        required:   [RelVar, Expr+, InsertStmt],
-                        permitted:  [RelVar, Expr+]
-                      );
-
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-
 implicit program : Program, typedefs : [TypeName -> NeType], context : Database {
   [AnalysisError] analysis_errors(Handler handler) {
     // type Handler  = handler(type: NeType, body: Statement*);
@@ -42,6 +34,11 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Database,
     curr_reqrs = [];
     curr_env = env;
     for s <- stmts:
+      errs = match (s)
+        insert_stmt()     |
+        assignment_stmt() = analyse(s, curr_reqrs, curr_env),
+        _                 = [];
+      return errs if errs != [];
       curr_reqrs = update_insert_requirement(s, curr_reqrs, curr_env);
       curr_env = update_env(s, curr_env);
     ;
@@ -50,6 +47,25 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Database,
       possible_foreign_key_violation(s, nonempty([v : v, unused_var <- curr_reqrs(?, ?, s)]))
       : s <- prob_stmts
     ];
+  }
+
+
+  [AnalysisError] analyse(InsertStmt stmt, [RelVar, Expr+, InsertStmt] reqrs, [EnvVar -> Type] env) {
+    if is_one_to_one_attribute(context.name, stmt.var):
+      key_args = take(stmt.args, |stmt.args| - 1);
+      if not reqrs(stmt.var, key_args, *):
+        bad_args = reqrs(stmt.var, *, *);
+        return [out_of_place_one_to_one_attr_insertion(stmt, master_rel_var(context.name, stmt.var), bad_args)];
+      ;
+    ;
+    return [];
+  }
+
+
+  [AnalysisError] analyse(AssignmentStmt stmt, [RelVar, Expr+, InsertStmt] reqrs, [EnvVar -> Type] env) {
+    req_vars = [r, v : r, es, unused_var_2 <- reqrs, e <~ es, v <- extern_vars(e)];
+    violations = [r, v : v <~ stmt.vars, r <- req_vars(?, v)];
+    return [assignment_with_pending_updates(stmt, violations) if violations != []];
   }
 
   //////////////////////////////////////////////////////////////////////////////

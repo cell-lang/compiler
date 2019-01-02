@@ -1,8 +1,7 @@
 type AnalysisError  = annotated_analysis_error(error: AnalysisError, anchor: Any),
-                      possible_foreign_key_violation(
-                        orig_stmt: InsertStmt,
-                        missing_insertions: [+RelVar]
-                      );
+                      possible_foreign_key_violation(orig_stmt: InsertStmt, missing_insertions: [+RelVar]),
+                      out_of_place_one_to_one_attr_insertion(stmt: InsertStmt, master: RelVar, bad_args: Bool),
+                      assignment_with_pending_updates(stmt: AssignmentStmt, pending: [+RelVar, StdVar]);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -11,6 +10,12 @@ AnalysisError annotated_analysis_error(AnalysisError e, Any a) =
 
 AnalysisError possible_foreign_key_violation(InsertStmt s, [+RelVar] vs) =
   possible_foreign_key_violation(orig_stmt: s, missing_insertions: vs);
+
+AnalysisError out_of_place_one_to_one_attr_insertion(InsertStmt s, RelVar v, Bool b) =
+  out_of_place_one_to_one_attr_insertion(stmt: s, master: v, bad_args: b);
+
+AnalysisError assignment_with_pending_updates(AssignmentStmt s, [+RelVar, StdVar] p) =
+  assignment_with_pending_updates(stmt: s, pending: p);
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -39,7 +44,9 @@ String* create_annotated_error_msg(AnalysisError error, Any anchor) {
 
 String* create_error_msg(AnalysisError err) =
   annotated_analysis_error()        = create_annotated_error_msg(err.error, err.anchor),
-  possible_foreign_key_violation()  = possible_foreign_key_violation_err_msg(err.orig_stmt, err.missing_insertions);
+  possible_foreign_key_violation()  = possible_foreign_key_violation_err_msg(err.orig_stmt, err.missing_insertions),
+  out_of_place_one_to_one_attr_insertion() = out_of_place_one_to_one_attr_insertion_err_msg(err.stmt, err.master, err.bad_args),
+  assignment_with_pending_updates() = assignment_with_pending_updates_err_msg(err.stmt, err.pending);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -49,3 +56,18 @@ String* possible_foreign_key_violation_err_msg(InsertStmt orig_stmt, [+RelVar] m
 );
 
 
+String* out_of_place_one_to_one_attr_insertion_err_msg(InsertStmt stmt, RelVar master, Bool bad_args) = (
+  "Relation " & user_repr(stmt.var) & "() encodes a mandatory single-valued attribute of " & user_repr(master) & "()",
+  "In order to insert data into " & user_repr(stmt.var) & "() you must first insert a corresponding entry in " & user_repr(master) & "(). Example:",
+  "  insert " & user_repr(master) & "(" & append(("x", "y" if |stmt.args| > 2), ", ") & ");",
+  "  insert " & user_repr(stmt.var) & "(" & append(("x", "y", "z" if |stmt.args| > 2), ", ") & ");",
+  "You might want to use an update " & user_repr(stmt.var) & "() statement here instead" if not bad_args,
+  "A preceding insertion into " & user_repr(master) & "() is present, but the arguments are different" if bad_args
+);
+
+
+String* assignment_with_pending_updates_err_msg(AssignmentStmt stmt, [+RelVar, StdVar] pending) = (
+  "Variable " & user_repr(v) & " cannot be assigned while pending updates to the following relations require it: " &
+  append((user_repr(r) : r <- isort([r : r <- pending(?, v)])), ", ")
+  : v <- isort([v : unused_var, v <- pending])
+);

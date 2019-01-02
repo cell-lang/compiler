@@ -43,49 +43,81 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
   }
 
 
-  Bool is_one_to_one_attribute(DBSymbol rel_auto_id, RelVar rel_var) {
-    return global_map(rel_auto_id, !!)(rel_var);
+  Bool is_one_to_one_attribute(DBSymbol rel_auto, RelVar rel_var) {
+    rel_auto_map = one_to_one_attributes_map(rel_auto, !!);
+    ## WORKAROUND FOR A BUG IN THE COMPILER, WITHOUT THE !!
+    ## THE GENERATED CODE CONTAINS A BUG
+    return rel_auto_map(rel_var, !!) != nothing;
+  }
 
 
-    [DBSymbol -> [RelVar]] global_map = [
+  RelVar master_rel_var(DBSymbol rel_auto, RelVar rel_var) {
+    rel_auto_map = one_to_one_attributes_map(rel_auto, !!);
+    return value_unsafe(rel_auto_map(rel_var));
+  }
+
+
+  [DBSymbol -> [RelVar -> Maybe[RelVar]]] one_to_one_attributes_map {
+    return [
       rel_auto.name -> [
-        v : v, unused_var <- rel_auto.rel_vars, is_one_to_one_attribute(rel_auto, v)
+        v -> master_rel_var(rel_auto, v) : v, unused_var <- rel_auto.rel_vars
       ] : rel_auto <- program.data_bases
     ];
 
 
-    Bool is_one_to_one_attribute(Database rel_auto, RelVar rel_var) {
+    Maybe[RelVar] master_rel_var(Database rel_auto, RelVar rel_var) {
       info = rel_auto.rel_vars(rel_var);
-      foreign_keys = rel_auto.foreign_keys;
-      return false if info.symmetric;
+      return nothing if info.symmetric;
       arity = only([|s| : s <- info.signatures]);
-      if arity == 2 and info.keys == [[0]]:
-        for cand_rel_var, cand_info <- isort(rel_auto.rel_vars):
-          cand_arity = only([|s| : s <- cand_info.signatures]);
-          if cand_arity == 1:
-            // Foreign keys that go from the entity or relationship to the attribute
-            down_keys = [k : k <- foreign_keys, is_std_attr_key(k, cand_rel_var, rel_var)];
-
-            // Foreign keys that go from the attribute to the entity or relationship
-            up_keys = [k : k <- foreign_keys, is_mand_attr_key(k, rel_var, cand_rel_var)];
-
-            if down_keys != [] and up_keys != []:
-              ## SHOULD CHECK THAT ALL THE SIGNATURES (OF THE ATTRIBUTE, NOT NECESSARILY THE MASTER)
-              ## ARE COVERED BY THE KEYS
-
-              all_signatures_covered = (s <- info.signatures : {
-                // For each signature of the attribute relation variable, there must
-                // be a pair of keys (one for each direction) that cover it entirely
-                // for k <- up_keys:
-                  // src, src_args, src_types, tgt, tgt_args = unpack(key);
-
-                fail;
-              });
-              return true if all_signatures_covered;
-            ;
-          ;
-        ;
+      if (arity == 2 and info.keys == [[0]]) or (arity == 3 and info.keys == [[0, 1]]):
+        masters = [v : v, unused_var <- rel_auto.rel_vars, is_one_to_one_attribute_of(rel_auto, rel_var, v)];
+        return just(only(masters)) if |masters| == 1;
       ;
+      return nothing;
+    }
+
+
+    Bool is_one_to_one_attribute_of(Database rel_auto, RelVar rel_var, RelVar master_rel_var) {
+      foreign_keys = rel_auto.foreign_keys;
+      info = rel_auto.rel_vars(rel_var);
+      arity = only([|s| : s <- info.signatures]);
+      master_info = rel_auto.rel_vars(master_rel_var);
+      master_arity = only([|s| : s <- master_info.signatures]);
+      if master_arity == arity - 1:
+        // Foreign keys that go from the entity or relationship to the attribute
+        down_keys = [k : k <- foreign_keys, is_mand_attr_key(k, master_rel_var, rel_var)];
+
+        // Foreign keys that go from the attribute to the entity or relationship
+        up_keys = [k : k <- foreign_keys, is_std_attr_key(k, rel_var, master_rel_var)];
+
+        // Each signatures of the attribute relation must be linked one-on-one
+        // with one of the signatures of the master relation
+        all_signatures_covered = not (s <- info.signatures : not {
+          // For each signature of the attribute relation, there must
+          // be a foreign key originating here that covers it entirely
+          up_ok = (k <- up_keys : {
+            src, src_args, src_types, tgt, tgt_args = unpack(k);
+            return is_subset_signature(s, src_types);
+          });
+
+          // For each signature of the attribute relation, there must be a key that, when
+          // applied to one of the signatures of master, covers such signature completely
+          down_ok = (k <- down_keys : {
+            src, src_args, src_types, tgt, tgt_args = unpack(k);
+            return (src_sgn <- rel_auto.rel_vars(src).signatures : {
+              // Types of all variables when the key is applied to this specific signature of the source relation
+              src_type_map = [value(a) -> src_sgn(i) : a @ i <~ src_args, a != nothing];
+              tgt_args_types = (apply(a, src_type_map($)) : a <- tgt_args);
+              return is_subset_signature(s, tgt_args_types);
+            });
+          });
+
+          return up_ok and down_ok;
+        });
+
+        return true if all_signatures_covered;
+      ;
+
       return false;
     }
   }
@@ -96,8 +128,9 @@ Bool is_std_attr_key(ForeignKey key, RelVar exp_src, RelVar exp_tgt) {
   src, src_args, src_types, tgt, tgt_args = unpack(key);
   return false if src != exp_src or tgt != exp_tgt;
   return match (src_args, tgt_args)
-    (just(), nothing),  (just())  = true,
-    _,                  _         = false;
+    (just(), nothing),          (just())          = true,
+    (just(), just(), nothing),  (just(), just())  = true,
+    _,                          _                 = false;
 }
 
 
@@ -105,8 +138,9 @@ Bool is_mand_attr_key(ForeignKey key, RelVar exp_src, RelVar exp_tgt) {
   src, src_args, src_types, tgt, tgt_args = unpack(key);
   return false if src != exp_src or tgt != exp_tgt;
   return match (src_args, tgt_args)
-    (just()), (just(), nothing)   = true,
-    _,        _                   = false;
+    (just()),         (just(), nothing)         = true,
+    (just(), just()), (just(), just(), nothing) = true,
+    _,                _                         = false;
 }
 
 
