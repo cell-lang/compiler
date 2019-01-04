@@ -84,7 +84,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     elif |args_types| == 2 and expr.unknown_arg_idx :: <0..2>:
       return tern_rel_arg_supertype(rel_type, expr.unknown_arg_idx);
     else
-      fail;
+      fail; ## IMPLEMENT IMPLEMENT IMPLEMENT
     ;
   }
 
@@ -984,6 +984,16 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   }
 
 
+  [EnvVar -> Type] loop_vars(RelSubsetIter iter, [EnvVar -> Type] env) {
+    fail; ## IMPLEMENT IMPLEMENT IMPLEMENT
+  }
+
+
+  [EnvVar -> Type] loop_vars(RelVarIter iter, [EnvVar -> Type] env) {
+    fail; ## IMPLEMENT IMPLEMENT IMPLEMENT
+  }
+
+
   [EnvVar -> Type] seq_loop_vars(CollValueIter iter, [EnvVar -> Type] env) {
     elem_type = seq_elem_supertype(expr_type(iter.src_expr, env));
     if |iter.vars| == 1:
@@ -1514,16 +1524,17 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   }
 
 
-  Type foreach_stmt_return_type(CollValueIter iter, Statement+ body, [EnvVar -> Type] env) {
-    elem_type = seq_elem_supertype(expr_type(iter.src_expr, env));
-    assert elem_type != empty_type;
-    env_delta = partial_asgnm_env_updates(iter.vars, elem_type);
-    env_delta = env_delta & [iter.idx_var -> type_nat] if iter.idx_var?;
-    env_0 = update(env, env_delta);
-    env_1 = update_env(body, env_0);
-    ret_type_0 = return_type(body, env_0);
-    ret_type_1 = return_type(body, env_1);
-    return union_superset(ret_type_0, ret_type_1);
+  Type foreach_stmt_return_type(Iter iter, Statement+ body, [EnvVar -> Type] env) {
+    fail; ## IMPLEMENT IMPLEMENT IMPLEMENT
+    // elem_type = seq_elem_supertype(expr_type(iter.src_expr, env));
+    // assert elem_type != empty_type;
+    // env_delta = partial_asgnm_env_updates(iter.vars, elem_type);
+    // env_delta = env_delta & [iter.idx_var -> type_nat] if iter.idx_var?;
+    // env_0 = update(env, env_delta);
+    // env_1 = update_env(body, env_0);
+    // ret_type_0 = return_type(body, env_0);
+    // ret_type_1 = return_type(body, env_1);
+    // return union_superset(ret_type_0, ret_type_1);
   }
 
 
@@ -1649,21 +1660,22 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   }
 
 
-  [EnvVar -> Type] foreach_stmt_update_env(CollValueIter iter, Statement+ body, [EnvVar -> Type] env) {
-    elem_type = seq_elem_supertype(expr_type(iter.src_expr, env));
-    // assert elem_type != empty_type;
-    loop_vars = set(values(iter.vars)) & [iter.idx_var if iter.idx_var?];
-    assert disjoint(keys(env), loop_vars);
-    if |iter.vars| == 1:
-      var = only(iter.vars);
-      non_idx_typed_loop_vars = [value(var) -> elem_type if var != nothing];
-    else
-      args_types = tuple_field_supertypes(elem_type, |iter.vars|);
-      non_idx_typed_loop_vars = [value(v) -> args_types(i) : v @ i <~ iter.vars, v != nothing];
-    ;
-    env_0 = env & non_idx_typed_loop_vars & [iter.idx_var -> type_nat if iter.idx_var?];
-    env_1 = update_env(body, env_0);
-    return merge_envs([env, remove_keys(env_1, loop_vars), break_env(body, env_0), break_env(body, env_1)]);
+  [EnvVar -> Type] foreach_stmt_update_env(Iter iter, Statement+ body, [EnvVar -> Type] env) {
+    fail; ## IMPLEMENT IMPLEMENT IMPLEMENT
+    // elem_type = seq_elem_supertype(expr_type(iter.src_expr, env));
+    // // assert elem_type != empty_type;
+    // loop_vars = set(values(iter.vars)) & [iter.idx_var if iter.idx_var?];
+    // assert disjoint(keys(env), loop_vars);
+    // if |iter.vars| == 1:
+    //   var = only(iter.vars);
+    //   non_idx_typed_loop_vars = [value(var) -> elem_type if var != nothing];
+    // else
+    //   args_types = tuple_field_supertypes(elem_type, |iter.vars|);
+    //   non_idx_typed_loop_vars = [value(v) -> args_types(i) : v @ i <~ iter.vars, v != nothing];
+    // ;
+    // env_0 = env & non_idx_typed_loop_vars & [iter.idx_var -> type_nat if iter.idx_var?];
+    // env_1 = update_env(body, env_0);
+    // return merge_envs([env, remove_keys(env_1, loop_vars), break_env(body, env_0), break_env(body, env_1)]);
   }
 
 

@@ -109,10 +109,31 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Database,
     // foreach_stmt(iter: CollValueIter, body: Statement+);
     // coll_value_iter(vars: Maybe[StdVar]+, idx_var: StdVar?, src_expr: Expr);
     [RelVar, Expr+, InsertStmt] update_reqrs(ForeachStmt[Statement] stmt, [RelVar, Expr+, InsertStmt] reqrs, [EnvVar -> Type] env) {
-      coll_type = expr_type(stmt.iter.src_expr, env);
-      return reqrs if coll_type == empty_type or (x <- [[], ()] : type_contains_obj(coll_type, x));
+      return reqrs if not iterates_at_least_once(stmt.iter, env);
       loop_env = env & loop_vars(stmt.iter, env);
       return update_reqrs(stmt.body, reqrs, loop_env);
+    }
+
+
+    // type CollValueIter = coll_value_iter(vars: Maybe[StdVar]+, idx_var: StdVar?, src_expr: Expr);
+    Bool iterates_at_least_once(CollValueIter iter, [EnvVar -> Type] env) {
+      coll_type = expr_type(iter.src_expr, env);
+      ## BAD BAD BAD: WHAT ARE WE SUPPOSED TO DO IF THE TYPE OF THE SOURCE IS THE EMPTY TYPE?
+      return coll_type != empty_type and
+             not type_contains_obj(coll_type, ()) and
+             not type_contains_obj(coll_type, []);
+    }
+
+
+    // type RelSubsetIter = rel_subset_iter(vars: Maybe[StdVar]+, src_expr: Expr, args: Maybe[Expr]+);
+    Bool iterates_at_least_once(RelSubsetIter iter, [EnvVar -> Type] env) {
+      fail; ## IMPLEMENT IMPLEMENT IMPLEMENT
+    }
+
+
+    // type RelVarIter = rel_var_iter(vars: Maybe[StdVar]+, rel_var: AnyRelVar, args: Maybe[Expr]+);
+    Bool iterates_at_least_once(RelVarIter iter, [EnvVar -> Type] env) {
+      fail; ## IMPLEMENT IMPLEMENT IMPLEMENT
     }
 
 

@@ -166,7 +166,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
 
     args = (apply(a, desugar_expr($, def_vars)) : a <- syn_args);
     if syn_target :: IdChain:
-      target = only(resolve_by_priority_as_memb_test_target(destructure_id_chain(syn_target), |syn_args|, def_vars));
+      target = only(resolve_by_priority_as_expr_or_rel_var(destructure_id_chain(syn_target), |syn_args|, def_vars));
     else
       target = desugar_expr(syn_target, def_vars);
     ;
@@ -184,7 +184,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
 
 
   Expr desugar_rel_lookup(Atom+ symbols, Maybe[SynExpr]+ syn_args, [StdVar] def_vars) {
-    target = only(resolve_by_priority_as_memb_test_target(symbols, |syn_args|, def_vars));
+    target = only(resolve_by_priority_as_expr_or_rel_var(symbols, |syn_args|, def_vars));
     args = (desugar_expr(value(a), def_vars) : a <- syn_args, a != nothing);
     target_arg_idx = only_unsafe((i : a @ i <- syn_args, a == nothing));
     return desugar(target, args, target_arg_idx);
@@ -406,7 +406,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
     Clause desugar_iter_clause(StdVar+ vars, SynExpr syn_src_expr, [StdVar] def_vars) {
       if syn_src_expr :: IdChain:
         symbols = destructure_id_chain(syn_src_expr);
-        resols = resolve_by_priority_as_memb_test_target(symbols, |vars|, def_vars);
+        resols = resolve_by_priority_as_expr_or_rel_var(symbols, |vars|, def_vars);
         if |resols| == 1:
           resol = only(resols);
           if resol :: AnyRelVar:
@@ -425,7 +425,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
     Clause desugar_iter_clause(StdVar+ vars, SynProj syn_src_expr, [StdVar] def_vars) {
       assert (a <~ syn_src_expr.args : a != nothing);
       args = (apply(a, desugar_expr($, def_vars)) : a <- syn_src_expr.args);
-      resol = only(resolve_by_priority_as_memb_test_target(syn_src_expr.target, |args|, def_vars));
+      resol = only(resolve_by_priority_as_expr_or_rel_var(syn_src_expr.target, |args|, def_vars));
       return rel_or_relvar_clause(vars, resol, args);
     }
 
@@ -588,14 +588,39 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
 
 
     Statement desugar(SynCollIter syn_iter, Statement+ body, [StdVar] def_vars) {
-      src_expr = desugar_expr(syn_iter.src_expr, def_vars);
-      iter = coll_value_iter(
-        vars:     syn_iter.vars,
-        idx_var:  syn_iter.idx_var if syn_iter.idx_var?,
-        src_expr: src_expr
-      );
+      if syn_iter.idx_var?:
+        src_expr = desugar_expr(syn_iter.src_expr, def_vars);
+        iter = coll_value_iter(syn_iter.vars, syn_iter.idx_var, src_expr);
+      elif syn_iter.src_expr :: IdChain:
+        symbs = destructure_id_chain(syn_iter.src_expr);
+        target = only(resolve_by_priority_as_expr_or_rel_var(symbs, |syn_iter.vars|, def_vars));
+        iter = iter(syn_iter.vars, target);
+      else
+        src_expr = desugar_expr(syn_iter.src_expr, def_vars);
+        iter = coll_value_iter(syn_iter.vars, src_expr);
+      ;
       return foreach_stmt(iter, body);
     }
+
+
+    Iter iter(Maybe[StdVar]+ vars, AnyRelVar rel_var) = rel_var_iter(vars, rel_var, (nothing : v <- vars));
+    Iter iter(Maybe[StdVar]+ vars, Expr expr)         = coll_value_iter(vars, expr);
+
+
+    Statement desugar(SynFilteredIter syn_iter, Statement+ body, [StdVar] def_vars) {
+      vars = (apply(v, var) : v <- syn_iter.vars);
+      args = (apply(a, desugar_expr($, def_vars)) : a <- syn_iter.args);
+      target = only(resolve_by_priority_as_expr_or_rel_var(syn_iter.target, |syn_iter.args|, def_vars));
+      iter = iter(vars, target, args);
+      return foreach_stmt(iter, body);
+    }
+
+
+    Iter iter(Maybe[StdVar]+ vars, AnyRelVar rel_var, Maybe[Expr]+ args) =
+      rel_var_iter(vars, rel_var, args);
+
+    Iter iter(Maybe[StdVar]+ vars, Expr expr, Maybe[Expr]+ args) =
+      rel_subset_iter(vars, expr, args);
 
 
     Statement desugar(SynRangeIter iter, Statement+ body, [StdVar] def_vars) {

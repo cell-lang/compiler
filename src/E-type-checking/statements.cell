@@ -97,41 +97,57 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   }
 
 
-  [TypeCheckingError] typecheck_foreach_stmt(CollValueIter iter, Statement+ body, Type exp_type, [EnvVar -> Type] env) {
-    nvars = |iter.vars|;
-    exp_src_type = if nvars == 1 then type_seq else type_seq(type_tuple(nvars));
-    errs_seq = typecheck(iter.src_expr, exp_src_type, env);
-    return typecheck_loop_body(body, seq_loop_vars(iter, env), exp_type, env) if errs_seq == [];
-    return errs_seq if iter.idx_var? or nvars > 3;
+  [TypeCheckingError] typecheck_foreach_stmt(Iter iter, Statement+ body, Type exp_type, [EnvVar -> Type] env) {
+    errs = typecheck_iter(iter, env);
+    return errs if errs != [];
+    return typecheck_loop_body(body, loop_vars(iter, env), exp_type, env);
 
-    if |iter.vars| == 1:
-      errs_set = typecheck(iter.src_expr, type_set, env);
-      if errs_set != []:
-        ## BAD: THIS SHOULB BE DONE IN error-euristics.cell, NOT HERE
-        errs_any = typecheck(iter.src_expr, ne_union_type([type_seq, type_set]), env);
-        return if errs_any != [] then errs_any else errs_seq & errs_set;
-      ;
-      return typecheck_loop_body(body, set_loop_vars(iter, env), exp_type, env);
 
-    elif |iter.vars| == 2:
-      errs_rel = typecheck(iter.src_expr, type_bin_rel, env);
-      if errs_rel != []:
-        ## BAD: THIS SHOULB BE DONE IN error-euristics.cell, NOT HERE
-        errs_any = typecheck(iter.src_expr, ne_union_type([type_seq, type_bin_rel]), env);
-        return if errs_any != [] then errs_any else errs_seq & errs_rel;
-      ;
-      return typecheck_loop_body(body, bin_rel_loop_vars(iter, env), exp_type, env);
+    // type CollValueIter  = coll_value_iter(vars: Maybe[StdVar]+, idx_var: StdVar?, src_expr: Expr);
+    [TypeCheckingError] typecheck_iter(CollValueIter iter, [EnvVar -> Type] env) {
+      nvars = |iter.vars|;
+      exp_src_type = if nvars == 1 then type_seq else type_seq(type_tuple(nvars));
+      errs_seq = typecheck(iter.src_expr, exp_src_type, env);
+      return [] if errs_seq == [];
+      return errs_seq if iter.idx_var? or nvars > 3;
 
-    else
-      assert |iter.vars| == 3;
-      errs_rel = typecheck(iter.src_expr, type_tern_rel, env);
-      if errs_rel != []:
-        ## BAD: THIS SHOULB BE DONE IN error-euristics.cell, NOT HERE
-        errs_any = typecheck(iter.src_expr, ne_union_type([type_seq, type_tern_rel]), env);
-        return if errs_any != [] then errs_any else errs_seq & errs_rel;
+      if |iter.vars| == 1:
+        errs_set = typecheck(iter.src_expr, type_set, env);
+        if errs_set != []:
+          errs_any = typecheck(iter.src_expr, ne_union_type([type_seq, type_set]), env);
+          return if errs_any != [] then errs_any else errs_seq & errs_set;
+        ;
+
+      elif |iter.vars| == 2:
+        errs_rel = typecheck(iter.src_expr, type_bin_rel, env);
+        if errs_rel != []:
+          errs_any = typecheck(iter.src_expr, ne_union_type([type_seq, type_bin_rel]), env);
+          return if errs_any != [] then errs_any else errs_seq & errs_rel;
+        ;
+
+      else
+        assert |iter.vars| == 3;
+        errs_rel = typecheck(iter.src_expr, type_tern_rel, env);
+        if errs_rel != []:
+          errs_any = typecheck(iter.src_expr, ne_union_type([type_seq, type_tern_rel]), env);
+          return if errs_any != [] then errs_any else errs_seq & errs_rel;
+        ;
       ;
-      return typecheck_loop_body(body, tern_rel_loop_vars(iter, env), exp_type, env);
-    ;
+
+      return [];
+    }
+
+
+    // type RelSubsetIter  = rel_subset_iter(vars: Maybe[StdVar]+, src_expr: Expr, args: Maybe[Expr]+);
+    [TypeCheckingError] typecheck_iter(RelSubsetIter iter, [EnvVar -> Type] env) {
+      fail; ## IMPLEMENT IMPLEMENT IMPLEMENT
+    }
+
+
+    // type RelVarIter     = rel_var_iter(vars: Maybe[StdVar]+, rel_var: AnyRelVar, args: Maybe[Expr]+);
+    [TypeCheckingError] typecheck_iter(RelVarIter iter, [EnvVar -> Type] env) {
+      fail; ## IMPLEMENT IMPLEMENT IMPLEMENT
+    }
 
 
     [TypeCheckingError] typecheck_loop_body(Statement+ body, [EnvVar -> Type] loop_vars, Type exp_type, [EnvVar -> Type] env) {

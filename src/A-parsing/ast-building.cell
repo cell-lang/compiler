@@ -1384,6 +1384,12 @@ implicit filename : String, lines : Nat** {
         return syn_coll_iter(nonempty(vars), idx_var, expr);
       ;
 
+      if get_rule_name(mtc) == :foreach_prj:
+        vars = (just(get_lowercase_id(n)) : n <- nonempty(rep_rule_nodes(nodes(0))));
+        proj = build_proj_ast(nodes(2));
+        return syn_filtered_iter(vars, proj.target, proj.args);
+      ;
+
       if get_rule_name(mtc) == :for_upper:
         var = var(get_lowercase_id(nodes(0)));
         op = get_token(nodes(1));
@@ -1691,24 +1697,24 @@ implicit filename : String, lines : Nat** {
         proj  = build_proj_ast(inner_mtc),
         expr  = build_expr_ast(inner_mtc);
     }
+  }
 
-    SynProj build_proj_ast(RuleMatch mtc) {
-      nodes = rule_seq_nodes(mtc);
-      assert |nodes| == 2;
-      target = (get_lowercase_id(n) : n <- rep_rule_nodes(nodes(0)));
-      args_sects_nodes = rule_seq_nodes(block_node(nodes(1)));
-      assert |args_sects_nodes| == 3;
-      pre_args = (just(build_expr_ast(rule_seq_node(np, 0))) : np <- rep_rule_nodes(args_sects_nodes(0)));
-      post_args = ({
-          arg_node = rule_seq_node(np, 1);
-          arg_label = get_rule_name(arg_node);
-          arg_mtc = get_rule_match(arg_node);
-          assert arg_label == :any or arg_label == :value;
-          return if arg_label == :value then just(build_expr_ast(arg_mtc)) else nothing;
-        } : np <- rep_rule_nodes(args_sects_nodes(2))
-      );
-      return syn_proj(nonempty(target), nonempty(pre_args & (nothing) & post_args));
-    }
+  SynProj build_proj_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 2;
+    target = (get_lowercase_id(n) : n <- rep_rule_nodes(nodes(0)));
+    args_sects_nodes = rule_seq_nodes(block_node(nodes(1)));
+    assert |args_sects_nodes| == 3;
+    pre_args = (just(build_expr_ast(rule_seq_node(np, 0))) : np <- rep_rule_nodes(args_sects_nodes(0)));
+    post_args = ({
+        arg_node = rule_seq_node(np, 1);
+        arg_label = get_rule_name(arg_node);
+        arg_mtc = get_rule_match(arg_node);
+        assert arg_label == :any or arg_label == :value;
+        return if arg_label == :value then just(build_expr_ast(arg_mtc)) else nothing;
+      } : np <- rep_rule_nodes(args_sects_nodes(2))
+    );
+    return syn_proj(nonempty(target), nonempty(pre_args & (nothing) & post_args));
   }
 
   SynClause build_seq_iter_clause_ast(RuleMatch mtc) {

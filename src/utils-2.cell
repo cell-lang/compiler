@@ -193,7 +193,7 @@ Bool is_param_type(FnType type) = (t <~ type.args : is_param_type(t)) or is_para
   if_stmt()                 = retrieve(stmt.cond) & retrieve_from_nested_exprs(stmt.body, retrieve) &
                               retrieve_from_nested_exprs(stmt.else, retrieve),
   loop_stmt(ss?)            = retrieve_from_nested_exprs(ss, retrieve),
-  foreach_stmt()            = retrieve(stmt.iter.src_expr) & retrieve_from_nested_exprs(stmt.body, retrieve),
+  foreach_stmt()            = retrieve_from_nested_exprs(stmt.iter, retrieve) & retrieve_from_nested_exprs(stmt.body, retrieve),
   for_stmt()                = retrieve(stmt.start_val) & retrieve(stmt.end_val) & retrieve_from_nested_exprs(stmt.body, retrieve),
   let_stmt()                = union([retrieve(e) : unused_var, e <- stmt.asgnms]) & retrieve_from_nested_exprs(stmt.body, retrieve),
   break_stmt                = [],
@@ -230,6 +230,12 @@ Bool is_param_type(FnType type) = (t <~ type.args : is_param_type(t)) or is_para
   match_clause()    = retrieve(cls.expr),
   asgnm_clause()    = retrieve(cls.expr),
   filter_clause(e?) = retrieve(e);
+
+
+[T] retrieve_from_nested_exprs(Iter iter, (Expr -> [T]) retrieve) =
+  coll_value_iter()   = retrieve(iter.src_expr),
+  rel_subset_iter()   = retrieve(iter.src_expr) & union([retrieve(a) : a <~ values(iter.args)]),
+  rel_var_iter()      = union([retrieve(a) : a <~ values(iter.args)]);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -382,6 +388,12 @@ Bool is_pattern_any(Pattern ptrn) =
 
 [StdVar] new_vars(Statement* stmts) = seq_union((new_vars(s) : s <- stmts));
 
+
+[StdVar] new_vars(Iter iter) =
+  coll_value_iter()   = set(values(iter.vars)) & [iter.idx_var if iter.idx_var?],
+  rel_subset_iter()   = set(values(iter.vars)),
+  rel_var_iter()      = set(values(iter.vars));
+
 ///////////////////////////////////////////////////////////////////////////////
 
 ## THIS FUNCTION DOES NOT RETRIEVE QUALIFIED MEMBER VARIABLES LIKE auto_var.public_var OR db_var.var
@@ -486,9 +498,7 @@ Bool is_pattern_any(Pattern ptrn) =
   return_stmt(e?)   = extern_vars(e),
   if_stmt()         = extern_vars(s.cond) & stmts_extern_vars(s.body) & stmts_extern_vars(s.else),
   loop_stmt(ss?)    = stmts_extern_vars(ss),
-  foreach_stmt()    = { loc_def_vars = set(values(s.iter.vars)) & [s.idx_var if s.idx_var?];
-                        return extern_vars(s.iter.src_expr) & (stmts_extern_vars(s.body) - loc_def_vars);
-                      },
+  foreach_stmt()    = iter_extern_vars(s.iter) & (stmts_extern_vars(s.body) - new_vars(s.iter)),
   for_stmt()        = extern_vars(s.start_val) & extern_vars(s.end_val) & (stmts_extern_vars(s.body) - [s.var if s.var?]),
   break_stmt        = [],
   fail_stmt()       = [],
@@ -502,6 +512,12 @@ Bool is_pattern_any(Pattern ptrn) =
   cls_var()   = [],
   fn_ptr()    = [],
   cls_expr()  = extern_vars(expr.expr) - set((fn_arg(i) : i < expr.arity));
+
+
+[Var] iter_extern_vars(Iter iter) =
+  coll_value_iter()   = extern_vars(iter.src_expr),
+  rel_subset_iter()   = extern_vars(iter.src_expr) & union([extern_vars(e) : e <~ values(iter.args)]),
+  rel_var_iter()      = union([extern_vars(e) : e <~ values(iter.args)]);
 
 ////////////////////////////////////////////////////////////////////////////////
 

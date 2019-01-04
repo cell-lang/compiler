@@ -603,176 +603,181 @@ implicit program           : Program,
 
 
   StmtCompInfo foreach_stmt_opt_code(ForeachStmt stmt, [EnvVar -> Type] env, VarGen var_gen) {
-    iter = stmt.iter;
+    fail; ## IMPLEMENT IMPLEMENT IMPLEMENT
 
-    src_type = expr_type(iter.src_expr, env);
-    if is_subset(src_type, type_seq):
-      return seq_foreach_stmt_opt_code(stmt, env, var_gen);
-    elif |iter.vars| == 1:
-      return set_foreach_stmt_opt_code(stmt, env, var_gen);
-    else
-      fail; ## IMPLEMENT IMPLEMENT IMPLEMENT
-    ;
+    // iter = stmt.iter;
+
+    // src_type = expr_type(iter.src_expr, env);
+    // if is_subset(src_type, type_seq):
+    //   return seq_foreach_stmt_opt_code(stmt, env, var_gen);
+    // elif |iter.vars| == 1:
+    //   return set_foreach_stmt_opt_code(stmt, env, var_gen);
+    // elif |iter.vars| == 2:
+    //   fail; ## IMPLEMENT IMPLEMENT IMPLEMENT
+    // else
+    //   assert |iter.vars| == 3;
+    //   fail; ## IMPLEMENT IMPLEMENT IMPLEMENT
+    // ;
   }
 
 
-  StmtCompInfo seq_foreach_stmt_opt_code(ForeachStmt stmt, [EnvVar -> Type] env, VarGen init_var_gen) {
-    iter = stmt.iter;
+  // StmtCompInfo seq_foreach_stmt_opt_code(ForeachStmt stmt, [EnvVar -> Type] env, VarGen init_var_gen) {
+  //   iter = stmt.iter;
 
-    // Calculating input sequence type, and returning early if the type is trivial
-    seq_type = expr_type(iter.src_expr, env);
-    if seq_type == empty_type:
-      ## just(surrogates) OR nothing?
-      return ((terminate), just(surrogates), [], init_var_gen);
-    elif is_subset(seq_type, empty_seq_type):
-      return ((), just(surrogates), [], init_var_gen);
-    ;
+  //   // Calculating input sequence type, and returning early if the type is trivial
+  //   seq_type = expr_type(iter.src_expr, env);
+  //   if seq_type == empty_type:
+  //     ## just(surrogates) OR nothing?
+  //     return ((terminate), just(surrogates), [], init_var_gen);
+  //   elif is_subset(seq_type, empty_seq_type):
+  //     return ((), just(surrogates), [], init_var_gen);
+  //   ;
 
-    // Type and representation of the elements of the input sequence
-    elt_type = seq_elem_supertype(seq_type);
-    fail if elt_type == empty_type;
-    elt_repr = opt_repr(elt_type);
+  //   // Type and representation of the elements of the input sequence
+  //   elt_type = seq_elem_supertype(seq_type);
+  //   fail if elt_type == empty_type;
+  //   elt_repr = opt_repr(elt_type);
 
-    // Evaluation of input expression
-    entry_code, seq_surr, var_gen = opt_eval_code(iter.src_expr, env, init_var_gen);
-    if not seq_surr :: <LocVar, StdVar>:
-      seq_var, var_gen = next_obj_var(var_gen);
-      entry_code = (entry_code | set_var(seq_var, seq_surr));
-      seq_surr = seq_var;
-    ;
+  //   // Evaluation of input expression
+  //   entry_code, seq_surr, var_gen = opt_eval_code(iter.src_expr, env, init_var_gen);
+  //   if not seq_surr :: <LocVar, StdVar>:
+  //     seq_var, var_gen = next_obj_var(var_gen);
+  //     entry_code = (entry_code | set_var(seq_var, seq_surr));
+  //     seq_surr = seq_var;
+  //   ;
 
-    // Temporary buffer for source data
-    src_array_var, var_gen = next_array_var(var_gen, elt_repr);
+  //   // Temporary buffer for source data
+  //   src_array_var, var_gen = next_array_var(var_gen, elt_repr);
 
-    vars = iter.vars;
-    if |vars| == 1:
-      // Simple case, no destructuring of the elements of the source sequence
-      var = only(vars);
-      if var != nothing:
-        var = value(var);
-        it_var = low_level_var(elt_repr, var);
-        local_surrs = [var -> obj_expr(it_var) if var != it_var];
-      else
-        it_var, var_gen = next_obj_var(var_gen);
-        local_surrs = [];
-      ;
-      body_code_setup = ();
+  //   vars = iter.vars;
+  //   if |vars| == 1:
+  //     // Simple case, no destructuring of the elements of the source sequence
+  //     var = only(vars);
+  //     if var != nothing:
+  //       var = value(var);
+  //       it_var = low_level_var(elt_repr, var);
+  //       local_surrs = [var -> obj_expr(it_var) if var != it_var];
+  //     else
+  //       it_var, var_gen = next_obj_var(var_gen);
+  //       local_surrs = [];
+  //     ;
+  //     body_code_setup = ();
 
-    else
-      // Elements of source sequence need to be destructured
-      assert elt_repr == :object;
-      vars_types = tuple_field_supertypes(elt_type, |vars|);
-      ## REMOVE WHEN DONE
-      assert vars_types == (restricted_seq_elem_supertype(elt_type, singleton_type(i)) : i < |vars|);
-      reprs = (opt_repr(t) : t <- vars_types);
-      vars = [i -> value(v) : v @ i <~ vars, v != nothing];
-      phys_vars = [i -> low_level_var(reprs(i), v) : i, v <- vars];
-      local_surrs = [v -> obj_expr(pv) : i, v <- vars, pv = phys_vars(i), v != pv];
-      it_var, var_gen = next_obj_var(var_gen);
-      body_code_setup = (set_any_var(v, at(it_var, i)) : i, v <- sort_bin_rel_by_key(phys_vars, $a));
-    ;
+  //   else
+  //     // Elements of source sequence need to be destructured
+  //     assert elt_repr == :object;
+  //     vars_types = tuple_field_supertypes(elt_type, |vars|);
+  //     ## REMOVE WHEN DONE
+  //     assert vars_types == (restricted_seq_elem_supertype(elt_type, singleton_type(i)) : i < |vars|);
+  //     reprs = (opt_repr(t) : t <- vars_types);
+  //     vars = [i -> value(v) : v @ i <~ vars, v != nothing];
+  //     phys_vars = [i -> low_level_var(reprs(i), v) : i, v <- vars];
+  //     local_surrs = [v -> obj_expr(pv) : i, v <- vars, pv = phys_vars(i), v != pv];
+  //     it_var, var_gen = next_obj_var(var_gen);
+  //     body_code_setup = (set_any_var(v, at(it_var, i)) : i, v <- sort_bin_rel_by_key(phys_vars, $a));
+  //   ;
 
-    // Index variables
-    count_var, var_gen = next_int32_var(var_gen);
-    hidden_idx_var, var_gen = next_int32_var(var_gen);
-    local_surrs = local_surrs & [iter.idx_var -> int_obj(hidden_idx_var)] if iter.idx_var?;
+  //   // Index variables
+  //   count_var, var_gen = next_int32_var(var_gen);
+  //   hidden_idx_var, var_gen = next_int32_var(var_gen);
+  //   local_surrs = local_surrs & [iter.idx_var -> int_obj(hidden_idx_var)] if iter.idx_var?;
 
-    // Environment the body runs in
-    body_env = foreach_stmt_body_env(stmt, env);
+  //   // Environment the body runs in
+  //   body_env = foreach_stmt_body_env(stmt, env);
 
-    // Compiling loop body and adjusting entry code
-    entry_code_fixes, body_code, surrs = loop_stable_code(stmt.body, local_surrs, body_env, var_gen);
-    entry_code = entry_code & entry_code_fixes;
-    body_code = body_code_setup & body_code;
+  //   // Compiling loop body and adjusting entry code
+  //   entry_code_fixes, body_code, surrs = loop_stable_code(stmt.body, local_surrs, body_env, var_gen);
+  //   entry_code = entry_code & entry_code_fixes;
+  //   body_code = body_code_setup & body_code;
 
-    // Mapping source to destination arrays
-    read_len_instr = set_ivar32(count_var, get_size(seq_surr));
-    map_instr = foreach(
-      seq:        seq_surr,
-      src_array:  src_array_var,
-      count_var:  count_var,
-      idx_var:    hidden_idx_var,
-      it_var:     it_var,
-      body:       body_code
-    );
+  //   // Mapping source to destination arrays
+  //   read_len_instr = set_ivar32(count_var, get_size(seq_surr));
+  //   map_instr = foreach(
+  //     seq:        seq_surr,
+  //     src_array:  src_array_var,
+  //     count_var:  count_var,
+  //     idx_var:    hidden_idx_var,
+  //     it_var:     it_var,
+  //     body:       body_code
+  //   );
 
-    return ((entry_code | read_len_instr, map_instr), just(surrs), [], init_var_gen);
+  //   return ((entry_code | read_len_instr, map_instr), just(surrs), [], init_var_gen);
 
 
-    ## THIS OUGHT TO BE MOVED SOMEWHERE ELSE, MAYBE IN type-inference.cell
-    [EnvVar -> Type] foreach_stmt_body_env(ForeachStmt stmt, [EnvVar -> Type] env) {
-      iter = stmt.iter;
+  //   ## THIS OUGHT TO BE MOVED SOMEWHERE ELSE, MAYBE IN type-inference.cell
+  //   [EnvVar -> Type] foreach_stmt_body_env(ForeachStmt stmt, [EnvVar -> Type] env) {
+  //     iter = stmt.iter;
 
-      elt_type = seq_elem_supertype(expr_type(iter.src_expr, env));
-      loop_vars_env = partial_asgnm_env_updates(iter.vars, elt_type);
+  //     elt_type = seq_elem_supertype(expr_type(iter.src_expr, env));
+  //     loop_vars_env = partial_asgnm_env_updates(iter.vars, elt_type);
 
-      loop_vars_env = loop_vars_env & [iter.idx_var -> type_nat] if iter.idx_var?;
-      exit_env = update_env(stmt.body, env & loop_vars_env);
-      return merge_envs(env, exit_env) & loop_vars_env;
-    }
-  }
+  //     loop_vars_env = loop_vars_env & [iter.idx_var -> type_nat] if iter.idx_var?;
+  //     exit_env = update_env(stmt.body, env & loop_vars_env);
+  //     return merge_envs(env, exit_env) & loop_vars_env;
+  //   }
+  // }
 
-  StmtCompInfo set_foreach_stmt_opt_code(ForeachStmt stmt, [EnvVar -> Type] env, VarGen init_var_gen) {
-    iter = stmt.iter;
+  // StmtCompInfo set_foreach_stmt_opt_code(ForeachStmt stmt, [EnvVar -> Type] env, VarGen init_var_gen) {
+  //   iter = stmt.iter;
 
-    // Calculating input sequence type, and returning early if the type is trivial
-    coll_type = expr_type(iter.src_expr, env);
-    if coll_type == empty_type:
-      ## just(surrogates) OR nothing?
-      return ((terminate), just(surrogates), [], init_var_gen);
-    elif is_subset(coll_type, empty_rel_type):
-      return ((), just(surrogates), [], init_var_gen);
-    ;
+  //   // Calculating input sequence type, and returning early if the type is trivial
+  //   coll_type = expr_type(iter.src_expr, env);
+  //   if coll_type == empty_type:
+  //     ## just(surrogates) OR nothing?
+  //     return ((terminate), just(surrogates), [], init_var_gen);
+  //   elif is_subset(coll_type, empty_rel_type):
+  //     return ((), just(surrogates), [], init_var_gen);
+  //   ;
 
-    // Type and representation of the elements of the input sequence
-    elt_type = set_elem_supertype(coll_type);
-    fail if elt_type == empty_type;
-    elt_repr = opt_repr(elt_type);
+  //   // Type and representation of the elements of the input sequence
+  //   elt_type = set_elem_supertype(coll_type);
+  //   fail if elt_type == empty_type;
+  //   elt_repr = opt_repr(elt_type);
 
-    // Evaluation of input expression
-    entry_code, coll_surr, var_gen = opt_eval_code(iter.src_expr, env, init_var_gen);
-    if not coll_surr :: <LocVar, StdVar>:
-      coll_var, var_gen = next_obj_var(var_gen);
-      entry_code = (entry_code | set_var(coll_var, coll_surr));
-      coll_surr = coll_var;
-    ;
+  //   // Evaluation of input expression
+  //   entry_code, coll_surr, var_gen = opt_eval_code(iter.src_expr, env, init_var_gen);
+  //   if not coll_surr :: <LocVar, StdVar>:
+  //     coll_var, var_gen = next_obj_var(var_gen);
+  //     entry_code = (entry_code | set_var(coll_var, coll_surr));
+  //     coll_surr = coll_var;
+  //   ;
 
-    it_var, var_gen = next_set_it_var(var_gen);
-    var = only_unsafe(iter.vars);
-    if var != nothing:
-      var = value(var);
-      elt_var = low_level_var(elt_repr, var);
-      local_surrs = [var -> obj_expr(elt_var) if var != elt_var];
-      set_elt_var_instr = set_any_var(elt_var, get_curr_obj(it_var));
-      // body_code_setup = ();
-    else
-      local_surrs = [];
-      set_elt_var_instr = no_op;
-      // body_code_setup = ();
-    ;
+  //   it_var, var_gen = next_set_it_var(var_gen);
+  //   var = only_unsafe(iter.vars);
+  //   if var != nothing:
+  //     var = value(var);
+  //     elt_var = low_level_var(elt_repr, var);
+  //     local_surrs = [var -> obj_expr(elt_var) if var != elt_var];
+  //     set_elt_var_instr = set_any_var(elt_var, get_curr_obj(it_var));
+  //     // body_code_setup = ();
+  //   else
+  //     local_surrs = [];
+  //     set_elt_var_instr = no_op;
+  //     // body_code_setup = ();
+  //   ;
 
-    // Environment the body runs in
-    loop_vars_env = partial_asgnm_env_updates(iter.vars, elt_type);
-    exit_env = update_env(stmt.body, env & loop_vars_env);
-    body_env = merge_envs(env, exit_env) & loop_vars_env;
+  //   // Environment the body runs in
+  //   loop_vars_env = partial_asgnm_env_updates(iter.vars, elt_type);
+  //   exit_env = update_env(stmt.body, env & loop_vars_env);
+  //   body_env = merge_envs(env, exit_env) & loop_vars_env;
 
-    // Compiling loop body and adjusting entry code
-    entry_code_fixes, body_code, surrs = loop_stable_code(stmt.body, local_surrs, body_env, var_gen);
-    entry_code = entry_code & entry_code_fixes;
-    // body_code = body_code_setup & body_code;
+  //   // Compiling loop body and adjusting entry code
+  //   entry_code_fixes, body_code, surrs = loop_stable_code(stmt.body, local_surrs, body_env, var_gen);
+  //   entry_code = entry_code & entry_code_fixes;
+  //   // body_code = body_code_setup & body_code;
 
-    code = entry_code & (
-      get_iter(it_var, coll_surr),
-      repeat((
-        break_if(is_out_of_range(it_var)),
-        set_elt_var_instr
-        ) & body_code & (
-        move_forward(it_var)
-      ))
-    );
+  //   code = entry_code & (
+  //     get_iter(it_var, coll_surr),
+  //     repeat((
+  //       break_if(is_out_of_range(it_var)),
+  //       set_elt_var_instr
+  //       ) & body_code & (
+  //       move_forward(it_var)
+  //     ))
+  //   );
 
-    return (code, just(surrs), [], init_var_gen);
-  }
+  //   return (code, just(surrs), [], init_var_gen);
+  // }
 
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////

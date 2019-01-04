@@ -142,9 +142,39 @@ implicit {
     }
 
 
-    ExprWFError* iter_wf_errors(SynIter iter, [DefVar] vars) =
-      coll_value_iter() = expr_wf_errors(iter.src_expr, vars),
-      range_iter()      = expr_wf_errors(iter.start_val, vars) & expr_wf_errors(iter.end_val, vars);
+    ExprWFError* iter_wf_errors(SynCollIter iter, [DefVar] vars) {
+      if not iter.idx_var? and iter.src_expr :: IdChain:
+        symbs = destructure_id_chain(iter.src_expr);
+        resols = resolve_by_priority_as_expr_or_rel_var(symbs, |iter.vars|, vars);
+        if |resols| == 1:
+          return ();
+        elif |resols| > 1:
+          return (ambiguous_expr(iter.src_expr, resols));
+        ;
+      ;
+      return expr_wf_errors(iter.src_expr, vars);
+    }
+
+
+    ExprWFError* iter_wf_errors(SynFilteredIter iter, [DefVar] vars) {
+      target = iter.target;
+      resols = resolve_by_priority_as_expr_or_rel_var(target, |iter.args|, vars);
+      if |resols| == 1:
+        return ();
+      elif |resols| > 1:
+        // Building a "fake" expression to feed to ambiguous_expr()
+        expr = const_or_var(head(target));
+        for i = 1 .. |target|:
+          expr = syn_accessor(expr, target(i));
+        ;
+        return (ambiguous_expr(expr, resols));
+      ;
+      return join((expr_wf_errors(value(a), vars) : a <- iter.args, a != nothing));
+    }
+
+
+    ExprWFError* iter_wf_errors(SynRangeIter iter, [DefVar] vars) =
+      expr_wf_errors(iter.start_val, vars) & expr_wf_errors(iter.end_val, vars);
   }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -283,6 +313,7 @@ implicit {
     for it <- stmt.loops:
       dupl_vars = match (it)
         coll_value_iter() = duplicates(values(it.vars) & (it.idx_var if it.idx_var?)),
+        filtered_iter()   = [var(v) : v <- duplicates(values(it.vars))],
         range_iter()      = [];
       errs = errs & (dupl_var_mult_asgnm(v) : v <- rand_sort(dupl_vars));
       it_vars = syn_new_vars(it);

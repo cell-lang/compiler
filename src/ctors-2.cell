@@ -462,10 +462,15 @@ CtrlStmt send_msg_ctrl_stmt(StdVar rv, LocDBVar dbv, Expr m)  = send_msg_ctrl_st
 CtrlStmt read_state_ctrl_stmt(StdVar rv, <LocAutoVar, LocDBVar> av) = read_state_ctrl_stmt(res_var: rv, auto_var: av);
 CtrlStmt restore_state_ctrl_stmt(StdVar rv, <LocAutoVar, LocDBVar> av, Expr e) = restore_state_ctrl_stmt(res_var: rv, auto_var: av, state: e);
 
+CollValueIter coll_value_iter(Maybe[StdVar]+ vs, Expr e)                    = coll_value_iter(vars: vs, src_expr: e);
+CollValueIter coll_value_iter(Maybe[StdVar]+ vs, StdVar i, Expr e)          = coll_value_iter(vars: vs, idx_var: i, src_expr: e);
+RelSubsetIter rel_subset_iter(Maybe[StdVar]+ vs, Expr e, Maybe[Expr]+ as)   = rel_subset_iter(vars: vs, src_expr: e, args: as);
+RelVarIter    rel_var_iter(Maybe[StdVar]+ vs, AnyRelVar r, Maybe[Expr]+ as) = rel_var_iter(vars: vs, rel_var: r, args: as);
+
 CompositeStmt[T] if_stmt(Expr c, T+ b, T* e)            = if_stmt(cond: c, body: b, else: e);
 CompositeStmt[T] loop_stmt(T+ ss)                       = :loop_stmt(ss);
 CompositeStmt[T] let_stmt([ImplArg -> Expr] as, T+ b)   = let_stmt(asgnms: as, body: b);
-ForeachStmt[T] foreach_stmt(CollValueIter it, T+ b)     = foreach_stmt(iter: it, body: b);
+ForeachStmt[T] foreach_stmt(Iter it, T+ b)              = foreach_stmt(iter: it, body: b);
 
 CompositeStmt[T] for_stmt(Maybe[StdVar] v, Expr sv, Expr ev, Bool evi, T+ b) =
   for_stmt(var: value(v) if v != nothing, start_val: sv, end_val: ev, end_val_incl: evi, body: b);
