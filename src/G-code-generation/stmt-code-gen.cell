@@ -835,7 +835,7 @@ implicit program           : Program,
     blank_idxs = (i : a @ i <- table_args, a == nothing);
     set_args = values(table_args);
 
-    args_eval_code, args_aliases, var_gen = opt_eval_code(set_args, env, init_var_gen);
+    entry_code, args_aliases, var_gen = opt_eval_code(set_args, env, init_var_gen);
 
     surr_vars, var_gen = next_int32_vars(var_gen, |set_args|);
     it_var, var_gen = next_table_it_var(var_gen, |table_args|, symmetric(iter.rel_var));
@@ -848,9 +848,9 @@ implicit program           : Program,
     log_args_types = (apply(a, expr_type($, env)) : a <- iter.args);
     candidate_tables = overlapping_physical_tables(iter.rel_var, log_args_types);
 
-    code = args_eval_code;
-
     // Iterating through all candidate tables
+    code = ();
+    surrs = surrogates;
     for tv <- isort(candidate_tables):
       assert (a <~ surr_args : a == nothing);
       lookup_exprs = (
@@ -871,7 +871,10 @@ implicit program           : Program,
           llvar = low_level_var(args_reprs(i), var), var != llvar
       ];
 
-      entry_code_fixes, body_code, surrs = loop_stable_code(body, local_surrs, body_env, var_gen);
+      let surrogates = surrs:
+        entry_code_fixes, body_code, surrs = loop_stable_code(body, local_surrs, body_env, var_gen);
+      ;
+      entry_code = entry_code & entry_code_fixes;
 
       vars_setup_code = (set_var(value(v), lookup_exprs(i)) : v @ i <- perm_vars, v != nothing);
       loop_code = (break_if(is_out_of_range(it_var))) & vars_setup_code & body_code & (move_forward(it_var));
@@ -892,8 +895,7 @@ implicit program           : Program,
       code = code & table_code;
     ;
 
-    surrs = []; ## IMPLEMENT IMPLEMENT IMPLEMENT
-    return (code, just(surrs), [], init_var_gen);
+    return (entry_code & code, just(surrs), [], init_var_gen);
   }
 
   //////////////////////////////////////////////////////////////////////////////
