@@ -857,7 +857,22 @@ implicit program           : Program,
         lookup_surrogate(substitute(table_col_store_id(tv, i)), get_unknown_arg(it_var, j))
         : i @ j <- blank_idxs
       );
-      body_code = (); ## IMPLEMENT IMPLEMENT IMPLEMENT
+
+      // Environment the body runs in
+      args_types = table_signature(tv);
+      loop_vars_env = [value(v) -> args_types(i) : v @ i <~ iter.vars, v != nothing];
+      exit_env = update_env(body, env & loop_vars_env);
+      body_env = merge_envs(env, exit_env) & loop_vars_env;
+
+      args_reprs = (opt_repr(t) : t <- args_types);
+      local_surrs = [
+        var -> obj_expr(llvar)
+        : v @ i <~ iter.vars, v != nothing, var = value(v),
+          llvar = low_level_var(args_reprs(i), var), var != llvar
+      ];
+
+      entry_code_fixes, body_code, surrs = loop_stable_code(body, local_surrs, body_env, var_gen);
+
       vars_setup_code = (set_var(value(v), lookup_exprs(i)) : v @ i <- perm_vars, v != nothing);
       loop_code = (break_if(is_out_of_range(it_var))) & vars_setup_code & body_code & (move_forward(it_var));
       table_code = (
@@ -880,9 +895,6 @@ implicit program           : Program,
     surrs = []; ## IMPLEMENT IMPLEMENT IMPLEMENT
     return (code, just(surrs), [], init_var_gen);
   }
-
-    // loop_vars_env = [value(v) -> args_types(i) : v @ i <~ vars, v != nothing];
-    // entry_code_fixes, body_code, surrs = loop_stable_code(body, local_surrs, body_env, var_gen);
 
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////
