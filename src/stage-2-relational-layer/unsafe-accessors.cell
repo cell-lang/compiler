@@ -65,9 +65,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context {
 
   ## BAD BAD BAD: ASSUMING THERE'S ONLY ONE SIGNATURE PER TABLE, THAT MAY CHANGE IN THE FUTURE
   ## MAYBE I SHOULD MERGE ALL SIGNATURES INSTEAD...
-  NeType+ table_signature(AnyTableVar var) =
-    table_var()       = only(table_signatures(this_db_symbol, var)),
-    qual_table_var()  = only(table_signatures(var_type(var.db_var), var.table_var));
+  NeType+ table_signature(TableVar var)     = only(table_signatures(this_db_symbol, var));
+  NeType+ table_signature(QualTableVar var) = only(table_signatures(var_type(var.db_var), var.table_var));
 
 
   [[+Nat]] table_var_keys(TableVar var)     = table_var_keys(this_db_symbol, var);

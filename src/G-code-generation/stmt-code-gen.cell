@@ -864,12 +864,14 @@ implicit program           : Program,
       exit_env = update_env(body, env & loop_vars_env);
       body_env = merge_envs(env, exit_env) & loop_vars_env;
 
-      args_reprs = (opt_repr(t) : t <- args_types);
-      local_surrs = [
-        var -> obj_expr(llvar)
-        : v @ i <~ iter.vars, v != nothing, var = value(v),
-          llvar = low_level_var(args_reprs(i), var), var != llvar
-      ];
+      ## IGNORING LOW LEVEL REPRESENTATION FOR NOW. THIS OPTIMIZATION WILL BE PART OF RELEASE 0.4
+      // args_reprs = (opt_repr(t) : t <- args_types);
+      // low_level_vars = [
+      //   var -> low_level_var(args_reprs(i), var)
+      //   : v @ i <~ iter.vars, v != nothing, var = value(v)
+      // ];
+      // local_surrs = [v -> obj_expr(lv) : v, lv <- low_level_vars];
+      local_surrs = [];
 
       let surrogates = surrs:
         entry_code_fixes, body_code, surrs = loop_stable_code(body, local_surrs, body_env, var_gen);
