@@ -96,7 +96,7 @@ type ExprSpecWFError    = already_def_var(Var),
                           not_a_scalar_var(names: Atom+),
                           dupl_var_mult_asgnm(StdVar),
                           diff_var_sets_in_ptrn_union(SynPtrn+),
-                          iter_clause_wrong_arity(vars: StdVar+, valid_arities: [+NzNat]),
+                          wrong_iter_arity(vars: Maybe[StdVar]+, valid_arities: [+NzNat]),
                           invalid_case_arity(actual: Nat, expected: Nat),
 
                           ro_vars_asgnm(vars: [+Var]),
@@ -313,7 +313,8 @@ ExprSpecWFError not_a_scalar_var(Atom a)                                = not_a_
 ExprSpecWFError not_a_scalar_var(Atom+ as)                              = not_a_scalar_var(names: as);
 ExprSpecWFError dupl_var_mult_asgnm(StdVar v)                           = :dupl_var_mult_asgnm(v);
 ExprSpecWFError diff_var_sets_in_ptrn_union(SynPtrn+ ps)                = :diff_var_sets_in_ptrn_union(ps);
-ExprSpecWFError iter_clause_wrong_arity(StdVar+ vs, [+NzNat] as)        = iter_clause_wrong_arity(vars: vs, valid_arities: as);
+ExprSpecWFError wrong_iter_arity(Maybe[Symbol]+ vs, NzNat a)            = wrong_iter_arity(vars: (apply(v, var) : v <- vs), valid_arities: [a]);
+ExprSpecWFError wrong_iter_arity(StdVar+ vs, [+NzNat] as)               = wrong_iter_arity(vars: (just(v) : v <- vs), valid_arities: as);
 ExprSpecWFError invalid_case_arity(Nat n, Nat m)                        = invalid_case_arity(actual: n, expected: m);
 
 ExprSpecWFError ro_vars_asgnm([+Var] vs)                        = ro_vars_asgnm(vars: vs);
@@ -432,7 +433,7 @@ Any* anchor_objs(ExprSpecWFError err) =
   not_a_scalar_var()                      = (),
   dupl_var_mult_asgnm()                   = (),
   diff_var_sets_in_ptrn_union(ps?)        = (head(ps)),
-  iter_clause_wrong_arity()               = (),
+  wrong_iter_arity()                      = (),
   invalid_case_arity()                    = (),
 
   ro_vars_asgnm()                         = (),
@@ -855,9 +856,9 @@ String* basic_err_msg(ExprSpecWFError err) =
   not_a_scalar_var()          = ("Invalid use of non-object variable: " & append((_print_(n) : n <- err.names), ".")),
   dupl_var_mult_asgnm(v?)     = ("Duplicated variable in multiple assignment: " & user_repr(v)),
   diff_var_sets_in_ptrn_union(ps?)  = ("Individual patterns in a union must define the same set of variables"),
-  iter_clause_wrong_arity()   = { arities_str = append((printed(a) : a <- rand_sort(err.valid_arities)), " ");
+  wrong_iter_arity()          = { arities_str = append((printed(a) : a <- rand_sort(err.valid_arities)), " ");
                                   suffix = if |err.valid_arities| == 1 then "y" else "ies";
-                                  return ("Invalid clause arity. Expected arit" & suffix & ": " & arities_str);
+                                  return ("Invalid iterator arity. Expected arit" & suffix & ": " & arities_str);
                                 },
   invalid_case_arity()        = ("Wrong pattern list length"),
 

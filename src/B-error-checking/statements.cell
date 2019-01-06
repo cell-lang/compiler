@@ -160,7 +160,13 @@ implicit {
       target = iter.target;
       resols = resolve_by_priority_as_expr_or_rel_var(target, |iter.args|, vars);
       if |resols| == 1:
-        return ();
+        resol = only(resols);
+        if resol :: AnyRelVar:
+          exp_arity = relvar_arity(resol);
+          return (invalid_rel_var_arity(last(target), |iter.args|, exp_arity) if |iter.args| != exp_arity);
+        else
+          return ();
+        ;
       elif |resols| > 1:
         // Building a "fake" expression to feed to ambiguous_expr()
         expr = const_or_var(head(target));
@@ -319,9 +325,19 @@ implicit {
       it_vars = syn_new_vars(it);
       bad_vars = already_def_vars(it_vars, union([ro_vars, rw_vars, new_vars]));
       errs = (errs | vars_redef(stmt, bad_vars)) if bad_vars != [];
+      errs = errs & match (it)
+        filtered_iter()   = iter_wf_errors(it),
+        coll_value_iter() |
+        range_iter()      = ();
       new_vars = new_vars & it_vars;
     ;
     return errs;
+
+
+    ExprWFError* iter_wf_errors(SynFilteredIter iter) {
+      free_args_count = count(iter.args, $ == nothing);
+      return (wrong_iter_arity(iter.vars, nz_nat(free_args_count)) if |iter.vars| != free_args_count);
+    }
   }
 
 

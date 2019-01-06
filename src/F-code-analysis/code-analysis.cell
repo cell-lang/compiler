@@ -127,7 +127,11 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Database,
 
     // type RelSubsetIter = rel_subset_iter(vars: Maybe[StdVar]+, src_expr: Expr, args: Maybe[Expr]+);
     Bool iterates_at_least_once(RelSubsetIter iter, [EnvVar -> Type] env) {
-      fail; ## IMPLEMENT IMPLEMENT IMPLEMENT
+      src_type = expr_type(iter.src_expr, env);
+      ## BAD BAD BAD: WHAT ARE WE SUPPOSED TO DO IF THE TYPE OF THE SOURCE IS THE EMPTY TYPE?
+      return src_type != empty_type and
+             not type_contains_obj(src_type, []) and
+             not (a <~ iter.args : a != nothing);
     }
 
 
@@ -150,13 +154,3 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Database,
     }
   }
 }
-
-// body: (
-//   insert_stmt(var: rel_var(user), args: (accessor(expr: var(this), field: object(user)))),
-//   foreach_stmt(
-//     body: (
-//       insert_stmt(var: rel_var(score), args: (accessor(expr: var(this), field: object(user)), var(s)))
-//     ),
-//     iter:
-//       coll_value_iter(vars: (just(var(s))), src_expr: accessor(expr: var(this), field: object(scores)))
-//   )

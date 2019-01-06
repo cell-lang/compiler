@@ -14,7 +14,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg], actual_ar
     dupl_vars = duplicates(vars);
     errs  = (already_def_var(v) : v <- vars, already_def(v, def_vars)) &
             (dupl_var_mult_asgnm(v) : v <- rand_sort(dupl_vars)) &
-            (iter_clause_wrong_arity(vars, [1, 2, 3]) if not in(arity, [1, 2, 3]));
+            (wrong_iter_arity(vars, [1, 2, 3]) if not in(arity, [1, 2, 3]));
     return errs;
   }
 
@@ -30,7 +30,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg], actual_ar
         resol = only(resols);
         if resol :: AnyRelVar:
           relvar_arity = relvar_arity(resol);
-          return (iter_clause_wrong_arity(vars, [relvar_arity]) if |vars| != relvar_arity);
+          return (wrong_iter_arity(vars, [relvar_arity]) if |vars| != relvar_arity);
         ;
       elif resols == []:
         ## BAD BAD BAD: USING A FIXED MAXIMUM ARITY
@@ -62,7 +62,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg], actual_ar
     return args_errs if args_errs != ();
 
     exp_clause_arity = nz_nat(count(args, $ == nothing));
-    return (iter_clause_wrong_arity(vars, [exp_clause_arity])) if |vars| != exp_clause_arity;
+    return (wrong_iter_arity(vars, [exp_clause_arity])) if |vars| != exp_clause_arity;
 
     // Trying to resolve the relation name
     resols = resolve_by_priority_as_expr_or_rel_var(target, |args|, def_vars);
