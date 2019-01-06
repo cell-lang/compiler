@@ -1537,16 +1537,13 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
 
   Type foreach_stmt_return_type(Iter iter, Statement+ body, [EnvVar -> Type] env) {
-    fail; ## IMPLEMENT IMPLEMENT IMPLEMENT
-    // elem_type = seq_elem_supertype(expr_type(iter.src_expr, env));
-    // assert elem_type != empty_type;
-    // env_delta = partial_asgnm_env_updates(iter.vars, elem_type);
-    // env_delta = env_delta & [iter.idx_var -> type_nat] if iter.idx_var?;
-    // env_0 = update(env, env_delta);
-    // env_1 = update_env(body, env_0);
-    // ret_type_0 = return_type(body, env_0);
-    // ret_type_1 = return_type(body, env_1);
-    // return union_superset(ret_type_0, ret_type_1);
+    loop_vars = loop_vars(iter, env);
+    env_0 = env & loop_vars;
+    env_1 = update_env(body, env_0);
+    exit_env = remove_keys(env_1, keys(loop_vars));
+    ret_type_0 = return_type(body, env_0);
+    ret_type_1 = return_type(body, env_1);
+    return union_superset(ret_type_0, ret_type_1);
   }
 
 

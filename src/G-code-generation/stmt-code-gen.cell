@@ -738,11 +738,15 @@ implicit program           : Program,
     // Evaluation of arguments
     args_eval_code, args_surrs, var_gen = sparse_opt_eval_code(args, env, var_gen);
 
+    // Mapping the index of each iterator variable to that of the corresponding relation argument
+    var_arg_idx_map = indexes(args, $ == nothing);
+
     // Type and representation of the arguments of the source set/relation
     local_surrs = [];
     iter_vars_setup_code = ();
 
-    if |vars| == 1:
+    if |args| == 1:
+      fail if |vars| != 1;
       elt_type = nonempty_type(set_elem_supertype(coll_type));
       elt_repr = opt_repr(elt_type);
       it_var, var_gen = next_set_it_var(var_gen);
@@ -755,7 +759,7 @@ implicit program           : Program,
         iter_vars_setup_code = (set_any_var(elt_var, get_curr_obj(it_var)));
       ;
 
-    elif |vars| == 2:
+    elif |args| == 2:
       args_types = (nonempty_type(t) : t <- bin_rel_args_supertypes(coll_type));
       args_reprs = (opt_repr(t) : t <- args_types);
       it_var, var_gen = next_bin_rel_it_var(var_gen);
@@ -763,15 +767,17 @@ implicit program           : Program,
       for v @ i <- vars:
         if v != nothing:
           var = value(v);
-          low_level_var = low_level_var(args_reprs(i), var);
+          arg_idx = var_arg_idx_map(i);
+          low_level_var = low_level_var(args_reprs(arg_idx), var);
           local_surrs = local_surrs & [var -> obj_expr(low_level_var) if var != low_level_var];
-          fail if not i :: <0..1>;
-          iter_vars_setup_code = (iter_vars_setup_code | set_any_var(low_level_var, get_curr_arg(it_var, i)));
+          fail if not arg_idx :: <0..1>;
+          instr = set_any_var(low_level_var, get_curr_arg(it_var, arg_idx));
+          iter_vars_setup_code = (iter_vars_setup_code | instr);
         ;
       ;
 
     else
-      fail if |vars| != 3;
+      fail if |args| != 3;
       args_types = (nonempty_type(t) : t <- tern_rel_args_supertypes(coll_type));
       args_reprs = (opt_repr(t) : t <- args_types);
       it_var, var_gen = next_tern_rel_it_var(var_gen);
@@ -779,10 +785,12 @@ implicit program           : Program,
       for v @ i <- vars:
         if v != nothing:
           var = value(v);
-          low_level_var = low_level_var(args_reprs(i), var);
+          arg_idx = var_arg_idx_map(i);
+          low_level_var = low_level_var(args_reprs(arg_idx), var);
           local_surrs = local_surrs & [var -> obj_expr(low_level_var) if var != low_level_var];
-          fail if not i :: <0..2>;
-          iter_vars_setup_code = (iter_vars_setup_code | set_any_var(low_level_var, get_curr_arg(it_var, i)));
+          fail if not arg_idx :: <0..2>;
+          instr = set_any_var(low_level_var, get_curr_arg(it_var, arg_idx));
+          iter_vars_setup_code = (iter_vars_setup_code | instr);
         ;
       ;
     ;
@@ -796,7 +804,7 @@ implicit program           : Program,
     entry_code = entry_code & entry_code_fixes;
     // body_code = body_code_setup & body_code;
 
-    code = entry_code & (
+    code = entry_code & args_eval_code & (
       get_any_rel_iter(it_var, coll_surr, args_surrs),
       repeat((
         break_if(is_out_of_range(it_var))
