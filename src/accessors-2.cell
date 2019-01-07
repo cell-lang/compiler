@@ -3,7 +3,8 @@ type Context = null_context, Function, Procedure, Automaton, Database, LambdaCtx
 type LambdaCtx  = lambda_ctx(
                     var_subst_map     : [StdVar -> CaptVar],
                     cls_var_subst_map : [ClsVar -> CaptClsVar],
-                    rel_auto          : Database?
+                    parent            : Context,
+                    rel_auto          : Database? ## THIS IS PROBABLY REDUNDANT NOW...
                   );
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -14,11 +15,12 @@ implicit context : Context {
       null_context    |
       function()      |
       procedure()     |
-      automaton()     = lambda_ctx(var_subst_map: vs, cls_var_subst_map: cs),
-      data_base()     = lambda_ctx(var_subst_map: vs, cls_var_subst_map: cs, rel_auto: context),
+      automaton()     = lambda_ctx(var_subst_map: vs, cls_var_subst_map: cs, parent: context),
+      data_base()     = lambda_ctx(var_subst_map: vs, cls_var_subst_map: cs, parent: context, rel_auto: context),
       lambda_ctx()    = lambda_ctx(
                           var_subst_map:      vs,
                           cls_var_subst_map:  cs,
+                          parent:             context,
                           rel_auto:           context.rel_auto if context.rel_auto?
                         );
 
@@ -92,10 +94,7 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
 ////////////////////////////////////////////////////////////////////////////////
 
 implicit program : Program, context : Context {
-  [ClsVar -> ClsType] closures =
-    match (context)
-      function()    = [v -> t : v, t <~ context.cls_args],
-      _             = [];
+  [ClsVar -> ClsType] closures = closures(context);
 
 
   [PlainFnFamilyId -> [+ClsType]] constraints =
@@ -103,6 +102,12 @@ implicit program : Program, context : Context {
       function()  = merge_values([[fn_family_id(n, arity(s)) -> s] : n, ss <- context.constrs, s <- ss]),
       _           = [];
 }
+
+
+[ClsVar -> ClsType] closures(Context context) =
+  function()      = [v -> t : v, t <~ context.cls_args],
+  lambda_ctx()    = closures(context.parent),
+  _               = [];
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////

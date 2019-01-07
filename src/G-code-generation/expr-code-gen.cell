@@ -1648,15 +1648,16 @@ implicit program           : Program,
     ;
     body = (eval_code | ret_val(surr));
 
-    capt_context = match (context)
+    return lambda_expr(cls_def(arity, body), capt_context(context), capt_vars, capt_cls_vars);
+
+
+    Maybe[DBSymbol] capt_context(Context ctx) =
       null_context  |
       function()    |
       procedure()   |
       automaton()   = nothing,
-      data_base()   = just(context.name),
-      lambda_ctx()  = undefined; ## IMPLEMENT IMPLEMENT IMPLEMENT
-
-    return lambda_expr(cls_def(arity, body), capt_context, capt_vars, capt_cls_vars);
+      data_base()   = just(ctx.name),
+      lambda_ctx()  = capt_context(ctx.parent);
   }
 }
 
