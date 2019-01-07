@@ -64,10 +64,15 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Database,
 
 
   // type DeleteStmt = delete_stmt(var: RelVar, args: Maybe[Expr]+);
-  [AnalysisError] analyse(DeleteStmt stmt, [RelVar, Expr+, InsertStmt] reqrs, [EnvVar -> Type] env) = [
-    deleting_one_to_one_attribute(stmt, master_rel_var(context.name, stmt.var))
-      if is_one_to_one_attribute(context.name, stmt.var)
-  ];
+  [AnalysisError] analyse(DeleteStmt stmt, [RelVar, Expr+, InsertStmt] reqrs, [EnvVar -> Type] env) {
+    if is_one_to_one_attribute(context.name, stmt.var):
+      master = master_rel_var(context.name, stmt.var);
+      if context.attr_map(master, stmt.var):
+        return [deleting_one_to_one_attribute(stmt, master_rel_var(context.name, stmt.var))];
+      ;
+    ;
+    return [];
+  }
 
 
   [AnalysisError] analyse(AssignmentStmt stmt, [RelVar, Expr+, InsertStmt] reqrs, [EnvVar -> Type] env) {
