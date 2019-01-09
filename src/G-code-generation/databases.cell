@@ -1,5 +1,5 @@
 implicit program : Program, typedefs : [TypeName -> NeType], database : Database, options : CompOptions {
-  StaticBlock compiled_database {
+  StaticBlock compiled_database([RelVar -> [+Nat -> Nat]] rel_vars_args_perms) {
     methods = compiled_database_methods(database.methods);
     updates = compiled_database_updates(database.updates);
     handlers = compiled_database_handlers(database.handlers);
@@ -20,8 +20,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
       nested_blocks:            database.nested_dbs,
       init_code:                database_init_code,
       cleanup_code:             database_cleanup_code,
-      copy_state_code:          database_copy_state_code,
-      set_state_code:           database_set_state_code,
+      copy_state_code:          database_copy_state_code(rel_vars_args_perms),
+      set_state_code:           database_set_state_code(rel_vars_args_perms),
       foreign_keys_check_code:  database_foreign_keys_check_code,
       methods:                  methods,
       accessors:                accessors,
@@ -65,7 +65,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
   }
 
 
-  Instr* database_copy_state_code {
+  Instr* database_copy_state_code([RelVar -> [+Nat -> Nat]] rel_vars_args_perms) {
     count = nat(|database.state_vars| + |database.rel_vars| + |database.nested_dbs|);
     return (ret_val(empty_rel)) if count == 0;
 
@@ -86,10 +86,10 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
         value_var = evar(values_var.id, i);
         set_value_instr = match (v)
           memb_var()      = set_var(value_var, v),
-          rel_var()       = copy_table(
+          rel_var()       = copy_rel(
                               value_var,
                               nonempty_map(select_by_key(tables_info, physical_tables(database.name, v))),
-                              rel_var_cols_perm(database.name, v)
+                              rel_vars_args_perms(v)
                             ),
           nested_db_var() = copy_state(value_var, v, var_type(v));
         return (set_label_instr, set_value_instr);
@@ -100,13 +100,13 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
   }
 
 
-  Instr* database_set_state_code {
+  Instr* database_set_state_code([RelVar -> [+Nat -> Nat]] rel_vars_args_perms) {
     rel_auto_id = database.name;
 
     state_var = fn_arg(0);
     tmp_var = lvar(0);
     bool_var = bvar(0);
-    log_args_vars = (lvar(nat(i+1)) : i < 3);
+    args_vars = (lvar(nat(i+1)) : i < 3);
     surr_vars = (ivar32(i) : i < 3);
     it_vars = [1 -> set_it_var(0), 2 -> bin_rel_it_var(0), 3 -> tern_rel_it_var(0)];
 
@@ -133,8 +133,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
     ord_rel_vars = sort_by_key(keys(database.rel_vars), arity(rel_auto_id, $));
     for v <- ord_rel_vars:
       arity = arity(rel_auto_id, v);
-      cols_perm = rel_var_cols_perm(rel_auto_id, v);
-      phys_args_vars = (log_args_vars(i) : i <- cols_perm);
+      args_perm = rel_vars_args_perms(v);
+      // phys_args_vars = (log_args_vars(args_perm(i)) : i < arity);
       it_var = it_vars[arity]; // Need to use [] instead of () because of the typechecker...
 
       // Physical tables the logical relation is partitioned into
@@ -145,7 +145,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
         stores_ids = (table_col_store_id(rel_auto_id, table_var, i) : i < arity);
         core_loop_code = (
         ) & (
-          immediate_insert_or_add_ref(surr_vars(i), stores_ids(i), phys_args_vars(i)) : i < arity
+          immediate_insert_or_add_ref(surr_vars(i), stores_ids(i), args_vars(i)) : i < arity
         ) & (
           immediate_insert_tuple(table_var, nonempty(take(surr_vars, arity)))
         );
@@ -154,12 +154,12 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
         // Choosing the dispatch arguments
         signatures = [table_signatures(rel_auto_id, tv) : tv <- phys_tables];
         disp_args_idxs = optimal_dispatch_args(signatures, typedefs);
-        disp_args = (log_args_vars(i) : i <- disp_args_idxs);
+        disp_args = (args_vars(i) : i <- disp_args_idxs);
 
         cases = [{
           stores_ids = (table_col_store_id(rel_auto_id, tv, i) : i < arity);
           case_code = (
-            (immediate_insert_or_add_ref(surr_vars(i), stores_ids(i), phys_args_vars(i)) : i < arity) |
+            (immediate_insert_or_add_ref(surr_vars(i), stores_ids(i), args_vars(i)) : i < arity) |
             immediate_insert_tuple(tv, nonempty(take(surr_vars, arity)))
           );
           types = table_signatures(rel_auto_id, tv);
@@ -180,12 +180,12 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
       } : i < arity);
 
       mono_args = ((i, an_elem([s(i) : s <- signatures])) : i < arity, arg_type_is_unique(i));
-      args_types_conds = (is_member(memb_test_preds_map(t, !!), log_args_vars(i)) : i, t <- mono_args);
+      args_types_conds = (is_member(memb_test_preds_map(t, !!), args_vars(i)) : i, t <- mono_args);
 
       poly_args = (i : i < arity, not arg_type_is_unique(i));
       if poly_args != ():
         poly_conds = (
-          and_then((is_member(memb_test_preds_map(s(i), !!), log_args_vars(i))  : i <- poly_args))
+          and_then((is_member(memb_test_preds_map(s(i), !!), args_vars(i))  : i <- poly_args))
         : s <- isort(signatures));
         args_types_conds = (args_types_conds | or_else(poly_conds));
       ;
@@ -193,7 +193,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
       core_loop_code = (do_if_not(and_then(nonempty(args_types_conds)), ret_val(false))) & core_loop_code;
 
       loop_body = (break_if(is_out_of_range(it_var))) &
-                  (get_curr_arg(log_args_vars(i), it_var, i) : i < arity) &
+                  (get_curr_arg(args_vars(args_perm(i)), it_var, i) : i < arity) &
                   core_loop_code & (move_forward(it_var));
 
       rel_check_cond = match (arity)
@@ -716,8 +716,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
     origin_args = (a : a, t <- typed_origin_args);
     target_relvar, target_args = key.target;
 
-    rev_origin_perm = reverse_perm(rel_var_cols_perm(database.name, origin_relvar));
-    rev_target_perm = reverse_perm(rel_var_cols_perm(database.name, target_relvar));
+    // rev_origin_perm = reverse_perm(rel_var_cols_perm(database.name, origin_relvar));
+    // rev_target_perm = reverse_perm(rel_var_cols_perm(database.name, target_relvar));
 
     origin_symmetric = symmetric(database.name, origin_relvar);
     target_symmetric = symmetric(database.name, target_relvar);
@@ -755,9 +755,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
         (_),                        (_, _)      = :unary_sym_binary,
         (_),                        (_, _, _)   = :unary_sym_ternary,
         (_, _),                     (_)         = :sym_binary_unary,
-        (nothing, nothing, just()), (just())    = { assert rev_origin_perm == (0, 1, 2);
-                                                    return ternary_unary(2);
-                                                  },
+        (nothing, nothing, just()), (just())    = ternary_unary(2),
         (_, _, _),                  (_)         = :sym_ternary_unary,
         (_, _),                     (_, _, _)   = :sym_binary_sym_ternary,
         (_, _, _),                  (_, _)      = :sym_ternary_sym_binary;
@@ -765,19 +763,15 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
     else
       key_type = match (origin_args, target_args)
         (just()),           (just())          = :unary_unary,
-        (just()),           (just(), nothing) = unary_binary(rev_target_perm(0)),
-        (just()),           (nothing, just()) = unary_binary(rev_target_perm(1)),
-        (just()),           (_, _, _) as?     = { idx = only_unsafe((i : a @ i <- as, a != nothing));
-                                                  return unary_ternary(rev_target_perm(idx));
-                                                },
+        (just()),           (just(), nothing) = unary_binary(0),
+        (just()),           (nothing, just()) = unary_binary(1),
+        (just()),           (_, _, _) as?     = unary_ternary(only_unsafe((i : a @ i <- as, a != nothing))),
 
-        (just(),  nothing), (just())          = binary_unary(rev_origin_perm(0)),
-        (nothing, just()),  (just())          = binary_unary(rev_origin_perm(1)),
+        (just(),  nothing), (just())          = binary_unary(0),
+        (nothing, just()),  (just())          = binary_unary(1),
         (just(),  just()),  (_, _, _)         = :binary_ternary,
 
-        (_, _, _) oas?,     (just() ta?)      = { idx = only_unsafe((i : a @ i <- oas, a == ta));
-                                                  return ternary_unary(rev_origin_perm(idx));
-                                                },
+        (_, _, _) oas?,     (just() ta?)      = ternary_unary(only_unsafe((i : a @ i <- oas, a == ta))),
         (_, _, _),          (_, _)            = :ternary_binary;
     ;
 
@@ -848,12 +842,12 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 
         value_stores = (col_to_vs_map((tv, i)) : i < arity);
         keys = table_var_keys(auto_id, tv);
-        applied_perm = rel_var_cols_perm(auto_id, rv);
+        // applied_perm = rel_var_cols_perm(auto_id, rv);
 
-        log_cols_types = (ne_union_superset([ts(i) : ts <- table_signatures(auto_id, tv)]) : i < arity);
-        phys_cols_types = (log_cols_types(i) : i <- applied_perm);
+        cols_types = (ne_union_superset([ts(i) : ts <- table_signatures(auto_id, tv)]) : i < arity);
+        // phys_cols_types = (log_cols_types(i) : i <- applied_perm);
 
-        return table(value_stores, keys, phys_cols_types, applied_perm, info.symmetric);
+        return table(value_stores, keys, cols_types, info.symmetric);
       } : rv, info <- database.rel_vars, tv <- physical_tables(auto_id, rv)
     ];
   }

@@ -7,12 +7,12 @@ type CompOptions  = options(
 
 
 implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptions {
-  CompiledPrg compiled_program {
+  CompiledPrg compiled_program([DBSymbol -> [RelVar -> [+Nat -> Nat]]] rel_vars_args_perms) {
     memb_test_preds = [memb_test_pred(t, memb_test_preds_map) : t, unused_var <- memb_test_preds_map];
     fndefs          = [gen_fn_code(fd) : fd <- program.fndefs];
     proc_defs       = [gen_proc_code(pd) : pd <- program.proc_defs];
     react_blocks    = [gen_auto_code(automaton=a) : a <- program.auto_defs];
-    static_blocks   = [compiled_database(database=db) : db <- program.data_bases];
+    static_blocks   = [compiled_database(rel_vars_args_perms(db.name), database=db) : db <- program.data_bases];
 
     return compiled_prg(
       typedefs:       program.typedefs,

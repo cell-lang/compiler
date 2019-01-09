@@ -76,35 +76,37 @@ implicit program           : Program,
 
   // relvar_yield_action(vars: StdVar+, relvar: AnyRelVar, args: Maybe[Expr]+, next: YieldAction)
   Instr* relvar_yield_action_opt_code(RelvarYieldAction action, VarGen init_var_gen) {
-    args_perm = relvar_cols_perm(action.relvar);
-    table_args = (action.args(i) : i <- args_perm);
+    // args_perm = relvar_cols_perm(action.relvar);
+    // table_args = (action.args(i) : i <- args_perm);
 
-    ## INVALID ARGS SHOULD BE NULL...
-    vars = action.vars;
-    arg_to_var_before_perm = (i-1 : i <- partial_sums((bit(a == nothing) : a <- action.args)));
-    var_to_arg_after_perm = (i : a @ i <- table_args, a == nothing);
-    vars_perm = (arg_to_var_before_perm(args_perm(var_to_arg_after_perm(i))) : unused_var @ i <- action.vars); ## UGLY UGLY UGLY
-    perm_vars = (action.vars(vars_perm(i)) : unused_var @ i <- vars); ## UGLY UGLY UGLY
+    // ## INVALID ARGS SHOULD BE NULL...
+    // vars = action.vars;
+    // arg_to_var_before_perm = (i-1 : i <- partial_sums((bit(a == nothing) : a <- action.args)));
+    // var_to_arg_after_perm = (i : a @ i <- table_args, a == nothing);
+    // vars_perm = (arg_to_var_before_perm(args_perm(var_to_arg_after_perm(i))) : unused_var @ i <- action.vars); ## UGLY UGLY UGLY
+    // perm_vars = (action.vars(vars_perm(i)) : unused_var @ i <- vars); ## UGLY UGLY UGLY
 
-    assert {
-      if all((a == nothing : a <- action.args)):
-        return false if |action.vars| != |action.args|;
-        return perm_vars == (action.vars(i) : i <- args_perm);
-      else
-        ## ADD SOME CHECK HERE TOO...
-        return true;
-      ;
-    };
+    // assert {
+    //   if all((a == nothing : a <- action.args)):
+    //     return false if |action.vars| != |action.args|;
+    //     return perm_vars == (action.vars(i) : i <- args_perm);
+    //   else
+    //     ## ADD SOME CHECK HERE TOO...
+    //     return true;
+    //   ;
+    // };
 
-    filtered_idxs = idxs_into_filtered_seq((a != nothing : a <- table_args));
-    unfiltered_idxs = (i : a @ i <- table_args, a != nothing);
-    blank_idxs = (i : a @ i <- table_args, a == nothing);
-    set_args = values(table_args);
+    args = action.args;
+
+    filtered_idxs = idxs_into_filtered_seq((a != nothing : a <- args));
+    unfiltered_idxs = (i : a @ i <- args, a != nothing);
+    blank_idxs = (i : a @ i <- args, a == nothing);
+    set_args = values(args);
 
     args_eval_code, args_aliases, var_gen = opt_eval_info(set_args, init_var_gen);
 
     surr_vars, var_gen = next_int32_vars(var_gen, |set_args|);
-    it_var, var_gen = next_table_it_var(var_gen, |table_args|, symmetric(action.relvar));
+    it_var, var_gen = next_table_it_var(var_gen, |args|, symmetric(action.relvar));
 
     surr_args = (apply(mi, surr_vars($)) : mi <- filtered_idxs);
 
@@ -138,7 +140,7 @@ implicit program           : Program,
           lookup_surrogate(substitute(table_col_store_id(tv, i)), get_unknown_arg(it_var, j))
           : i @ j <- blank_idxs
         );
-        vars_setup_code = (set_var(v, lookup_exprs(i)) : v @ i <- perm_vars);
+        vars_setup_code = (set_var(v, lookup_exprs(i)) : v @ i <- action.vars);
         loop_code = (break_if(is_out_of_range(it_var))) & vars_setup_code & action_code & (move_forward(it_var));
         table_code = (
           get_table_iter(it_var, substitute(tv), nonempty(surr_args)),

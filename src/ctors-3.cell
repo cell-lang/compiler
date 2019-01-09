@@ -306,7 +306,7 @@ Instr parse_value(WriteObjVar v, AtomicExpr s)  = set_var(v, parse_value(value: 
 Instr print_value(WriteObjVar v, AtomicExpr s)  = set_var(v, print_value(value: s));
 
 Instr copy_state(WriteObjVar rv, AnyDBVar dv, DBSymbol t) = set_var(rv, copy_state(var: dv, type: t));
-Instr copy_table(WriteObjVar ov, [+TableVar -> Table] ts, Nat+ p) = set_var(ov, copy_table(tables: ts, perm: p));
+Instr copy_rel(WriteObjVar ov, [+TableVar -> Table] ts, [+Nat -> Nat] p) = set_var(ov, copy_rel(tables: ts, applied_perm: p));
 
 Instr copy_persistent_state(WriteObjVar rv, AnyAutoVar av, AutoSymbol t) = set_var(rv, copy_persistent_state(var: av, type: t));
 
@@ -549,9 +549,9 @@ NestedValueStoreId nested_value_store_id(AnyDBVar v, ValueStoreId id) =
 
 CaptValueStoreId capt_value_store_id(ValueStoreId id) = :capt_value_store_id(id);
 
-Table table(ValueStoreId+ vs, [[+Nat]] ks, NeType+ ts, Nat+ p, Bool s) {
-  assert |vs| == |ts| and |vs| == |p|;
-  return table(value_stores: vs, keys: ks, col_types: ts, applied_perm: p, symmetric: s);
+Table table(ValueStoreId+ vs, [[+Nat]] ks, NeType+ ts, Bool s) {
+  assert |vs| == |ts|;
+  return table(value_stores: vs, keys: ks, col_types: ts, symmetric: s);
 }
 
 ForeignKeyType unary_binary(Nat i)  = if i :: <0..1> then :unary_binary(i)  else undefined;
