@@ -3,8 +3,8 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
     cols_perms_by_database_relvar((database, rel_var), !!);
 
 
-  [+TableVar] physical_tables(DBSymbol database) =
-    nonempty(keys(physical_tables_signatures_by_rel_auto_id(database, !!)));
+  [TableVar] physical_tables(DBSymbol database) =
+    keys(physical_tables_signatures_by_rel_auto_id(database, !!));
 
 
   [+TableVar] physical_tables(DBSymbol database, RelVar rel_var) {
@@ -34,13 +34,22 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////
 
+  T+ logical_to_physical_order(DBSymbol rel_auto_id, RelVar rel_var, T+ logical_values) {
+    applied_perm = rel_var_cols_perm(rel_auto_id, rel_var);
+    assert |logical_values| == |applied_perm|;
+    return (logical_values(i) : i <- applied_perm);
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+
   ## MOVE SOMEWHERE ELSE?
   ## THIS SPLITS RELATIONS MORE THAN IT'S PROBABLY NECESSARY
   [TableVar -> [+NeType+]] physical_tables_signatures(Database database) = merge([
-    if |info.signatures| != 1
-      then [table_var(v, i) -> [s] : s @ i <~ isort(info.signatures)]
-      else [table_var(v) -> [only(info.signatures)]]
-    : v, info <- database.rel_vars
+    if |sgns| != 1
+      then [table_var(v, i) -> [s] : s @ i <~ isort(sgns)]
+      else [table_var(v) -> [only(sgns)]]
+    : v, info <- database.rel_vars,
+      sgns = [logical_to_physical_order(database.name, v, s) : s <- info.signatures]
   ]);
 
 

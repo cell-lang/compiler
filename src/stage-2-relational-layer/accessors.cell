@@ -37,20 +37,12 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
   [+TableVar] overlapping_physical_tables(DBSymbol rel_auto_id, RelVar var, Maybe[Type]+ log_args_types) {
     tables = physical_tables(rel_auto_id, unqualified(var));
     phys_args_types = logical_to_physical_order(rel_auto_id, var, log_args_types);
-    return nonempty([
+    overlapping_tables = [
       t : t <- tables,
           sgns = table_signatures(rel_auto_id, t),
           any_signature_overlaps_partial_signature(sgns, phys_args_types)
-    ]);
-  }
-
-  //////////////////////////////////////////////////////////////////////////////
-
-  ## IS THIS IN THE RIGHT PLACE?
-  T+ logical_to_physical_order(DBSymbol rel_auto_id, RelVar rel_var, T+ logical_values) {
-    applied_perm = rel_var_cols_perm(rel_auto_id, rel_var);
-    assert |logical_values| == |applied_perm|;
-    return (logical_values(i) : i <- applied_perm);
+    ];
+    return nonempty(overlapping_tables);
   }
 
   //////////////////////////////////////////////////////////////////////////////
