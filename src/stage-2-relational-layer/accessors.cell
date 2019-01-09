@@ -21,12 +21,14 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
     rel_auto_by_id(rel_auto_id).rel_vars(rel_var).keys;
 
 
-  [[+Nat]] table_var_keys(DBSymbol rel_auto_id, TableVar table_var) {
-    rel_var = logical_rel_var(table_var);
-    log_keys = rel_var_keys(rel_auto_id, rel_var);
-    perm = rel_var_cols_perm(rel_auto_id, rel_var);
-    return permutate_keys(log_keys, perm);
-  }
+  [[+Nat]] table_var_keys(DBSymbol rel_auto_id, TableVar table_var) =
+    rel_var_keys(rel_auto_id, logical_rel_var(table_var));
+
+  // { rel_var = logical_rel_var(table_var);
+  //   log_keys = rel_var_keys(rel_auto_id, rel_var);
+  //   perm = rel_var_cols_perm(rel_auto_id, rel_var);
+  //   return permutate_keys(log_keys, perm);
+  // }
 
 
   ValueStoreId table_col_store_id(DBSymbol rel_auto_id, TableVar rel_var, Nat col_idx) =
@@ -34,13 +36,13 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
 
 
   // The arguments must be in the logical order, not in the physical one
-  [+TableVar] overlapping_physical_tables(DBSymbol rel_auto_id, RelVar var, Maybe[Type]+ log_args_types) {
+  [+TableVar] overlapping_physical_tables(DBSymbol rel_auto_id, RelVar var, Maybe[Type]+ args_types) {
     tables = physical_tables(rel_auto_id, unqualified(var));
-    phys_args_types = logical_to_physical_order(rel_auto_id, var, log_args_types);
+    // phys_args_types = logical_to_physical_order(rel_auto_id, var, log_args_types);
     overlapping_tables = [
       t : t <- tables,
           sgns = table_signatures(rel_auto_id, t),
-          any_signature_overlaps_partial_signature(sgns, phys_args_types)
+          any_signature_overlaps_partial_signature(sgns, args_types)
     ];
     return nonempty(overlapping_tables);
   }
