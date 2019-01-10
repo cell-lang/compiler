@@ -21,24 +21,18 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
 
 
     [RelVar, NeType+, RelVar] required_insertions(Database rel_auto, ForeignKey key) {
-      src_rel_var, src_info = key.source;
-      src_args, src_types = unzip(src_info);
-      src_arity = |src_types|;
-      tgt_rel_var, tgt_args = key.target;
-      tgt_arity = |tgt_args|;
-
-      insertion_required = match (src_args, tgt_args)
+      insertion_required = match (key.source_args, key.target_args)
         (just()),         (just(), nothing)           = true,
         (just(), just()), (just(), just(), nothing)   = true,
         _,                _                           = false;
       return [] if not insertion_required;
 
-      src_rel_var_sgns = rel_auto.rel_vars(src_rel_var).signatures;
+      src_rel_var_sgns = rel_auto.rel_vars(key.source_rel_var).signatures;
       affected_src_sgns = nonempty([
-        s : s <- src_rel_var_sgns, signature_overlaps_partial_signature(s, nonempty(src_types))
+        s : s <- src_rel_var_sgns, signature_overlaps_partial_signature(s, key.source_types)
       ]);
 
-      return [src_rel_var, s, tgt_rel_var : s <- affected_src_sgns];
+      return [key.source_rel_var, s, key.target_rel_var : s <- affected_src_sgns];
     }
   }
 
@@ -95,19 +89,15 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
         all_signatures_covered = not (s <- info.signatures : not {
           // For each signature of the attribute relation, there must
           // be a foreign key originating here that covers it entirely
-          up_ok = (k <- up_keys : {
-            src, src_args, src_types, tgt, tgt_args = unpack(k);
-            return is_subset_signature(s, src_types);
-          });
+          up_ok = (k <- up_keys : is_subset_signature(s, k.source_types));
 
           // For each signature of the attribute relation, there must be a key that, when
           // applied to one of the signatures of master, covers such signature completely
           down_ok = (k <- down_keys : {
-            src, src_args, src_types, tgt, tgt_args = unpack(k);
-            return (src_sgn <- rel_auto.rel_vars(src).signatures : {
+            return (src_sgn <- rel_auto.rel_vars(k.source_rel_var).signatures : {
               // Types of all variables when the key is applied to this specific signature of the source relation
-              src_type_map = [value(a) -> src_sgn(i) : a @ i <~ src_args, a != nothing];
-              tgt_args_types = (apply(a, src_type_map($)) : a <- tgt_args);
+              src_type_map = [value(a) -> src_sgn(i) : a @ i <~ k.source_args, a != nothing];
+              tgt_args_types = (apply(a, src_type_map($)) : a <- k.target_args);
               return is_subset_signature(s, tgt_args_types);
             });
           });
@@ -125,9 +115,8 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
 
 
 Bool is_std_attr_key(ForeignKey key, RelVar exp_src, RelVar exp_tgt) {
-  src, src_args, src_types, tgt, tgt_args = unpack(key);
-  return false if src != exp_src or tgt != exp_tgt;
-  return match (src_args, tgt_args)
+  return false if key.source_rel_var != exp_src or key.target_rel_var != exp_tgt;
+  return match (key.source_args, key.target_args)
     (just(), nothing),          (just())          = true,
     (just(), just(), nothing),  (just(), just())  = true,
     _,                          _                 = false;
@@ -135,41 +124,12 @@ Bool is_std_attr_key(ForeignKey key, RelVar exp_src, RelVar exp_tgt) {
 
 
 Bool is_mand_attr_key(ForeignKey key, RelVar exp_src, RelVar exp_tgt) {
-  src, src_args, src_types, tgt, tgt_args = unpack(key);
-  return false if src != exp_src or tgt != exp_tgt;
-  return match (src_args, tgt_args)
+  return false if key.source_rel_var != exp_src or key.target_rel_var != exp_tgt;
+  return match (key.source_args, key.target_args)
     (just()),         (just(), nothing)         = true,
     (just(), just()), (just(), just(), nothing) = true,
     _,                _                         = false;
 }
-
-
-## MOVE TO methods-2.cell
-(RelVar, Maybe[Symbol]+, Maybe[NeType]+, RelVar, Maybe[Symbol]+) unpack(ForeignKey key) {
-  src, src_info = key.source;
-  src_args, src_types = unzip(src_info);
-  tgt, tgt_args = key.target;
-  return (src, nonempty(src_args), nonempty(src_types), tgt, tgt_args);
-}
-
-// type ForeignKey = foreign_key(
-//                     source: (RelVar, (Maybe[Symbol], Maybe[NeType])+),
-//                     target: (RelVar, Maybe[Symbol]+)
-//                   );
-
-// type Database = data_base(
-//                   name:         DBSymbol,
-//                   links:        DBSymbol*,
-//                   state_vars:   [MembVar -> (type: NeType, init_value: Expr)],
-//                   rel_vars:     [RelVar -> (signatures: [+NeType+], keys: [[+Nat]], symmetric: Bool)],
-//                   foreign_keys: [ForeignKey],
-//                   nested_dbs:   [NestedDBVar -> DBSymbol],
-//                   methods:      [Method],
-//                   updates:      [Update],
-//                   handlers:     [Handler]
-//                 );
-
-
 
 // // Foreign keys where the relation appears as the origin/source
 // // and the target is a unary relation

@@ -98,9 +98,10 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
 
 
   [CoreWFError] foreign_key_errors(Database database, ForeignKey key) {
-    src_rel = left(key.source);
+    src_rel = key.source_rel_var;
     src_rel_info = database.rel_vars(src_rel);
-    src_args, src_args_types = unzip(right(key.source));
+    src_args = key.source_args;
+    src_args_types = key.source_types;
 
     fail if src_args_types == ();
     src_sgns = [s : s <- src_rel_info.signatures, not are_disjoint(s, src_args_types)];
@@ -112,9 +113,9 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
       return [no_exact_signature_match(key, src_rel, sgn, src_args_types)];
     ;
 
-    tgt_rel = left(key.target);
+    tgt_rel = key.target_rel_var;
     tgt_rel_info = database.rel_vars(tgt_rel);
-    tgt_args = right(key.target);
+    tgt_args = key.target_args;
 
     for src_sgn <- isort(src_sgns):
       // Types of all variables when the key is applied to this specific signature of the source relation

@@ -77,13 +77,13 @@ implicit syn_prg : SynPrg, artifact : SchemaDef {
       return [] if attributes == [];
       base_relvar = rel_var(name);
       args_names = (:a, :b);
-      typed_base_args = ((just(args_names(i)), just(t)) : t @ i <- col_types);
-      typed_attr_args = (typed_base_args | (nothing, nothing));
-      untyped_base_args = (v : v, unused_var <- typed_base_args);
-      untyped_attr_args = (v : v, unused_var <- typed_attr_args);
+      base_args = (just(args_names(i)) : t @ i <- col_types);
+      base_types = (just(t) : t @ i <- col_types);
+      attr_args = (base_args | nothing);
+      attr_types = (base_types | nothing);
       return union([
-        [ foreign_key((base_relvar, typed_base_args), (attr_relvar, untyped_attr_args)),
-          foreign_key((attr_relvar, typed_attr_args), (base_relvar, untyped_base_args))
+        [ foreign_key(base_relvar, base_args, base_types, attr_relvar, attr_args),
+          foreign_key(attr_relvar, attr_args, attr_types, base_relvar, base_args)
         ] : a <- attributes, attr_relvar = rel_var(a.name)
       ]);
     }
@@ -92,12 +92,9 @@ implicit syn_prg : SynPrg, artifact : SchemaDef {
 
   [ForeignKey] desugared_foreign_keys = [{
     used_args = [value(a) : a <~ as, a != nothing];
-    src_args = (
-      ( if a != nothing and not used_args(value(a)) then nothing else a,
-        apply(t, desugar_plain_type)
-      ) : a, t <- k.src_args
-    );
-    return foreign_key((rel_var(k.src_rel), src_args), (rel_var(r), as));
+    src_args = (if a != nothing and not used_args(value(a)) then nothing else a : a, t <- k.src_args);
+    src_types = (apply(t, desugar_plain_type) : a, t <- k.src_args);
+    return foreign_key(rel_var(k.src_rel), src_args, src_types, rel_var(r), as);
   } : k <- db_foreign_keys, tgt <~ k.targets, (r?, as?) ?= tgt];
 
 

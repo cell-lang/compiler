@@ -652,24 +652,20 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 
     // Iterating through all foreign keys
     for k <- isort(database.foreign_keys):
-      src_args = right(k.source);
-
-      // Source signature of the foreign key
-      src_key_sgn = (t : unused_var, t <- src_args);
 
       // Iterating through the tables the source relation is partitioned in
-      for sv <- isort(table_vars_by_rel_var(left(k.source))):
+      for sv <- isort(table_vars_by_rel_var(k.source_rel_var)):
 
         // Signatures of the current source table
         src_table_sgns = table_signatures(rel_auto_id, sv);
 
         // Checking to see if the current table signature overlaps
         // with the source signature of the foreign key
-        if (s <- src_table_sgns : signature_overlaps_partial_signature(s, src_key_sgn)):
+        if (s <- src_table_sgns : signature_overlaps_partial_signature(s, k.source_types)):
 
           // Making sure that source signature of the foreing key applies to the entire table
           ## THIS HAS TO BE CHECKED DURING WELL-FORMEDNESS CHECKING, EITHER IN STAGE ONE OR TWO
-          assert not (s <- src_table_sgns : not is_subset_signature(s, src_key_sgn));
+          assert not (s <- src_table_sgns : not is_subset_signature(s, k.source_types));
 
           // Target tables that are reached by the instantiation of the foreign
           // key on this particular physical table
@@ -679,11 +675,11 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
           for src_sgn <- isort(src_table_sgns):
 
             // Target signature for this particular source table signature
-            args_types = [v -> src_sgn(i) : v, unused_var @ i <~ src_args, v != nothing];
-            target_key_sgn = (if v != nothing then just(args_types(v)) else nothing : v <- right(k.target));
+            args_types = [v -> src_sgn(i) : v @ i <~ k.source_args, v != nothing];
+            target_key_sgn = (if v != nothing then just(args_types(v)) else nothing : v <- k.target_args);
 
             // Iterating through the tables the target relation is partitioned in
-            for tv <- isort(table_vars_by_rel_var(left(k.target))):
+            for tv <- isort(table_vars_by_rel_var(k.target_rel_var)):
 
               // Polymorphic signatures of the target table
               target_table_signatures = table_signatures(rel_auto_id, tv);
@@ -712,15 +708,14 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 
 
   ForeignKeyType foreign_key_type(ForeignKey key) {
-    origin_relvar, typed_origin_args = key.source;
-    origin_args = (a : a, t <- typed_origin_args);
-    target_relvar, target_args = key.target;
+    origin_args = key.source_args;
+    target_args = key.target_args;
 
     // rev_origin_perm = reverse_perm(rel_var_cols_perm(database.name, origin_relvar));
     // rev_target_perm = reverse_perm(rel_var_cols_perm(database.name, target_relvar));
 
-    origin_symmetric = symmetric(database.name, origin_relvar);
-    target_symmetric = symmetric(database.name, target_relvar);
+    origin_symmetric = symmetric(database.name, key.source_rel_var);
+    target_symmetric = symmetric(database.name, key.target_rel_var);
 
     assert match (origin_args, target_args)
       (just(s1?)),              (just(s2?))                     = s1 == s2,

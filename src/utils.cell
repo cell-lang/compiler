@@ -354,14 +354,14 @@ String user_repr(Operator) =
 
 String user_repr(ForeignKey key) {
   src_args_list = (
-    match (mv, mt)
+    match (mv, key.source_types(i))
       just(v?),   just(t?)  = printed(v) & " : " & user_repr(t),
       just(v?),   nothing   = printed(v),
       nothing,    just(t?)  = user_repr(t),
       nothing,    nothing   = "_"
-    : mv, mt <- right(key.source)
+    : mv @ i <- key.source_args
   );
-  tgt_args_list = (if a != nothing then printed(value(a)) else "_" : a <- right(key.target));
-  return user_repr(left(key.source)) & "(" & append(src_args_list, ", ") & ") -> " &
-         user_repr(left(key.target)) & "(" & append(tgt_args_list, ", ") & ")";
+  tgt_args_list = (if a != nothing then printed(value(a)) else "_" : a <- key.target_args);
+  return user_repr(key.source_rel_var) & "(" & append(src_args_list, ", ") & ") -> " &
+         user_repr(key.target_rel_var) & "(" & append(tgt_args_list, ", ") & ")";
 }
