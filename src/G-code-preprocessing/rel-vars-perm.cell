@@ -1,0 +1,108 @@
+(Program, [DBSymbol -> [RelVar -> [+Nat -> Nat]]]) permutate_rel_vars(Program prg) {
+  return (prg, []) if prg.data_bases == [];
+  let program = prg:
+    new_prg = program(
+      typedefs:       prg.typedefs,
+      fndefs:         prg.fndefs,
+      proc_defs:      [permutate_rel_vars(p) : p <- prg.proc_defs],
+      aggr_fn_defs:   prg.aggr_fn_defs,
+      auto_defs:      [permutate_rel_vars(a) : a <- prg.auto_defs],
+      data_bases:     [permutate_rel_vars(a) : a <- prg.data_bases]
+    );
+    applied_perms = rel_vars_perm_map;
+  ;
+  return (new_prg, applied_perms);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+// type Database = data_base(
+//                   name:         DBSymbol,
+//                   links:        DBSymbol*,
+//                   state_vars:   [MembVar -> (type: NeType, init_value: Expr)],
+//                   rel_vars:     [RelVar -> (signatures: [+NeType+], keys: [[+Nat]], symmetric: Bool)],
+//                   attr_map:     [RelVar, RelVar],
+//                   foreign_keys: [ForeignKey],
+//                   nested_dbs:   [NestedDBVar -> DBSymbol],
+//                   methods:      [Method],
+//                   updates:      [Update],
+//                   handlers:     [Handler]
+//                 );
+
+implicit program : Program {
+  Database permutate_rel_vars(Database rel_auto) {
+    perms = rel_vars_perm_map(rel_auto.name, !!);
+
+    rel_vars = [v -> {
+      perm = perms(v);
+      return (
+        signatures: [permutate(s, perm) : s <- info.signatures],
+        keys:       [[perm(i) : i <- k] : k <- info.keys],
+        symmetric:  info.symmetric
+      );
+    } : v, info <- rel_auto.rel_vars];
+
+    return data_base(
+      name:         rel_auto.name,
+      links:        rel_auto.links,
+      state_vars:   rel_auto.state_vars,
+      rel_vars:     rel_vars,
+
+      attr_map:     rel_auto.attr_map,
+      foreign_keys: rel_auto.foreign_keys,
+      nested_dbs:   rel_auto.nested_dbs,
+      methods:      rel_auto.methods,
+      updates:      rel_auto.updates,
+      handlers:     rel_auto.handlers
+    );
+  }
+
+  Automaton permutate_rel_vars(Automaton react_auto) {
+    return react_auto;
+  }
+
+  Procedure permutate_rel_vars(Procedure proc) {
+    return proc;
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+implicit program : Program {
+  [DBSymbol -> [RelVar -> [+Nat -> Nat]]] rel_vars_perm_map = [
+    a.name -> [r -> rel_var_args_perm(only([|s| : s <- info.signatures]), info.keys) : r, info <- a.rel_vars]
+    : a <- program.data_bases
+  ];
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+## NOT PARTICULARLY EFFICIENT, SHOULD BE CACHED...
+[+Nat -> Nat] rel_var_args_perm(NzNat arity, [[+Nat]] keys) {
+  idxs = (i : i < arity);
+  return [i -> i : i <~ idxs] if keys == [];
+  ps = [[i -> p(i) : i <~ idxs] : p <- permutations(arity)];
+  valid_keys = valid_keys_by_arity[arity];
+  for p <- rand_sort(ps):
+    perm_keys = permutate_keys(keys, p);
+    return p if valid_keys(perm_keys);
+  ;
+  fail;
+
+
+  [NzNat -> [+[[+Nat]]]] valid_keys_by_arity = [
+      1 -> [[]],
+      2 -> [[[0]], [[0], [1]]],
+      3 -> [
+        [[0, 1]],
+        [[0, 1], [2]],
+        [[0, 1], [1, 2]],
+        [[0, 1], [1, 2], [0, 2]]
+      ]
+    ];
+
+
+  [[+Nat]] permutate_keys([[+Nat]] keys, [+Nat -> Nat] perm) = [[perm(i) : i <- k] : k <- keys];
+}
