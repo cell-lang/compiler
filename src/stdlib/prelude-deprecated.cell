@@ -687,3 +687,28 @@ T+ permutate(T+ xs, [+Nat -> Nat] p) {
   assert |xs| == |p|;
   return (xs(p(!!, i)) : i < |xs|);
 }
+
+
+() ord_idxs([]) = ();
+Nat+ ord_idxs([+Nat -> Any] xs) = nonempty(sort_set(keys(xs), $a < $b));
+
+[] packed_idxs([]) = [];
+[+Nat -> Nat] packed_idxs([+Nat -> Any] xs) = [j -> i : i @ j <~ ord_idxs(xs)];
+
+() values_ord_by_idx([]) = ();
+T+ values_ord_by_idx([+Nat -> T] xs) = (xs(i) : i <- ord_idxs(xs));
+
+
+Nat first_unused_idx([Nat -> Any] xs) {
+  idx = 0;
+  loop
+    return idx if not xs(idx, *);
+    idx = nat(idx + 1);
+  ;
+}
+
+
+Maybe[T]+ maybe_seq([Nat -> T] map, NzNat arity) {
+  assert not (i, unused_var <- map : i >= arity);
+  return (if map(i, *) then just(map(i)) else nothing : i < arity);
+}

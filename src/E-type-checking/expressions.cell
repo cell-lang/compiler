@@ -251,34 +251,36 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
 
   [TypeCheckingError] pre_typecheck_rel_lookup(RelLookup expr, [EnvVar -> Type] env) {
-    args = expr.set_args;
-    return typecheck(expr.rel, type_set, env) if args == ();
-    return match(args)
-      (a?)        = pre_typecheck(expr.rel, a, expr.unknown_arg_idx, env),
-      (a1?, a2?)  = pre_typecheck(expr.rel, a1, a2, expr.unknown_arg_idx, env);
+    args = expr.args;
+    if args == []:
+      return typecheck(expr.rel, type_set, env);
+    elif |args| == 1:
+      return pre_typecheck(expr.rel, only(values(args)), only(keys(args)), env);
+    else
+      assert |args| == 2;
+      return pre_typecheck(expr.rel, args, looked_up_arg_idx(expr), env);
+    ;
 
 
-    [TypeCheckingError] pre_typecheck(Expr rel, Expr known_arg, Nat unknown_arg_idx, [EnvVar -> Type] env) {
+    [TypeCheckingError] pre_typecheck(Expr rel, Expr set_arg, Nat set_arg_idx, [EnvVar -> Type] env) {
       errs = typecheck(rel, type_bin_rel, env);
       return errs if errs != [];
       rel_type = expr_type(rel, env);
-      assert unknown_arg_idx == 0 or unknown_arg_idx == 1;
-      known_arg_idx = if unknown_arg_idx == 0 then 1 else 0;
-      exp_arg_type = bin_rel_arg_supertype(rel_type, known_arg_idx);
-      return typecheck(known_arg, exp_arg_type, env);
+      fail if not set_arg_idx :: Bit;
+      exp_arg_type = bin_rel_arg_supertype(rel_type, set_arg_idx);
+      return typecheck(set_arg, exp_arg_type, env);
     }
 
 
-    [TypeCheckingError] pre_typecheck(Expr rel, Expr known_arg_1, Expr known_arg_2, Nat unknown_arg_idx, [EnvVar -> Type] env) {
+    [TypeCheckingError] pre_typecheck(Expr rel, [Nat -> Expr] set_args, Nat lookup_up_arg_idx, [EnvVar -> Type] env) {
+      assert lookup_up_arg_idx :: <0..2>;
       errs = typecheck(rel, type_tern_rel, env);
       return errs if errs != [];
       rel_type = expr_type(rel, env);
-      assert unknown_arg_idx :: <0..2>;
-      arg_1_idx = if unknown_arg_idx == 0 then 1 else 0;
-      arg_2_idx = if unknown_arg_idx == 2 then 1 else 2;
-      exp_arg_1_type = tern_rel_arg_supertype(rel_type, arg_1_idx);
-      exp_arg_2_type = tern_rel_arg_supertype(rel_type, arg_2_idx);
-      return typecheck(known_arg_1, exp_arg_1_type, env) & typecheck(known_arg_2, exp_arg_2_type, env);
+      return union([
+        typecheck(set_args(i), tern_rel_arg_supertype(rel_type, i), env)
+        : i <- [0, 1, 2], i != lookup_up_arg_idx
+      ]);
     }
   }
 
@@ -305,20 +307,20 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
 
   [TypeCheckingError] pre_typecheck_relvar_lookup(RelVarLookup expr, [EnvVar -> Type] env) {
-    errs = seq_union((typecheck(a, type_any, env) : a <- expr.set_args));
+    errs = union([typecheck(a, type_any, env) : i, a <- expr.args]);
     return errs if errs != [];
-    set_args_types = (expr_type(a, env) : a <- expr.set_args);
+    args_types = [i -> expr_type(a, env) : i, a <- expr.args];
     sgns = relvar_signatures(expr.rel_var);
-    target_idx = expr.unknown_arg_idx;
+    target_idx = looked_up_arg_idx(expr);
     for s <- rand_sort(sgns):
-      return [] if not (t @ i <~ set_args_types : not is_subset(t, s(i + bit(i >= target_idx))));
+      return [] if not (i, t <- args_types : not is_subset(t, s(i)));
     ;
     agg_sgns = aggregated_relation_signatures(sgns); ## BAD BAD BAD: AGGREGATED SIGNATURES SHOULD BE CACHED
     for s <- rand_sort(agg_sgns):
-      return [] if not (t @ i <~ set_args_types : not is_subset(t, s(i + bit(i >= target_idx))));
+      return [] if not (i, t <- args_types : not is_subset(t, s(i)));
     ;
-    args_types = insert((just(t) : t <- set_args_types), target_idx, nothing);
-    return [no_matching_relvar(expr.rel_var, args_types, sgns)];
+    all_args_types = (if args_types(i, *) then just(args_types(i)) else nothing : i <= |args_types|);
+    return [no_matching_relvar(expr.rel_var, all_args_types, sgns)];
   }
 
 

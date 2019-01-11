@@ -73,29 +73,25 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
   Type rel_lookup_expr_type(RelLookup expr, [EnvVar -> Type] env) {
     rel_type = expr_type(expr.rel, env);
-    args_types = (expr_type(a, env) : a <- expr.set_args);
-    if args_types == ():
-      return set_elem_supertype(rel_type);
-    elif |args_types| == 1 and expr.unknown_arg_idx :: <0..1>:
-      return if expr.unknown_arg_idx == 1
-        then restricted_bin_rel_arg1_supertype(rel_type, only(args_types))
-        else bin_rel_arg_supertype(rel_type, expr.unknown_arg_idx);
-    elif |args_types| == 2 and expr.unknown_arg_idx :: <0..2>:
-      return tern_rel_arg_supertype(rel_type, expr.unknown_arg_idx);
-    else
-      fail; ## IMPLEMENT IMPLEMENT IMPLEMENT
+    args_types = [i -> expr_type(a, env) : i, a <- expr.args];
+    return set_elem_supertype(rel_type) if args_types == [];
+    target_idx = looked_up_arg_idx(expr);
+    if |args_types| == 1:
+      return if target_idx == 1
+        then restricted_bin_rel_arg1_supertype(rel_type, args_types(0))
+        else bin_rel_arg_supertype(rel_type, 0);
     ;
+    assert |args_types| == 2;
+    fail if not target_idx :: <0..2>;
+    return tern_rel_arg_supertype(rel_type, target_idx);
   }
 
 
   Type relvar_lookup_expr_type(RelVarLookup expr, [EnvVar -> Type] env) {
-    set_args_types = (expr_type(a, env) : a <- expr.set_args);
+    args_types = [i -> expr_type(a, env) : i, a <- expr.args];
     sgns = relvar_signatures(expr.rel_var);
-    target_idx = expr.unknown_arg_idx;
-    ret_types = [
-      s(target_idx) : s <- sgns,
-      not (t @ i <~ set_args_types : are_ptype_disjoint(t, s(i + bit(i >= target_idx))))
-    ];
+    target_idx = looked_up_arg_idx(expr);
+    ret_types = [s(target_idx) : s <- sgns, not (i, t <- args_types : are_ptype_disjoint(t, s(i)))];
     assert ret_types != [];
     return union_superset(ret_types);
   }

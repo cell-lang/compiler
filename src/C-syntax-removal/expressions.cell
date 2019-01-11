@@ -96,7 +96,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
       return relvar_memb_test(var, (just(a) : a <- args));
     else
       assert arity == rel_var_arity - 1;
-      return relvar_lookup(var, args, nat(rel_var_arity-1));
+      return relvar_lookup(var, [i -> a : a @ i <~ args]);
     ;
   }
 
@@ -184,12 +184,11 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
 
   Expr desugar_rel_lookup(Atom+ symbols, Maybe[SynExpr]+ syn_args, [StdVar] def_vars) {
     target = only(resolve_by_priority_as_expr_or_rel_var(symbols, |syn_args|, def_vars));
-    args = (desugar_expr(value(a), def_vars) : a <- syn_args, a != nothing);
-    target_arg_idx = only_unsafe((i : a @ i <- syn_args, a == nothing));
-    return desugar(target, args, target_arg_idx);
+    args = [i -> desugar_expr(value(a), def_vars) : a @ i <~ syn_args, a != nothing];
+    return desugar(target, args);
 
-    Expr desugar(AnyRelVar target, Expr* args, Nat target_arg_idx) = relvar_lookup(target, args, target_arg_idx);
-    Expr desugar(Expr target, Expr* args, Nat target_arg_idx) = rel_lookup(target, args, target_arg_idx);
+    Expr desugar(AnyRelVar target, [Nat -> Expr] args) = relvar_lookup(target, args);
+    Expr desugar(Expr target, [Nat -> Expr] args) = rel_lookup(target, args);
   }
 
 

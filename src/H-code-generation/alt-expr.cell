@@ -51,20 +51,20 @@ Expr* exprs_cluster(SeqTailExpr expr, Nat offset) =
     seq_tail_expr($(0), nonempty(tail(nonempty($))))
   );
 
-// rel_lookup(rel: Expr, set_args: Expr*, unknown_arg_idx: Nat);
+// rel_lookup(rel: Expr, args: [Nat -> Expr]);
 Expr* exprs_cluster(RelLookup expr, Nat offset) =
   exprs_cluster(
-    (expr.rel) & expr.set_args,
+    (expr.rel) & values_ord_by_idx(expr.args),
     offset,
-    rel_lookup($(0), tail(nonempty($)), expr.unknown_arg_idx)
+    rel_lookup($(0), [i -> $(i+1) : i <~ ord_idxs(expr.args)])
   );
 
-// relvar_lookup(rel_var: AnyRelVar, set_args: Expr*, unknown_arg_idx: Nat);
+// relvar_lookup(rel_var: AnyRelVar, args: [Nat -> Expr]);
 Expr* exprs_cluster(RelVarLookup expr, Nat offset) =
   exprs_cluster(
-    expr.set_args,
+    values_ord_by_idx(expr.args),
     offset,
-    relvar_lookup(expr.rel_var, $, expr.unknown_arg_idx)
+    relvar_lookup(expr.rel_var, [i -> $(i) : i <~ ord_idxs(expr.args)])
   );
 
 // auto_method_call(var: AnyAutoVar?, name: MethodSymbol, args: Expr*);
@@ -462,10 +462,10 @@ Expr replace_nested(RecExpr expr, (Expr -> Expr) replace) =
   size_expr()         = size_expr(replace(expr.coll)),
   unary_pseudo_call() = unary_pseudo_call(replace(expr.target), replace(expr.arg)),
   rel_memb_test()     = rel_memb_test(replace(expr.rel), (apply(a, replace) : a <- expr.args)),
-  rel_lookup()        = rel_lookup(replace(expr.rel), (replace(a) : a <- expr.set_args), expr.unknown_arg_idx),
+  rel_lookup()        = rel_lookup(replace(expr.rel), [i -> replace(a) : i, a <- expr.args]),
   relvar_memb_test()  = relvar_memb_test(expr.rel_var, (apply(a, replace) : a <- expr.args)),
   rel_var_size_expr() = rel_var_size_expr(expr.rel_var, (apply(a, replace) : a <- expr.args)),
-  relvar_lookup()     = relvar_lookup(expr.rel_var, (replace(a) : a <- expr.set_args), expr.unknown_arg_idx),
+  relvar_lookup()     = relvar_lookup(expr.rel_var, [i -> replace(a) : i, a <- expr.args]),
   and_expr()          = and_expr(replace(expr.left), replace(expr.right)),
   or_expr()           = or_expr(replace(expr.left), replace(expr.right)),
   not_expr(e?)        = not_expr(replace(e)),

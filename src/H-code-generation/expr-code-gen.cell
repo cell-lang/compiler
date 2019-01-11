@@ -99,7 +99,7 @@ implicit program           : Program,
     rel_memb_test()     = rel_memb_test_opt_eval_info(expr.rel, expr.args, var_gen),
     rel_lookup()        = rel_lookup_opt_eval_info(expr, var_gen),
     relvar_memb_test()  = relvar_memb_test_opt_eval_info(expr.rel_var, expr.args, var_gen),
-    relvar_lookup()     = relvar_lookup_opt_eval_info(expr.rel_var, expr.set_args, expr.unknown_arg_idx, var_gen),
+    relvar_lookup()     = relvar_lookup_opt_eval_info(expr.rel_var, expr.args, var_gen),
     and_expr()          = and_expr_opt_eval_info(expr.left, expr.right, var_gen),
     or_expr()           = or_expr_opt_eval_info(expr.left, expr.right, var_gen),
     not_expr(e?)        = not_expr_opt_eval_info(e, var_gen),
@@ -123,9 +123,6 @@ implicit program           : Program,
 
 
   (Instr*, ObjExpr, VarGen) rel_var_size_expr_opt_eval_info(AnyRelVar rel_var, Maybe[Expr]+ args, VarGen init_var_gen) {
-    // args_perm = relvar_cols_perm(rel_var);
-    // table_args = (args(i) : i <- args_perm);
-
     filtered_idxs = nonempty(idxs_into_filtered_seq((a != nothing : a <- args)));
     unfiltered_idxs = (i : a @ i <- args, a != nothing);
 
@@ -166,9 +163,6 @@ implicit program           : Program,
 
   // relvar_memb_test(rel_var: AnyRelVar, args: Maybe[Expr]+);
   (Instr*, ObjExpr, VarGen) relvar_memb_test_opt_eval_info(AnyRelVar rel_var, Maybe[Expr]+ args, VarGen init_var_gen) {
-    // args_perm = relvar_cols_perm(rel_var);
-    // table_args = (args(i) : i <- args_perm);
-
     filtered_idxs = nonempty(idxs_into_filtered_seq((a != nothing : a <- args)));
     unfiltered_idxs = (i : a @ i <- args, a != nothing);
 
@@ -217,83 +211,52 @@ implicit program           : Program,
   }
 
 
-  // relvar_lookup(rel_var: AnyRelVar, set_args: Expr*, unknown_arg_idx: Nat)
-  (Instr*, ObjExpr, VarGen) relvar_lookup_opt_eval_info(AnyRelVar rel_var, Expr* set_args, Nat unknown_arg_idx, VarGen init_var_gen) {
-    if set_args == ():
-      fail; ## IMPLEMENT IMPLEMENT IMPLEMENT
-    ;
+  // relvar_lookup(rel_var: AnyRelVar, args: [Nat -> Expr])
+  (Instr*, ObjExpr, VarGen) relvar_lookup_opt_eval_info(AnyRelVar rel_var, [Nat -> Expr] args, VarGen init_var_gen) {
+    ## IMPLEMENT IMPLEMENT IMPLEMENT
+    fail if args == (); // rel_var(!!)
 
-    // args_perm = relvar_cols_perm(rel_var);
-    // args_rev_perm = reverse_perm(args_perm);
+    target_idx = first_unused_idx(args);
+    arity = nz_nat(|args| + 1);
+    args_idxs = ord_idxs(args);
+    ord_args = values_ord_by_idx(args);
 
-    // unknown_table_arg_idx = args_rev_perm(unknown_arg_idx);
-
-    // all_args = take(set_args, unknown_arg_idx) & (:not_an_expr) & drop(set_args, unknown_arg_idx);
-    // all_table_args = (all_relvar_args(i) : i <- args_perm);
-    // set_args = (a : a <- all_args, a != :not_an_expr);
-
-    // assert {
-    //   set_args_perm = ({
-    //       j = i + bit(i >= unknown_table_arg_idx); // Index of the argument in the full list of permutated arguments
-    //       k = args_perm(j); // Index of the argument in the full list of arguments, before permutation
-    //       assert k != unknown_arg_idx;
-    //       h = k - bit(k > unknown_arg_idx); // Index of the argument in the list of set arguments before permutation
-    //       return h;
-    //     } : i < |set_args|
-    //   );
-    //   set_table_args_2 = (set_args(i) : i <- set_args_perm);
-    //   return set_table_args == set_table_args_2;
-    // };
-
-    is_unique = (k <- relvar_keys(rel_var) : not k(unknown_arg_idx));
-    // return after_perm_eval_info(rel_var, nonempty(set_args), unknown_arg_idx, is_unique, var_gen);
-
-
-    // (Instr*, ObjExpr, VarGen) after_perm_eval_info(AnyRelVar rel_var, Expr+ set_args, Nat unknown_arg_idx, Bool is_unique, VarGen init_var_gen) {
-    arity = nz_nat(|set_args| + 1);
+    // The result is garanteed to be unique if there's a key that does
+    // not contain the argument that is being looked up
+    is_unique = (k <- relvar_keys(rel_var) : not k(target_idx));
 
     res_var, ret_var_gen = next_obj_var(init_var_gen);
-    args_eval_code, args_aliases, var_gen = opt_eval_info(set_args, ret_var_gen);
 
-    surr_vars, var_gen = next_int32_vars(var_gen, nat(arity-1));
+    // Evaluation of arguments
+    args_eval_code, args_aliases, var_gen = opt_eval_info(ord_args, ret_var_gen);
+
+    surr_vars, var_gen = next_int32_vars(var_gen, |args|);
+    surr_vars_map = [i -> surr_vars(j) : i @ j <~ args_idxs];
     it_var, var_gen = next_table_it_var(var_gen, arity, symmetric(rel_var));
 
-    all_surr_args_ref = (
-      if i < unknown_arg_idx
-        then just(surr_vars(i))
-      elif i == unknown_arg_idx
-        then nothing
-      else
-        just(surr_vars(i-1))
-      : i < arity
-    );
-    all_surr_args = insert((just(v) : v <- surr_vars), unknown_arg_idx, nothing);
-    assert all_surr_args == all_surr_args_ref;
-
     // Selecting the candidate tables among those the relation is partitioned into
-    all_args = insert((just(a) : a <- set_args), unknown_arg_idx, nothing);
-    log_args_types = (apply(a, subexpr_type) : a <- all_args);
-    candidate_tables = overlapping_physical_tables(rel_var, log_args_types);
+    args_types = [i -> subexpr_type(e) : i, e <- args];
+    candidate_tables = overlapping_physical_tables(rel_var, maybe_seq(args_types, arity));
 
     // If all the lookups fail, then we throw an exception
     code = (terminate);
 
     // Iterating through all the candidate tables
-    for tv @ k <- isort(candidate_tables):
+    for tv <- isort(candidate_tables):
+      // Looking up all arguments
       args_lookup_code = join(({
-        arg_idx = j + bit(j >= unknown_arg_idx);
-        store_id = substitute(table_col_store_id(tv, nat(arg_idx)));
-        surr_var = surr_vars(j);
+        store_id = substitute(table_col_store_id(tv, args_idxs(i)));
+        surr_var = surr_vars(i);
         return (
           set_ivar32(surr_var, lookup_value(store_id, e)),
           check(neg(is_eq(surr_var, -1)))
         );
-      } : e @ j <- args_aliases));
+      } : e @ i <- args_aliases));
 
-      res_store_id = substitute(table_col_store_id(tv, unknown_arg_idx));
+      res_store_id = substitute(table_col_store_id(tv, target_idx));
 
       lookup_code = (
-        get_table_iter(it_var, substitute(tv), all_surr_args),
+        get_table_iter(it_var, substitute(tv), maybe_seq(surr_vars_map, arity)),
         branch(
           neg(is_out_of_range(it_var)),
           ( lookup_surrogate(res_var, res_store_id, get_unknown_arg(it_var, 0)),
@@ -309,7 +272,6 @@ implicit program           : Program,
     ;
 
     return (args_eval_code & code, res_var, ret_var_gen);
-    // }
   }
 
 
@@ -539,8 +501,11 @@ implicit program           : Program,
   }
 
 
-  // rel_lookup(rel: Expr, set_args: Expr*, unknown_arg_idx: Nat);
+  // rel_lookup(rel: Expr, args: [Nat -> Expr]);
   (Instr*, ObjExpr, VarGen) rel_lookup_opt_eval_info(RelLookup expr, VarGen init_var_gen) {
+    arity = nz_nat(|expr.args| + 1);
+    target_idx = looked_up_arg_idx(expr);
+
     // Physical representation of the result and variable that stores it
     type = types(expr_id);
     return ((terminate), :invalid_var, init_var_gen) if type == empty_type;
@@ -550,19 +515,19 @@ implicit program           : Program,
 
     // Evaluation of all subexpressions
     code, rel_surr, var_gen = opt_eval_info(expr.rel, ret_var_gen);
-    args_surrs = ();
-    for e <- expr.set_args:
+    args_surrs = [];
+    for i, e <- isort(expr.args):
       arg_code, arg_surr, var_gen = opt_eval_info(e, var_gen);
       code = code & arg_code;
-      args_surrs = (args_surrs | arg_surr);
+      args_surrs = args_surrs & [i -> arg_surr];
     ;
 
-    if args_surrs == ():
+    if args_surrs == []:
       code = (code | check(is_eq(get_size(rel_surr), 1)), set_any_var(res_var, rand_elem(rel_surr)));
 
     elif |args_surrs| == 1:
-      arg_surr = only(args_surrs);
-      if expr.unknown_arg_idx == 1:
+      arg_surr = only(values(args_surrs));
+      if target_idx == 0:
         code = (code | set_any_var(res_var, lookup(rel_surr, arg_surr)));
       else
         it_var, var_gen = next_bin_rel_it_var(var_gen);
@@ -576,13 +541,12 @@ implicit program           : Program,
       ;
 
     else
+      assert |args_surrs| == 2;
       it_var, var_gen = next_tern_rel_it_var(var_gen);
-      search_args = insert((just(a) : a <- args_surrs), expr.unknown_arg_idx, nothing);
-      fail if |search_args| != 3 or not expr.unknown_arg_idx :: <0..2>;
       code = (code |
-        get_iter(it_var, rel_surr, search_args),
+        get_any_rel_iter(it_var, rel_surr, maybe_seq(args_surrs, 3)),
         check(neg(is_out_of_range(it_var))),
-        set_any_var(res_var, get_curr_arg(it_var, expr.unknown_arg_idx)),
+        set_any_var(res_var, get_curr_arg(it_var, target_idx)),
         move_forward(it_var),
         check(is_out_of_range(it_var))
       );
