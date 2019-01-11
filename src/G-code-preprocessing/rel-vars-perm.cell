@@ -1,67 +1,40 @@
-(Program, [DBSymbol -> [RelVar -> [+Nat -> Nat]]]) permutate_rel_vars(Program prg) {
-  return (prg, []) if prg.data_bases == [];
-  let program = prg:
+implicit program : Program, typedefs : [TypeName -> NeType] {
+  (Program, [DBSymbol -> [RelVar -> [+Nat -> Nat]]]) post_rel_vars_perm_program {
+    return (program, []) if program.data_bases == [];
     new_prg = program(
-      typedefs:       prg.typedefs,
-      fndefs:         prg.fndefs,
-      proc_defs:      [permutate_rel_vars(p) : p <- prg.proc_defs],
-      aggr_fn_defs:   prg.aggr_fn_defs,
-      auto_defs:      [permutate_rel_vars(a) : a <- prg.auto_defs],
-      data_bases:     [permutate_rel_vars(a, context=a) : a <- prg.data_bases]
+      typedefs:       program.typedefs,
+      fndefs:         program.fndefs,
+      proc_defs:      [permutate_rel_vars(p) : p <- program.proc_defs],
+      aggr_fn_defs:   program.aggr_fn_defs,
+      auto_defs:      [permutate_rel_vars(a) : a <- program.auto_defs],
+      data_bases:     [permutate_rel_vars(a) : a <- program.data_bases]
     );
     applied_perms = rel_vars_perm_map;
-  ;
-  return (new_prg, applied_perms);
-}
-
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-
-implicit program : Program {
-  Automaton permutate_rel_vars(Automaton react_auto) {
-    return react_auto;
+    return (new_prg, applied_perms);
   }
 
+  //////////////////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////
 
-  Procedure permutate_rel_vars(Procedure proc) {
-    return proc;
-  }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-
-// type Database = data_base(
-//                   name:         DBSymbol,
-//                   links:        DBSymbol*,
-//                   state_vars:   [MembVar -> (type: NeType, init_value: Expr)],
-//                   rel_vars:     [RelVar -> (signatures: [+NeType+], keys: [[+Nat]], symmetric: Bool)],
-//                   attr_map:     [RelVar, RelVar],
-//                   foreign_keys: [ForeignKey],
-//                   nested_dbs:   [NestedDBVar -> DBSymbol],
-//                   methods:      [Method],
-//                   updates:      [Update],
-//                   handlers:     [Handler]
-//                 );
-
-implicit program : Program, context : Database {
   Database permutate_rel_vars(Database rel_auto) {
-    perms = rel_vars_perm_map(rel_auto.name, !!);
+    let context = rel_auto:
+      perms = rel_vars_perm_map(rel_auto.name, !!);
 
-    rel_vars = [v -> {
-      perm = perms(v);
-      return (
-        signatures: [permutate(s, perm) : s <- info.signatures],
-        keys:       [[perm(i) : i <- k] : k <- info.keys],
-        symmetric:  info.symmetric
-      );
-    } : v, info <- rel_auto.rel_vars];
+      rel_vars = [v -> {
+        perm = perms(v);
+        return (
+          signatures: [permutate(s, perm) : s <- info.signatures],
+          keys:       [[perm(i) : i <- k] : k <- info.keys],
+          symmetric:  info.symmetric
+        );
+      } : v, info <- rel_auto.rel_vars];
 
-    foreign_keys = [rewrite(k, perms) : k <- rel_auto.foreign_keys];
+      foreign_keys = [rewrite(k, perms) : k <- rel_auto.foreign_keys];
 
-    methods  = undefined;
-    updates  = undefined;
-    handlers = undefined;
+      methods = [method(m.name, m.args, m.ret_type, apply_rel_var_perms(m.expr)) : m <- rel_auto.methods];
+      updates  = undefined;
+      handlers = undefined;
+    ;
 
     return data_base(
       name:         rel_auto.name,
@@ -95,23 +68,25 @@ implicit program : Program, context : Database {
         permutate(key.target_args, tgt_perm)
       );
     }
+  }
 
-    // type Method = method(name: MethodSymbol, args: (NeType, Maybe[StdVar])*, ret_type: NeType, expr: Expr);
-    Method rewrite(Method method) {
-      return method(
-        name:     method.name,
-        args:     method.args,
-        ret_type: method.ret_type,
-        expr:     apply_rel_var_perms(method.expr)
-      );
-    }
+  //////////////////////////////////////////////////////////////////////////////
+
+  Automaton permutate_rel_vars(Automaton react_auto) {
+    return react_auto;
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  Procedure permutate_rel_vars(Procedure proc) {
+    return proc;
   }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-implicit program : Program, context : Database {
+implicit program : Program, typedefs : [TypeName -> NeType], context : Database {
   Expr apply_rel_var_perms(Expr expr) {
     return match (expr)
       rel_var_size_expr()   |
@@ -129,7 +104,12 @@ implicit program : Program, context : Database {
 
     // type RelVarSizeExpr = rel_var_size_expr(rel_var: AnyRelVar, args: Maybe[Expr]+);
     RelVarSizeExpr rewrite(RelVarSizeExpr expr) {
-      fail;
+      perm = rel_var_args_perm(expr.rel_var);
+      args = permutate(expr.args, perm);
+      return rel_var_size_expr(expr.rel_var, args);
+
+      // args_perm = relvar_cols_perm(rel_var);
+      // table_args = (args(i) : i <- args_perm);
     }
 
 
@@ -190,6 +170,17 @@ implicit program : Program, context : Database {
     DoExpr rewrite(DoExpr expr) {
       fail;
     }
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+implicit program : Program, typedefs : [TypeName -> NeType], context : Context {
+  [+Nat -> Nat] rel_var_args_perm(AnyRelVar rel_var) {
+    rel_auto = rel_auto_type(rel_var);
+    perms_map = rel_vars_perm_map(rel_auto, !!);
+    return perms_map(unqualified(rel_var));
   }
 }
 
