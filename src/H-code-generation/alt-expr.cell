@@ -7,7 +7,7 @@ type NonRecExpr     = undefined, LeafObj, FloatLit, Var, OutputIsDefExpr, Output
 Expr* exprs_cluster(NonRecExpr expr, Nat offset) = (expr);
 
 
-Expr* exprs_cluster(<ExprRef, CastExpr>, Nat) = undefined;
+Expr* exprs_cluster(ExprRef, Nat) = undefined;
 
 ////////////////////////////////////////////////////////////////////////////////
 ///////////////////// Order of subexpression doesn't matter ////////////////////
@@ -199,7 +199,7 @@ Expr* exprs_cluster(TernRelCompExpr expr, Nat offset) =
   );
 
 
-// aggr_fn_call(fn_id: PlainAggrFnId, expr: Expr, clause: RelvarClause, cond: Expr?, extra_args: Expr*);
+// aggr_fn_call(fn_id: PlainAggrFnId, expr: Expr, clause: RelVarClause, cond: Expr?, extra_args: Expr*);
 Expr* exprs_cluster(AggrFnCallExpr expr, Nat offset) =
   exprs_cluster(
     expr.clause,
@@ -208,7 +208,7 @@ Expr* exprs_cluster(AggrFnCallExpr expr, Nat offset) =
     aggr_fn_call(
       fn_id:      expr.fn_id,
       expr:       $b(|expr.extra_args|),
-      clause:     if $a :: RelvarClause then $a else undefined,
+      clause:     if $a :: RelVarClause then $a else undefined,
       cond:       $b(|expr.extra_args| + 1) if expr.cond?,
       extra_args: take($b, |expr.extra_args|)
     )
@@ -268,7 +268,7 @@ Expr* exprs_cluster(Clause cls, Expr+ exprs, Nat offset, (Clause Expr+ -> Expr) 
 }
 
 // relvar_clause(vars: StdVar+, rel_var: AnyRelVar, args: Maybe[Expr]+),
-(RelvarClause, Expr*) cluster_clause(RelvarClause cls, Nat offset) {
+(RelVarClause, Expr*) cluster_clause(RelVarClause cls, Nat offset) {
   repl_exprs, cluster = cluster_expr_seqs((opt(a) : a <- cls.args), offset);
   repl_cls = relvar_clause(cls.vars, cls.rel_var, (maybe_unsafe(e) : e <- nonempty(repl_exprs)));
   return (repl_cls, cluster);
@@ -418,7 +418,7 @@ type RecExpr  = SetExpr, SeqExpr, TupleExpr, SeqTailExpr,
                 RelVarMembTest, RelVarLookup,
                 AndExpr, OrExpr, NotExpr,
                 EqExpr,
-                MembExpr, CastExpr,
+                MembExpr,
                 AccExpr, AccTestExpr,
                 AutoMethodCall, DBMethodCall,
                 IfExpr, MatchExpr, DoExpr,
@@ -471,14 +471,13 @@ Expr replace_nested(RecExpr expr, (Expr -> Expr) replace) =
   not_expr(e?)        = not_expr(replace(e)),
   eq()                = eq(replace(expr.left), replace(expr.right)),
   membership()        = membership(replace(expr.obj), expr.type),
-  cast_expr()         = cast_expr(replace(expr.expr), expr.type),
   accessor()          = accessor(replace(expr.expr), expr.field),
   accessor_test()     = accessor_test(replace(expr.expr), expr.field),
   aggr_fn_call()      = aggr_fn_call(
                           fn_id:      expr.fn_id,
                           expr:       replace(expr.expr),
                           clause:     { cls = replace_nested(expr.clause, replace);
-                                        return if cls :: RelvarClause then cls else undefined;
+                                        return if cls :: RelVarClause then cls else undefined;
                                       },
                           cond:       replace(expr.cond) if expr.cond?,
                           extra_args: (replace(e) : e <- expr.extra_args)

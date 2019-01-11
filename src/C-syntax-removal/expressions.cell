@@ -35,7 +35,6 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
     eq()                  = eq(desugar_expr(expr.left, def_vars), desugar_expr(expr.right, def_vars)),
     neq()                 = not_expr(eq(desugar_expr(expr.left, def_vars), desugar_expr(expr.right, def_vars))),
     membership()          = membership(desugar_expr(expr.obj, def_vars), desugar_schema_aware_type(expr.type, schema_names)),
-    cast_expr()           = cast_expr(desugar_expr(expr.expr, def_vars), desugar_plain_type(expr.type)),
     accessor()            = desugar_accessor(expr, def_vars),
     accessor_test()       = desugar_accessor_test(expr.expr, expr.field, def_vars),
     ex_qual()             = desugar_ex_qual_expr(expr.source, expr.cond, def_vars),
@@ -56,7 +55,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
   Expr desugar_aggr_fn_call(SynAggrFnCall expr, [StdVar] def_vars) {
     id = aggr_fn_id(expr.fn_name);
     clause = desugar_clause(expr.clause, def_vars);
-    fail if not clause :: RelvarClause;
+    fail if not clause :: RelVarClause;
     new_vars = def_vars & set(clause.vars);
     return aggr_fn_call(
       fn_id:      id,

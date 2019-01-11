@@ -65,7 +65,6 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
       not_expr(e?)        = typecheck(e, type_bool, env),
       eq()                = pre_typecheck_eq_expr(expr.left, expr.right, env),
       membership()        = pre_typecheck_membership(expr.obj, expr.type, env),
-      cast_expr()         = pre_typecheck_cast_expr(expr.expr, expr.type, env),
       accessor()          = pre_typecheck_accessor_expr(expr.expr, expr.field, env),
       accessor_test()     = typecheck(expr.expr, type_dot_access_target, env),
       aggr_fn_call()      = pre_typecheck_aggr_fn_call(expr, env),
@@ -363,16 +362,6 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     // No error is produced if the expression is never evaluated, i.e. the actual type is empty
     always_false = actual_type != empty_type and are_ptype_disjoint(actual_type, type);
     return [expression_can_never_belong_to_type(actual_type, type) if always_false];
-  }
-
-
-  [TypeCheckingError] pre_typecheck_cast_expr(Expr expr, NeType type, [EnvVar -> Type] env) {
-    errs = typecheck(expr, type_any, env);
-    return errs if errs != [];
-    actual_type = expr_type(expr, env);
-    // No error is produced if the expression is never evaluated, i.e. the actual type is empty
-    never_succeeds = actual_type != empty_type and are_ptype_disjoint(actual_type, type);
-    return [expression_can_never_belong_to_type(actual_type, type) if never_succeeds];
   }
 
 

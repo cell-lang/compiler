@@ -150,7 +150,7 @@ type Expr     = undefined, LeafObj, FloatLit, Var, ExprRef,
                 RelVarMembTest, RelVarLookup,
                 AndExpr, OrExpr, NotExpr,
                 EqExpr,
-                MembExpr, CastExpr,
+                MembExpr,
                 AccExpr, AccTestExpr,
                 AutoMethodCall, DBMethodCall,
                 IfExpr, MatchExpr, DoExpr,
@@ -189,7 +189,6 @@ type NotExpr        = not_expr(Expr);                    ## NOT SURE HERE
 type EqExpr         = eq(left: Expr, right: Expr);
 
 type MembExpr       = membership(obj: Expr, type: NeType);
-type CastExpr       = cast_expr(expr: Expr, type: NeType);
 
 type AccExpr        = accessor(expr: Expr, field: SymbObj);      ## SHOULD <field> BE AN OBJECT OR JUST A PLAIN SYMBOL?
 type AccTestExpr    = accessor_test(expr: Expr, field: SymbObj); ## DITTO
@@ -197,7 +196,7 @@ type AccTestExpr    = accessor_test(expr: Expr, field: SymbObj); ## DITTO
 type AggrFnCallExpr = aggr_fn_call(
                         fn_id:      PlainAggrFnId,
                         expr:       Expr,
-                        clause:     RelvarClause,
+                        clause:     RelVarClause,
                         cond:       Expr?,
                         extra_args: Expr*
                       );
@@ -258,12 +257,12 @@ type TagPtrn  = ptrn_symbol, ptrn_symbol(SymbObj), ptrn_var(var: StdVar, ptrn: p
 
 ////////////////////////////////////////////////////////////////////////////////
 
-type Clause = SetClause, RelClause, RelvarClause, SeqClause, AndClause,
+type Clause = SetClause, RelClause, RelVarClause, SeqClause, AndClause,
               OrClause, MatchClause, AsgnmClause, FilterClause;
 
 type SetClause    = set_clause(var: StdVar, src: Expr);
 type RelClause    = rel_clause(vars: StdVar+, src: Expr, args: Maybe[Expr]+);
-type RelvarClause = relvar_clause(vars: StdVar+, rel_var: AnyRelVar, args: Maybe[Expr]+);
+type RelVarClause = relvar_clause(vars: StdVar+, rel_var: AnyRelVar, args: Maybe[Expr]+);
 type SeqClause    = seq_clause(vars: Maybe[StdVar]+, idx_var: Maybe[StdVar], src: Expr);
 type AndClause    = and_clause(left: Clause, right: Clause);
 type OrClause     = or_clause(left: Clause, right: Clause);

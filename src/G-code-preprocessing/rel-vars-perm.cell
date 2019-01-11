@@ -7,11 +7,25 @@
       proc_defs:      [permutate_rel_vars(p) : p <- prg.proc_defs],
       aggr_fn_defs:   prg.aggr_fn_defs,
       auto_defs:      [permutate_rel_vars(a) : a <- prg.auto_defs],
-      data_bases:     [permutate_rel_vars(a) : a <- prg.data_bases]
+      data_bases:     [permutate_rel_vars(a, context=a) : a <- prg.data_bases]
     );
     applied_perms = rel_vars_perm_map;
   ;
   return (new_prg, applied_perms);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+implicit program : Program {
+  Automaton permutate_rel_vars(Automaton react_auto) {
+    return react_auto;
+  }
+
+
+  Procedure permutate_rel_vars(Procedure proc) {
+    return proc;
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -30,7 +44,7 @@
 //                   handlers:     [Handler]
 //                 );
 
-implicit program : Program {
+implicit program : Program, context : Database {
   Database permutate_rel_vars(Database rel_auto) {
     perms = rel_vars_perm_map(rel_auto.name, !!);
 
@@ -43,27 +57,139 @@ implicit program : Program {
       );
     } : v, info <- rel_auto.rel_vars];
 
+    foreign_keys = [rewrite(k, perms) : k <- rel_auto.foreign_keys];
+
+    methods  = undefined;
+    updates  = undefined;
+    handlers = undefined;
+
     return data_base(
       name:         rel_auto.name,
       links:        rel_auto.links,
       state_vars:   rel_auto.state_vars,
       rel_vars:     rel_vars,
-
       attr_map:     rel_auto.attr_map,
-      foreign_keys: rel_auto.foreign_keys,
+      foreign_keys: foreign_keys,
       nested_dbs:   rel_auto.nested_dbs,
-      methods:      rel_auto.methods,
-      updates:      rel_auto.updates,
-      handlers:     rel_auto.handlers
+      methods:      methods,
+      updates:      updates,
+      handlers:     handlers
     );
-  }
 
-  Automaton permutate_rel_vars(Automaton react_auto) {
-    return react_auto;
-  }
 
-  Procedure permutate_rel_vars(Procedure proc) {
-    return proc;
+    // type ForeignKey = foreign_key(
+    //                     source_rel_var: RelVar,
+    //                     source_args:    Maybe[Symbol]+,
+    //                     source_types:   Maybe[NeType]+,
+    //                     target_rel_var: RelVar,
+    //                     target_args:    Maybe[Symbol]+
+    //                   );
+    ForeignKey rewrite(ForeignKey key, [RelVar -> [+Nat -> Nat]] perms) {
+      src_perm = perms(key.source_rel_var);
+      tgt_perm = perms(key.target_rel_var);
+      return foreign_key(
+        key.source_rel_var,
+        permutate(key.source_args, src_perm),
+        permutate(key.source_types, src_perm),
+        key.target_rel_var,
+        permutate(key.target_args, tgt_perm)
+      );
+    }
+
+    // type Method = method(name: MethodSymbol, args: (NeType, Maybe[StdVar])*, ret_type: NeType, expr: Expr);
+    Method rewrite(Method method) {
+      return method(
+        name:     method.name,
+        args:     method.args,
+        ret_type: method.ret_type,
+        expr:     apply_rel_var_perms(method.expr)
+      );
+    }
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+implicit program : Program, context : Database {
+  Expr apply_rel_var_perms(Expr expr) {
+    return match (expr)
+      rel_var_size_expr()   |
+      relvar_memb_test()    |
+      relvar_lookup()       |
+      aggr_fn_call()        |
+      ex_qual()             |
+      set_comp()            |
+      map_comp()            |
+      bin_rel_comp()        |
+      tern_rel_comp()       |
+      do_expr()             = rewrite(expr),
+      _                     = rewrite_expr(expr, apply_rel_var_perms);
+
+
+    // type RelVarSizeExpr = rel_var_size_expr(rel_var: AnyRelVar, args: Maybe[Expr]+);
+    RelVarSizeExpr rewrite(RelVarSizeExpr expr) {
+      fail;
+    }
+
+
+    // type RelVarMembTest = relvar_memb_test(rel_var: AnyRelVar, args: Maybe[Expr]+);
+    RelVarMembTest rewrite(RelVarMembTest expr) {
+      fail;
+    }
+
+
+    // type RelVarLookup = relvar_lookup(rel_var: AnyRelVar, set_args: Expr*, unknown_arg_idx: Nat);
+    RelVarLookup rewrite(RelVarLookup expr) {
+      fail;
+    }
+
+
+    // type AggrFnCallExpr = aggr_fn_call(
+    //                         fn_id:      PlainAggrFnId,
+    //                         expr:       Expr,
+    //                         clause:     RelVarClause,
+    //                         cond:       Expr?,
+    //                         extra_args: Expr*
+    //                       );
+    AggrFnCallExpr rewrite(AggrFnCallExpr expr) {
+      fail;
+    }
+
+
+    // type ExQualExpr = ex_qual(source: Clause, cond: Expr);
+    ExQualExpr rewrite(ExQualExpr expr) {
+      fail;
+    }
+
+
+    // type SetCompExpr = set_comp(expr: Expr, source: Clause);
+    SetCompExpr rewrite(SetCompExpr expr) {
+      fail;
+    }
+
+
+    // type MapCompExpr = map_comp(key_expr: Expr, value_expr: Expr, source: Clause);
+    MapCompExpr rewrite(MapCompExpr expr) {
+      fail;
+    }
+
+
+    // type BinRelCompExpr = bin_rel_comp(exprs: (Expr, Expr), source: Clause);
+    BinRelCompExpr rewrite(BinRelCompExpr expr) {
+      fail;
+    }
+
+
+    // type TernRelCompExpr = tern_rel_comp(exprs: (Expr, Expr, Expr), source: Clause);
+    TernRelCompExpr rewrite(TernRelCompExpr expr) {
+      fail;
+    }
+
+    // type DoExpr = do_expr(body: Statement+, typed_vars: [StdVar -> NeType]);
+    DoExpr rewrite(DoExpr expr) {
+      fail;
+    }
   }
 }
 
@@ -71,28 +197,27 @@ implicit program : Program {
 ////////////////////////////////////////////////////////////////////////////////
 
 implicit program : Program {
-  [DBSymbol -> [RelVar -> [+Nat -> Nat]]] rel_vars_perm_map = [
-    a.name -> [r -> rel_var_args_perm(only([|s| : s <- info.signatures]), info.keys) : r, info <- a.rel_vars]
-    : a <- program.data_bases
-  ];
-}
-
-////////////////////////////////////////////////////////////////////////////////
-
-## NOT PARTICULARLY EFFICIENT, SHOULD BE CACHED...
-[+Nat -> Nat] rel_var_args_perm(NzNat arity, [[+Nat]] keys) {
-  idxs = (i : i < arity);
-  return [i -> i : i <~ idxs] if keys == [];
-  ps = [[i -> p(i) : i <~ idxs] : p <- permutations(arity)];
-  valid_keys = valid_keys_by_arity[arity];
-  for p <- rand_sort(ps):
-    perm_keys = permutate_keys(keys, p);
-    return p if valid_keys(perm_keys);
-  ;
-  fail;
+  [DBSymbol -> [RelVar -> [+Nat -> Nat]]] rel_vars_perm_map {
+    return [
+      a.name -> [r -> rel_var_args_perm(only([|s| : s <- info.signatures]), info.keys) : r, info <- a.rel_vars]
+      : a <- program.data_bases
+    ];
 
 
-  [NzNat -> [+[[+Nat]]]] valid_keys_by_arity = [
+    [+Nat -> Nat] rel_var_args_perm(NzNat arity, [[+Nat]] keys) {
+      idxs = (i : i < arity);
+      return [i -> i : i <~ idxs] if keys == [];
+      ps = [[i -> p(i) : i <~ idxs] : p <- permutations(arity)];
+      valid_keys = valid_keys_by_arity[arity];
+      for p <- rand_sort(ps):
+        perm_keys = [[p(i) : i <- k] : k <- keys];
+        return p if valid_keys(perm_keys);
+      ;
+      fail;
+    }
+
+
+    [NzNat -> [+[[+Nat]]]] valid_keys_by_arity = [
       1 -> [[]],
       2 -> [[[0]], [[0], [1]]],
       3 -> [
@@ -102,7 +227,5 @@ implicit program : Program {
         [[0, 1], [1, 2], [0, 2]]
       ]
     ];
-
-
-  [[+Nat]] permutate_keys([[+Nat]] keys, [+Nat -> Nat] perm) = [[perm(i) : i <- k] : k <- keys];
+  }
 }

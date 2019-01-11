@@ -5,7 +5,7 @@ type RelYieldAction     = rel_yield_action(
                             vars: StdVar+, src_rel: Expr, args: Maybe[Expr]+, next: YieldAction
                           );
 
-type RelvarYieldAction  = relvar_yield_action(
+type RelVarYieldAction  = relvar_yield_action(
                             vars: StdVar+, relvar: AnyRelVar, args: Maybe[Expr]+, next: YieldAction
                           );
 
@@ -19,7 +19,7 @@ type CondYieldAction    = cond_yield_action(cond: Expr, next: YieldAction);
 
 type YieldActions       = yield_actions(YieldAction+);
 
-type YieldAction        = YieldValueAction, SetYieldAction, RelYieldAction, RelvarYieldAction, SeqYieldAction,
+type YieldAction        = YieldValueAction, SetYieldAction, RelYieldAction, RelVarYieldAction, SeqYieldAction,
                           MatchYieldAction, LetYieldAction, CondYieldAction, YieldActions;
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -29,7 +29,7 @@ YieldValueAction yield_value_action(AnyLocVar v, Expr e, Instr+ is) =
 
 CondYieldAction cond_yield_action(Expr c, YieldAction a) = cond_yield_action(cond: c, next: a);
 
-RelvarYieldAction relvar_yield_action(StdVar+ vs, AnyRelVar r, Maybe[Expr]+ as, YieldAction a) =
+RelVarYieldAction relvar_yield_action(StdVar+ vs, AnyRelVar r, Maybe[Expr]+ as, YieldAction a) =
   relvar_yield_action(vars: vs, relvar: r, args: as, next: a);
 
 YieldAction yield_actions(YieldAction+ actions) =
@@ -75,7 +75,7 @@ implicit program           : Program,
 
 
   // relvar_yield_action(vars: StdVar+, relvar: AnyRelVar, args: Maybe[Expr]+, next: YieldAction)
-  Instr* relvar_yield_action_opt_code(RelvarYieldAction action, VarGen init_var_gen) {
+  Instr* relvar_yield_action_opt_code(RelVarYieldAction action, VarGen init_var_gen) {
     // args_perm = relvar_cols_perm(action.relvar);
     // table_args = (action.args(i) : i <- args_perm);
 
