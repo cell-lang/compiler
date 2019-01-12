@@ -1,4 +1,4 @@
-Expr rewrite_expr(Expr expr, (Expr -> Expr) rewrite) {
+Expr rewrite_expr(Expr expr, (Expr -> Expr) rw_expr, (Clause -> Clause) rw_cls, (Statement -> Statement) rw_stmt) {
   return expr if expr :: Var;
   return match (expr)
     undefined             |
@@ -7,98 +7,106 @@ Expr rewrite_expr(Expr expr, (Expr -> Expr) rewrite) {
     output_is_def()       |
     output_is_set()       = expr,
 
-    set_expr(ses?)        = set_expr([rewrite_subexpr(se, rewrite) : se <- ses]),
-    seq_expr(ses?)        = seq_expr((rewrite_subexpr(se, rewrite) : se <- ses)),
-    tuple_expr(es?)       = tuple_expr((rewrite(e) : e <- es)),
-    seq_tail_expr()       = seq_tail_expr(rewrite(expr.seq), (rewrite(e) : e <- expr.tail)),
-    map_expr(es?)         = map_expr([(key: rewrite(e.key), value: rewrite(e.value), cond: rewrite(e.cond) if e.cond?) : e <- es]),
-    bin_rel_expr(es?)     = bin_rel_expr([(args: (rewrite(a) : a <- e.args), cond: rewrite(e.cond) if e.cond?) : e <- es]),
-    tern_rel_expr(es?)    = tern_rel_expr([(args: (rewrite(a) : a <- e.args), cond: rewrite(e.cond) if e.cond?) : e <- es]),
-    tag_obj_expr()        = tag_obj_expr(rewrite(expr.tag), rewrite(expr.obj)),
+    set_expr(ses?)        = set_expr([rewrite_subexpr(se, rw_expr) : se <- ses]),
+    seq_expr(ses?)        = seq_expr((rewrite_subexpr(se, rw_expr) : se <- ses)),
+    tuple_expr(es?)       = tuple_expr((rw_expr(e) : e <- es)),
+    seq_tail_expr()       = seq_tail_expr(rw_expr(expr.seq), (rw_expr(e) : e <- expr.tail)),
+    map_expr(es?)         = map_expr([(key: rw_expr(e.key), value: rw_expr(e.value), cond: rw_expr(e.cond) if e.cond?) : e <- es]),
+    bin_rel_expr(es?)     = bin_rel_expr([(args: (rw_expr(a) : a <- e.args), cond: rw_expr(e.cond) if e.cond?) : e <- es]),
+    tern_rel_expr(es?)    = tern_rel_expr([(args: (rw_expr(a) : a <- e.args), cond: rw_expr(e.cond) if e.cond?) : e <- es]),
+    tag_obj_expr()        = tag_obj_expr(rw_expr(expr.tag), rw_expr(expr.obj)),
     fn_call()             = fn_call(
                               expr.fn_id,
-                              (rewrite(a) : a <- expr.args),
-                              (rewrite_closure(c, rewrite) : c <- expr.cls_args),
-                              [a -> rewrite(e) : a, e <- expr.impl_args]
+                              (rw_expr(a) : a <- expr.args),
+                              (rewrite_closure(c, rw_expr) : c <- expr.cls_args),
+                              [a -> rw_expr(e) : a, e <- expr.impl_args]
                             ),
-    cls_call()            = cls_call(expr.name, (rewrite(a) : a <- expr.args)),
-    builtin_call()        = builtin_call(expr.name, (rewrite(a) : a <- expr.args)),
-    size_expr()           = size_expr(rewrite(expr.coll)),
-    rel_var_size_expr()   = rel_var_size_expr(expr.rel_var, (apply(a, rewrite) : a <- expr.args)),
-    unary_pseudo_call()   = unary_pseudo_call(rewrite(expr.target), rewrite(expr.arg)),
-    rel_memb_test()       = rel_memb_test(rewrite(expr.rel), (apply(a, rewrite) : a <- expr.args)),
-    rel_lookup()          = rel_lookup(rewrite(expr.rel), [i -> rewrite(e) : i, e <- expr.args]),
-    relvar_memb_test()    = relvar_memb_test(expr.rel_var, (apply(a, rewrite) : a <- expr.args)),
-    relvar_lookup()       = relvar_lookup(expr.rel_var, [i -> rewrite(e) : i, e <- expr.args]),
-    and_expr()            = and_expr(rewrite(expr.left), rewrite(expr.right)),
-    or_expr()             = or_expr(rewrite(expr.left), rewrite(expr.right)),
-    not_expr(e?)          = not_expr(rewrite(e)),
-    eq()                  = eq(rewrite(expr.left), rewrite(expr.right)),
-    membership()          = membership(rewrite(expr.obj), expr.type),
-    accessor()            = accessor(rewrite(expr.expr), expr.field),
-    accessor_test()       = accessor_test(rewrite(expr.expr), expr.field),
+    cls_call()            = cls_call(expr.name, (rw_expr(a) : a <- expr.args)),
+    builtin_call()        = builtin_call(expr.name, (rw_expr(a) : a <- expr.args)),
+    size_expr()           = size_expr(rw_expr(expr.coll)),
+    rel_var_size_expr()   = rel_var_size_expr(expr.rel_var, (apply(a, rw_expr) : a <- expr.args)),
+    unary_pseudo_call()   = unary_pseudo_call(rw_expr(expr.target), rw_expr(expr.arg)),
+    rel_memb_test()       = rel_memb_test(rw_expr(expr.rel), (apply(a, rw_expr) : a <- expr.args)),
+    rel_lookup()          = rel_lookup(rw_expr(expr.rel), [i -> rw_expr(e) : i, e <- expr.args]),
+    relvar_memb_test()    = relvar_memb_test(expr.rel_var, (apply(a, rw_expr) : a <- expr.args)),
+    relvar_lookup()       = relvar_lookup(expr.rel_var, [i -> rw_expr(e) : i, e <- expr.args]),
+    and_expr()            = and_expr(rw_expr(expr.left), rw_expr(expr.right)),
+    or_expr()             = or_expr(rw_expr(expr.left), rw_expr(expr.right)),
+    not_expr(e?)          = not_expr(rw_expr(e)),
+    eq()                  = eq(rw_expr(expr.left), rw_expr(expr.right)),
+    membership()          = membership(rw_expr(expr.obj), expr.type),
+    accessor()            = accessor(rw_expr(expr.expr), expr.field),
+    accessor_test()       = accessor_test(rw_expr(expr.expr), expr.field),
     aggr_fn_call()        = aggr_fn_call(
                               fn_id:      expr.fn_id,
-                              expr:       rewrite(expr.expr),
-                              clause:     rewrite_rel_var_clause(expr.clause, rewrite),
-                              cond:       rewrite(expr.cond) if expr.cond?,
-                              extra_args: (rewrite(e) : e <- expr.extra_args)
+                              expr:       rw_expr(expr.expr),
+                              clause:     { cls = rw_cls(expr.clause);
+                                            return if cls :: RelVarClause then cls else undefined;
+                                          },
+                              cond:       rw_expr(expr.cond) if expr.cond?,
+                              extra_args: (rw_expr(e) : e <- expr.extra_args)
                             ),
     auto_method_call()    = auto_method_call(
                               var:  expr.var if expr.var?,
                               name: expr.name,
-                              args: (rewrite(a) : a <- expr.args)
+                              args: (rw_expr(a) : a <- expr.args)
                             ),
     db_method_call()      = db_method_call(
                               var:  expr.var if expr.var?,
                               name: expr.name,
-                              args: (rewrite(a) : a <- expr.args)
+                              args: (rw_expr(a) : a <- expr.args)
                             ),
-    if_expr()             = if_expr(rewrite(expr.cond), rewrite(expr.then), rewrite(expr.else)),
+    if_expr()             = if_expr(rw_expr(expr.cond), rw_expr(expr.then), rw_expr(expr.else)),
     match_expr()          = match_expr(
-                              (rewrite(e) : e <- expr.exprs),
-                              ((ptrns: c.ptrns, expr: rewrite(c.expr)) : c <- expr.cases)
+                              (rw_expr(e) : e <- expr.exprs),
+                              ((ptrns: c.ptrns, expr: rw_expr(c.expr)) : c <- expr.cases)
                             ),
-    do_expr()             = do_expr((rewrite_stmt_exprs(s, rewrite) : s <- expr.body), expr.typed_vars),
-    ex_qual()             = ex_qual(rewrite_clause(expr.source, rewrite), rewrite(expr.cond)),
-    set_comp()            = set_comp(rewrite(expr.expr), rewrite_clause(expr.source, rewrite)),
-    map_comp()            = map_comp(
-                              rewrite(expr.key_expr),
-                              rewrite(expr.value_expr),
-                              rewrite_clause(expr.source, rewrite)
-                            ),
-    bin_rel_comp()        = bin_rel_comp((rewrite(e) : e <- expr.exprs), rewrite_clause(expr.source, rewrite)),
-    tern_rel_comp()       = tern_rel_comp((rewrite(e) : e <- expr.exprs), rewrite_clause(expr.source, rewrite)),
+    do_expr()             = do_expr((rewrite_stmt(s, rw_expr, rw_cls, rw_stmt) : s <- expr.body), expr.typed_vars),
+    ex_qual()             = ex_qual(rw_cls(expr.source), rw_expr(expr.cond)),
+    set_comp()            = set_comp(rw_expr(expr.expr), rw_cls(expr.source)),
+    map_comp()            = map_comp(rw_expr(expr.key_expr), rw_expr(expr.value_expr), rw_cls(expr.source)),
+    bin_rel_comp()        = bin_rel_comp((rw_expr(e) : e <- expr.exprs), rw_cls(expr.source)),
+    tern_rel_comp()       = tern_rel_comp((rw_expr(e) : e <- expr.exprs), rw_cls(expr.source)),
     seq_comp()            = seq_comp(
-                              expr:     rewrite(expr.expr),
+                              expr:     rw_expr(expr.expr),
                               vars:     expr.vars,
                               idx_var:  expr.idx_var if expr.idx_var?,
-                              src_expr: rewrite(expr.src_expr),
-                              sel_expr: rewrite(expr.sel_expr) if expr.sel_expr?
+                              src_expr: rw_expr(expr.src_expr),
+                              sel_expr: rw_expr(expr.sel_expr) if expr.sel_expr?
                             ),
     range_comp()          = range_comp(
-                              expr:     rewrite(expr.expr),
+                              expr:     rw_expr(expr.expr),
                               var:      expr.var,
-                              bound_expr: rewrite(expr.bound_expr),
+                              bound_expr: rw_expr(expr.bound_expr),
                               inclusive:  expr.inclusive,
-                              sel_expr:   rewrite(expr.sel_expr) if expr.sel_expr?
+                              sel_expr:   rw_expr(expr.sel_expr) if expr.sel_expr?
                             );
 
   //////////////////////////////////////////////////////////////////////////////
 
-  Expr rewrite_subexpr(Expr expr, (Expr -> Expr) rewrite) = rewrite(expr);
+  Expr rewrite_subexpr(Expr expr, (Expr -> Expr) rw_expr) = rw_expr(expr);
 
-  CondExpr rewrite_subexpr(CondExpr expr, (Expr -> Expr) rewrite) =
-    cond_expr(rewrite(expr.expr), rewrite(expr.cond));
+  CondExpr rewrite_subexpr(CondExpr expr, (Expr -> Expr) rw_expr) =
+    cond_expr(rw_expr(expr.expr), rw_expr(expr.cond));
 
   //////////////////////////////////////////////////////////////////////////////
 
-  AnyClsExpr rewrite_closure(AnyClsExpr expr, (Expr -> Expr) rewrite) = undefined;
-
-  Clause rewrite_clause(Clause cls, (Expr -> Expr) rewrite) = undefined;
-
-  RelVarClause rewrite_rel_var_clause(RelVarClause cls, (Expr -> Expr) rewrite) = undefined;
+  AnyClsExpr rewrite_closure(AnyClsExpr expr, (Expr -> Expr) rw_expr) =
+    cls_var()   |
+    fn_ptr()    = expr,
+    cls_expr()  = cls_expr(expr.arity, rw_expr(expr.expr));
 }
 
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
 
-Statement rewrite_stmt_exprs(Statement stmt, (Expr -> Expr) rewrite) = undefined;
+Clause rewrite_clause(Clause cls, (Expr -> Expr) rw_expr, (Clause -> Clause) rw_cls, (Statement -> Statement) rw_stmt) {
+  fail;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+Statement rewrite_stmt(Statement stmt, (Expr -> Expr) rw_expr, (Clause -> Clause) rw_cls, (Statement -> Statement) rw_stmt) {
+  fail;
+}

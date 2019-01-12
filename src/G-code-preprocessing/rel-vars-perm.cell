@@ -31,7 +31,7 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
 
       foreign_keys = [rewrite(k, perms) : k <- rel_auto.foreign_keys];
 
-      methods = [method(m.name, m.args, m.ret_type, apply_rel_var_perms(m.expr)) : m <- rel_auto.methods];
+      methods = [method(m.name, m.args, m.ret_type, perm_expr_rel_vars(m.expr)) : m <- rel_auto.methods];
       updates  = undefined;
       handlers = undefined;
     ;
@@ -87,25 +87,19 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
 ////////////////////////////////////////////////////////////////////////////////
 
 implicit program : Program, typedefs : [TypeName -> NeType], context : Database {
-  Expr apply_rel_var_perms(Expr expr) {
+  Expr perm_expr_rel_vars(Expr expr) {
     return match (expr)
       rel_var_size_expr()   |
       relvar_memb_test()    |
-      relvar_lookup()       |
-      aggr_fn_call()        |
-      ex_qual()             |
-      set_comp()            |
-      map_comp()            |
-      bin_rel_comp()        |
-      tern_rel_comp()       |
-      do_expr()             = rewrite(expr),
-      _                     = rewrite_expr(expr, apply_rel_var_perms);
+      relvar_lookup()       = rewrite(expr),
+      _                     = rewrite_expr(expr, perm_expr_rel_vars, perm_cls_rel_vars, perm_stmt_rel_vars);
 
 
     // type RelVarSizeExpr = rel_var_size_expr(rel_var: AnyRelVar, args: Maybe[Expr]+);
     RelVarSizeExpr rewrite(RelVarSizeExpr expr) {
       perm = rel_var_args_perm(expr.rel_var);
       args = permutate(expr.args, perm);
+      args = (apply(a, perm_expr_rel_vars) : a <- args);
       return rel_var_size_expr(expr.rel_var, args);
     }
 
@@ -114,78 +108,27 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Database 
     RelVarMembTest rewrite(RelVarMembTest expr) {
       perm = rel_var_args_perm(expr.rel_var);
       args = permutate(expr.args, perm);
+      args = (apply(a, perm_expr_rel_vars) : a <- args);
       return relvar_memb_test(expr.rel_var, args);
     }
 
 
-    // type RelVarLookup = relvar_lookup(rel_var: AnyRelVar, set_args: Expr*, unknown_arg_idx: Nat);
+    // type RelVarLookup = relvar_lookup(rel_var: AnyRelVar, args: [Nat -> Expr]);
     RelVarLookup rewrite(RelVarLookup expr) {
-      fail;
-      // perm = rel_var_args_perm(expr.rel_var);
-      // count = |expr.set_args|;
-      // unknown_arg_idx = perm(expr.unknown_arg_idx);
-      // args = ({
-      //   idx = nat(i + bit(i >= unknown_arg_idx));
-      //   src_idx = perm(!!, idx);
-      // } : i < count);
-      // assert {
-      //   all_args = take(expr.set_args, expr.unknown_arg_idx) &
-      //              (:not_an_expr) &
-      //              drop(expr.set_args, expr.unknown_arg_idx);
-      //   all_perm_args = permutate(all_args, perm);
-      //   perm_set_args = (a : a <- all_perm_args, a != :not_an_expr);
-      //   perm_unknown_arg_idx = (i : a @ i <- all_perm_args, a == :not_an_expr);
-      //   return perm_set_args == args and perm_unknown_arg_idx == unknown_arg_idx;
-      // };
-      // return relvar_lookup(expr.rel_var, args, unknown_arg_idx);
+      perm = rel_var_args_perm(expr.rel_var);
+      args = [perm(i) -> perm_expr_rel_vars(e) : i, e <- expr.args];
+      return relvar_lookup(expr.rel_var, args);
     }
+  }
 
 
-    // type AggrFnCallExpr = aggr_fn_call(
-    //                         fn_id:      PlainAggrFnId,
-    //                         expr:       Expr,
-    //                         clause:     RelVarClause,
-    //                         cond:       Expr?,
-    //                         extra_args: Expr*
-    //                       );
-    AggrFnCallExpr rewrite(AggrFnCallExpr expr) {
-      fail;
-    }
+  Clause perm_cls_rel_vars(Clause cls) {
+    fail;
+  }
 
 
-    // type ExQualExpr = ex_qual(source: Clause, cond: Expr);
-    ExQualExpr rewrite(ExQualExpr expr) {
-      fail;
-    }
-
-
-    // type SetCompExpr = set_comp(expr: Expr, source: Clause);
-    SetCompExpr rewrite(SetCompExpr expr) {
-      fail;
-    }
-
-
-    // type MapCompExpr = map_comp(key_expr: Expr, value_expr: Expr, source: Clause);
-    MapCompExpr rewrite(MapCompExpr expr) {
-      fail;
-    }
-
-
-    // type BinRelCompExpr = bin_rel_comp(exprs: (Expr, Expr), source: Clause);
-    BinRelCompExpr rewrite(BinRelCompExpr expr) {
-      fail;
-    }
-
-
-    // type TernRelCompExpr = tern_rel_comp(exprs: (Expr, Expr, Expr), source: Clause);
-    TernRelCompExpr rewrite(TernRelCompExpr expr) {
-      fail;
-    }
-
-    // type DoExpr = do_expr(body: Statement+, typed_vars: [StdVar -> NeType]);
-    DoExpr rewrite(DoExpr expr) {
-      fail;
-    }
+  Statement perm_stmt_rel_vars(Statement stmt) {
+    fail;
   }
 }
 
