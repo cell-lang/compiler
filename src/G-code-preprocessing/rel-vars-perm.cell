@@ -50,13 +50,6 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
     );
 
 
-    // type ForeignKey = foreign_key(
-    //                     source_rel_var: RelVar,
-    //                     source_args:    Maybe[Symbol]+,
-    //                     source_types:   Maybe[NeType]+,
-    //                     target_rel_var: RelVar,
-    //                     target_args:    Maybe[Symbol]+
-    //                   );
     ForeignKey rewrite(ForeignKey key, [RelVar -> [+Nat -> Nat]] perms) {
       src_perm = perms(key.source_rel_var);
       tgt_perm = perms(key.target_rel_var);
@@ -151,25 +144,49 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Database 
 
     // type DeleteStmt = delete_stmt(var: RelVar, args: Maybe[Expr]+);
     DeleteStmt rewrite(DeleteStmt stmt) {
-      fail;
+      perm = rel_var_args_perm(stmt.var);
+      args = permutate(stmt.args, perm);
+      args = (apply(a, perm_expr_rel_vars) : a <- args);
+      return delete_stmt(stmt.var, args);
     }
 
 
     // type InsertStmt = insert_stmt(var: RelVar, args: Expr+);
     InsertStmt rewrite(InsertStmt stmt) {
-      fail;
+      perm = rel_var_args_perm(stmt.var);
+      args = permutate(stmt.args, perm);
+      args = (perm_expr_rel_vars(a) : a <- args);
+      return insert_stmt(stmt.var, args);
     }
 
 
     // type UpdateStmt = update_stmt(var: RelVar, args: Expr+);
     UpdateStmt rewrite(UpdateStmt stmt) {
-      fail;
+      perm = rel_var_args_perm(stmt.var);
+      args = permutate(stmt.args, perm);
+      args = (perm_expr_rel_vars(a) : a <- args);
+      return update_stmt(stmt.var, args);
     }
 
 
     // type ForeachStmt = foreach_stmt(iter: Iter, body: Statement+);
     ForeachStmt rewrite(ForeachStmt stmt) {
-      fail;
+      iter = match (stmt.iter)
+        coll_value_iter() |
+        rel_subset_iter() = stmt.iter,
+        rel_var_iter()    = rewrite(stmt.iter);
+      return foreach_stmt(iter, (perm_stmt_rel_vars(s) : s <- stmt.body));
+    }
+
+
+    // type RelVarIter = rel_var_iter(vars: Maybe[StdVar]+, rel_var: AnyRelVar, args: Maybe[Expr]+);
+    RelVarIter rewrite(RelVarIter iter) {
+      perm = rel_var_args_perm(iter.rel_var);
+      args = permutate(iter.args, perm);
+      args = (apply(a, perm_expr_rel_vars) : a <- args);
+      var_arg_idxs = (i : a @ i <- iter.args, a == nothing);
+      vars = values_ord_by_idx([perm(i) -> v : v @ i <~ iter.vars]);
+      return rel_var_iter(vars, iter.rel_var, args);
     }
   }
 }
