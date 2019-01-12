@@ -125,7 +125,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Database 
   Clause perm_cls_rel_vars(Clause cls) {
     return match (cls)
       relvar_clause() = rewrite(cls),
-      _               = cls;
+      _               = rewrite_clause(cls, perm_expr_rel_vars, perm_cls_rel_vars, perm_stmt_rel_vars);
+
 
     // type RelVarClause = relvar_clause(vars: StdVar+, rel_var: AnyRelVar, args: Maybe[Expr]+);
     RelVarClause rewrite(RelVarClause cls) {
@@ -140,7 +141,36 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Database 
 
 
   Statement perm_stmt_rel_vars(Statement stmt) {
-    fail;
+    return match (stmt)
+      delete_stmt()   |
+      insert_stmt()   |
+      update_stmt()   |
+      foreach_stmt()  = rewrite(stmt),
+      _               = rewrite_stmt(stmt, perm_expr_rel_vars, perm_cls_rel_vars, perm_stmt_rel_vars);
+
+
+    // type DeleteStmt = delete_stmt(var: RelVar, args: Maybe[Expr]+);
+    DeleteStmt rewrite(DeleteStmt stmt) {
+      fail;
+    }
+
+
+    // type InsertStmt = insert_stmt(var: RelVar, args: Expr+);
+    InsertStmt rewrite(InsertStmt stmt) {
+      fail;
+    }
+
+
+    // type UpdateStmt = update_stmt(var: RelVar, args: Expr+);
+    UpdateStmt rewrite(UpdateStmt stmt) {
+      fail;
+    }
+
+
+    // type ForeachStmt = foreach_stmt(iter: Iter, body: Statement+);
+    ForeachStmt rewrite(ForeachStmt stmt) {
+      fail;
+    }
   }
 }
 

@@ -113,7 +113,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Database,
 
     // foreach_stmt(iter: CollValueIter, body: Statement+);
     // coll_value_iter(vars: Maybe[StdVar]+, idx_var: StdVar?, src_expr: Expr);
-    [RelVar, Expr+, InsertStmt] update_reqrs(ForeachStmt[Statement] stmt, [RelVar, Expr+, InsertStmt] reqrs, [EnvVar -> Type] env) {
+    [RelVar, Expr+, InsertStmt] update_reqrs(ForeachStmt stmt, [RelVar, Expr+, InsertStmt] reqrs, [EnvVar -> Type] env) {
       return reqrs if not iterates_at_least_once(stmt.iter, env);
       loop_env = env & loop_vars(stmt.iter, env);
       return update_reqrs(stmt.body, reqrs, loop_env);

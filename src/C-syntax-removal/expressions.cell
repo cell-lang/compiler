@@ -555,14 +555,14 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
   }
 
 
-  Statement desugar_let_stmt(SynLetStmt[SynStmt] stmt, [StdVar] def_vars) {
+  Statement desugar_let_stmt(SynLetStmt stmt, [StdVar] def_vars) {
     asgnms = merge(([var -> desugar_expr(val, def_vars)] : var, val <- stmt.asgnms));
     body = desugar_stmts(stmt.body, def_vars, impl_args = impl_args & keys(asgnms));
     return let_stmt(asgnms, body);
   }
 
 
-  Statement desugar_loop_stmt(SynLoopStmt[SynStmt] stmt, [StdVar] def_vars) {
+  Statement desugar_loop_stmt(SynLoopStmt stmt, [StdVar] def_vars) {
     cond_vars = def_vars & if stmt.skip_first then syn_new_vars(stmt.body) else [];
     cond      = desugar_expr(stmt.cond, cond_vars);
     exit_stmt = if_stmt(not_expr(cond), (break_stmt), ());

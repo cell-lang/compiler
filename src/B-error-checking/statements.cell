@@ -91,7 +91,7 @@ implicit {
     }
 
 
-    ExprWFError* if_stmt_wf_errors(SynIfStmt[SynStmt] stmt, [DefVar] ro_vars, [StdVar] rw_vars, [DefVar] all_vars) {
+    ExprWFError* if_stmt_wf_errors(SynIfStmt stmt, [DefVar] ro_vars, [StdVar] rw_vars, [DefVar] all_vars) {
       branches_errs = join((expr_wf_errors(b.cond, all_vars) & stmts_wf_errors(b.body, ro_vars, rw_vars) : b <- stmt.branches));
       else_body = stmt.else;
       else_errs = if else_body != () then stmts_wf_errors(else_body, ro_vars, rw_vars) else ();
@@ -99,7 +99,7 @@ implicit {
     }
 
 
-    ExprWFError* for_stmt_wf_errors(SynForStmt[SynStmt] stmt, [DefVar] ro_vars, [StdVar] rw_vars, [DefVar] all_vars) {
+    ExprWFError* for_stmt_wf_errors(SynForStmt stmt, [DefVar] ro_vars, [StdVar] rw_vars, [DefVar] all_vars) {
       iter_errs = ();
       new_vars = [];
       for it <- stmt.loops:
@@ -313,7 +313,7 @@ implicit {
   );
 
 
-  ExprWFError* for_stmt_local_wf_errors(SynForStmt[SynStmt] stmt, [DefVar] ro_vars, [StdVar] rw_vars) {
+  ExprWFError* for_stmt_local_wf_errors(SynForStmt stmt, [DefVar] ro_vars, [StdVar] rw_vars) {
     errs = ();
     new_vars = [];
     for it <- stmt.loops:
@@ -341,7 +341,7 @@ implicit {
   }
 
 
-  ExprWFError* let_stmt_local_wf_errors(SynLetStmt[SynStmt] stmt, [DefVar] ro_vars, [StdVar] rw_vars) {
+  ExprWFError* let_stmt_local_wf_errors(SynLetStmt stmt, [DefVar] ro_vars, [StdVar] rw_vars) {
     ## CHECK THAT THERE ARE NOT DUPLICATES AMONG IMPLICIT ARGUMENTS
     ## AND THAT THERE ARE NOT MUTUAL DEPENDENCIES
     exprs_errs = join((expr_wf_errors(e, ro_vars & rw_vars) : unused_var, e <- stmt.asgnms));

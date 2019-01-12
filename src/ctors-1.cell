@@ -142,13 +142,13 @@ SynCtrlStmt syn_send_msg_ctrl_stmt(Atom rv, Atom av, SynExpr m) = send_msg_ctrl_
 SynCtrlStmt syn_read_state_ctrl_stmt(Atom rv, Atom dv)          = read_state_ctrl_stmt(res_var: rv, db_var: dv);
 SynCtrlStmt syn_restore_state_ctrl_stmt(Atom rv, Atom dv, SynExpr e)  = restore_state_ctrl_stmt(res_var: rv, db_var: dv, state: e);
 
-SynIfStmt[T]      syn_if_stmt(SynExpr c, T+ ss)                     = syn_if_stmt(((cond: c, body: ss)), ());
-SynIfStmt[T]      syn_if_stmt((cond: SynExpr, body: T+)+ bs, T* e)  = if_stmt(branches: bs, else: e);
-SynLoopStmt[T]    syn_loop_stmt(SynExpr c, T+ b)                    = syn_loop_stmt(c, b, false);
-SynLoopStmt[T]    syn_loop_stmt(SynExpr c, T+ b, Bool s)            = loop_stmt(cond: c, skip_first: s, body: b);
-SynInfLoopStmt[T] syn_inf_loop_stmt(T+ ss)                          = :inf_loop_stmt(ss);
-SynForStmt[T]     syn_for_stmt(SynIter+ ls, T+ b)                   = for_stmt(loops: ls, body: b);
-SynLetStmt[T]     syn_let_stmt((ImplArg, SynExpr)+ a, T+ b)         = let_stmt(asgnms: a, body: b);
+SynIfStmt syn_if_stmt((cond: SynExpr, body: SynStmt+)+ bs, SynStmt* e) = if_stmt(branches: bs, else: e);
+SynIfStmt      syn_if_stmt(SynExpr c, SynStmt+ ss)              = syn_if_stmt(((cond: c, body: ss)), ());
+SynLoopStmt    syn_loop_stmt(SynExpr c, SynStmt+ b)             = syn_loop_stmt(c, b, false);
+SynLoopStmt    syn_loop_stmt(SynExpr c, SynStmt+ b, Bool s)     = loop_stmt(cond: c, skip_first: s, body: b);
+SynInfLoopStmt syn_inf_loop_stmt(SynStmt+ ss)                   = :inf_loop_stmt(ss);
+SynForStmt     syn_for_stmt(SynIter+ ls, SynStmt+ b)            = for_stmt(loops: ls, body: b);
+SynLetStmt     syn_let_stmt((ImplArg, SynExpr)+ a, SynStmt+ b)  = let_stmt(asgnms: a, body: b);
 
 SynIter syn_coll_iter(Maybe[StdVar]+ vs, SynExpr e)             = coll_value_iter(vars: vs, src_expr: e);
 SynIter syn_coll_iter(Maybe[StdVar]+ vs, StdVar iv, SynExpr e)  = coll_value_iter(vars: vs, idx_var: iv, src_expr: e);

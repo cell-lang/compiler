@@ -317,21 +317,15 @@ type CtrlStmt = SetInputCtrlStmt, ClearInputCtrlStmt, SetElapsedTimeCtrlStmt, Ap
 
 type JumpStmt = return_stmt(Expr), break_stmt, return_stmt;
 
-type IfStmt[T]      = if_stmt(cond: Expr, body: T+, else: T*);
-type LoopStmt[T]    = loop_stmt(T+);
-type ForeachStmt[T] = foreach_stmt(iter: Iter, body: T+);
-type ForStmt[T]     = for_stmt(var: StdVar?, start_val: Expr, end_val: Expr, end_val_incl: Bool, body: T+);
-type LetStmt[T]     = let_stmt(asgnms: [ImplArg -> Expr], body: T+);
+type IfStmt      = if_stmt(cond: Expr, body: Statement+, else: Statement*);
+type LoopStmt    = loop_stmt(Statement+);
+type ForeachStmt = foreach_stmt(iter: Iter, body: Statement+);
+type ForStmt     = for_stmt(var: StdVar?, start_val: Expr, end_val: Expr, end_val_incl: Bool, body: Statement+);
+type LetStmt     = let_stmt(asgnms: [ImplArg -> Expr], body: Statement+);
 
-type CompositeStmt[T] = IfStmt[T], LoopStmt[T], ForeachStmt[T], ForStmt[T], LetStmt[T];
+type CompositeStmt = IfStmt, LoopStmt, ForeachStmt, ForStmt, LetStmt;
 
-type Statement  = AtomicFnStmt, AtomicUpdateStmt, ProcCallStmt, CtrlStmt, JumpStmt, CompositeStmt[Statement];
-
-type IfStmt       = IfStmt[Statement];
-type LoopStmt     = LoopStmt[Statement];
-type ForeachStmt  = ForeachStmt[Statement];
-type ForStmt      = ForStmt[Statement];
-type LetStmt      = LetStmt[Statement];
+type Statement  = AtomicFnStmt, AtomicUpdateStmt, ProcCallStmt, CtrlStmt, JumpStmt, CompositeStmt;
 
 ///////////////////////////////////////////////////////////////////////////////
 
