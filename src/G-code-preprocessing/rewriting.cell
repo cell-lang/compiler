@@ -61,7 +61,7 @@ Expr rewrite_expr(Expr expr, (Expr -> Expr) rw_expr, (Clause -> Clause) rw_cls, 
                               (rw_expr(e) : e <- expr.exprs),
                               ((ptrns: c.ptrns, expr: rw_expr(c.expr)) : c <- expr.cases)
                             ),
-    do_expr()             = do_expr((rewrite_stmt(s, rw_expr, rw_cls, rw_stmt) : s <- expr.body), expr.typed_vars),
+    do_expr()             = do_expr((rw_stmt(s) : s <- expr.body), expr.typed_vars),
     ex_qual()             = ex_qual(rw_cls(expr.source), rw_expr(expr.cond)),
     set_comp()            = set_comp(rw_expr(expr.expr), rw_cls(expr.source)),
     map_comp()            = map_comp(rw_expr(expr.key_expr), rw_expr(expr.value_expr), rw_cls(expr.source)),
@@ -100,13 +100,69 @@ Expr rewrite_expr(Expr expr, (Expr -> Expr) rw_expr, (Clause -> Clause) rw_cls, 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-Clause rewrite_clause(Clause cls, (Expr -> Expr) rw_expr, (Clause -> Clause) rw_cls, (Statement -> Statement) rw_stmt) {
-  fail;
-}
+Clause rewrite_clause(Clause cls, (Expr -> Expr) rw_expr, (Clause -> Clause) rw_cls) =
+  set_clause()      = set_clause(cls.var, rw_expr(cls.src)),
+  rel_clause()      = rel_clause(cls.vars, rw_expr(cls.src), (apply(a, rw_expr) : a <- cls.args)),
+  relvar_clause()   = relvar_clause(cls.vars, cls.rel_var, (apply(a, rw_expr) : a <- cls.args)),
+  seq_clause()      = seq_clause(cls.vars, cls.idx_var, rw_expr(cls.src)),
+  and_clause()      = and_clause(rw_cls(cls.left), rw_cls(cls.right)),
+  or_clause()       = or_clause(rw_cls(cls.left), rw_cls(cls.right)),
+  match_clause()    = match_clause(cls.ptrn, rw_expr(cls.expr)),
+  asgnm_clause()    = asgnm_clause(cls.var, rw_expr(cls.expr)),
+  filter_clause(e?) = filter_clause(rw_expr(e));
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-Statement rewrite_stmt(Statement stmt, (Expr -> Expr) rw_expr, (Clause -> Clause) rw_cls, (Statement -> Statement) rw_stmt) {
-  fail;
+Statement rewrite_stmt(Statement stmt, (Expr -> Expr) rw_expr, (Statement -> Statement) rw_stmt) {
+  return match (stmt)
+    assert_stmt()           = assert_stmt(rw_expr(stmt.cond), stmt.env, stmt.file, stmt.line, stmt.text),
+    seq_update_stmt()       = seq_update_stmt(stmt.seq_var, stmt.idx, rw_expr(stmt.value)),
+    assignment_stmt()       = assignment_stmt(stmt.vars, rw_expr(stmt.value)),
+    print_stmt(e?)          = print_stmt(rw_expr(e)),
+    send_msg_stmt()         = send_msg_stmt(stmt.target, rw_expr(stmt.msg)),
+    try_update_stmt()       = try_update_stmt(stmt.name, (rw_expr(e) : e <- stmt.args)),
+    set_memb_var_stmt()     = set_memb_var_stmt(stmt.var, rw_expr(stmt.value)),
+    delete_stmt()           = delete_stmt(stmt.var, (apply(a, rw_expr) : a <- stmt.args)),
+    insert_stmt()           = insert_stmt(stmt.var, (rw_expr(a) : a <- stmt.args)),
+    update_stmt()           = update_stmt(stmt.var, (rw_expr(a) : a <- stmt.args)),
+    proc_call_stmt()        = proc_call_stmt(
+                                res_var:    stmt.res_var if stmt.res_var?,
+                                proc_name:  stmt.proc_name,
+                                args:       (rw_expr(e) : e <- stmt.args)
+                              ),
+    return_stmt(e?)         = return_stmt(rw_expr(e)),
+    break_stmt              |
+    return_stmt             |
+    fail_stmt()             = stmt,
+
+    set_input_ctrl_stmt()         = set_input_ctrl_stmt(stmt.var, stmt.input, rw_expr(stmt.value)),
+    clear_input_ctrl_stmt()       = clear_input_ctrl_stmt(stmt.var, stmt.input),
+    set_elapsed_time_ctrl_stmt()  = set_elapsed_time_ctrl_stmt(stmt.var, rw_expr(stmt.time)),
+    apply_ctrl_stmt()             = stmt,
+    send_msg_ctrl_stmt()          = send_msg_ctrl_stmt(stmt.res_var, stmt.db_var, rw_expr(stmt.msg)),
+    read_state_ctrl_stmt()        = read_state_ctrl_stmt(stmt.res_var, stmt.auto_var),
+    restore_state_ctrl_stmt()     = restore_state_ctrl_stmt(stmt.res_var, stmt.auto_var, rw_expr(stmt.state)),
+
+    if_stmt()               = if_stmt(rw_expr(stmt.cond), (rw_stmt(s) : s <- stmt.body), (rw_stmt(s) : s <- stmt.else)),
+    loop_stmt(ss?)          = loop_stmt((rw_stmt(s) : s <- ss)),
+    foreach_stmt()          = foreach_stmt(rewrite(stmt.iter, rw_expr), (rw_stmt(s) : s <- stmt.body)),
+    for_stmt()              = for_stmt(
+                                var:          stmt.var if stmt.var?,
+                                start_val:    rw_expr(stmt.start_val),
+                                end_val:      rw_expr(stmt.end_val),
+                                end_val_incl: stmt.end_val_incl,
+                                body:         (rw_stmt(s) : s <- stmt.body)
+                              ),
+    let_stmt()              = let_stmt([a -> rw_expr(e) : a, e <- stmt.asgnms], (rw_stmt(s) : s <- stmt.body));
+
+
+    CollValueIter rewrite(CollValueIter iter, (Expr -> Expr) rw_expr) =
+      coll_value_iter(vars: iter.vars, idx_var: iter.idx_var if iter.idx_var?, src_expr: rw_expr(iter.src_expr));
+
+    RelSubsetIter rewrite(RelSubsetIter iter, (Expr -> Expr) rw_expr) =
+      rel_subset_iter(iter.vars, rw_expr(iter.src_expr), (apply(a, rw_expr) : a <- iter.args));
+
+    RelVarIter rewrite(RelVarIter iter, (Expr -> Expr) rw_expr) =
+      rel_var_iter(iter.vars, iter.rel_var, (apply(a, rw_expr) : a <- iter.args));
 }
