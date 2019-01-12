@@ -123,7 +123,19 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Database 
 
 
   Clause perm_cls_rel_vars(Clause cls) {
-    fail;
+    return match (cls)
+      relvar_clause() = rewrite(cls),
+      _               = cls;
+
+    // type RelVarClause = relvar_clause(vars: StdVar+, rel_var: AnyRelVar, args: Maybe[Expr]+);
+    RelVarClause rewrite(RelVarClause cls) {
+      perm = rel_var_args_perm(cls.rel_var);
+      args = permutate(cls.args, perm);
+      args = (apply(a, perm_expr_rel_vars) : a <- args);
+      var_arg_idxs = (i : a @ i <- cls.args, a == nothing);
+      vars = values_ord_by_idx([perm(var_arg_idxs(i)) -> v : v @ i <~ cls.vars]);
+      return relvar_clause(vars, cls.rel_var, args);
+    }
   }
 
 
