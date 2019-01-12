@@ -91,40 +91,11 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
 ////////////////////////////////////////////////////////////////////////////////
 
 implicit program : Program, typedefs : [TypeName -> NeType], context : Context {
-  Expr perm_expr_rel_vars(Expr expr) {
-    return match (expr)
-      rel_var_size_expr()   |
-      relvar_memb_test()    |
-      relvar_lookup()       = rewrite(expr),
-      _                     = rewrite_expr(expr, perm_expr_rel_vars, perm_cls_rel_vars, perm_stmt_rel_vars);
-
-
-    // type RelVarSizeExpr = rel_var_size_expr(rel_var: AnyRelVar, args: Maybe[Expr]+);
-    RelVarSizeExpr rewrite(RelVarSizeExpr expr) {
-      perm = rel_var_args_perm(expr.rel_var);
-      args = permutate(expr.args, perm);
-      args = (apply(a, perm_expr_rel_vars) : a <- args);
-      return rel_var_size_expr(expr.rel_var, args);
-    }
-
-
-    // type RelVarMembTest = relvar_memb_test(rel_var: AnyRelVar, args: Maybe[Expr]+);
-    RelVarMembTest rewrite(RelVarMembTest expr) {
-      perm = rel_var_args_perm(expr.rel_var);
-      args = permutate(expr.args, perm);
-      args = (apply(a, perm_expr_rel_vars) : a <- args);
-      return relvar_memb_test(expr.rel_var, args);
-    }
-
-
-    // type RelVarLookup = relvar_lookup(rel_var: AnyRelVar, args: Maybe[Expr]+);
-    RelVarLookup rewrite(RelVarLookup expr) {
-      perm = rel_var_args_perm(expr.rel_var);
-      args = permutate(expr.args, perm);
-      args = (apply(a, perm_expr_rel_vars) : a <- args);
-      return relvar_lookup(expr.rel_var, args);
-    }
-  }
+  Expr perm_expr_rel_vars(Expr expr) =
+    rel_var_size_expr()   = rel_var_size_expr(expr.rel_var, rewrite_maybe_args(expr.args, expr.rel_var)),
+    relvar_memb_test()    = relvar_memb_test(expr.rel_var, rewrite_maybe_args(expr.args, expr.rel_var)),
+    relvar_lookup()       = relvar_lookup(expr.rel_var, rewrite_maybe_args(expr.args, expr.rel_var)),
+    _                     = rewrite_expr(expr, perm_expr_rel_vars, perm_cls_rel_vars, perm_stmt_rel_vars);
 
 
   Clause perm_cls_rel_vars(Clause cls) {
@@ -147,38 +118,11 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context {
 
   Statement perm_stmt_rel_vars(Statement stmt) {
     return match (stmt)
-      delete_stmt()   |
-      insert_stmt()   |
-      update_stmt()   |
+      delete_stmt()   = delete_stmt(stmt.var, rewrite_maybe_args(stmt.args, stmt.var)),
+      insert_stmt()   = insert_stmt(stmt.var, rewrite_args(stmt.args, stmt.var)),
+      update_stmt()   = update_stmt(stmt.var, rewrite_args(stmt.args, stmt.var)),
       foreach_stmt()  = rewrite(stmt),
       _               = rewrite_stmt(stmt, perm_expr_rel_vars, perm_stmt_rel_vars);
-
-
-    // type DeleteStmt = delete_stmt(var: RelVar, args: Maybe[Expr]+);
-    DeleteStmt rewrite(DeleteStmt stmt) {
-      perm = rel_var_args_perm(stmt.var);
-      args = permutate(stmt.args, perm);
-      args = (apply(a, perm_expr_rel_vars) : a <- args);
-      return delete_stmt(stmt.var, args);
-    }
-
-
-    // type InsertStmt = insert_stmt(var: RelVar, args: Expr+);
-    InsertStmt rewrite(InsertStmt stmt) {
-      perm = rel_var_args_perm(stmt.var);
-      args = permutate(stmt.args, perm);
-      args = (perm_expr_rel_vars(a) : a <- args);
-      return insert_stmt(stmt.var, args);
-    }
-
-
-    // type UpdateStmt = update_stmt(var: RelVar, args: Expr+);
-    UpdateStmt rewrite(UpdateStmt stmt) {
-      perm = rel_var_args_perm(stmt.var);
-      args = permutate(stmt.args, perm);
-      args = (perm_expr_rel_vars(a) : a <- args);
-      return update_stmt(stmt.var, args);
-    }
 
 
     // type ForeachStmt = foreach_stmt(iter: Iter, body: Statement+);
@@ -200,6 +144,19 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context {
       vars = values_ord_by_idx([perm(i) -> v : v @ i <~ iter.vars]);
       return rel_var_iter(vars, iter.rel_var, args);
     }
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  Expr+ rewrite_args(Expr+ args, AnyRelVar rel_var) {
+    perm = rel_var_args_perm(rel_var);
+    return (perm_expr_rel_vars(e) : e <- permutate(args, perm));
+  }
+
+
+  Maybe[Expr]+ rewrite_maybe_args(Maybe[Expr]+ args, AnyRelVar rel_var) {
+    perm = rel_var_args_perm(rel_var);
+    return (apply(a, perm_expr_rel_vars) : a <- permutate(args, perm));
   }
 }
 
