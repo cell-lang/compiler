@@ -72,13 +72,14 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
 
   Type rel_lookup_expr_type(RelLookup expr, [EnvVar -> Type] env) {
+    arity = |expr.args|;
     rel_type = expr_type(expr.rel, env);
-    args_types = [i -> expr_type(a, env) : i, a <- expr.args];
-    return set_elem_supertype(rel_type) if args_types == [];
-    target_idx = looked_up_arg_idx(expr);
-    if |args_types| == 1:
+    return set_elem_supertype(rel_type) if arity == 1;
+    args_types = (apply(a, expr_type($, env)) : a <- expr.args);
+    target_idx = index_only(expr.args, nothing);
+    if arity == 2:
       return if target_idx == 1
-        then restricted_bin_rel_arg1_supertype(rel_type, args_types(0))
+        then restricted_bin_rel_arg1_supertype(rel_type, value_unsafe(args_types(0)))
         else bin_rel_arg_supertype(rel_type, 0);
     ;
     assert |args_types| == 2;
@@ -92,7 +93,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     overlapping_sgns = [
       s : s <- relvar_signatures(expr.rel_var), signature_overlaps_partial_signature(s, args_types)
     ];
-    target_idx = only_unsafe((i : a @ i <- expr.args, a == nothing));
+    target_idx = index_only(expr.args, nothing);
     return union_superset(nonempty([s(target_idx) : s <- overlapping_sgns]));
   }
 

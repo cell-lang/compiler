@@ -51,12 +51,12 @@ Expr* exprs_cluster(SeqTailExpr expr, Nat offset) =
     seq_tail_expr($(0), nonempty(tail(nonempty($))))
   );
 
-// rel_lookup(rel: Expr, args: [Nat -> Expr]);
+// rel_lookup(rel: Expr, args: Maybe[Expr]+);
 Expr* exprs_cluster(RelLookup expr, Nat offset) =
-  exprs_cluster(
-    (expr.rel) & values_ord_by_idx(expr.args),
+  maybe_exprs_cluster(
+    (just(expr.rel)) & expr.args,
     offset,
-    rel_lookup($(0), [i -> $(i+1) : i <~ ord_idxs(expr.args)])
+    rel_lookup(value_unsafe($(0)), nonempty(drop(expr.args, 1)))
   );
 
 // relvar_lookup(rel_var: AnyRelVar, args: Maybe[Expr]+);
@@ -462,7 +462,7 @@ Expr replace_nested(RecExpr expr, (Expr -> Expr) replace) =
   size_expr()         = size_expr(replace(expr.coll)),
   unary_pseudo_call() = unary_pseudo_call(replace(expr.target), replace(expr.arg)),
   rel_memb_test()     = rel_memb_test(replace(expr.rel), (apply(a, replace) : a <- expr.args)),
-  rel_lookup()        = rel_lookup(replace(expr.rel), [i -> replace(a) : i, a <- expr.args]),
+  rel_lookup()        = rel_lookup(replace(expr.rel), (apply(a, replace) : a <- expr.args)),
   relvar_memb_test()  = relvar_memb_test(expr.rel_var, (apply(a, replace) : a <- expr.args)),
   rel_var_size_expr() = rel_var_size_expr(expr.rel_var, (apply(a, replace) : a <- expr.args)),
   relvar_lookup()     = relvar_lookup(expr.rel_var, (apply(a, replace) : a <- expr.args)),

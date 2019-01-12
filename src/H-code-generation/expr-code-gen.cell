@@ -504,8 +504,8 @@ implicit program           : Program,
 
   // rel_lookup(rel: Expr, args: [Nat -> Expr]);
   (Instr*, ObjExpr, VarGen) rel_lookup_opt_eval_info(RelLookup expr, VarGen init_var_gen) {
-    arity = nz_nat(|expr.args| + 1);
-    target_idx = looked_up_arg_idx(expr);
+    arity = |expr.args|;
+    target_idx = index_only(expr.args, nothing);
 
     // Physical representation of the result and variable that stores it
     type = types(expr_id);
@@ -517,16 +517,19 @@ implicit program           : Program,
     // Evaluation of all subexpressions
     code, rel_surr, var_gen = opt_eval_info(expr.rel, ret_var_gen);
     args_surrs = [];
-    for i, e <- isort(expr.args):
-      arg_code, arg_surr, var_gen = opt_eval_info(e, var_gen);
-      code = code & arg_code;
-      args_surrs = args_surrs & [i -> arg_surr];
+    for a @ i <- expr.args:
+      if a != nothing:
+        arg_code, arg_surr, var_gen = opt_eval_info(value(a), var_gen);
+        code = code & arg_code;
+        args_surrs = args_surrs & [i -> arg_surr];
+      ;
     ;
+    assert |args_surrs| == arity - 1;
 
-    if args_surrs == []:
+    if arity == 1:
       code = (code | check(is_eq(get_size(rel_surr), 1)), set_any_var(res_var, rand_elem(rel_surr)));
 
-    elif |args_surrs| == 1:
+    elif arity == 2:
       arg_surr = only(values(args_surrs));
       if target_idx == 0:
         code = (code | set_any_var(res_var, lookup(rel_surr, arg_surr)));
@@ -542,7 +545,7 @@ implicit program           : Program,
       ;
 
     else
-      assert |args_surrs| == 2;
+      assert arity == 3;
       it_var, var_gen = next_tern_rel_it_var(var_gen);
       code = (code |
         get_any_rel_iter(it_var, rel_surr, maybe_seq(args_surrs, 3)),

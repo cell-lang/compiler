@@ -251,15 +251,11 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
 
   [TypeCheckingError] pre_typecheck_rel_lookup(RelLookup expr, [EnvVar -> Type] env) {
-    args = expr.args;
-    if args == []:
-      return typecheck(expr.rel, type_set, env);
-    elif |args| == 1:
-      return pre_typecheck(expr.rel, only(values(args)), only(keys(args)), env);
-    else
-      assert |args| == 2;
-      return pre_typecheck(expr.rel, args, looked_up_arg_idx(expr), env);
-    ;
+    return match (expr.args)
+      (nothing)           = typecheck(expr.rel, type_set, env),
+      (just(a?), nothing) = pre_typecheck(expr.rel, a, 0, env),
+      (nothing, just(a?)) = pre_typecheck(expr.rel, a, 1, env),
+      (_, _, _)           = pre_typecheck(expr.rel, expr.args, env);
 
 
     [TypeCheckingError] pre_typecheck(Expr rel, Expr set_arg, Nat set_arg_idx, [EnvVar -> Type] env) {
@@ -272,19 +268,12 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     }
 
 
-    [TypeCheckingError] pre_typecheck(Expr rel, [Nat -> Expr] set_args, Nat lookup_up_arg_idx, [EnvVar -> Type] env) {
-      assert lookup_up_arg_idx :: <0..2>;
+    [TypeCheckingError] pre_typecheck(Expr rel, Maybe[Expr]+ args, [EnvVar -> Type] env) {
       errs = typecheck(rel, type_tern_rel, env);
       return errs if errs != [];
       rel_type = expr_type(rel, env);
-      return union([
-        ## BAD BAD BAD: WORKAROUND FOR BUG IN BINARY RELATION LOOKUP DISGUISED AS UNARY PSEUDO CALL
-        // typecheck(set_args(i), tern_rel_arg_supertype(rel_type, i), env)
-        { arg = set_args(i);
-          return typecheck(arg, tern_rel_arg_supertype(rel_type, i), env);
-        }
-        : i <- [0, 1, 2], i != lookup_up_arg_idx
-      ]);
+      exp_args_types = tern_rel_args_supertypes(rel_type);
+      return union([typecheck(value(a), exp_args_types(i), env) : a @ i <~ args, a != nothing]);
     }
   }
 
