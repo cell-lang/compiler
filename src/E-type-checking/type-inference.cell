@@ -88,12 +88,12 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
 
   Type relvar_lookup_expr_type(RelVarLookup expr, [EnvVar -> Type] env) {
-    args_types = [i -> expr_type(a, env) : i, a <- expr.args];
-    sgns = relvar_signatures(expr.rel_var);
-    target_idx = looked_up_arg_idx(expr);
-    ret_types = [s(target_idx) : s <- sgns, not (i, t <- args_types : are_ptype_disjoint(t, s(i)))];
-    assert ret_types != [];
-    return union_superset(ret_types);
+    args_types = (apply(a, expr_type($, env)) : a <- expr.args);
+    overlapping_sgns = [
+      s : s <- relvar_signatures(expr.rel_var), signature_overlaps_partial_signature(s, args_types)
+    ];
+    target_idx = only_unsafe((i : a @ i <- expr.args, a == nothing));
+    return union_superset(nonempty([s(target_idx) : s <- overlapping_sgns]));
   }
 
 

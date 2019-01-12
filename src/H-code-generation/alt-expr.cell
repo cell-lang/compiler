@@ -59,12 +59,12 @@ Expr* exprs_cluster(RelLookup expr, Nat offset) =
     rel_lookup($(0), [i -> $(i+1) : i <~ ord_idxs(expr.args)])
   );
 
-// relvar_lookup(rel_var: AnyRelVar, args: [Nat -> Expr]);
+// relvar_lookup(rel_var: AnyRelVar, args: Maybe[Expr]+);
 Expr* exprs_cluster(RelVarLookup expr, Nat offset) =
-  exprs_cluster(
-    values_ord_by_idx(expr.args),
+  maybe_exprs_cluster(
+    expr.args,
     offset,
-    relvar_lookup(expr.rel_var, [i -> $(i) : i <~ ord_idxs(expr.args)])
+    relvar_lookup(expr.rel_var, nonempty($))
   );
 
 // auto_method_call(var: AnyAutoVar?, name: MethodSymbol, args: Expr*);
@@ -465,7 +465,7 @@ Expr replace_nested(RecExpr expr, (Expr -> Expr) replace) =
   rel_lookup()        = rel_lookup(replace(expr.rel), [i -> replace(a) : i, a <- expr.args]),
   relvar_memb_test()  = relvar_memb_test(expr.rel_var, (apply(a, replace) : a <- expr.args)),
   rel_var_size_expr() = rel_var_size_expr(expr.rel_var, (apply(a, replace) : a <- expr.args)),
-  relvar_lookup()     = relvar_lookup(expr.rel_var, [i -> replace(a) : i, a <- expr.args]),
+  relvar_lookup()     = relvar_lookup(expr.rel_var, (apply(a, replace) : a <- expr.args)),
   and_expr()          = and_expr(replace(expr.left), replace(expr.right)),
   or_expr()           = or_expr(replace(expr.left), replace(expr.right)),
   not_expr(e?)        = not_expr(replace(e)),

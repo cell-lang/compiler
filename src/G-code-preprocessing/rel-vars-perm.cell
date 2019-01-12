@@ -117,10 +117,11 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context {
     }
 
 
-    // type RelVarLookup = relvar_lookup(rel_var: AnyRelVar, args: [Nat -> Expr]);
+    // type RelVarLookup = relvar_lookup(rel_var: AnyRelVar, args: Maybe[Expr]+);
     RelVarLookup rewrite(RelVarLookup expr) {
       perm = rel_var_args_perm(expr.rel_var);
-      args = [perm(i) -> perm_expr_rel_vars(e) : i, e <- expr.args];
+      args = permutate(expr.args, perm);
+      args = (apply(a, perm_expr_rel_vars) : a <- args);
       return relvar_lookup(expr.rel_var, args);
     }
   }

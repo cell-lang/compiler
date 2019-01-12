@@ -211,11 +211,12 @@ implicit program           : Program,
   }
 
 
-  // relvar_lookup(rel_var: AnyRelVar, args: [Nat -> Expr])
-  (Instr*, ObjExpr, VarGen) relvar_lookup_opt_eval_info(AnyRelVar rel_var, [Nat -> Expr] args, VarGen init_var_gen) {
+  // relvar_lookup(rel_var: AnyRelVar, args: Maybe[Expr]+)
+  (Instr*, ObjExpr, VarGen) relvar_lookup_opt_eval_info(AnyRelVar rel_var, Maybe[Expr]+ maybe_args, VarGen init_var_gen) {
     ## IMPLEMENT IMPLEMENT IMPLEMENT
-    fail if args == (); // rel_var(!!)
+    assert |maybe_args| > 1; // Excluding rel_var(!!)
 
+    args = [i -> value(a) : a @ i <~ maybe_args, a != nothing];
     target_idx = first_unused_idx(args);
     arity = nz_nat(|args| + 1);
     args_idxs = ord_idxs(args);

@@ -311,20 +311,18 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
 
   [TypeCheckingError] pre_typecheck_relvar_lookup(RelVarLookup expr, [EnvVar -> Type] env) {
-    errs = union([typecheck(a, type_any, env) : i, a <- expr.args]);
+    errs = union([typecheck(value(a), type_any, env) : a <~ expr.args, a != nothing]);
     return errs if errs != [];
-    args_types = [i -> expr_type(a, env) : i, a <- expr.args];
+    args_types = (apply(a, expr_type($, env)) : a <- expr.args);
     sgns = relvar_signatures(expr.rel_var);
-    target_idx = looked_up_arg_idx(expr);
     for s <- rand_sort(sgns):
-      return [] if not (i, t <- args_types : not is_subset(t, s(i)));
+      return [] if not (t @ i <~ args_types : t != nothing and not is_subset(value(t), s(i)));
     ;
     agg_sgns = aggregated_relation_signatures(sgns); ## BAD BAD BAD: AGGREGATED SIGNATURES SHOULD BE CACHED
     for s <- rand_sort(agg_sgns):
-      return [] if not (i, t <- args_types : not is_subset(t, s(i)));
+      return [] if not (t @ i <~ args_types : t != nothing and not is_subset(value(t), s(i)));
     ;
-    all_args_types = (if args_types(i, *) then just(args_types(i)) else nothing : i <= |args_types|);
-    return [no_matching_relvar(expr.rel_var, all_args_types, sgns)];
+    return [no_matching_relvar(expr.rel_var, args_types, sgns)];
   }
 
 
