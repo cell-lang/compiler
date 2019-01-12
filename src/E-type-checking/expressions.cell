@@ -278,7 +278,11 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
       return errs if errs != [];
       rel_type = expr_type(rel, env);
       return union([
-        typecheck(set_args(i), tern_rel_arg_supertype(rel_type, i), env)
+        ## BAD BAD BAD: WORKAROUND FOR BUG IN BINARY RELATION LOOKUP DISGUISED AS UNARY PSEUDO CALL
+        // typecheck(set_args(i), tern_rel_arg_supertype(rel_type, i), env)
+        { arg = set_args(i);
+          return typecheck(arg, tern_rel_arg_supertype(rel_type, i), env);
+        }
         : i <- [0, 1, 2], i != lookup_up_arg_idx
       ]);
     }
