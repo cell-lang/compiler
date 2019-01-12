@@ -32,8 +32,8 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
       foreign_keys = [rewrite(k, perms) : k <- rel_auto.foreign_keys];
 
       methods = [method(m.name, m.args, m.ret_type, perm_expr_rel_vars(m.expr)) : m <- rel_auto.methods];
-      updates  = undefined;
-      handlers = undefined;
+      updates  = [update(u.name, u.args, (perm_stmt_rel_vars(s) : s <- u.body)) : u <- rel_auto.updates];
+      handlers = [handler(h.type, (perm_stmt_rel_vars(s) : s <- h.body)) : h <- rel_auto.handlers];
     ;
 
     return data_base(
@@ -66,20 +66,31 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
   //////////////////////////////////////////////////////////////////////////////
 
   Automaton permutate_rel_vars(Automaton react_auto) {
+    ## IMPLEMENT IMPLEMENT IMPLEMENT
     return react_auto;
   }
 
   //////////////////////////////////////////////////////////////////////////////
 
   Procedure permutate_rel_vars(Procedure proc) {
-    return proc;
+    let context = proc:
+      body = (perm_stmt_rel_vars(s) : s <- proc.body);
+    ;
+    return procedure(
+      id:         proc.id,
+      args:       proc.args,
+      res_type:   proc.res_type,
+      auto_vars:  proc.auto_vars,
+      db_vars:    proc.db_vars,
+      body:       body
+    );
   }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-implicit program : Program, typedefs : [TypeName -> NeType], context : Database {
+implicit program : Program, typedefs : [TypeName -> NeType], context : Context {
   Expr perm_expr_rel_vars(Expr expr) {
     return match (expr)
       rel_var_size_expr()   |
