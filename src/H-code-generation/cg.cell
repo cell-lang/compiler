@@ -1,7 +1,6 @@
 type CompOptions  = options(
                       debug_mode:                 Bool,
                       ignore_assertions:          Bool,
-                      generate_accessors:         Bool,
                       max_opt_fields_in_opt_rec:  Nat
                     );
 
@@ -341,12 +340,10 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
   [NeType] rel_auto_runtime_checked_types(Database db) {
     exprs_types = retrieve_from_nested_exprs(db, retrieve_types);
     method_args_types = [t : m <- db.methods, t, unused_var <~ m.args];
-    accessors_args_types = [t : m <- generated_accessors(database=db), t, unused_var <~ m.args];
     msg_type = [ne_union_type([h.type : h <- db.handlers]) if db.handlers != []];
     memb_vars_types = [info.type : unused_var, info <- db.state_vars];
     rel_vars_types = [t : unused_var, info <- db.rel_vars, s <- info.signatures, t <~ s];
-    return union([exprs_types, method_args_types, accessors_args_types, msg_type,
-                  memb_vars_types, rel_vars_types]);
+    return union([exprs_types, method_args_types, msg_type, memb_vars_types, rel_vars_types]);
   }
 
 
