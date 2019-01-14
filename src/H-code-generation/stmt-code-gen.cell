@@ -205,9 +205,6 @@ implicit program           : Program,
 
 
   StmtCompInfo insert_stmt_opt_code(RelVar rel_var, ObjExpr+ args_aliases, Type+ args_types, VarGen init_var_gen) {
-    // args_perm = relvar_cols_perm(rel_var);
-    // table_args = (log_args_aliases(i) : i <- args_perm);
-
     arity = |args_aliases|;
     surr_vars, var_gen = next_int32_vars(init_var_gen, arity);
     fail if surr_vars == ();
@@ -257,7 +254,7 @@ implicit program           : Program,
     args_types = (expr_type(a, env) : a <- args);
     info = insert_stmt_opt_code(rel_var, nonempty(args_aliases), args_types, var_gen);
     code, surrs, break_surrs, var_gen = info;
-    assert surrs == just(surrogates) and break_surrs == [] and var_gen == init_var_gen;
+    assert surrs == just(surrogates) and break_surrs == [];
 
     for k <- isort(relvar_keys(rel_var)):
       delete_args = (if k(i) then just(a) else nothing : a @ i <- args_aliases);
@@ -265,7 +262,7 @@ implicit program           : Program,
         delete_code, surrs, break_surrs, var_gen =
           delete_stmt_opt_code(rel_var, nonempty(delete_args), (just(t) : t <- args_types), var_gen);
       ;
-      assert surrs == just(surrogates) and break_surrs == [] and var_gen == init_var_gen;
+      assert surrs == just(surrogates) and break_surrs == [];
       code = code & delete_code;
     ;
 
