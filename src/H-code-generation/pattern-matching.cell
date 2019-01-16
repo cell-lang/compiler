@@ -208,12 +208,10 @@ implicit typedefs : [TypeName -> NeType] {
 
     Instr* opt_code(PtrnMatchType ptrn_match_type, ObjExpr expr, Type type, (Pattern, Instr+, [StdVar -> AnyLocVar])+ cases) {
       restricted_type = intersection_superset(type, ptrn_match_type);
-      code = match (ptrn_match_type)
+      return match (ptrn_match_type)
         symbols   = symb_ptrns_opt_code(expr, restricted_type, cases),
         tag_objs  = tag_objs_ptrns_opt_code(expr, restricted_type, cases),
         _         = default_opt_code(ptrn_match_type, expr, restricted_type, cases);
-      is_complete = not may_fall_through(type, (p : p, unused_var_1, unused_var_2 <- cases));
-      return (code | terminate(is_complete));
     }
 
 
