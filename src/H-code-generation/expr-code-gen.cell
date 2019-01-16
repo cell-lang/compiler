@@ -1039,7 +1039,7 @@ implicit program           : Program,
       type = types(expr_id);
       return ((terminate), :invalid_var, init_var_gen) if type == empty_type;
       repr = opt_repr(type);
-      res_var, ret_var_gen = next_var(repr, var_gen);
+      res_var, var_gen = next_var(repr, var_gen);
       code = (code | set_any_var(res_var, lookup(target_surr, arg_surr)));
       expr_surr = obj_expr(res_var);
 
@@ -1048,7 +1048,6 @@ implicit program           : Program,
       expr_surr, var_gen = next_obj_var(var_gen);
       ## HERE WE COULD CHECK IF THE TARGET OBJECT NEEDS TO BE OPTIMIZED
       code = (code | call_proc(expr_surr, :any_tag_obj_conv, (target_surr, arg_surr), ()));
-      var_gen = init_var_gen;
     ;
 
     return (code, expr_surr, var_gen);
