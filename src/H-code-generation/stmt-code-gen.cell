@@ -138,13 +138,43 @@ implicit program           : Program,
 
 
   StmtCompInfo delete_stmt_opt_code(RelVar rel_var, Maybe[Expr]+ args, [EnvVar -> Type] env, VarGen init_var_gen) {
+    args_types = (apply(a, expr_type($, env)) : a <- args);
     args_eval_code, args_aliases, var_gen = sparse_opt_eval_code(args, env, init_var_gen);
-    info = delete_stmt_opt_code(rel_var, nonempty(args_aliases), (apply(a, expr_type($, env)) : a <- args), var_gen);
+    info = delete_stmt_opt_code(rel_var, nonempty(args_aliases), args_types, var_gen);
     delete_code, surrs, break_surrs, var_gen = info;
     assert surrs == just(surrogates) and break_surrs == [] and var_gen == init_var_gen;
-    return (args_eval_code & delete_code, just(surrogates), [], init_var_gen);
+    code = args_eval_code & delete_code;
+
+    // // Adding cascade deletes
+    // rel_auto = cast_database(context);
+    // attrs = [v : v <- rel_auto.attr_map(rel_var, ?)];
+    // attr_args_aliases = (args_aliases | nothing);
+    // for s <- isort(rel_auto.rel_vars(rel_var).signatures):
+    //   attr_base_args_types = (if t != nothing then t else just(s(i)) : t @ i <- args_types);
+    //   attr_args_types = (attr_base_args_types | nothing);
+    //   for a <- attrs:
+    //     info = delete_stmt_opt_code(a, attr_args_aliases, attr_args_types, X_var_gen);
+    //   ;
+    // ;
+
+    return (code, just(surrogates), [], init_var_gen);
   }
 
+
+  // // type DeleteStmt = delete_stmt(var: RelVar, args: Maybe[Expr]+);
+  // Statement+ insert_cascade_deletes(DeleteStmt stmt, [EnvVar -> Type] env) {
+  //   rel_auto = cast_database(context);
+  //   attrs = [v : v <- rel_auto.attr_map(stmt.var, ?)];
+  //   attr_args = (stmt.args | nothing);
+  //   args_types = (apply(a, expr_type($, env)) : a <- attr_args);
+  //   stmts = (stmt);
+  //   for a <- isort(attrs):
+  //     if any_signature_overlaps_partial_signature(rel_auto.rel_vars(a).signatures, args_types):
+  //       stmts = (stmts | delete_stmt(a, attr_args));
+  //     ;
+  //   ;
+  //   return stmts;
+  // }
 
   StmtCompInfo delete_stmt_opt_code(RelVar rel_var, Maybe[ObjExpr]+ args_aliases, Maybe[Type]+ args_types, VarGen init_var_gen) {
     args_surrs : Maybe[Int32Var]*;
