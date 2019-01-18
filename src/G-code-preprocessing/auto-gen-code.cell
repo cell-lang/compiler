@@ -41,62 +41,65 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
       state_var_accessor(v) : v, unused_var <- database.state_vars, not methods(bare_id(v), 0)
     ];
 
+    rel_auto_id = database.name;
+    gen_rel_vars = [logical_rel_var(v) : v, unused_var <- database.rel_vars];
+
     unary_rel_accessors = [
       unary_rel_accessor(v)
-      : v, unused_var <- database.rel_vars,
-        arity(database.name, v) == 1,
+      : v <- gen_rel_vars,
+        arity(rel_auto_id, v) == 1,
         not methods(bare_id(v), 0)
     ];
 
     unary_rel_memb_tests = [
       unary_rel_memb_test(v)
-      : v, unused_var <- database.rel_vars,
-        arity(database.name, v) == 1,
+      : v <- gen_rel_vars,
+        arity(rel_auto_id, v) == 1,
         not methods(bare_id(v), 1)
     ];
 
     bin_rel_accessors = [
       bin_rel_accessor(v)
-      : v, unused_var <- database.rel_vars,
-        arity(database.name, v) == 2,
+      : v <- gen_rel_vars,
+        arity(rel_auto_id, v) == 2,
         not methods(bare_id(v), 0)
     ];
 
     bin_rel_indexed_accessors = [
       bin_rel_indexed_accessor(v)
-      : v, info <- database.rel_vars,
-        arity(database.name, v) == 2,
-        info.keys([0]),
+      : v <- gen_rel_vars,
+        arity(rel_auto_id, v) == 2,
+        in([0], rel_var_keys(rel_auto_id, v)),
         not methods(bare_id(v), 1)
     ];
 
     bin_rel_memb_tests = [
       bin_rel_memb_test(v)
-      : v, unused_var <- database.rel_vars,
-        arity(database.name, v) == 2,
+      : v <- gen_rel_vars,
+        arity(rel_auto_id, v) == 2,
         ## info.keys == []
         not methods(bare_id(v), 2)
     ];
 
     tern_rel_accessors = [
       tern_rel_accessor(v)
-      : v, unused_var <- database.rel_vars,
-        arity(database.name, v) == 3,
+      : v <- gen_rel_vars,
+        arity(rel_auto_id, v) == 3,
         not methods(bare_id(v), 0)
     ];
 
     tern_rel_indexed_accessors = [
       tern_rel_indexed_accessor(v)
-      : v, info <- database.rel_vars,
-        arity(database.name, v) == 3,
-        info.keys([0, 1]),
+      : v <- gen_rel_vars,
+        arity(rel_auto_id, v) == 3,
+        in([0, 1], rel_var_keys(rel_auto_id, v)),
         not methods(bare_id(v), 2)
     ];
 
     tern_rel_memb_tests = [
       tern_rel_memb_test(v)
-      : v, unused_var <- database.rel_vars,
-        arity(database.name, v) == 3,
+      : v <- gen_rel_vars,
+        arity(rel_auto_id, v) == 3,
         ## info.keys == []
         not methods(bare_id(v), 3)
     ];
@@ -131,7 +134,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
       method(
         method_symbol(bare_id(rel_var)),
         (),
-        type_set(ne_union_superset([only_unsafe(s) : s <- database.rel_vars(rel_var).signatures])),
+        type_set(ne_union_superset([only_unsafe(s) : s <- rel_var_signatures(database, rel_var)])),
         set_comp(var(:x), relvar_clause((var(:x)), rel_var, (nothing)))
       );
 
@@ -139,7 +142,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
     Method unary_rel_memb_test(RelVar rel_var) =
       method(
         method_symbol(bare_id(rel_var)),
-        (( ne_union_superset([only_unsafe(s) : s <- database.rel_vars(rel_var).signatures]),
+        (( ne_union_superset([only_unsafe(s) : s <- rel_var_signatures(database, rel_var)]),
            just(var(:id))
         )),
         type_bool,
@@ -153,8 +156,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
         (),
         type_set(
           ne_tuple_type((
-            ne_union_superset([s(0) : s <- database.rel_vars(rel_var).signatures]),
-            ne_union_superset([s(1) : s <- database.rel_vars(rel_var).signatures])
+            ne_union_superset([s(0) : s <- rel_var_signatures(database, rel_var)]),
+            ne_union_superset([s(1) : s <- rel_var_signatures(database, rel_var)])
           ))
         ),
         set_comp(
@@ -167,10 +170,10 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
     Method bin_rel_indexed_accessor(RelVar rel_var) =
       method(
         method_symbol(bare_id(rel_var)),
-        (( ne_union_superset([s(0) : s <- database.rel_vars(rel_var).signatures]),
+        (( ne_union_superset([s(0) : s <- rel_var_signatures(database, rel_var)]),
            just(var(:x))
         )),
-        ne_union_superset([s(1) : s <- database.rel_vars(rel_var).signatures]),
+        ne_union_superset([s(1) : s <- rel_var_signatures(database, rel_var)]),
         relvar_lookup(rel_var, (just(var(:x)), nothing))
       );
 
@@ -178,8 +181,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
     Method bin_rel_memb_test(RelVar rel_var) =
       method(
         method_symbol(bare_id(rel_var)),
-        ( (ne_union_superset([s(0) : s <- database.rel_vars(rel_var).signatures]), just(var(:x))),
-          (ne_union_superset([s(1) : s <- database.rel_vars(rel_var).signatures]), just(var(:y)))
+        ( (ne_union_superset([s(0) : s <- rel_var_signatures(database, rel_var)]), just(var(:x))),
+          (ne_union_superset([s(1) : s <- rel_var_signatures(database, rel_var)]), just(var(:y)))
         ),
         type_bool,
         relvar_memb_test(rel_var, (just(var(:x)), just(var(:y))))
@@ -192,9 +195,9 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
         (),
         type_set(
           ne_tuple_type((
-            ne_union_superset([s(0) : s <- database.rel_vars(rel_var).signatures]),
-            ne_union_superset([s(1) : s <- database.rel_vars(rel_var).signatures]),
-            ne_union_superset([s(2) : s <- database.rel_vars(rel_var).signatures])
+            ne_union_superset([s(0) : s <- rel_var_signatures(database, rel_var)]),
+            ne_union_superset([s(1) : s <- rel_var_signatures(database, rel_var)]),
+            ne_union_superset([s(2) : s <- rel_var_signatures(database, rel_var)])
           ))
         ),
         set_comp(
@@ -207,10 +210,10 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
     Method tern_rel_indexed_accessor(RelVar rel_var) =
       method(
         method_symbol(bare_id(rel_var)),
-        ( (ne_union_superset([s(0) : s <- database.rel_vars(rel_var).signatures]), just(var(:x))),
-          (ne_union_superset([s(1) : s <- database.rel_vars(rel_var).signatures]), just(var(:y)))
+        ( (ne_union_superset([s(0) : s <- rel_var_signatures(database, rel_var)]), just(var(:x))),
+          (ne_union_superset([s(1) : s <- rel_var_signatures(database, rel_var)]), just(var(:y)))
         ),
-        ne_union_superset([s(2) : s <- database.rel_vars(rel_var).signatures]),
+        ne_union_superset([s(2) : s <- rel_var_signatures(database, rel_var)]),
         relvar_lookup(rel_var, (just(var(:x)), just(var(:y)), nothing))
       );
 
@@ -218,9 +221,9 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
     Method tern_rel_memb_test(RelVar rel_var) =
       method(
         method_symbol(bare_id(rel_var)),
-        ( (ne_union_superset([s(0) : s <- database.rel_vars(rel_var).signatures]), just(var(:x))),
-          (ne_union_superset([s(1) : s <- database.rel_vars(rel_var).signatures]), just(var(:y))),
-          (ne_union_superset([s(2) : s <- database.rel_vars(rel_var).signatures]), just(var(:z)))
+        ( (ne_union_superset([s(0) : s <- rel_var_signatures(database, rel_var)]), just(var(:x))),
+          (ne_union_superset([s(1) : s <- rel_var_signatures(database, rel_var)]), just(var(:y))),
+          (ne_union_superset([s(2) : s <- rel_var_signatures(database, rel_var)]), just(var(:z)))
         ),
         type_bool,
         relvar_memb_test(rel_var, (just(var(:x)), just(var(:y)), just(var(:z))))

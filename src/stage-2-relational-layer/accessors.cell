@@ -8,43 +8,40 @@ implicit program : Program {
 
 
 implicit program : Program, typedefs : [TypeName -> NeType] {
-  NzNat arity(DBSymbol rel_auto_id, RelVar rel_var) {
-    signatures = rel_autos_by_id(rel_auto_id, !!).rel_vars(rel_var).signatures;
-    return only([|s| : s <- signatures]); ## BAD BAD BAD: THIS THING IS PRETTY UGLY AND UNSAFE...
-  }
+  NeType+ rel_var_signature(DBSymbol rel_auto_id, PhysRelVar rel_var) =
+    rel_auto_by_id(rel_auto_id).rel_vars(rel_var).signature;
 
 
-  Bool symmetric(DBSymbol rel_auto_id, RelVar rel_var) =
-    rel_autos_by_id(rel_auto_id, !!).rel_vars(rel_var).symmetric;
+  NzNat arity(DBSymbol rel_auto_id, PhysRelVar rel_var) =
+    rel_var_arity(rel_auto_by_id(rel_auto_id), logical_rel_var(rel_var));
+
+
+  Bool symmetric(DBSymbol rel_auto_id, PhysRelVar rel_var) =
+    rel_var_is_symmetric(rel_auto_by_id(rel_auto_id), logical_rel_var(rel_var));
+
 
   [[+Nat]] rel_var_keys(DBSymbol rel_auto_id, RelVar rel_var) =
-    rel_auto_by_id(rel_auto_id).rel_vars(rel_var).keys;
+    rel_var_keys(rel_auto_by_id(rel_auto_id), rel_var);
+
+
+  NeType+ table_signature(DBSymbol rel_auto_id, TableVar table_var) =
+    rel_var_signature(rel_auto_id, original_rel_var(table_var));
 
 
   [[+Nat]] table_var_keys(DBSymbol rel_auto_id, TableVar table_var) =
-    rel_var_keys(rel_auto_id, logical_rel_var(table_var));
-
-  // { rel_var = logical_rel_var(table_var);
-  //   log_keys = rel_var_keys(rel_auto_id, rel_var);
-  //   perm = rel_var_cols_perm(rel_auto_id, rel_var);
-  //   return permutate_keys(log_keys, perm);
-  // }
+    rel_var_keys(rel_auto_id, logical_rel_var(original_rel_var(table_var)));
 
 
-  ValueStoreId table_col_store_id(DBSymbol rel_auto_id, TableVar rel_var, Nat col_idx) =
-    tables_by_db(rel_auto_id, !!)(rel_var).value_stores(col_idx);
+  ValueStoreId table_col_store_id(DBSymbol rel_auto_id, TableVar var, Nat col_idx) =
+    tables_by_db(rel_auto_id, !!)(var).value_stores(col_idx);
 
 
-  // The arguments must be in the logical order, not in the physical one
-  [+TableVar] overlapping_physical_tables(DBSymbol rel_auto_id, RelVar var, Maybe[Type]+ args_types) {
-    tables = physical_tables(rel_auto_id, unqualified(var));
-    // phys_args_types = logical_to_physical_order(rel_auto_id, var, log_args_types);
-    overlapping_tables = [
-      t : t <- tables,
-          sgns = table_signatures(rel_auto_id, t),
-          any_signature_overlaps_partial_signature(sgns, args_types)
+  [TableVar] overlapping_tables(DBSymbol rel_auto_id, RelVar rel_var, Maybe[NeType]+ args_types) {
+    rel_auto = rel_auto_by_id(rel_auto_id);
+    rel_vars = physical_rel_vars(rel_auto, rel_var);
+    return [
+      table_var(v) : v <- rel_vars, overlap(rel_auto.rel_vars(v).signature, args_types)
     ];
-    return nonempty(overlapping_tables);
   }
 
   //////////////////////////////////////////////////////////////////////////////
@@ -93,8 +90,9 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
 
 
   [DBSymbol -> [RelVar -> [NeType+]]] aggregated_signatures_by_rel_var = [
-    db.name -> [v -> aggregated_relation_signatures(info.signatures) : v, info <- db.rel_vars]
-    : db <- program.data_bases
+    db.name -> [
+      v -> aggregated_relation_signatures(rel_var_signatures(db, v)) : v <- logical_rel_vars(db)
+    ] : db <- program.data_bases
   ];
 
 

@@ -135,9 +135,10 @@ implicit program           : Program,
 
     surr_args = (apply(mi, surr_vars($)) : mi <- filtered_idxs);
 
-    // Selecting the candidate tables among those the relation is partitioned into
-    log_args_types = (apply(a, subexpr_type) : a <- args);
-    candidate_tables = overlapping_physical_tables(rel_var, log_args_types);
+    // Selecting the candidate tables among those the logical relation is partitioned into
+    args_types = (apply(a, subexpr_type) : a <- args);
+    return ((), :invalid_var, init_var_gen) if not args_types :: Maybe[NeType]+;
+    candidate_tables = overlapping_tables(rel_var, args_types);
 
     symmetric = symmetric(rel_var);
 
@@ -177,9 +178,10 @@ implicit program           : Program,
 
     symmetric = symmetric(rel_var);
 
-    // Selecting the candidate tables among those the relation is partitioned into
-    log_args_types = (apply(a, subexpr_type) : a <- args);
-    candidate_tables = overlapping_physical_tables(rel_var, log_args_types);
+    // Selecting the candidate tables among those the logical relation is partitioned into
+    args_types = (apply(a, subexpr_type) : a <- args);
+    return ((), :invalid_var, init_var_gen) if not args_types :: Maybe[NeType]+;
+    candidate_tables = overlapping_tables(rel_var, args_types);
 
     code = (eval_code | set_bvar(res_var, false));
     for tv @ i <- isort(candidate_tables):
@@ -235,9 +237,10 @@ implicit program           : Program,
     surr_vars_map = [i -> surr_vars(j) : i @ j <~ args_idxs];
     it_var, var_gen = next_table_it_var(var_gen, arity, symmetric(rel_var));
 
-    // Selecting the candidate tables among those the relation is partitioned into
+    // Selecting the candidate tables among those the logical relation is partitioned into
     args_types = [i -> subexpr_type(e) : i, e <- args];
-    candidate_tables = overlapping_physical_tables(rel_var, maybe_seq(args_types, arity));
+    return ((), :invalid_var, init_var_gen) if not args_types :: [Nat -> NeType];
+    candidate_tables = overlapping_tables(rel_var, maybe_seq(args_types, arity));
 
     // If all the lookups fail, then we throw an exception
     code = (terminate);

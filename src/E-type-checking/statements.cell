@@ -39,7 +39,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
       set_memb_var_stmt() = typecheck_set_memb_var_stmt(stmt.var, stmt.value, env),
       delete_stmt()       = typecheck_delete_stmt(stmt.var, stmt.args, env),
       insert_stmt()       = typecheck_insert_stmt(stmt.var, stmt.args, env),
-      update_stmt()       = typecheck_standalone_insert_stmt(stmt.var, stmt.args, env),
+      update_stmt()       = typecheck_insert_stmt(stmt.var, stmt.args, env),
 
       return_stmt         = [],
       proc_call_stmt()    = typecheck_proc_call_stmt(
@@ -241,30 +241,25 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     errs = seq_union((typecheck(value(a), type_any, env) : a <- args, a != nothing));
     return errs if errs != [];
     args_types = (apply(a, expr_type($, env)) : a <- args);
-    sgns = cast_database(context).rel_vars[var].signatures;
+    sgns = rel_var_signatures(cast_database(context), var);
     for s <- rand_sort(sgns):
-      return [] if all((at == nothing or not are_ptype_disjoint(value(at), ft) : at, ft <- zip(args_types, s)));
+      return [] if not (t @ i <~ args_types : t != nothing and are_ptype_disjoint(value(t), s(i)));
     ;
     return [no_matching_relvar(var, args_types, sgns)];
   }
 
 
   [TypeCheckingError] typecheck_insert_stmt(RelVar var, Expr+ args, [EnvVar -> Type] env) {
-    return typecheck_standalone_insert_stmt(var, args, env);
-  }
-
-
-  [TypeCheckingError] typecheck_standalone_insert_stmt(RelVar var, Expr+ args, [EnvVar -> Type] env) {
     errs = seq_union((typecheck(a, type_any, env) : a <- args));
     return errs if errs != [];
     args_types = (expr_type(a, env) : a <- args);
     database = cast_database(context);
-    sgns = database.rel_vars[var].signatures;
+    sgns = rel_var_signatures(database, var);
     agg_sgns = relvar_aggregated_signatures(database.name, var);
     for s <- rand_sort(sgns) & rand_sort(agg_sgns):
-      return [] if all((is_subset(at, ft) : at, ft <- zip(args_types, s)));
+      return [] if not (t @ i <~ args_types : not is_subset(t, s(i)));
     ;
-    return [no_matching_relvar(var, (just(a) : a <- args_types), sgns)];
+    return [no_matching_relvar(var, (just(a) : a <- args_types), nonempty(sgns))];
   }
 
   //////////////////////////////////////////////////////////////////////////////

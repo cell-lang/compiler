@@ -67,8 +67,9 @@ implicit program           : Program,
     attr_args = (stmt.args | nothing);
     args_types = (apply(a, expr_type($, env)) : a <- attr_args);
     stmts = (stmt);
+    return stmts if not args_types :: Maybe[NeType]+;
     for a <- isort(attrs):
-      if any_signature_overlaps_partial_signature(rel_auto.rel_vars(a).signatures, args_types):
+      if overlap(rel_auto.rel_vars(a).signature, args_types):
         stmts = (stmts | delete_stmt(a, attr_args));
       ;
     ;
@@ -179,6 +180,8 @@ implicit program           : Program,
   StmtCompInfo delete_stmt_opt_code(RelVar rel_var, Maybe[ObjExpr]+ args_aliases, Maybe[Type]+ args_types, VarGen init_var_gen) {
     args_surrs : Maybe[Int32Var]*;
 
+    return ((terminate(true)), just(surrogates), [], init_var_gen) if not args_types :: Maybe[NeType]+;
+
     var_gen = init_var_gen;
 
     args_surrs = ();
@@ -191,11 +194,11 @@ implicit program           : Program,
       ;
     ;
 
-    // Selecting the candidate tables among those the relation is partitioned into
-    candidate_tables = overlapping_physical_tables(rel_var, args_types);
+    // Selecting the candidate tables among those the logical relation is partitioned into
+    candidate_tables = overlapping_tables(rel_var, args_types);
 
     code = join(({
-      table_code = (queue_deletes(tv, nonempty(args_surrs), symmetric(logical_rel_var(tv))));
+      table_code = (queue_deletes(tv, nonempty(args_surrs), symmetric(original_rel_var(tv))));
       for a @ ri <- reverse(args_aliases):
         if a != nothing:
           i = nat(|args_aliases| - ri - 1);
@@ -235,13 +238,19 @@ implicit program           : Program,
 
 
   StmtCompInfo insert_stmt_opt_code(RelVar rel_var, ObjExpr+ args_aliases, Type+ args_types, VarGen init_var_gen) {
+    return ((terminate(true)), just(surrogates), [], init_var_gen) if not args_types :: NeType+;
+
     arity = |args_aliases|;
     surr_vars, var_gen = next_int32_vars(init_var_gen, arity);
     fail if surr_vars == ();
     is_new_val_vars, var_gen = next_bool_vars(var_gen, arity);
 
-    // Selecting the candidate tables among those the relation is partitioned into
-    candidate_tables = overlapping_physical_tables(rel_var, (just(t) : t <- args_types));
+    // Selecting the candidate tables among those the logical relation is partitioned into
+    candidate_tables = overlapping_tables(rel_var, (just(t) : t <- args_types));
+    if candidate_tables == []:
+      assert (t <~ args_types : t == empty_type);
+      return ((terminate(true)), just(surrogates), [], init_var_gen);
+    ;
 
     if |candidate_tables| == 1:
       // Easy case: there's only one table
@@ -260,11 +269,11 @@ implicit program           : Program,
     ;
 
     // Choosing the dispatch arguments
-    signatures = [table_signatures(this_db_symbol, tv) : tv <- candidate_tables];
+    signatures = [table_signature(tv) : tv <- candidate_tables];
     disp_args = optimal_dispatch_args(signatures, typedefs);
 
     cases = [{
-      types = table_signatures(this_db_symbol, tv);
+      types = table_signature(tv);
       code = (
         lookup_or_queue_insert_value(surr_vars(i), table_col_store_id(tv, i), e)
         : e @ i <- args_aliases
@@ -273,7 +282,7 @@ implicit program           : Program,
       return (types, code);
     } : tv <- candidate_tables];
 
-    code = (execute_block(polymorphic_dynamic_dispatch_code(args_aliases, cases)));
+    code = (execute_block(dynamic_dispatch_code(args_aliases, cases)));
 
     return (code, just(surrogates), [], init_var_gen);
   }
@@ -878,9 +887,10 @@ implicit program           : Program,
 
     symmetric = symmetric(iter.rel_var);
 
-    // Selecting the candidate tables among those the relation is partitioned into
-    log_args_types = (apply(a, expr_type($, env)) : a <- iter.args);
-    candidate_tables = overlapping_physical_tables(iter.rel_var, log_args_types);
+    // Selecting the candidate tables among those the logical relation is partitioned into
+    args_types = (apply(a, expr_type($, env)) : a <- iter.args);
+    return ((terminate(true)), just(surrogates), [], init_var_gen) if not args_types :: Maybe[NeType]+;
+    candidate_tables = overlapping_tables(iter.rel_var, args_types);
 
     // Iterating through all candidate tables
     code = ();

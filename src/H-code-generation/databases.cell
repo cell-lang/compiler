@@ -70,26 +70,23 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
     values_var, var_gen = next_vector_var(var_gen, count);
 
     state_vars = rand_sort(keys(database.state_vars));
-    rel_vars = rand_sort(keys(database.rel_vars));
-    nested_dbs = rand_sort(keys(database.nested_dbs));
-    all_vars = state_vars & rel_vars & nested_dbs;
-
-    tables = tables_info;
+    gen_rel_vars = rand_sort([logical_rel_var(v) : v, unused_var <- database.rel_vars]);
+    nested_autos = rand_sort(keys(database.nested_dbs));
+    all_vars = state_vars & gen_rel_vars & nested_autos;
 
     let context = database:
       code = join(({
-        set_label_instr = set_var(evar(keys_var.id, i), object(bare_id(v)));
+        set_label_instr = set_var(evar(keys_var.id, i), object(bare_id(var)));
         value_var = evar(values_var.id, i);
-        set_value_instr = match (v)
-          memb_var()      = set_var(value_var, v),
-          rel_var()       = copy_rel(
-                              value_var,
-                              nonempty_map(select_by_key(tables_info, physical_tables(database.name, v))),
-                              rel_vars_args_perms(v)
-                            ),
-          nested_db_var() = copy_state(value_var, v, var_type(v));
+        set_value_instr = match (var)
+          memb_var()      = set_var(value_var, var),
+          nested_db_var() = copy_state(value_var, var, var_type(var)),
+          rel_var()       = { table_vars = [table_var(v) : v <- physical_rel_vars(database, var)];
+                              tables = nonempty_map(select_by_key(tables_info, table_vars));
+                              return copy_rel(value_var, tables, rel_vars_args_perms(var));
+                            };
         return (set_label_instr, set_value_instr);
-      } : v @ i <- all_vars));
+      } : var @ i <- all_vars));
     ;
 
     return (code | mk_map(res_var, keys_var, values_var, count), ret_val(res_var));
@@ -126,7 +123,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
     ;
 
     // Mutable relation variables
-    ord_rel_vars = sort_by_key(keys(database.rel_vars), arity(rel_auto_id, $));
+    ord_rel_vars = sort_by_key(logical_rel_vars(database), arity(rel_auto_id, $));
     for v <- ord_rel_vars:
       arity = arity(rel_auto_id, v);
       args_perm = rel_vars_args_perms(v);
@@ -134,10 +131,10 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
       it_var = it_vars[arity]; // Need to use [] instead of () because of the typechecker...
 
       // Physical tables the logical relation is partitioned into
-      phys_tables = physical_tables(rel_auto_id, v);
+      tables = [table_var(i) : i <- physical_rel_vars(database, v)];
 
-      if |phys_tables| == 1:
-        table_var = only(phys_tables);
+      if |tables| == 1:
+        table_var = only(tables);
         stores_ids = (table_col_store_id(rel_auto_id, table_var, i) : i < arity);
         core_loop_code = (
         ) & (
@@ -148,7 +145,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 
       else
         // Choosing the dispatch arguments
-        signatures = [table_signatures(rel_auto_id, tv) : tv <- phys_tables];
+        signatures = [table_signature(rel_auto_id, tv) : tv <- tables];
         disp_args_idxs = optimal_dispatch_args(signatures, typedefs);
         disp_args = (args_vars(i) : i <- disp_args_idxs);
 
@@ -158,16 +155,16 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
             (immediate_insert_or_add_ref(surr_vars(i), stores_ids(i), args_vars(i)) : i < arity) |
             immediate_insert_tuple(tv, nonempty(take(surr_vars, arity)))
           );
-          types = table_signatures(rel_auto_id, tv);
-          disp_types = [(ts(i) : i <- disp_args_idxs) : ts <- types];
+          types = table_signature(rel_auto_id, tv);
+          disp_types = (types(i) : i <- disp_args_idxs);
           return (disp_types, case_code);
-        } : tv <- phys_tables];
+        } : tv <- tables];
 
-        block_body = polymorphic_dynamic_dispatch_code(disp_args, cases);
+        block_body = dynamic_dispatch_code(disp_args, cases);
         core_loop_code = (execute_block(block_body));
       ;
 
-      signatures = database.rel_vars(v).signatures;
+      signatures = rel_var_signatures(database, v);
 
       arg_type_is_unique = ({
         types = [s(i) : s <- signatures];
@@ -232,11 +229,11 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
     rel_auto_id = database.name;
 
     phys_keys_by_table = group_by(physical_foreign_keys, $.origin);
-    tables = sort_by_key(keys(phys_keys_by_table), arity(rel_auto_id, logical_rel_var($)));
+    tables = sort_by_key(keys(phys_keys_by_table), arity(rel_auto_id, original_rel_var($)));
 
     code = ();
     for tv <- tables:
-      log_rel_var = logical_rel_var(tv);
+      log_rel_var = original_rel_var(tv);
       arity = arity(rel_auto_id, log_rel_var);
       src_is_sym = symmetric(rel_auto_id, log_rel_var);
 
@@ -446,80 +443,15 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 ////////////////////////////////////////////////////////////////////////////////
 
 implicit program : Program, typedefs : [TypeName -> NeType], database : Database {
-  [BlockForeignKey] physical_foreign_keys {
-    tables : [TableVar];
-    table_vars_by_rel_var : [RelVar -> [+TableVar]];
-
-    rel_auto_id = database.name;
-
-    tables = physical_tables(rel_auto_id);
-    table_vars_by_rel_var = group_by(tables, logical_rel_var);
-
-    physical_keys = ();
-
-    // Iterating through all foreign keys
-    for k <- isort(database.foreign_keys):
-
-      // Iterating through the tables the source relation is partitioned in
-      for sv <- isort(table_vars_by_rel_var(k.source_rel_var)):
-
-        // Signatures of the current source table
-        src_table_sgns = table_signatures(rel_auto_id, sv);
-
-        // Checking to see if the current table signature overlaps
-        // with the source signature of the foreign key
-        if (s <- src_table_sgns : signature_overlaps_partial_signature(s, k.source_types)):
-
-          // Making sure that source signature of the foreing key applies to the entire table
-          ## THIS HAS TO BE CHECKED DURING WELL-FORMEDNESS CHECKING, EITHER IN STAGE ONE OR TWO
-          assert not (s <- src_table_sgns : not is_subset_signature(s, k.source_types));
-
-          // Target tables that are reached by the instantiation of the foreign
-          // key on this particular physical table
-          target_tables = [];
-
-          // Iterating through the polymorphic signatures of the source table
-          for src_sgn <- isort(src_table_sgns):
-
-            // Target signature for this particular source table signature
-            args_types = [v -> src_sgn(i) : v @ i <~ k.source_args, v != nothing];
-            target_key_sgn = (if v != nothing then just(args_types(v)) else nothing : v <- k.target_args);
-
-            // Iterating through the tables the target relation is partitioned in
-            for tv <- isort(table_vars_by_rel_var(k.target_rel_var)):
-
-              // Polymorphic signatures of the target table
-              target_table_signatures = table_signatures(rel_auto_id, tv);
-
-              // If any of the polymorphic signatures of the target table overlaps with the
-              // current target signature, then the table is a target of the physical key
-              if (s <- target_table_signatures : overlap(s, target_key_sgn)):
-                target_tables = target_tables & [tv];
-              ;
-            ;
-          ;
-
-          // Just double checking that there's only one possible target table for this key
-          assert |target_tables| == 1;
-
-          // Creating the physical foreign key
-          key_type = foreign_key_type(k);
-          physical_key = foreign_key(sv, only(target_tables), key_type);
-          physical_keys = (physical_keys | physical_key);
-        ;
-      ;
-    ;
-
-    return set(physical_keys);
-  }
+  [BlockForeignKey] physical_foreign_keys = [
+    foreign_key(table_var(k.source_rel_var), table_var(k.target_rel_var), foreign_key_type(k))
+    : k <- database.foreign_keys
+  ];
 
 
   ForeignKeyType foreign_key_type(ForeignKey key) {
     origin_args = key.source_args;
     target_args = key.target_args;
-
-    // rev_origin_perm = reverse_perm(rel_var_cols_perm(database.name, origin_relvar));
-    // rev_target_perm = reverse_perm(rel_var_cols_perm(database.name, target_relvar));
 
     origin_symmetric = symmetric(database.name, key.source_rel_var);
     target_symmetric = symmetric(database.name, key.target_rel_var);
@@ -622,12 +554,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 
   [(TableVar, Nat) -> ValueStoreId] table_col_value_store_map {
     auto_id = database.name;
-    table_vars = [
-      t, arity(auto_id, r), s
-      : t <- physical_tables(auto_id),
-        r = logical_rel_var(t),
-        s = database.rel_vars(r).symmetric
-    ];
+    table_vars = [table_var(r), arity(auto_id, r), info.symmetric : r, info <- database.rel_vars];
     clusters = column_clusters(table_vars, physical_foreign_keys);
     ord_clusters = isort(clusters);
     return [c -> value_store_id(i) : cs @ i <~ ord_clusters, c <- cs];
@@ -637,20 +564,11 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
   [TableVar -> Table] tables_info {
     auto_id = database.name;
     col_to_vs_map = table_col_value_store_map;
-
     return [
       tv -> {
-        arity = arity(database.name, rv);
-
-        value_stores = (col_to_vs_map((tv, i)) : i < arity);
-        keys = table_var_keys(auto_id, tv);
-        // applied_perm = rel_var_cols_perm(auto_id, rv);
-
-        cols_types = (ne_union_superset([ts(i) : ts <- table_signatures(auto_id, tv)]) : i < arity);
-        // phys_cols_types = (log_cols_types(i) : i <- applied_perm);
-
-        return table(value_stores, keys, cols_types, info.symmetric);
-      } : rv, info <- database.rel_vars, tv <- physical_tables(auto_id, rv)
+        value_stores = (col_to_vs_map((tv, i)) : i < |info.signature|);
+        return table(value_stores, info.keys, info.signature, info.symmetric);
+      } : rv, info <- database.rel_vars, tv = table_var(rv)
     ];
   }
 }

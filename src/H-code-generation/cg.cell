@@ -342,7 +342,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
     method_args_types = [t : m <- db.methods, t, unused_var <~ m.args];
     msg_type = [ne_union_type([h.type : h <- db.handlers]) if db.handlers != []];
     memb_vars_types = [info.type : unused_var, info <- db.state_vars];
-    rel_vars_types = [t : unused_var, info <- db.rel_vars, s <- info.signatures, t <~ s];
+    rel_vars_types = [t : unused_var, info <- db.rel_vars, t <~ info.signature];
     return union([exprs_types, method_args_types, msg_type, memb_vars_types, rel_vars_types]);
   }
 
@@ -402,13 +402,6 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
 ////////////////////////////////////////////////////////////////////////////////
 
 implicit typedefs : [TypeName -> NeType] {
-  Instr+ polymorphic_dynamic_dispatch_code(ObjExpr+ disp_args, [+([+NeType+], Instr+)] cases) {
-    ## BAD BAD BAD: NOT THE MOST EFFICIENT WAY TO DO IT...
-    expanded_cases = [(s, right(c)) : c <- cases, s <- left(c)];
-    return dynamic_dispatch_code(disp_args, expanded_cases);
-  }
-
-
   Instr+ dynamic_dispatch_code(ObjExpr+ disp_args, [+(NeType+, Instr+)] cases) {
     if |disp_args| == 1:
       disp_arg = only(disp_args);

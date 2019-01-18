@@ -20,9 +20,9 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
       perms = rel_vars_perm_map(rel_auto.name, !!);
 
       rel_vars = [v -> {
-        perm = perms(v);
+        perm = perms(logical_rel_var(v));
         return (
-          signatures: [permutate(s, perm) : s <- info.signatures],
+          signature:  permutate(info.signature, perm),
           keys:       [[perm(i) : i <- k] : k <- info.keys],
           symmetric:  info.symmetric
         );
@@ -50,12 +50,11 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
 
 
     ForeignKey rewrite(ForeignKey key, [RelVar -> [+Nat -> Nat]] perms) {
-      src_perm = perms(key.source_rel_var);
-      tgt_perm = perms(key.target_rel_var);
+      src_perm = perms(logical_rel_var(key.source_rel_var));
+      tgt_perm = perms(logical_rel_var(key.target_rel_var));
       return foreign_key(
         key.source_rel_var,
         permutate(key.source_args, src_perm),
-        permutate(key.source_types, src_perm),
         key.target_rel_var,
         permutate(key.target_args, tgt_perm)
       );
@@ -176,8 +175,9 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context {
 implicit program : Program {
   [DBSymbol -> [RelVar -> [+Nat -> Nat]]] rel_vars_perm_map {
     return [
-      a.name -> [r -> rel_var_args_perm(only([|s| : s <- info.signatures]), info.keys) : r, info <- a.rel_vars]
-      : a <- program.data_bases
+      a.name -> [
+        logical_rel_var(r) -> rel_var_args_perm(|info.signature|, info.keys) : r, info <- a.rel_vars
+      ] : a <- program.data_bases
     ];
 
 

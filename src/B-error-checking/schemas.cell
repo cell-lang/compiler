@@ -71,7 +71,7 @@ implicit syn_prg : SynPrg, type_arity_map : [BasicTypeSymbol -> [+Nat]] {
   ExprWFError* foreign_key_decl_wf_errors(Symbol name, ForeignKeyDecl key) {
     // Checking that all relations involved exist and have the right arity
     info = db_interfaces(db_symbol(name), !!);
-    rels = (key.targets | (key.src_rel, (left(a) : a <- key.src_args)));
+    rels = (key.targets | (key.src_rel, key.src_args));
     errs = ();
     for r, as <- rels:
       if not info.rel_vars(r, *):
@@ -86,15 +86,12 @@ implicit syn_prg : SynPrg, type_arity_map : [BasicTypeSymbol -> [+Nat]] {
     return errs if errs != ();
 
     // Checking that there are no duplicate or undefined arguments
-    args = (value(n) : n, unused_var <- key.src_args, n != nothing);
+    args = values(key.src_args);
     dupl_args = duplicates(args);
     return (duplicate_foreign_key_args(key, dupl_args)) if dupl_args != [];
     args = set(args);
     errs = [undef_foreign_key_var(key, s) : unused_var, as <~ key.targets, a <~ as, just(s?) ?= a, not args(s)];
-    return isort(errs) if errs != [];
-
-    // Checking all types
-    return join((plain_type_wf_errors(value(t), type_arity_map) : unused_var, t <- key.src_args, t != nothing));
+    return isort(errs);
   }
 
   //////////////////////////////////////////////////////////////////////////////
