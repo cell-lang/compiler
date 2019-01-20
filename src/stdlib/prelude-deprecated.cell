@@ -590,6 +590,8 @@ T max_by(T+ xs, (T T -> Bool) lt) {
 
 [Nat] range(Nat n) = set((i : i < n));
 
+[+Nat] ne_range(NzNat n) = set((i : i < n));
+
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -716,3 +718,28 @@ Maybe[T]+ maybe_seq([Nat -> T] map, NzNat arity) {
 }
 
 [Nat -> T] map(Maybe[T]+ xs) = [i -> value(x) : x @ i <~ xs, x != nothing];
+
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+## THESE SHOULD PROBABLY GO IN A SEPARATE FILE
+type CounterSet[T]    = counter_set(nz_ctrs: [T -> NzNat]);
+type BlankCounterSet  = counter_set(nz_ctrs: []);
+
+
+BlankCounterSet blank_counter_set = counter_set(nz_ctrs: []);
+
+Nat next_value(CounterSet[T] ctr_set, T ctr) = lookup(ctr_set.nz_ctrs, ctr, 0);
+
+CounterSet[T] increment(CounterSet[T] ctr_set, T ctr) {
+  nz_ctrs = ctr_set.nz_ctrs;
+  new_nz_ctrs = if nz_ctrs(ctr, *)
+    then [c -> nz_nat(n + bit(c == ctr)) : c, n <- nz_ctrs]
+    else nz_ctrs & [ctr -> 1];
+  return counter_set(nz_ctrs: new_nz_ctrs);
+}
+
+(Nat, CounterSet[T]) claim_next(CounterSet[T] ctr_set, T ctr) = ( next_value(ctr_set, ctr),
+                                                                  increment(ctr_set, ctr)
+                                                                );

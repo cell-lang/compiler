@@ -12,15 +12,17 @@ implicit syn_prg : SynPrg, artifact : SchemaDef {
     handlers = [desugar_handler(h)   : h <- lookup(handlers_by_db, artifact.name, [])];
 
     rel_var_decls = [d : d <~ artifact.decls, relvars_decl() ?= d];
-    attr_map = [rel_var(r.name), rel_var(a.name) : r <- rel_var_decls, a <~ r.attributes];
+
+    rel_vars, impl_fkeys, attr_map = desugar_relvars(db_rel_vars);
+    expl_fkeys = desugar_foreign_keys(db_foreign_keys, rel_vars);
 
     db = data_base(
       name:         db_symbol(artifact.name),
       links:        (db_symbol(id) : id <- artifact.links),
       state_vars:   state_vars,
-      rel_vars:     desugared_relvars,
+      rel_vars:     rel_vars,
       attr_map:     attr_map,
-      foreign_keys: desugared_foreign_keys & desugared_implicit_foreign_keys,
+      foreign_keys: impl_fkeys & expl_fkeys,
       nested_dbs:   db_vars_types,
       methods:      methods,
       updates:      updates,
@@ -33,134 +35,17 @@ implicit syn_prg : SynPrg, artifact : SchemaDef {
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////
 
-  [ForeignKey] desugared_implicit_foreign_keys {
-    relvar_decls_by_name = group_by(db_rel_vars, $.name);
-    return union([desugared_keys(ds) : unused_var, ds <- relvar_decls_by_name]);
+  [ForeignKey] desugar_foreign_keys([ForeignKeyDecl] decls, [PhysRelVar -> RelVarInfo] rel_vars) {
+    log_to_phys_map = group_by_left_arg([bare_id(logical_rel_var(v)), v : v, unused_var <- rel_vars]);
+    return union([desugar(d.src_rel, d.src_args, r, as, log_to_phys_map) : d <- decls, t <~ d.targets, (r?, as?) ?= t]);
 
-
-    [ForeignKey] desugared_keys([+RelVarsDecl] decls) {
-      if |decls| == 1:
-        // Monomorphic relation
-        return desugared_keys(only(decls));
-      ;
-      if only([|d.col_types| : d <- decls]) != 1:
-        // Multiple polymorphic relations with arity two or greater. Signatures must be disjoint
-        return union([desugared_keys(d) : d <- decls]);
-      ;
-      // Multiple polymorphic unary relations. Signatures can overlap
-      decls_by_root_type = [desugar_plain_type(only_unsafe(d.col_types)) -> d : d <- decls];
-      tree = type_tree(keys(decls_by_root_type), typedefs = typedefs);
-      return desugared_keys(tree, decls_by_root_type, []);
+    [ForeignKey] desugar(Symbol src_rel, Maybe[Symbol]+ src_args, Symbol tgt_rel, Maybe[Symbol]+ tgt_args, [Symbol -> [+PhysRelVar]] log_to_phys_map) {
+      used_args = set(values(tgt_args));
+      min_src_args = (if a != nothing and not used_args(value(a)) then nothing else a : a <- src_args);
+      src_phys_rels = log_to_phys_map(src_rel);
+      tgt_phys_rel = only(log_to_phys_map(tgt_rel));
+      return [foreign_key(r, min_src_args, tgt_phys_rel, tgt_args) : r <- src_phys_rels];
     }
-
-
-    [ForeignKey] desugared_keys(TypeTree tree, [NeType -> RelVarsDecl] decls_by_root_type, [AttrRelVar] inherited_attributes) =
-      union([{
-        decl = decls_by_root_type(root_type);
-        rem_type = neat_difference(root_type, keys(subtrees), typedefs = typedefs);
-        attrs = inherited_attributes & set(decl.attributes);
-        decl_keys = if rem_type != empty_type
-          then desugared_keys(decl.name, (rem_type), attrs)
-          else [];
-        subdecls_keys = desugared_keys(subtrees, decls_by_root_type, attrs);
-        return decl_keys & subdecls_keys;
-      } : root_type, subtrees <- tree]);
-
-
-    [ForeignKey] desugared_keys(RelVarsDecl decl) =
-      desugared_keys(decl.name, (desugar_plain_type(t) : t <- decl.col_types), set(decl.attributes));
-
-
-    [ForeignKey] desugared_keys(Symbol name, NeType+ col_types, [AttrRelVar] attributes) {
-      // If we don't take care to handle the no-attributes case here
-      // the code that follows would crash for ternary relations
-      return [] if attributes == [];
-      base_relvar = rel_var(name);
-      args_names = (:a, :b);
-      base_args = (just(args_names(i)) : t @ i <- col_types);
-      base_types = (just(t) : t @ i <- col_types);
-      attr_args = (base_args | nothing);
-      attr_types = (base_types | nothing);
-      return union([
-        [ foreign_key(base_relvar, base_args, base_types, attr_relvar, attr_args),
-          foreign_key(attr_relvar, attr_args, attr_types, base_relvar, base_args)
-        ] : a <- attributes, attr_relvar = rel_var(a.name)
-      ]);
-    }
-  }
-
-
-  [ForeignKey] desugared_foreign_keys = [{
-    used_args = [value(a) : a <~ as, a != nothing];
-    src_args = (if a != nothing and not used_args(value(a)) then nothing else a : a, t <- k.src_args);
-    src_types = (apply(t, desugar_plain_type) : a, t <- k.src_args);
-    return foreign_key(rel_var(k.src_rel), src_args, src_types, rel_var(r), as);
-  } : k <- db_foreign_keys, tgt <~ k.targets, (r?, as?) ?= tgt];
-
-
-  [RelVar -> (signatures: [+NeType+], keys: [[+Nat]], symmetric: Bool)] desugared_relvars {
-    relvar_decls_by_name : [Symbol -> [+RelVarsDecl]];
-    relvars_sgns : [RelVar -> [+NeType+]];
-
-    relvar_decls_by_name = group_by(db_rel_vars, $.name);
-    relvars_sgns = group_by_left_arg(
-      merge_rels([desugared_signatures(ds) : unused_var, ds <- relvar_decls_by_name])
-    );
-
-    root_relvars_keys = [[rel_var(v.name) -> [set(k) : k <~ v.keys] : v <- db_rel_vars]];
-
-    attr_relvars_keys = [
-      [ rel_var(arv.name) -> [
-        [i : _ @ i <~ rv.col_types] if not arv.cardinality.multiple,
-        [|rv.col_types|] if arv.unique
-      ]]
-      : rv <- db_rel_vars, arv <~ rv.attributes
-    ];
-
-    relvars_keys = merge(root_relvars_keys & attr_relvars_keys);
-    assert keys(relvars_sgns) == keys(relvars_keys);
-
-    symm_relvars = [rel_var(v.name) : v <- db_rel_vars, v.symmetric] &
-                   [rel_var(arv.name) : rv <- db_rel_vars, rv.symmetric, arv <~ rv.attributes];
-
-    return [v -> (signatures: ss, keys: relvars_keys(v), symmetric: symm_relvars(v)) : v, ss <- relvars_sgns];
-
-
-    [+RelVar, NeType+] desugared_signatures([+RelVarsDecl] decls) {
-      if |decls| == 1:
-        // Monomorphic relation
-        return desugared_signatures(only(decls));
-      ;
-      if only([|d.col_types| : d <- decls]) != 1:
-        // Multiple polymorphic relations with arity two or greater. Signatures must be disjoint
-        return nonempty_rel(merge_rels([desugared_signatures(d) : d <- decls]));
-      ;
-      // Multiple polymorphic unary relations. Signatures can overlap
-      decls_by_root_type = [desugar_plain_type(only_unsafe(d.col_types)) -> d : d <- decls];
-      tree = type_tree(keys(decls_by_root_type), typedefs = typedefs);
-      return nonempty_rel(desugared_signatures(tree, decls_by_root_type, []));
-    }
-
-
-    [+RelVar, NeType+] desugared_signatures(RelVarsDecl decl) {
-      root_sgn = (desugar_plain_type(t) : t <- decl.col_types);
-      return [rel_var(decl.name) -> root_sgn] &
-             [rel_var(a.name) -> (root_sgn | desugar_plain_type(a.type)) : a <~ decl.attributes];
-    }
-
-
-    [RelVar, NeType+] desugared_signatures(TypeTree tree, [NeType -> RelVarsDecl] decls_by_root_type, [AttrRelVar] inherited_attributes) =
-      merge_rels([{
-        decl = decls_by_root_type(root_type);
-        rem_type = neat_difference(root_type, keys(subtrees), typedefs = typedefs);
-        attrs = inherited_attributes & set(decl.attributes);
-        decl_sgns = if rem_type != empty_type
-          then [rel_var(decl.name) -> (rem_type)] &
-               [rel_var(a.name) -> (rem_type, desugar_plain_type(a.type)) : a <- attrs]
-          else [];
-        subsgns = desugared_signatures(subtrees, decls_by_root_type, attrs);
-        return merge_rels([decl_sgns, subsgns]);
-      } : root_type, subtrees <- tree]);
   }
 
 
@@ -190,5 +75,182 @@ implicit syn_prg : SynPrg, artifact : SchemaDef {
     body = desugar_stmts(handler_def.body, [var(:this)], artifact = handler_def, impl_args = []);
     handler = handler(type, body);
     return transfer(handler, handler_def);
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+## FIND BETTER NAME
+type RelVarsDecl2 = relvars_decl(
+                      name:       Symbol,
+                      col_types:  NeType+,
+                      keys:       Nat+*,
+                      symmetric:  Bool,
+                      attributes: AttrRelVar2*
+                    );
+
+## FIND BETTER NAME
+type AttrRelVar2 = attr_relvar(name: Symbol, type: NeType, cardinality: AttrCard, unique: Bool);
+
+
+RelVarsDecl2 desugar_nested_types(RelVarsDecl decl) =
+  relvars_decl(
+    name:       decl.name,
+    col_types:  (desugar_plain_type(t) : t <- decl.col_types),
+    keys:       decl.keys,
+    symmetric:  decl.symmetric,
+    attributes: ( attr_relvar(
+                    name:         a.name,
+                    type:         desugar_plain_type(a.type),
+                    cardinality:  a.cardinality,
+                    unique:       a.unique
+                  ) : a <- decl.attributes)
+  );
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+implicit syn_prg : SynPrg {
+  ([PhysRelVar -> RelVarInfo], [ForeignKey], [PhysRelVar, PhysRelVar]) desugar_relvars([RelVarsDecl] original_decls) {
+    // Desugaring nested types
+    semi_desugared_decls = [desugar_nested_types(d) : d <- original_decls];
+
+    // Grouping relation variable by the name of the root relation
+    decls_groups = group_by(semi_desugared_decls, $.name);
+
+    // First we rewrite the declarations so as to get rid of hierarchies
+    flat_decls = union([flatten_rel_var_decls(ds) : unused_var, ds <- decls_groups]);
+
+    // Then we identify all polymorphic relations
+    poly_rel_vars = polymorphic_rel_vars(flat_decls);
+
+    // Desugaring the flattened declarations
+    return desugar_flat_relvars(flat_decls, poly_rel_vars);
+
+
+    [Symbol] polymorphic_rel_vars([RelVarsDecl2] flat_decls) {
+      names = ();
+      for d <- isort(flat_decls):
+        names = (names | d.name);
+        for a <- d.attributes:
+          names = (names | a.name);
+        ;
+      ;
+      return duplicates(names);
+    }
+  }
+
+
+  // [ Employee -> [
+  //     SalariedEmployee      -> [],
+  //     HourlyEmployee        -> [],
+  //     AnyCommissionEmployee -> [
+  //       BasePlusEmployee -> []
+  //     ]
+  //   ]
+  // ]
+
+  [RelVarsDecl2] flatten_rel_var_decls([RelVarsDecl2] decls) {
+    // Nothing to do for relations that are either monorphic
+    // or for those whose root relation is not unary
+    return decls if |decls| == 1 or only([|d.col_types| : d <- decls]) != 1;
+
+    // Multiple polymorphic unary relations. Signatures can overlap
+    decls_by_root_type = [only_unsafe(d.col_types) -> d : d <- decls];
+    tree = type_tree(keys(decls_by_root_type), typedefs = typedefs);
+    return flatten_hierarchy(tree, decls_by_root_type, ());
+
+
+    [RelVarsDecl2] flatten_hierarchy(TypeTree tree, [NeType -> RelVarsDecl2] root_type_to_decl, AttrRelVar2* inherited_attrs) =
+      union([flatten_hierarchy(t, st, root_type_to_decl, inherited_attrs) : t, st <- tree]);
+
+
+    [RelVarsDecl2] flatten_hierarchy(NeType arg_type, [NeType -> TypeTree] subtree, [NeType -> RelVarsDecl2] root_type_to_decl, AttrRelVar2* inherited_attrs) {
+      decl = root_type_to_decl(arg_type);
+      rem_type = neat_difference(arg_type, keys(subtree), typedefs = typedefs);
+      all_attrs = inherited_attrs & decl.attributes;
+      complete_decls = flatten_hierarchy(subtree, root_type_to_decl, inherited_attrs);
+      if rem_type != empty_type:
+        complete_decl = relvars_decl(
+          name:       decl.name,
+          col_types:  (rem_type),
+          keys:       decl.keys,
+          symmetric:  decl.symmetric,
+          attributes: all_attrs
+        );
+        complete_decls = complete_decls & [complete_decl];
+      ;
+      return complete_decls;
+    }
+  }
+
+
+  ([PhysRelVar -> RelVarInfo], [ForeignKey], [PhysRelVar, PhysRelVar]) desugar_flat_relvars([RelVarsDecl2] decls, [Symbol] poly_rel_vars) {
+    // Setting up the next loop
+    ctrs = blank_counter_set;
+    rel_vars = ();
+    foreign_keys = ();
+    attrs_map = ();
+
+    // Iterating through the declarations to generate the explicit desugared relations
+    for d <- isort(decls):
+      // Chosing a physical relation id for the root relation
+      if poly_rel_vars(d.name):
+        uid, ctrs = claim_next(ctrs, d.name);
+        root_rel_var = unique_rel_var(d.name, uid);
+      else
+        root_rel_var = rel_var(d.name);
+      ;
+
+      // Root relation information
+      root_arity = |d.col_types|;
+      root_args_types = (t : t <- d.col_types);
+      root_keys = [set(k) : k <~ d.keys];
+      root_info = (signature: root_args_types, keys: root_keys, symmetric: d.symmetric);
+
+      // Adding the new relation into the list
+      rel_vars = (rel_vars | (root_rel_var, root_info));
+
+      // Now turning attributes into explicit relations
+      for a <- d.attributes:
+        // Choosing a physical relation id for the attribute relation
+        if poly_rel_vars(a.name):
+          uid, ctrs = claim_next(ctrs, a.name);
+          attr_rel_var = unique_rel_var(a.name, uid);
+        else
+          attr_rel_var = rel_var(a.name);
+        ;
+
+        // Attribute relation information
+        attr_args_types = (root_args_types | a.type);
+        attr_keys = [
+          ne_range(root_arity) if not a.cardinality.multiple,
+          [root_arity] if a.unique
+        ];
+        attr_info = (signature: attr_args_types, keys: attr_keys, symmetric: d.symmetric);
+
+        // Adding the attribute relation to the list
+        rel_vars = (rel_vars | (attr_rel_var, attr_info));
+
+        // Creating the implicit foreign key
+        args_names = (:a, :b);
+        root_args = (just(args_names(i)) : i < root_arity);
+        attr_args = (root_args | nothing);
+        attr_to_root_key = foreign_key(root_rel_var, root_args, attr_rel_var, attr_args);
+        foreign_keys = (foreign_keys | attr_to_root_key);
+
+        // Making the key bidirectional for required attributes
+        if a.cardinality.required:
+          root_to_attr_key = foreign_key(attr_rel_var, attr_args, root_rel_var, root_args);
+          foreign_keys = (foreign_keys | root_to_attr_key);
+        ;
+
+        // Adding the new attribute to the list
+        attrs_map = (attrs_map | (root_rel_var, attr_rel_var));
+      ;
+    ;
+
+    return ([v -> info : v, info <~ rel_vars], set(foreign_keys), [e, a : e, a <~ attrs_map]);
   }
 }

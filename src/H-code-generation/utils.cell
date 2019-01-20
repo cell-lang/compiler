@@ -85,22 +85,6 @@ Nat+ optimal_dispatch_args([+NeType+] signatures, [TypeName -> Type] typedefs) {
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-type CounterSet[T] = counter_set(nz_ctrs: [T -> NzNat]);
-
-
-Nat next_value(CounterSet[T] ctr_set, T ctr) = lookup(ctr_set.nz_ctrs, ctr, 0);
-
-
-CounterSet[T] increment(CounterSet[T] ctr_set, T ctr) {
-  nz_ctrs = ctr_set.nz_ctrs;
-  new_nz_ctrs = if nz_ctrs(ctr, *)
-    then [c -> nz_nat(n + bit(c == ctr)) : c, n <- nz_ctrs]
-    else nz_ctrs & [ctr -> 1];
-  return counter_set(nz_ctrs: new_nz_ctrs);
-}
-
-////////////////////////////////////////////////////////////////////////////////
-
 type GenVarType = obj, int, int32, float, bool, array, tag_rec,
                   set_it, seq_it, bin_rel_it, tern_rel_it, table_it, stream, vector;
 
