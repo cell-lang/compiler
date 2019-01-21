@@ -24,6 +24,13 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
     rel_var_keys(rel_auto_by_id(rel_auto_id), rel_var);
 
 
+  [PhysRelVar] overlapping_phys_rel_vars(DBSymbol rel_auto_id, RelVar rel_var, Maybe[NeType]+ args_types) {
+    rel_auto = rel_auto_by_id(rel_auto_id);
+    phys_rel_vars = physical_rel_vars(rel_auto, rel_var);
+    return [v : v <- phys_rel_vars, overlap(rel_auto.rel_vars(v).signature, args_types)];
+  }
+
+
   NeType+ table_signature(DBSymbol rel_auto_id, TableVar table_var) =
     rel_var_signature(rel_auto_id, original_rel_var(table_var));
 

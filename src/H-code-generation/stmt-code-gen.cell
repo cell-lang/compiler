@@ -41,39 +41,14 @@ implicit program           : Program,
     env = init_env;
     surrs = just(surrogates);
     break_surrs = [];
-    for os <- stmts:
-      for s <- preprocessed_statements(os, env):
-        fail if surrs == nothing;
-        stmt_code, surrs, stmt_break_surrs, var_gen = stmt_opt_code(s, env, var_gen, surrogates = value(surrs));
-        code = code & stmt_code;
-        break_surrs = break_surrs & stmt_break_surrs;
-        env = update_env(s, env);
-      ;
+    for s <- stmts:
+      fail if surrs == nothing;
+      stmt_code, surrs, stmt_break_surrs, var_gen = stmt_opt_code(s, env, var_gen, surrogates = value(surrs));
+      code = code & stmt_code;
+      break_surrs = break_surrs & stmt_break_surrs;
+      env = update_env(s, env);
     ;
     return (code, surrs, break_surrs, var_gen);
-  }
-
-  //////////////////////////////////////////////////////////////////////////////
-
-  Statement+ preprocessed_statements(Statement stmt, [EnvVar -> Type] env) =
-    delete_stmt() = insert_cascade_deletes(stmt, env),
-    _             = (stmt);
-
-
-  // type DeleteStmt = delete_stmt(var: RelVar, args: Maybe[Expr]+);
-  Statement+ insert_cascade_deletes(DeleteStmt stmt, [EnvVar -> Type] env) {
-    rel_auto = cast_database(context);
-    attrs = [v : v <- rel_auto.attr_map(stmt.var, ?)];
-    attr_args = (stmt.args | nothing);
-    args_types = (apply(a, expr_type($, env)) : a <- attr_args);
-    stmts = (stmt);
-    return stmts if not args_types :: Maybe[NeType]+;
-    for a <- isort(attrs):
-      if overlap(rel_auto.rel_vars(a).signature, args_types):
-        stmts = (stmts | delete_stmt(a, attr_args));
-      ;
-    ;
-    return stmts;
   }
 
   //////////////////////////////////////////////////////////////////////////////
@@ -139,50 +114,14 @@ implicit program           : Program,
 
 
   StmtCompInfo delete_stmt_opt_code(RelVar rel_var, Maybe[Expr]+ args, [EnvVar -> Type] env, VarGen init_var_gen) {
-    args_types = (apply(a, expr_type($, env)) : a <- args);
-    args_eval_code, args_aliases, var_gen = sparse_opt_eval_code(args, env, init_var_gen);
-    info = delete_stmt_opt_code(rel_var, nonempty(args_aliases), args_types, var_gen);
-    delete_code, surrs, break_surrs, var_gen = info;
-    assert surrs == just(surrogates) and break_surrs == [] and var_gen == init_var_gen;
-    code = args_eval_code & delete_code;
-
-    // // Adding cascade deletes
-    // rel_auto = cast_database(context);
-    // attrs = [v : v <- rel_auto.attr_map(rel_var, ?)];
-    // attr_args_aliases = (args_aliases | nothing);
-    // for s <- isort(rel_auto.rel_vars(rel_var).signatures):
-    //   attr_base_args_types = (if t != nothing then t else just(s(i)) : t @ i <- args_types);
-    //   attr_args_types = (attr_base_args_types | nothing);
-    //   for a <- attrs:
-    //     info = delete_stmt_opt_code(a, attr_args_aliases, attr_args_types, X_var_gen);
-    //   ;
-    // ;
-
-    return (code, just(surrogates), [], init_var_gen);
-  }
-
-
-  // // type DeleteStmt = delete_stmt(var: RelVar, args: Maybe[Expr]+);
-  // Statement+ insert_cascade_deletes(DeleteStmt stmt, [EnvVar -> Type] env) {
-  //   rel_auto = cast_database(context);
-  //   attrs = [v : v <- rel_auto.attr_map(stmt.var, ?)];
-  //   attr_args = (stmt.args | nothing);
-  //   args_types = (apply(a, expr_type($, env)) : a <- attr_args);
-  //   stmts = (stmt);
-  //   for a <- isort(attrs):
-  //     if any_signature_overlaps_partial_signature(rel_auto.rel_vars(a).signatures, args_types):
-  //       stmts = (stmts | delete_stmt(a, attr_args));
-  //     ;
-  //   ;
-  //   return stmts;
-  // }
-
-  StmtCompInfo delete_stmt_opt_code(RelVar rel_var, Maybe[ObjExpr]+ args_aliases, Maybe[Type]+ args_types, VarGen init_var_gen) {
     args_surrs : Maybe[Int32Var]*;
 
+    args_types = (apply(a, expr_type($, env)) : a <- args);
     return ((terminate(true)), just(surrogates), [], init_var_gen) if not args_types :: Maybe[NeType]+;
 
-    var_gen = init_var_gen;
+    symmetric = symmetric(rel_var);
+
+    code, args_aliases, var_gen = sparse_opt_eval_code(args, env, init_var_gen);
 
     args_surrs = ();
     for a <- args_aliases:
@@ -194,26 +133,40 @@ implicit program           : Program,
       ;
     ;
 
-    // Selecting the candidate tables among those the logical relation is partitioned into
-    candidate_tables = overlapping_tables(rel_var, args_types);
+    fail if args_aliases == () or args_surrs == ();
 
-    code = join(({
-      table_code = (queue_deletes(tv, nonempty(args_surrs), symmetric(original_rel_var(tv))));
+    phys_rel_vars = overlapping_phys_rel_vars(rel_var, args_types);
+    rel_auto = cast_database(context);
+    for v <- isort(phys_rel_vars):
+      table_code = delete_code(table_var(v), args_aliases, args_surrs, symmetric);
+      attrs = [a : a <- rel_auto.attr_map(v, ?)];
+      attr_args_aliases = (args_aliases | nothing);
+      attr_args_surrs = (args_surrs | nothing);
+      for a <- isort(attrs):
+        assert arity(a) == arity(rel_var) + 1;
+        table_code = table_code & delete_code(table_var(a), attr_args_aliases, attr_args_surrs, symmetric);
+      ;
+      code = code & table_code;
+    ;
+
+    return (code, just(surrogates), [], init_var_gen);
+
+
+    Instr* delete_code(TableVar table_var, Maybe[ObjExpr]+ args_aliases, Maybe[Int32Var]+ args_surrs, Bool symmetric) {
+      code = (queue_deletes(table_var, nonempty(args_surrs), symmetric));
       for a @ ri <- reverse(args_aliases):
         if a != nothing:
           i = nat(|args_aliases| - ri - 1);
-          store_id = table_col_store_id(tv, i);
+          store_id = table_col_store_id(table_var, i);
           arg_surr = value_unsafe(args_surrs(i));
-          table_code = (
+          code = (
             set_ivar32(arg_surr, lookup_value(store_id, value(a))),
-            do_if_not(is_eq(arg_surr, -1), table_code)
+            do_if_not(is_eq(arg_surr, -1), code)
           );
         ;
       ;
-      return table_code;
-    } : tv <- isort(candidate_tables)));
-
-    return (code, just(surrogates), [], init_var_gen);
+      return code;
+    }
   }
 
 
@@ -289,23 +242,25 @@ implicit program           : Program,
 
 
   StmtCompInfo update_stmt_opt_code(RelVar rel_var, Expr+ args, [EnvVar -> Type] env, VarGen init_var_gen) {
-    args_eval_code, args_aliases, var_gen = opt_eval_code(args, env, init_var_gen);
-    args_types = (expr_type(a, env) : a <- args);
-    info = insert_stmt_opt_code(rel_var, nonempty(args_aliases), args_types, var_gen);
-    code, surrs, break_surrs, var_gen = info;
-    assert surrs == just(surrogates) and break_surrs == [];
+    fail;
+    // args_eval_code, args_aliases, var_gen = opt_eval_code(args, env, init_var_gen);
+    // args_types = (expr_type(a, env) : a <- args);
+    // info = insert_stmt_opt_code(rel_var, nonempty(args_aliases), args_types, var_gen);
+    // code, surrs, break_surrs, var_gen = info;
+    // assert surrs == just(surrogates) and break_surrs == [];
 
-    for k <- isort(relvar_keys(rel_var)):
-      delete_args = (if k(i) then just(a) else nothing : a @ i <- args_aliases);
-      let surrogates = value_unsafe(surrs): ## IS THIS AT ALL RIGHT? IT MAKES NO DIFFERENCE AT THE MOMENT BUT...
-        delete_code, surrs, break_surrs, var_gen =
-          delete_stmt_opt_code(rel_var, nonempty(delete_args), (just(t) : t <- args_types), var_gen);
-      ;
-      assert surrs == just(surrogates) and break_surrs == [];
-      code = code & delete_code;
-    ;
+    // for k <- isort(relvar_keys(rel_var)):
+    //   delete_args = (if k(i) then just(a) else nothing : a @ i <- args_aliases);
+    //   let surrogates = value_unsafe(surrs): ## IS THIS AT ALL RIGHT? IT MAKES NO DIFFERENCE AT THE MOMENT BUT...
+    //     delete_code, surrs, break_surrs, var_gen =
+    //       undefined;
+    //       // delete_stmt_opt_code(rel_var, nonempty(delete_args), (just(t) : t <- args_types), var_gen);
+    //   ;
+    //   assert surrs == just(surrogates) and break_surrs == [];
+    //   code = code & delete_code;
+    // ;
 
-    return (args_eval_code & code, just(surrogates), [], init_var_gen);
+    // return (args_eval_code & code, just(surrogates), [], init_var_gen);
   }
 
 
