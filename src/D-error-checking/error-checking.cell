@@ -61,9 +61,7 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
 
 
   [CoreWFError] database_errors(Database database) {
-    rel_var_errs = union(
-      [rel_var_errors(v, info.signatures, info.keys, info.symmetric) : v, info <- database.rel_vars]
-    );
+    rel_vars_errs = rel_vars_errors(database.rel_vars);
 
     foreign_key_errs = union([foreign_key_errors(database, f) : f <- database.foreign_keys]);
 
@@ -82,18 +80,47 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
       : h1, h2 <- symmetric_cart_prod(database.handlers), not are_ptype_disjoint(h1.type, h2.type)
     ];
 
-    errs = rel_var_errs & foreign_key_errs & method_errs & updates_errs & handler_errs;
+    errs = rel_vars_errs & foreign_key_errs & method_errs & updates_errs & handler_errs;
     return [error_cluster(database, errs) if errs != []];
   }
 
 
-  [CoreWFError] rel_var_errors(RelVar rel_var, [+NeType+] signatures, [[+Nat]] keys, Bool symmetric) {
-    arities = [|s| : s <- signatures];
-    return [multiple_rel_var_arities(rel_var, arities)] if |arities| != 1;
-    return [
-      overlapping_rel_var_signatures(rel_var, s1, s2)
-      : s1, s2 <- symmetric_cart_prod(signatures), not are_ptype_disjoint(s1, s2)
-    ];
+  [CoreWFError] rel_vars_errors([PhysRelVar -> RelVarInfo] rel_vars) {
+    rel_vars_by_log_id = group_by_left_arg([logical_rel_var(v), v : v, unused_var <- rel_vars]);
+    return union([rel_var_family_errors(lv, pvs, rel_vars) : lv, pvs <- rel_vars_by_log_id]);
+
+
+    [CoreWFError] rel_var_family_errors(RelVar rel_var, [+PhysRelVar] phys_rel_vars, [PhysRelVar -> RelVarInfo] rel_vars) {
+      for s1, s2 <- isort(symmetric_cart_prod(phys_rel_vars)):
+        info1 = rel_vars(s1);
+        info2 = rel_vars(s2);
+
+        sgn1 = info1.signature;
+        sgn2 = info2.signature;
+
+        // The relvars must have the same arity
+        arity = |sgn1|;
+        return [multiple_rel_var_arities(rel_var, [arity, |sgn2|])] if arity != |sgn2|;
+
+        // They must have the same keys
+        keys = info1.keys;
+        return [differing_keys_in_poly_rel_var(rel_var, keys, info2.keys)] if keys != info2.keys;
+
+        // Their signatures must be disjoint
+        return [overlapping_rel_var_signatures(rel_var, sgn1, sgn2)] if not are_ptype_disjoint(sgn1, sgn2);
+
+        // For each key, the projections of the signatures
+        // over the arguments of the key must be disjoint
+        for k <- isort(keys):
+          subsgn1 = nonempty((sgn1(i) : i < arity, k(i)));
+          subsgn2 = nonempty((sgn2(i) : i < arity, k(i)));
+          if not are_ptype_disjoint(subsgn1, subsgn2):
+            return [overlapping_rel_var_key_subsignatures(rel_var, (sgn1, sgn2), k)];
+          ;
+        ;
+      ;
+      return [];
+    }
   }
 
 
@@ -101,40 +128,10 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
     src_rel = key.source_rel_var;
     src_rel_info = database.rel_vars(src_rel);
     src_args = key.source_args;
-    src_args_types = key.source_types;
-
-    fail if src_args_types == ();
-    src_sgns = [s : s <- src_rel_info.signatures, not are_disjoint(s, src_args_types)];
-    return [no_signature_match(key, src_rel, src_rel_info.signatures, src_args_types)] if src_sgns == [];
-    aggr_sgns = aggregated_elements(src_sgns, aggregated_signature);
-    return [multiple_signature_matches(key, src_rel, src_sgns, src_args_types)] if |aggr_sgns| != 1;
-    sgn = only(aggr_sgns);
-    if not match_exactly(sgn, src_args_types):
-      return [no_exact_signature_match(key, src_rel, sgn, src_args_types)];
-    ;
 
     tgt_rel = key.target_rel_var;
     tgt_rel_info = database.rel_vars(tgt_rel);
     tgt_args = key.target_args;
-
-    for src_sgn <- isort(src_sgns):
-      // Types of all variables when the key is applied to this specific signature of the source relation
-      src_type_map = [value(a) -> src_sgn(i) : a @ i <~ src_args, a != nothing];
-      tgt_args_types = (apply(a, src_type_map($)) : a <- tgt_args);
-      // Signatures of the target that are not disjoint with the image of the source signature
-      tgt_sgns = [s : s <- tgt_rel_info.signatures, not are_disjoint(s, tgt_args_types)];
-      if tgt_sgns == []:
-        return [no_signature_match(key, tgt_rel, tgt_rel_info.signatures, tgt_args_types)];
-      elif |tgt_sgns| != 1:
-        ## REALLY BAD ERROR MESSAGE. FIX
-        return [multiple_signature_matches(key, tgt_rel, tgt_sgns, tgt_args_types)];
-      ;
-      tgt_sgn = only(tgt_sgns);
-      if not is_subsignature(tgt_args_types, tgt_sgn):
-        ## REALLY BAD ERROR MESSAGE. FIX
-        return [no_exact_signature_match(key, tgt_rel, tgt_sgn, tgt_args_types)];
-      ;
-    ;
 
     is_supported = match (src_args, tgt_args)
       // unary -> unary
@@ -179,21 +176,6 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
     ## IS THERE ANYTHING ELSE I'M SUPPOSED TO CHECK HERE?
 
     return [];
-
-
-    Maybe[NeType+] aggregated_signature(NeType+ types1, NeType+ types2) {
-      assert |types1| == |types2|;
-      diff_idx = :none;
-      for t1 @ i <- types1:
-        t2 = types2(i);
-        if not is_eq(t1, t2):
-          return nothing if diff_idx != :none;
-          diff_idx = i;
-        ;
-      ;
-      // Works fine even if <diff_idx == :none>
-      return just((if i != diff_idx then t else ne_union_type([t, types2(i)]) : t @ i <- types1));
-    }
   }
 
   //////////////////////////////////////////////////////////////////////////////
