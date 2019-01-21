@@ -170,40 +170,20 @@ implicit program           : Program,
   }
 
 
-  // StmtCompInfo insert_stmt_opt_code([(rel_var: RelVar, args: Expr+)] insertions, [EnvVar -> Type] env, VarGen init_var_gen) {
-  //   code = ();
-  //   for is <- isort(insertions):
-  //     ins_code, surrs, break_surrs, var_gen = insert_stmt_opt_code(is.rel_var, is.args, env, init_var_gen);
-  //     assert surrs == just(surrogates) and break_surrs == [] and var_gen == init_var_gen;
-  //     code = code & ins_code;
-  //   ;
-  //   return (code, just(surrogates), [], init_var_gen);
-  // }
-
-
   StmtCompInfo insert_stmt_opt_code(RelVar rel_var, Expr+ args, [EnvVar -> Type] env, VarGen init_var_gen) {
-    args_eval_code, args_aliases, var_gen = opt_eval_code(args, env, init_var_gen);
-    info = insert_stmt_opt_code(rel_var, nonempty(args_aliases), (expr_type(a, env) : a <- args), var_gen);
-    insert_code, surrs, break_surrs, var_gen = info;
-    assert surrs == just(surrogates) and break_surrs == [];
-    return (args_eval_code & insert_code, just(surrogates), [], init_var_gen);
-  }
-
-
-  StmtCompInfo insert_stmt_opt_code(RelVar rel_var, ObjExpr+ args_aliases, Type+ args_types, VarGen init_var_gen) {
+    args_types = (expr_type(a, env) : a <- args);
     return ((terminate(true)), just(surrogates), [], init_var_gen) if not args_types :: NeType+;
 
+    args_eval_code, args_aliases, var_gen = opt_eval_code(args, env, init_var_gen);
+    fail if args_aliases == ();
+
     arity = |args_aliases|;
-    surr_vars, var_gen = next_int32_vars(init_var_gen, arity);
+    surr_vars, var_gen = next_int32_vars(var_gen, arity);
     fail if surr_vars == ();
     is_new_val_vars, var_gen = next_bool_vars(var_gen, arity);
 
     // Selecting the candidate tables among those the logical relation is partitioned into
-    candidate_tables = overlapping_tables(rel_var, (just(t) : t <- args_types));
-    if candidate_tables == []:
-      assert (t <~ args_types : t == empty_type);
-      return ((terminate(true)), just(surrogates), [], init_var_gen);
-    ;
+    candidate_tables = nonempty(overlapping_tables(rel_var, (just(t) : t <- args_types)));
 
     if |candidate_tables| == 1:
       // Easy case: there's only one table
