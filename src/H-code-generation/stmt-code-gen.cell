@@ -170,6 +170,8 @@ implicit program           : Program,
   }
 
 
+  ## BAD BAD BAD: ALMOST IDENTICAL TO update_stmt_opt_code()
+  ## WHEN CHANGING ONE, ALWAYS REMEMBER TO CHANGE THE OTHER AS WELL
   StmtCompInfo insert_stmt_opt_code(RelVar rel_var, Expr+ args, [EnvVar -> Type] env, VarGen init_var_gen) {
     args_types = (expr_type(a, env) : a <- args);
     return ((terminate(true)), just(surrogates), [], init_var_gen) if not args_types :: NeType+;
@@ -221,26 +223,66 @@ implicit program           : Program,
   }
 
 
+  ## BAD BAD BAD: ALMOST IDENTICAL TO insert_stmt_opt_code()
+  ## WHEN CHANGING ONE, ALWAYS REMEMBER TO CHANGE THE OTHER AS WELL
   StmtCompInfo update_stmt_opt_code(RelVar rel_var, Expr+ args, [EnvVar -> Type] env, VarGen init_var_gen) {
-    fail;
-    // args_eval_code, args_aliases, var_gen = opt_eval_code(args, env, init_var_gen);
-    // args_types = (expr_type(a, env) : a <- args);
-    // info = insert_stmt_opt_code(rel_var, nonempty(args_aliases), args_types, var_gen);
-    // code, surrs, break_surrs, var_gen = info;
-    // assert surrs == just(surrogates) and break_surrs == [];
+    args_types = (expr_type(a, env) : a <- args);
+    return ((terminate(true)), just(surrogates), [], init_var_gen) if not args_types :: NeType+;
 
-    // for k <- isort(relvar_keys(rel_var)):
-    //   delete_args = (if k(i) then just(a) else nothing : a @ i <- args_aliases);
-    //   let surrogates = value_unsafe(surrs): ## IS THIS AT ALL RIGHT? IT MAKES NO DIFFERENCE AT THE MOMENT BUT...
-    //     delete_code, surrs, break_surrs, var_gen =
-    //       undefined;
-    //       // delete_stmt_opt_code(rel_var, nonempty(delete_args), (just(t) : t <- args_types), var_gen);
-    //   ;
-    //   assert surrs == just(surrogates) and break_surrs == [];
-    //   code = code & delete_code;
-    // ;
+    args_eval_code, args_aliases, var_gen = opt_eval_code(args, env, init_var_gen);
+    fail if args_aliases == ();
 
-    // return (args_eval_code & code, just(surrogates), [], init_var_gen);
+    arity = |args_aliases|;
+    surr_vars, var_gen = next_int32_vars(var_gen, arity);
+    fail if surr_vars == ();
+    is_new_val_vars, var_gen = next_bool_vars(var_gen, arity);
+
+    // Selecting the candidate tables among those the logical relation is partitioned into
+    candidate_tables = nonempty(overlapping_tables(rel_var, (just(t) : t <- args_types)));
+
+    symmetric = symmetric(rel_var);
+    maybe_surr_vars = (just(v) : v <- surr_vars);
+
+    if |candidate_tables| == 1:
+      // Easy case: there's only one table
+      table_var = only(candidate_tables);
+
+      pre_insert_code = ({
+        store_id = table_col_store_id(table_var, i);
+        surr_var = surr_vars(i);
+        return lookup_or_queue_insert_value(surr_var, store_id, e);
+      } : e @ i <- args_aliases);
+
+      insertion_code = (
+        queue_deletes(table_var, maybe_surr_vars, symmetric),
+        queue_insert_tuple(table_var, surr_vars)
+      );
+      code = pre_insert_code & insertion_code;
+
+      return (code, just(surrogates), [], init_var_gen);
+    ;
+
+    // Choosing the dispatch arguments
+    signatures = [table_signature(tv) : tv <- candidate_tables];
+    disp_args = optimal_dispatch_args(signatures, typedefs);
+
+    cases = [{
+      types = table_signature(tv);
+      code = (
+        lookup_or_queue_insert_value(surr_vars(i), table_col_store_id(tv, i), e)
+        : e @ i <- args_aliases
+      );
+      code = (code |
+        queue_deletes(tv, maybe_surr_vars, symmetric),
+        queue_insert_tuple(tv, surr_vars),
+        exit_block
+      );
+      return (types, code);
+    } : tv <- candidate_tables];
+
+    code = (execute_block(dynamic_dispatch_code(args_aliases, cases)));
+
+    return (code, just(surrogates), [], init_var_gen);
   }
 
 
