@@ -241,7 +241,8 @@ implicit program           : Program,
     candidate_tables = nonempty(overlapping_tables(rel_var, (just(t) : t <- args_types)));
 
     symmetric = symmetric(rel_var);
-    maybe_surr_vars = (just(v) : v <- surr_vars);
+    keys = isort(relvar_keys(rel_var));
+    deletes_args = ((maybe(v, k(i)) : v @ i <- surr_vars) : k <- keys);
 
     if |candidate_tables| == 1:
       // Easy case: there's only one table
@@ -254,7 +255,7 @@ implicit program           : Program,
       } : e @ i <- args_aliases);
 
       insertion_code = (
-        queue_deletes(table_var, maybe_surr_vars, symmetric),
+        (queue_deletes(table_var, as, symmetric) : as <- deletes_args) |
         queue_insert_tuple(table_var, surr_vars)
       );
       code = pre_insert_code & insertion_code;
@@ -272,11 +273,8 @@ implicit program           : Program,
         lookup_or_queue_insert_value(surr_vars(i), table_col_store_id(tv, i), e)
         : e @ i <- args_aliases
       );
-      code = (code |
-        queue_deletes(tv, maybe_surr_vars, symmetric),
-        queue_insert_tuple(tv, surr_vars),
-        exit_block
-      );
+      code = code & (queue_deletes(tv, as, symmetric) : as <- deletes_args);
+      code = (code | queue_insert_tuple(tv, surr_vars), exit_block);
       return (types, code);
     } : tv <- candidate_tables];
 
