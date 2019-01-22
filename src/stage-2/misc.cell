@@ -54,19 +54,13 @@ implicit typedefs : [TypeName -> NeType] {
   }
 
 
-  ## BAD: THERE'S SOME REDUNDANCY HERE..
-  Bool overlap(NeType+ signature, Maybe[NeType]+ partial_signature) {
-    assert |signature| == |partial_signature|;
-    for t2 @ i <- partial_signature:
-      return false if t2 != nothing and are_ptype_disjoint(signature(i), value(t2));
-    ;
-    return true;
-  }
+  Bool signatures_overlap(NeType+ sgn1, NeType+ sgn2) = not (t @ i <~ sgn1 : are_ptype_disjoint(t, sgn2(i)));
 
-  Bool is_subset_signature(NeType+ signature, Maybe[NeType]+ partial_signature) {
+
+  Bool overlaps_partial_signature(NeType+ signature, Maybe[NeType]+ partial_signature) {
     assert |signature| == |partial_signature|;
-    for mst @ i <- partial_signature:
-      return false if mst != nothing and not is_subset(signature(i), value(mst));
+    for t @ i <- partial_signature:
+      return false if t != nothing and not is_subset(signature(i), value(t));
     ;
     return true;
   }

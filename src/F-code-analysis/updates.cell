@@ -1,135 +1,130 @@
 implicit program : Program, typedefs : [TypeName -> NeType] {
-  [RelVar] required_insertions(DBSymbol rel_auto_id, RelVar rel_var, NeType+ args_types) {
-    global_map = required_insertions_map;
-    if global_map(rel_auto_id, *):
-      rel_auto_map = global_map(rel_auto_id);
-      if rel_auto_map(rel_var, *):
-        rel_var_map = rel_auto_map(rel_var);
-        return nonempty(union([rs : s, rs <- rel_var_map, not are_ptype_disjoint(s, args_types)]));
-      ;
-    ;
-    return [];
+  [+[PhysRelVar]] required_insertions(DBSymbol rel_auto_id, RelVar rel_var, NeType+ args_types) {
+    phys_rel_vars = physical_rel_vars(rel_auto_id, rel_var, args_types);
+    fail if phys_rel_vars == [];
+    rel_auto_map = required_insertions_map(rel_auto_id, !!);
+    return [rel_auto_map(v) : v <- phys_rel_vars];
 
 
-    [DBSymbol -> [RelVar -> [NeType+ -> [RelVar]]]] required_insertions_map = [
-      rel_auto.name -> {
-        rel_data = [rv, s, info : k <- rel_auto.foreign_keys, rv, s, info <- required_insertions(rel_auto, k)];
-        rel_vars = [r : r, unused_var_1, unused_var_2 <- rel_data];
-        return [rv -> group_by_left_arg([s, ts : s, ts <- rel_data(rv, ?, ?)]) : rv <- rel_vars];
-      } : rel_auto <- program.data_bases
+    [DBSymbol -> [PhysRelVar -> [PhysRelVar]]] required_insertions_map = [
+      a.name -> required_insertions_map(a) : a <- program.data_bases
     ];
 
 
-    [RelVar, NeType+, RelVar] required_insertions(Database rel_auto, ForeignKey key) {
-      insertion_required = match (key.source_args, key.target_args)
+    [PhysRelVar -> [PhysRelVar]] required_insertions_map(Database rel_auto) {
+      ins_keys = [k : k <- rel_auto.foreign_keys, requires_insertion(k)];
+      links = [k.source_rel_var, k.target_rel_var : k <- ins_keys];
+      return [sv -> [tv : tv <- links(sv, ?)] : sv <- keys(rel_auto.rel_vars)];
+    }
+
+
+    Bool requires_insertion(ForeignKey key) =
+      match (key.source_args, key.target_args)
         (just()),         (just(), nothing)           = true,
         (just(), just()), (just(), just(), nothing)   = true,
         _,                _                           = false;
-      return [] if not insertion_required;
-
-      src_rel_var_sgns = rel_auto.rel_vars(key.source_rel_var).signatures;
-      affected_src_sgns = nonempty([
-        s : s <- src_rel_var_sgns, signature_overlaps_partial_signature(s, key.source_types)
-      ]);
-
-      return [key.source_rel_var, s, key.target_rel_var : s <- affected_src_sgns];
-    }
   }
 
 
   Bool is_one_to_one_attribute(DBSymbol rel_auto, RelVar rel_var) {
-    rel_auto_map = one_to_one_attributes_map(rel_auto, !!);
-    ## WORKAROUND FOR A BUG IN THE COMPILER, WITHOUT THE !!
-    ## THE GENERATED CODE CONTAINS A BUG
-    return rel_auto_map(rel_var, !!) != nothing;
+    fail;
+
+    // ## CHECK THE GENERATED CODE HERE
+    // rel_auto_map = one_to_one_attributes_map(rel_auto, !!);
+    // return rel_auto_map(rel_var) != nothing;
   }
 
 
   RelVar master_rel_var(DBSymbol rel_auto, RelVar rel_var) {
-    rel_auto_map = one_to_one_attributes_map(rel_auto, !!);
-    return value_unsafe(rel_auto_map(rel_var));
+    fail;
+
+    // rel_auto_map = one_to_one_attributes_map(rel_auto, !!);
+    // return value_unsafe(rel_auto_map(rel_var));
   }
 
 
-  [DBSymbol -> [RelVar -> Maybe[RelVar]]] one_to_one_attributes_map {
-    return [
-      rel_auto.name -> [
-        v -> master_rel_var(rel_auto, v) : v, unused_var <- rel_auto.rel_vars
-      ] : rel_auto <- program.data_bases
-    ];
+  // [DBSymbol -> [RelVar -> Maybe[RelVar]]] one_to_one_attributes_map {
+  //   return [
+  //     rel_auto.name -> [
+  //       v -> master_rel_var(rel_auto, v) : v, unused_var <- rel_auto.rel_vars
+  //     ] : rel_auto <- program.data_bases
+  //   ];
 
 
-    Maybe[RelVar] master_rel_var(Database rel_auto, RelVar rel_var) {
-      info = rel_auto.rel_vars(rel_var);
-      return nothing if info.symmetric;
-      arity = only([|s| : s <- info.signatures]);
-      if (arity == 2 and info.keys == [[0]]) or (arity == 3 and info.keys == [[0, 1]]):
-        masters = [v : v, unused_var <- rel_auto.rel_vars, is_one_to_one_attribute_of(rel_auto, rel_var, v)];
-        return just(only(masters)) if |masters| == 1;
-      ;
-      return nothing;
-    }
+  //   Maybe[RelVar] master_rel_var(Database rel_auto, RelVar rel_var) {
+  //     info = rel_auto.rel_vars(rel_var);
+  //     return nothing if info.symmetric;
+  //     arity = only([|s| : s <- info.signatures]);
+  //     if (arity == 2 and info.keys == [[0]]) or (arity == 3 and info.keys == [[0, 1]]):
+  //       masters = [v : v, unused_var <- rel_auto.rel_vars, is_one_to_one_attribute_of(rel_auto, rel_var, v)];
+  //       return just(only(masters)) if |masters| == 1;
+  //     ;
+  //     return nothing;
+  //   }
 
 
-    Bool is_one_to_one_attribute_of(Database rel_auto, RelVar rel_var, RelVar master_rel_var) {
-      foreign_keys = rel_auto.foreign_keys;
-      info = rel_auto.rel_vars(rel_var);
-      arity = only([|s| : s <- info.signatures]);
-      master_info = rel_auto.rel_vars(master_rel_var);
-      master_arity = only([|s| : s <- master_info.signatures]);
-      if master_arity == arity - 1:
-        // Foreign keys that go from the entity or relationship to the attribute
-        down_keys = [k : k <- foreign_keys, is_mand_attr_key(k, master_rel_var, rel_var)];
+  //   Bool is_one_to_one_attribute_of(Database rel_auto, RelVar rel_var, RelVar master_rel_var) {
+  //     foreign_keys = rel_auto.foreign_keys;
+  //     info = rel_auto.rel_vars(rel_var);
+  //     arity = only([|s| : s <- info.signatures]);
+  //     master_info = rel_auto.rel_vars(master_rel_var);
+  //     master_arity = only([|s| : s <- master_info.signatures]);
+  //     if master_arity == arity - 1:
+  //       // Foreign keys that go from the entity or relationship to the attribute
+  //       down_keys = [k : k <- foreign_keys, is_mand_attr_key(k, master_rel_var, rel_var)];
 
-        // Foreign keys that go from the attribute to the entity or relationship
-        up_keys = [k : k <- foreign_keys, is_std_attr_key(k, rel_var, master_rel_var)];
+  //       // Foreign keys that go from the attribute to the entity or relationship
+  //       up_keys = [k : k <- foreign_keys, is_std_attr_key(k, rel_var, master_rel_var)];
 
-        // Each signatures of the attribute relation must be linked one-on-one
-        // with one of the signatures of the master relation
-        all_signatures_covered = not (s <- info.signatures : not {
-          // For each signature of the attribute relation, there must
-          // be a foreign key originating here that covers it entirely
-          up_ok = (k <- up_keys : is_subset_signature(s, k.source_types));
+  //       // Each signatures of the attribute relation must be linked one-on-one
+  //       // with one of the signatures of the master relation
+  //       all_signatures_covered = not (s <- info.signatures : not {
+  //         // For each signature of the attribute relation, there must
+  //         // be a foreign key originating here that covers it entirely
+  //         up_ok = (k <- up_keys : overlaps_partial_signature(s, k.source_types));
 
-          // For each signature of the attribute relation, there must be a key that, when
-          // applied to one of the signatures of master, covers such signature completely
-          down_ok = (k <- down_keys : {
-            return (src_sgn <- rel_auto.rel_vars(k.source_rel_var).signatures : {
-              // Types of all variables when the key is applied to this specific signature of the source relation
-              src_type_map = [value(a) -> src_sgn(i) : a @ i <~ k.source_args, a != nothing];
-              tgt_args_types = (apply(a, src_type_map($)) : a <- k.target_args);
-              return is_subset_signature(s, tgt_args_types);
-            });
-          });
+  //         // For each signature of the attribute relation, there must be a key that, when
+  //         // applied to one of the signatures of master, covers such signature completely
+  //         down_ok = (k <- down_keys : {
+  //           return (src_sgn <- rel_auto.rel_vars(k.source_rel_var).signatures : {
+  //             // Types of all variables when the key is applied to this specific signature of the source relation
+  //             src_type_map = [value(a) -> src_sgn(i) : a @ i <~ k.source_args, a != nothing];
+  //             tgt_args_types = (apply(a, src_type_map($)) : a <- k.target_args);
+  //             return overlaps_partial_signature(s, tgt_args_types);
+  //           });
+  //         });
 
-          return up_ok and down_ok;
-        });
+  //         return up_ok and down_ok;
+  //       });
 
-        return true if all_signatures_covered;
-      ;
+  //       return true if all_signatures_covered;
+  //     ;
 
-      return false;
-    }
-  }
+  //     return false;
+  //   }
+  // }
 }
 
 
-Bool is_std_attr_key(ForeignKey key, RelVar exp_src, RelVar exp_tgt) {
-  return false if key.source_rel_var != exp_src or key.target_rel_var != exp_tgt;
-  return match (key.source_args, key.target_args)
-    (just(), nothing),          (just())          = true,
-    (just(), just(), nothing),  (just(), just())  = true,
-    _,                          _                 = false;
-}
+// Bool is_std_attr_key(ForeignKey key, RelVar exp_src, RelVar exp_tgt) {
+//   return false if key.source_rel_var != exp_src or key.target_rel_var != exp_tgt;
+//   return match (key.source_args, key.target_args)
+//     (just(), nothing),          (just())          = true,
+//     (just(), just(), nothing),  (just(), just())  = true,
+//     _,                          _                 = false;
+// }
 
 
-Bool is_mand_attr_key(ForeignKey key, RelVar exp_src, RelVar exp_tgt) {
-  return false if key.source_rel_var != exp_src or key.target_rel_var != exp_tgt;
-  return match (key.source_args, key.target_args)
-    (just()),         (just(), nothing)         = true,
-    (just(), just()), (just(), just(), nothing) = true,
-    _,                _                         = false;
-}
+// Bool is_mand_attr_key(ForeignKey key, RelVar exp_src, RelVar exp_tgt) {
+//   return false if key.source_rel_var != exp_src or key.target_rel_var != exp_tgt;
+//   return match (key.source_args, key.target_args)
+//     (just()),         (just(), nothing)         = true,
+//     (just(), just()), (just(), just(), nothing) = true,
+//     _,                _                         = false;
+// }
+
+
+
 
 // // Foreign keys where the relation appears as the origin/source
 // // and the target is a unary relation
