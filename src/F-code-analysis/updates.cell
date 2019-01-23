@@ -27,120 +27,57 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
 
 
   Bool is_one_to_one_attribute(DBSymbol rel_auto, RelVar rel_var) {
-    fail;
-
-    // ## CHECK THE GENERATED CODE HERE
-    // rel_auto_map = one_to_one_attributes_map(rel_auto, !!);
-    // return rel_auto_map(rel_var) != nothing;
+    ## CHECK THE GENERATED CODE HERE
+    rel_auto_map = slave_master_map(rel_auto, !!);
+    return rel_auto_map(rel_var, *);
   }
 
 
-  RelVar master_rel_var(DBSymbol rel_auto, RelVar rel_var) {
-    fail;
-
-    // rel_auto_map = one_to_one_attributes_map(rel_auto, !!);
-    // return value_unsafe(rel_auto_map(rel_var));
+  PhysRelVar master_rel_var(DBSymbol rel_auto, RelVar rel_var) {
+    rel_auto_map = slave_master_map(rel_auto, !!);
+    return rel_auto_map(rel_var);
   }
 
 
-  // [DBSymbol -> [RelVar -> Maybe[RelVar]]] one_to_one_attributes_map {
-  //   return [
-  //     rel_auto.name -> [
-  //       v -> master_rel_var(rel_auto, v) : v, unused_var <- rel_auto.rel_vars
-  //     ] : rel_auto <- program.data_bases
-  //   ];
+  [DBSymbol -> [PhysRelVar -> PhysRelVar]] slave_master_map {
+    return [a.name -> slave_master_map(a) : a <- program.data_bases];
 
 
-  //   Maybe[RelVar] master_rel_var(Database rel_auto, RelVar rel_var) {
-  //     info = rel_auto.rel_vars(rel_var);
-  //     return nothing if info.symmetric;
-  //     arity = only([|s| : s <- info.signatures]);
-  //     if (arity == 2 and info.keys == [[0]]) or (arity == 3 and info.keys == [[0, 1]]):
-  //       masters = [v : v, unused_var <- rel_auto.rel_vars, is_one_to_one_attribute_of(rel_auto, rel_var, v)];
-  //       return just(only(masters)) if |masters| == 1;
-  //     ;
-  //     return nothing;
-  //   }
+    [PhysRelVar -> PhysRelVar] slave_master_map(Database rel_auto) {
+      std_attrs = [k.target_rel_var, k.source_rel_var : k <- rel_auto.foreign_keys, is_std_attr_key(k)];
+      mand_attrs = [k.source_rel_var, k.target_rel_var : k <- rel_auto.foreign_keys, is_mand_attr_key(k)];
+      rel_vars = keys(rel_auto.rel_vars);
+      ## THE !! IS NECESSARY BECAUSE OF A BUG IN THE OLD COMPILER THAT HAS BEEN FIXED NOW
+      return [v -> std_attrs(v, !!) : v, info <- rel_auto.rel_vars, is_slave(v, info, std_attrs, mand_attrs)];
+    }
 
 
-  //   Bool is_one_to_one_attribute_of(Database rel_auto, RelVar rel_var, RelVar master_rel_var) {
-  //     foreign_keys = rel_auto.foreign_keys;
-  //     info = rel_auto.rel_vars(rel_var);
-  //     arity = only([|s| : s <- info.signatures]);
-  //     master_info = rel_auto.rel_vars(master_rel_var);
-  //     master_arity = only([|s| : s <- master_info.signatures]);
-  //     if master_arity == arity - 1:
-  //       // Foreign keys that go from the entity or relationship to the attribute
-  //       down_keys = [k : k <- foreign_keys, is_mand_attr_key(k, master_rel_var, rel_var)];
-
-  //       // Foreign keys that go from the attribute to the entity or relationship
-  //       up_keys = [k : k <- foreign_keys, is_std_attr_key(k, rel_var, master_rel_var)];
-
-  //       // Each signatures of the attribute relation must be linked one-on-one
-  //       // with one of the signatures of the master relation
-  //       all_signatures_covered = not (s <- info.signatures : not {
-  //         // For each signature of the attribute relation, there must
-  //         // be a foreign key originating here that covers it entirely
-  //         up_ok = (k <- up_keys : overlaps_partial_signature(s, k.source_types));
-
-  //         // For each signature of the attribute relation, there must be a key that, when
-  //         // applied to one of the signatures of master, covers such signature completely
-  //         down_ok = (k <- down_keys : {
-  //           return (src_sgn <- rel_auto.rel_vars(k.source_rel_var).signatures : {
-  //             // Types of all variables when the key is applied to this specific signature of the source relation
-  //             src_type_map = [value(a) -> src_sgn(i) : a @ i <~ k.source_args, a != nothing];
-  //             tgt_args_types = (apply(a, src_type_map($)) : a <- k.target_args);
-  //             return overlaps_partial_signature(s, tgt_args_types);
-  //           });
-  //         });
-
-  //         return up_ok and down_ok;
-  //       });
-
-  //       return true if all_signatures_covered;
-  //     ;
-
-  //     return false;
-  //   }
-  // }
+    Bool is_slave(PhysRelVar rel_var, RelVarInfo info, [PhysRelVar, PhysRelVar] std_attrs_map, [PhysRelVar, PhysRelVar] mand_attrs_map) {
+      arity = |info.signature|;
+      if arity == 2:
+        return false if info.keys != [[0]]; ## WHAT IF IT HAS TWO KEYS? WOULDN'T THAT BE OK?
+      elif arity == 3:
+        return false if info.keys != [[0, 1]]; ## DITTO
+      else
+        return false;
+      ;
+      std_masters = [v : v <- std_attrs_map(rel_var, ?)];
+      mand_masters = [v : v <- mand_attrs_map(rel_var, ?)];
+      return |std_masters| == 1 and std_masters == mand_masters;
+    }
+  }
 }
 
 
-// Bool is_std_attr_key(ForeignKey key, RelVar exp_src, RelVar exp_tgt) {
-//   return false if key.source_rel_var != exp_src or key.target_rel_var != exp_tgt;
-//   return match (key.source_args, key.target_args)
-//     (just(), nothing),          (just())          = true,
-//     (just(), just(), nothing),  (just(), just())  = true,
-//     _,                          _                 = false;
-// }
+Bool is_std_attr_key(ForeignKey key) =
+  match (key.source_args, key.target_args)
+    (just(), nothing),          (just())          = true,
+    (just(), just(), nothing),  (just(), just())  = true,
+    _,                          _                 = false;
 
 
-// Bool is_mand_attr_key(ForeignKey key, RelVar exp_src, RelVar exp_tgt) {
-//   return false if key.source_rel_var != exp_src or key.target_rel_var != exp_tgt;
-//   return match (key.source_args, key.target_args)
-//     (just()),         (just(), nothing)         = true,
-//     (just(), just()), (just(), just(), nothing) = true,
-//     _,                _                         = false;
-// }
-
-
-
-
-// // Foreign keys where the relation appears as the origin/source
-// // and the target is a unary relation
-// keys_as_src = [k : k <- foreign_keys, left(k.source) == rel_var, |right(k.target)| == 1];
-
-// // Foreign keys where the relation appears as the target
-// // and the origin/source is a unary relation
-// keys_as_tgt = [k : k <- foreign_keys, left(k.target) == rel_var, |right(k.source)| == 1];
-
-// targets = [left(k.target) : k <- keys_as_src];
-// sources = [left(k.source) : k <- keys_as_tgt];
-
-// // Possible candidate as "masters" for this relation are relations
-// // that are linked to this one by a bidirectional foreign key
-// candidate_masters = intersection(targets, sources);
-// for cm <- candidate_masters:
-// sgns = info.signatures;
-// for fk <- rel_auto.foreign_keys:
-// ;
+Bool is_mand_attr_key(ForeignKey key) =
+  match (key.source_args, key.target_args)
+    (just()),         (just(), nothing)         = true,
+    (just(), just()), (just(), just(), nothing) = true,
+    _,                _                         = false;
