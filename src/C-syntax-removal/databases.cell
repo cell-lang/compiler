@@ -196,11 +196,10 @@ implicit syn_prg : SynPrg {
     // Iterating through the declarations to generate the explicit desugared relations
     for d <- isort(decls):
       // Chosing a physical relation id for the root relation
+      root_rel_var = rel_var(d.name);
       if poly_rel_vars(d.name):
         uid, ctrs = claim_next(ctrs, d.name);
-        root_rel_var = unique_rel_var(d.name, uid);
-      else
-        root_rel_var = rel_var(d.name);
+        root_rel_var = split_rel_var(root_rel_var, uid);
       ;
 
       // Root relation information
@@ -215,11 +214,10 @@ implicit syn_prg : SynPrg {
       // Now turning attributes into explicit relations
       for a <- d.attributes:
         // Choosing a physical relation id for the attribute relation
+        attr_rel_var = rel_var(a.name);
         if poly_rel_vars(a.name):
           uid, ctrs = claim_next(ctrs, a.name);
-          attr_rel_var = unique_rel_var(a.name, uid);
-        else
-          attr_rel_var = rel_var(a.name);
+          attr_rel_var = split_rel_var(attr_rel_var, uid);
         ;
 
         // Attribute relation information
