@@ -51,11 +51,11 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
 
     ForeignKey rewrite(ForeignKey key, [RelVar -> [+Nat -> Nat]] perms) {
       src_perm = perms(logical_rel_var(key.source_rel_var));
-      tgt_perm = perms(logical_rel_var(key.target_rel_var));
+      tgt_perm = perms(only([logical_rel_var(v) : v <- key.target_rel_vars]));
       return foreign_key(
         key.source_rel_var,
         permutate(key.source_args, src_perm),
-        key.target_rel_var,
+        key.target_rel_vars,
         permutate(key.target_args, tgt_perm)
       );
     }

@@ -125,12 +125,10 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
 
 
   [CoreWFError] foreign_key_errors(Database database, ForeignKey key) {
-    src_rel = key.source_rel_var;
-    src_rel_info = database.rel_vars(src_rel);
-    src_args = key.source_args;
+    log_tgts = [logical_rel_var(v) : v <- key.target_rel_vars];
+    return [unspecified_foreign_key_error(key)] if |log_tgts| != 1;
 
-    tgt_rel = key.target_rel_var;
-    tgt_rel_info = database.rel_vars(tgt_rel);
+    src_args = key.source_args;
     tgt_args = key.target_args;
 
     is_supported = match (src_args, tgt_args)
@@ -165,13 +163,18 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
 
     return [unsupported_foreign_key_type(key)] if not is_supported;
 
+    src_symm = database.rel_vars(key.source_rel_var).symmetric;
+    tgt_symms = [database.rel_vars(v).symmetric : v <- key.target_rel_vars];
+    return [unspecified_foreign_key_error(key)] if |tgt_symms| != 1;
+    tgt_symm = only(tgt_symms);
+
     ## ARE THESE THE ONLY CASES WHERE WE EXPECT TABLES TO HAVE MATCHING SYMMETRIES?
     symmetry_is_fine = match (src_args, tgt_args)
-      (just(), just()),           (just(), just(), nothing) = src_rel_info.symmetric == tgt_rel_info.symmetric,
-      (just(), just(), nothing),  (just(), just())          = src_rel_info.symmetric == tgt_rel_info.symmetric,
+      (just(), just()),           (just(), just(), nothing) = src_symm == tgt_symm,
+      (just(), just(), nothing),  (just(), just())          = src_symm == tgt_symm,
       _,                          _                         = true;
 
-    return [foreign_key_symmetry_mismatch(key, src_rel_info.symmetric)] if not symmetry_is_fine;
+    return [foreign_key_symmetry_mismatch(key, src_symm)] if not symmetry_is_fine;
 
     ## IS THERE ANYTHING ELSE I'M SUPPOSED TO CHECK HERE?
 

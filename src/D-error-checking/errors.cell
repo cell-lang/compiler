@@ -25,7 +25,8 @@ type CoreWFError  = error_cluster(AnyAuto, [+CoreWFError]),
                     invalid_input(var: NestedAutoVar, type: AutoSymbol, input: Atom),
                     undefined_input(var: NestedAutoVar, type: AutoSymbol, input: Atom),
                     continous_expr_for_discrete_input(var: NestedAutoVar, input: Atom),
-                    non_nested_self_ref(type: TypeName);
+                    non_nested_self_ref(type: TypeName),
+                    unspecified_foreign_key_error(key: ForeignKey);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -51,6 +52,7 @@ CoreWFError invalid_input(NestedAutoVar v, AutoSymbol t, Atom i) = invalid_input
 CoreWFError undefined_input(NestedAutoVar v, AutoSymbol t, Atom i) = undefined_input(var: v, type: t, input: i);
 CoreWFError continous_expr_for_discrete_input(NestedAutoVar v, Atom i) = continous_expr_for_discrete_input(var: v, input: i);
 CoreWFError non_nested_self_ref(TypeName t) = non_nested_self_ref(type: t);
+CoreWFError unspecified_foreign_key_error(ForeignKey key) = unspecified_foreign_key_error(key: key);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -76,7 +78,8 @@ String* error_message(CoreWFError err) =
   invalid_input()                     = invalid_input_error_message(err.var, err.type, err.input),
   undefined_input()                   = undefined_input_error_message(err.var, err.type, err.input),
   continous_expr_for_discrete_input() = continous_expr_for_discrete_input_error_message(err.var, err.input),
-  non_nested_self_ref()               = non_nested_self_ref_error_message(err.type);
+  non_nested_self_ref()               = non_nested_self_ref_error_message(err.type),
+  unspecified_foreign_key_error()     = unspecified_foreign_key_error_error_message(err.key);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -150,7 +153,7 @@ String* foreign_key_symmetry_mismatch_error_message(ForeignKey key, Bool src_is_
   src_neg = if src_is_sym then "" else "not ";
   tgt_neg = if src_is_sym then " not" else "";
   src_repr = user_repr(key.source_rel_var);
-  tgt_repr = user_repr(key.target_rel_var);
+  tgt_repr = user_repr(an_elem(key.target_rel_vars));
   return (
     "Unsupported foreign key type: " & user_repr(key),
     src_repr & " is " & src_neg & "symmetric, while " & tgt_repr & " is" & tgt_neg
@@ -222,6 +225,12 @@ String* continous_expr_for_discrete_input_error_message(NestedAutoVar var, Atom 
 
 String* non_nested_self_ref_error_message(TypeName type) =
   ("Types are not allowed to contain themselves: " & user_repr(type));
+
+
+String* unspecified_foreign_key_error_error_message(ForeignKey key) = (
+  "There was a problem involving the following foreign key: " & user_repr(key),
+  "I'm sorry I cannot be more specific than that"
+);
 
 ////////////////////////////////////////////////////////////////////////////////
 
