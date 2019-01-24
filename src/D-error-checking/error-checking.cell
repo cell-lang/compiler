@@ -81,7 +81,12 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
     ];
 
     errs = rel_vars_errs & foreign_key_errs & method_errs & updates_errs & handler_errs;
-    return [error_cluster(database, errs) if errs != []];
+    return [error_cluster(database, errs)] if errs != [];
+
+    sgns = [v -> info.signature : v, info <- database.rel_vars];
+    keys = [logical_rel_var(v) -> info.keys : v, info <- database.rel_vars];
+    res = try_to_split(sgns, database.foreign_keys, keys);
+    return [unpartitionable_foreign_key(get_error(res)) if failed(res)];
   }
 
 

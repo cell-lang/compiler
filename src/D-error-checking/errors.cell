@@ -26,7 +26,8 @@ type CoreWFError  = error_cluster(AnyAuto, [+CoreWFError]),
                     undefined_input(var: NestedAutoVar, type: AutoSymbol, input: Atom),
                     continous_expr_for_discrete_input(var: NestedAutoVar, input: Atom),
                     non_nested_self_ref(type: TypeName),
-                    unspecified_foreign_key_error(key: ForeignKey);
+                    unspecified_foreign_key_error(key: ForeignKey),
+                    unpartitionable_foreign_key(key: ForeignKey);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -53,6 +54,7 @@ CoreWFError undefined_input(NestedAutoVar v, AutoSymbol t, Atom i) = undefined_i
 CoreWFError continous_expr_for_discrete_input(NestedAutoVar v, Atom i) = continous_expr_for_discrete_input(var: v, input: i);
 CoreWFError non_nested_self_ref(TypeName t) = non_nested_self_ref(type: t);
 CoreWFError unspecified_foreign_key_error(ForeignKey key) = unspecified_foreign_key_error(key: key);
+CoreWFError unpartitionable_foreign_key(ForeignKey key) = unpartitionable_foreign_key(key: key);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -79,7 +81,8 @@ String* error_message(CoreWFError err) =
   undefined_input()                   = undefined_input_error_message(err.var, err.type, err.input),
   continous_expr_for_discrete_input() = continous_expr_for_discrete_input_error_message(err.var, err.input),
   non_nested_self_ref()               = non_nested_self_ref_error_message(err.type),
-  unspecified_foreign_key_error()     = unspecified_foreign_key_error_error_message(err.key);
+  unspecified_foreign_key_error()     = unspecified_foreign_key_error_error_message(err.key),
+  unpartitionable_foreign_key()       = unpartitionable_foreign_key_error_message(err.key);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -230,6 +233,15 @@ String* non_nested_self_ref_error_message(TypeName type) =
 String* unspecified_foreign_key_error_error_message(ForeignKey key) = (
   "There was a problem involving the following foreign key: " & user_repr(key),
   "I'm sorry I cannot be more specific than that"
+);
+
+
+String* unpartitionable_foreign_key_error_message(ForeignKey key) = (
+  "Unsupported foreign key: " & user_repr(key),
+  "For reasons that are a bit complicated to explain, the compiler is not (yet) able",
+  "to deal with certain kinds of foreign keys that involve polymorphic relations.",
+  "This problem is expected to arise only in very unusual circumstances, but it looks",
+  "like you've come across one of such cases. Try reporting the problem in the Cell forum."
 );
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -299,26 +299,6 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
     return code;
   }
 
-  // public boolean fullCheck() {
-  //   int i0, i1;
-
-  //   UnaryTable.Iter uit = operator_B.getIter();
-  //   while (!uit.done()) {
-  //     i0 = uit.get();
-  //     if (!code_B1.contains1(i0) || !name_B.contains1(i0))
-  //       return false;
-  //   }
-
-  //   BinaryTable.Iter bit = code_B0.getIter();
-  //   while (!bit.done()) {
-  //     i0 = bit.get1();
-  //     if (!operator_B.contains(i0))
-  //       return false;
-  //   }
-
-  //   return true;
-  // }
-
 
   ## COMPILATION OF METHODS FOR BOTH TYPES OF AUTOMATA IS ALMOST IDENTICAL, CAN WE SHARE SOME CODE HERE?
   [MethodId -> CompiledMethod] compiled_database_methods([Method] methods) {
@@ -444,7 +424,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 
 implicit program : Program, typedefs : [TypeName -> NeType], database : Database {
   [BlockForeignKey] physical_foreign_keys = [
-    foreign_key(table_var(k.source_rel_var), table_var(k.target_rel_var), foreign_key_type(k))
+    foreign_key(table_var(k.source_rel_var), table_var(only(k.target_rel_vars)), foreign_key_type(k))
     : k <- database.foreign_keys
   ];
 
@@ -454,7 +434,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
     target_args = key.target_args;
 
     origin_symmetric = symmetric(database.name, key.source_rel_var);
-    target_symmetric = symmetric(database.name, key.target_rel_var);
+    target_symmetric = symmetric(database.name, only(key.target_rel_vars));
 
     assert match (origin_args, target_args)
       (just(s1?)),              (just(s2?))                     = s1 == s2,
