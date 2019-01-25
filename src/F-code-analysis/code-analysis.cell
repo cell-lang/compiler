@@ -51,7 +51,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Database,
   }
 
 
-  [AnalysisError] analyse(InsertStmt stmt, [PhysRelVar, Expr+, InsertStmt] reqrs, [EnvVar -> Type] env) {
+  [AnalysisError] analyse(InsertStmt stmt, [RelVar, Expr+, InsertStmt] reqrs, [EnvVar -> Type] env) {
     if is_one_to_one_attribute(context.name, stmt.var):
       key_args = take(stmt.args, |stmt.args| - 1);
       if not reqrs(stmt.var, key_args, *):
@@ -71,7 +71,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Database,
 
 
   // type DeleteStmt = delete_stmt(var: RelVar, args: Maybe[Expr]+);
-  [AnalysisError] analyse(DeleteStmt stmt, [PhysRelVar, Expr+, InsertStmt] reqrs, [EnvVar -> Type] env) {
+  [AnalysisError] analyse(DeleteStmt stmt, [RelVar, Expr+, InsertStmt] reqrs, [EnvVar -> Type] env) {
     if is_one_to_one_attribute(context.name, stmt.var):
       master = master_rel_var(context.name, stmt.var);
       if context.attr_map(master, stmt.var):
@@ -82,7 +82,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Database,
   }
 
 
-  [AnalysisError] analyse(AssignmentStmt stmt, [PhysRelVar, Expr+, InsertStmt] reqrs, [EnvVar -> Type] env) {
+  [AnalysisError] analyse(AssignmentStmt stmt, [RelVar, Expr+, InsertStmt] reqrs, [EnvVar -> Type] env) {
     req_vars = [r, v : r, es, unused_var_2 <- reqrs, e <~ es, v <- extern_vars(e)];
     violations = [r, v : v <~ stmt.vars, r <- req_vars(?, v)];
     return [assignment_with_pending_updates(stmt, violations) if violations != []];
@@ -90,7 +90,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Database,
 
   //////////////////////////////////////////////////////////////////////////////
 
-  [PhysRelVar, Expr+, InsertStmt] update_insert_requirement(Statement stmt, [PhysRelVar, Expr+, InsertStmt] reqrs, [EnvVar -> Type] env) {
+  [RelVar, Expr+, InsertStmt] update_insert_requirement(Statement stmt, [RelVar, Expr+, InsertStmt] reqrs, [EnvVar -> Type] env) {
     return match (stmt)
       insert_stmt()   |
       foreach_stmt()  = update_reqrs(stmt, reqrs, env),
@@ -98,7 +98,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Database,
 
 
     // insert_stmt(var: RelVar, args: Expr+);
-    [PhysRelVar, Expr+, InsertStmt] update_reqrs(InsertStmt stmt, [PhysRelVar, Expr+, InsertStmt] reqrs, [EnvVar -> Type] env) {
+    [RelVar, Expr+, InsertStmt] update_reqrs(InsertStmt stmt, [RelVar, Expr+, InsertStmt] reqrs, [EnvVar -> Type] env) {
       rel_auto = cast_database(context);
       args_types = (expr_type(a, env) : a <- stmt.args);
       return reqrs if not args_types :: NeType+;
@@ -120,7 +120,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Database,
 
     // foreach_stmt(iter: CollValueIter, body: Statement+);
     // coll_value_iter(vars: Maybe[StdVar]+, idx_var: StdVar?, src_expr: Expr);
-    [PhysRelVar, Expr+, InsertStmt] update_reqrs(ForeachStmt stmt, [PhysRelVar, Expr+, InsertStmt] reqrs, [EnvVar -> Type] env) {
+    [RelVar, Expr+, InsertStmt] update_reqrs(ForeachStmt stmt, [RelVar, Expr+, InsertStmt] reqrs, [EnvVar -> Type] env) {
       return reqrs if not iterates_at_least_once(stmt.iter, env);
       loop_env = env & loop_vars(stmt.iter, env);
       return update_reqrs(stmt.body, reqrs, loop_env);
@@ -151,7 +151,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Database,
     Bool iterates_at_least_once(RelVarIter iter, [EnvVar -> Type] env) = false;
 
 
-    [PhysRelVar, Expr+, InsertStmt] update_reqrs(Statement+ stmts, [PhysRelVar, Expr+, InsertStmt] reqrs, [EnvVar -> Type] env) {
+    [RelVar, Expr+, InsertStmt] update_reqrs(Statement+ stmts, [RelVar, Expr+, InsertStmt] reqrs, [EnvVar -> Type] env) {
       curr_reqrs = [];
       curr_env = env;
       for s <- stmts:

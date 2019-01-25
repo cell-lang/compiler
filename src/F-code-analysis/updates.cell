@@ -1,20 +1,20 @@
 implicit program : Program, typedefs : [TypeName -> NeType] {
-  [+[PhysRelVar]] required_insertions(DBSymbol rel_auto_id, RelVar rel_var, NeType+ args_types) {
+  [+[RelVar]] required_insertions(DBSymbol rel_auto_id, RelVar rel_var, NeType+ args_types) {
     phys_rel_vars = physical_rel_vars(rel_auto_id, rel_var, args_types);
     fail if phys_rel_vars == [];
     rel_auto_map = required_insertions_map(rel_auto_id, !!);
     return [rel_auto_map(v) : v <- phys_rel_vars];
 
 
-    [DBSymbol -> [PhysRelVar -> [PhysRelVar]]] required_insertions_map = [
+    [DBSymbol -> [PhysRelVar -> [RelVar]]] required_insertions_map = [
       a.name -> required_insertions_map(a) : a <- program.data_bases
     ];
 
 
-    [PhysRelVar -> [PhysRelVar]] required_insertions_map(Database rel_auto) {
+    [PhysRelVar -> [RelVar]] required_insertions_map(Database rel_auto) {
       ins_keys = [k : k <- rel_auto.foreign_keys, requires_insertion(k)];
       links = [k.source_rel_var, only(k.target_rel_vars) : k <- ins_keys];
-      return [sv -> [tv : tv <- links(sv, ?)] : sv <- keys(rel_auto.rel_vars)];
+      return [sv -> [logical_rel_var(tv) : tv <- links(sv, ?)] : sv <- keys(rel_auto.rel_vars)];
     }
 
 
@@ -48,7 +48,7 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
       mand_attrs = [k.source_rel_var, only(k.target_rel_vars) : k <- rel_auto.foreign_keys, is_mand_attr_key(k)];
       rel_vars = keys(rel_auto.rel_vars);
       ## THE !! IS NECESSARY BECAUSE OF A BUG IN THE OLD COMPILER THAT HAS BEEN FIXED NOW
-      return [v -> std_attrs(v, !!) : v, info <- rel_auto.rel_vars, is_slave(v, info, std_attrs, mand_attrs)];
+      return [v -> std_attrs(!!, v) : v, info <- rel_auto.rel_vars, is_slave(v, info, std_attrs, mand_attrs)];
     }
 
 
@@ -61,8 +61,8 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
       else
         return false;
       ;
-      std_masters = [v : v <- std_attrs_map(rel_var, ?)];
-      mand_masters = [v : v <- mand_attrs_map(rel_var, ?)];
+      std_masters = [v : v <- std_attrs_map(?, rel_var)];
+      mand_masters = [v : v <- mand_attrs_map(?, rel_var)];
       return |std_masters| == 1 and std_masters == mand_masters;
     }
   }
