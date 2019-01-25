@@ -50,7 +50,7 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
             // and then select only the relvars in the target set that overlap with it
             src_vars_types = [value(a) -> s(i) : a @ i <~ key.source_args, a != nothing];
             tgt_sgn = (apply(a, src_vars_types($)) : a @ i <- key.target_args);
-            tgt_rel_vars = [tv : tv <- key.target_rel_vars, overlaps_partial_signature(rel_vars(tv), tgt_sgn)];
+            tgt_rel_vars = [tv : tv <- key.target_rel_vars, signature_overlaps_partial_signature(rel_vars(tv), tgt_sgn)];
             fail if tgt_rel_vars == []; ## CAN THIS ACTUALLY HAPPEN?
             subkey = foreign_key(v, key.source_args, tgt_rel_vars, key.target_args);
             subkeys = (subkeys | subkey);
@@ -108,9 +108,21 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
       // If there's more than one argument whose type depends on the target we just give up
       return nothing if |diff_idxs| != 1;
 
-      // Checking that all types are disjoin
+      ## THE KEYS IN diff_idxs ARE THE INDEXES OF THE TARGET OR THE SOURCE?
+
+      // Discarding all targets that are not in the "image" of the source
       diff_idx, types_by_target = only_unsafe(isort(diff_idxs));
-      ord_targets, ord_types = unzip(isort(types_by_target));
+      src_rel_var = key.source_rel_var;
+      source_sgn = rel_vars(src_rel_var);
+      src_type = source_sgn(diff_idx);
+      overlapping_types_by_target = [v -> t : v, t <- types_by_target, not are_ptype_disjoint(t, src_type)];
+
+      // If the source can reach only one of the targets, then there's no need to split anything
+      // We just do a "pretend" split that doesn't split anything
+      return just((src_rel_var, [src_rel_var -> rel_vars(src_rel_var)])) if |overlapping_types_by_target| == 1;
+
+      // Checking that all types are disjoint
+      ord_targets, ord_types = unzip(isort(overlapping_types_by_target));
       for t1 @ i1 <- ord_types:
         for i2 = i1+1 .. |ord_types|:
           return nothing if not are_ptype_disjoint(t1, ord_types(i2));
@@ -118,12 +130,9 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
       ;
 
       // If the union of the target-specific types is the source type then we're jolly
-      union_type = ne_union_superset(nonempty(values(types_by_target)));
-      src_rel_var = key.source_rel_var;
-      source_sgn = rel_vars(src_rel_var);
-      if not is_eq(union_type, source_sgn(diff_idx)):
-        ## THE UNION OF THE TARGET TYPES COULD BE A SUPERSET OF THE SOURCE TYPE
-        ## WE SHOULDN'T BE GIVING UP TOO EARLY
+      union_type = ne_union_superset(nonempty(values(overlapping_types_by_target)));
+      if not is_eq(src_type, union_type):
+        ## HERE WE CAN DO BETTER THAN THIS
         return nothing;
       ;
 

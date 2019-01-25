@@ -9,10 +9,6 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
     ;
     return true;
   }
-
-
-  Bool any_signature_overlaps_partial_signature([+NeType+] signatures, Maybe[Type]+ partial_signature) =
-    (s <- signatures : signature_overlaps_partial_signature(s, partial_signature));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -55,15 +51,6 @@ implicit typedefs : [TypeName -> NeType] {
 
 
   Bool signatures_overlap(NeType+ sgn1, NeType+ sgn2) = not (t @ i <~ sgn1 : are_ptype_disjoint(t, sgn2(i)));
-
-
-  Bool overlaps_partial_signature(NeType+ signature, Maybe[NeType]+ partial_signature) {
-    assert |signature| == |partial_signature|;
-    for t @ i <- partial_signature:
-      return false if t != nothing and not is_subset(signature(i), value(t));
-    ;
-    return true;
-  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////

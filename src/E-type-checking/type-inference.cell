@@ -996,7 +996,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     sgns = relvar_signatures(iter.rel_var);
     args_types = (apply(a, expr_type($, env)) : a <- iter.args);
     return [value(v) -> empty_type : v @ i <~ iter.vars, v != nothing] if not args_types :: Maybe[NeType]+;
-    filtered_sgns = [s : s <- sgns, overlaps_partial_signature(s, args_types)];
+    filtered_sgns = [s : s <- sgns, signature_overlaps_partial_signature(s, args_types)];
     vars_types = (ne_union_superset(nonempty([s(i) : s <- filtered_sgns])) : v @ i <- iter.args, v == nothing);
     return [value(v) -> vars_types(i) : v @ i <~ iter.vars, v != nothing];
   }
