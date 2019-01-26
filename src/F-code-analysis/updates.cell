@@ -46,8 +46,6 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
     [PhysRelVar -> PhysRelVar] slave_master_map(Database rel_auto) {
       std_attrs = [only(k.target_rel_vars), k.source_rel_var : k <- rel_auto.foreign_keys, is_std_attr_key(k)];
       mand_attrs = [k.source_rel_var, only(k.target_rel_vars) : k <- rel_auto.foreign_keys, is_mand_attr_key(k)];
-      rel_vars = keys(rel_auto.rel_vars);
-      ## THE !! IS NECESSARY BECAUSE OF A BUG IN THE OLD COMPILER THAT HAS BEEN FIXED NOW
       return [v -> std_attrs(!!, v) : v, info <- rel_auto.rel_vars, is_slave(v, info, std_attrs, mand_attrs)];
     }
 

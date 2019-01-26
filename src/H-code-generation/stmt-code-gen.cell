@@ -198,7 +198,7 @@ implicit program           : Program,
       } : e @ i <- args_aliases);
 
       insertion_code = (queue_insert_tuple(table_var, surr_vars));
-      code = pre_insert_code & insertion_code;
+      code = args_eval_code & pre_insert_code & insertion_code;
 
       return (code, just(surrogates), [], init_var_gen);
     ;
@@ -217,7 +217,7 @@ implicit program           : Program,
       return (types, code);
     } : tv <- candidate_tables];
 
-    code = (execute_block(dynamic_dispatch_code(args_aliases, cases)));
+    code = (args_eval_code | execute_block(dynamic_dispatch_code(args_aliases, cases)));
 
     return (code, just(surrogates), [], init_var_gen);
   }
@@ -258,7 +258,7 @@ implicit program           : Program,
         (queue_deletes(table_var, as, symmetric) : as <- deletes_args) |
         queue_insert_tuple(table_var, surr_vars)
       );
-      code = pre_insert_code & insertion_code;
+      code = args_eval_code & pre_insert_code & insertion_code;
 
       return (code, just(surrogates), [], init_var_gen);
     ;
@@ -278,7 +278,7 @@ implicit program           : Program,
       return (types, code);
     } : tv <- candidate_tables];
 
-    code = (execute_block(dynamic_dispatch_code(args_aliases, cases)));
+    code = (args_eval_code | execute_block(dynamic_dispatch_code(args_aliases, cases)));
 
     return (code, just(surrogates), [], init_var_gen);
   }

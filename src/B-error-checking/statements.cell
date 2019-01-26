@@ -142,6 +142,7 @@ implicit {
     }
 
 
+    // type SynCollIter = coll_value_iter(vars: Maybe[StdVar]+, idx_var: StdVar?, src_expr: SynExpr);
     ExprWFError* iter_wf_errors(SynCollIter iter, [DefVar] vars) {
       if not iter.idx_var? and iter.src_expr :: IdChain:
         symbs = destructure_id_chain(iter.src_expr);
@@ -156,7 +157,11 @@ implicit {
     }
 
 
+    // type SynFilteredIter = filtered_iter(vars: Maybe[Symbol]+, target: Symbol+, args: Maybe[SynExpr]+);
     ExprWFError* iter_wf_errors(SynFilteredIter iter, [DefVar] vars) {
+      errs = join((expr_wf_errors(value(a), vars) : a <- iter.args, a != nothing));
+      return errs if errs != ();
+
       target = iter.target;
       resols = resolve_by_priority_as_expr_or_rel_var(target, |iter.args|, vars);
       if |resols| == 1:
@@ -179,6 +184,7 @@ implicit {
     }
 
 
+    // type SynRangeIter = range_iter(var: StdVar?, start_val: SynExpr, end_val: SynExpr, end_val_incl: Bool);
     ExprWFError* iter_wf_errors(SynRangeIter iter, [DefVar] vars) =
       expr_wf_errors(iter.start_val, vars) & expr_wf_errors(iter.end_val, vars);
   }

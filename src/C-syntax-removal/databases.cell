@@ -235,12 +235,12 @@ implicit syn_prg : SynPrg {
         args_names = (:a, :b);
         root_args = (just(args_names(i)) : i < root_arity);
         attr_args = (root_args | nothing);
-        attr_to_root_key = foreign_key(root_rel_var, root_args, [attr_rel_var], attr_args);
+        attr_to_root_key = foreign_key(attr_rel_var, attr_args, [root_rel_var], root_args);
         foreign_keys = (foreign_keys | attr_to_root_key);
 
         // Making the key bidirectional for required attributes
         if a.cardinality.required:
-          root_to_attr_key = foreign_key(attr_rel_var, attr_args, [root_rel_var], root_args);
+          root_to_attr_key = foreign_key(root_rel_var, root_args, [attr_rel_var], attr_args);
           foreign_keys = (foreign_keys | root_to_attr_key);
         ;
 
