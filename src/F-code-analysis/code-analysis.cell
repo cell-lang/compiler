@@ -39,6 +39,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Database,
         delete_stmt()     |
         assignment_stmt() = analyse(s, curr_reqrs, curr_env),
         _                 = [];
+
       return errs if errs != [];
       curr_reqrs = update_insert_requirement(s, curr_reqrs, curr_env);
       curr_env = update_env(s, curr_env);
@@ -52,30 +53,35 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Database,
 
 
   [AnalysisError] analyse(InsertStmt stmt, [RelVar, Expr+, InsertStmt] reqrs, [EnvVar -> Type] env) {
-    if is_one_to_one_attribute(context.name, stmt.var):
-      key_args = take(stmt.args, |stmt.args| - 1);
-      if not reqrs(stmt.var, key_args, *):
-        bad_args = reqrs(stmt.var, *, *);
-        return [out_of_place_one_to_one_attr_insertion(stmt, master_rel_var(context.name, stmt.var), bad_args)];
+    args_types = (expr_type(a, env) : a <- stmt.args);
+    return [] if not args_types :: NeType+;
+    phys_rel_vars = physical_rel_vars(stmt.var, args_types);
+    for v <- isort(phys_rel_vars):
+      if is_one_to_one_attribute(context.name, v):
+        key_args = take(stmt.args, |stmt.args| - 1);
+        if not reqrs(logical_rel_var(v), key_args, *):
+          bad_args = reqrs(v, *, *);
+          return [out_of_place_one_to_one_attr_insertion(stmt, master_rel_var(context.name, v), bad_args)];
+        ;
       ;
     ;
 
-    args_types = (expr_type(a, env) : a <- stmt.args);
-    if args_types :: NeType+:
-      req_inserts = required_insertions(context.name, stmt.var, args_types);
-      return [invalid_polymorphic_insertion(stmt, req_inserts)] if |req_inserts| != 1;
-    ;
-
-    return [];
+    req_inserts = required_insertions(context.name, stmt.var, args_types);
+    return [invalid_polymorphic_insertion(stmt, req_inserts) if |req_inserts| != 1];
   }
 
 
   // type DeleteStmt = delete_stmt(var: RelVar, args: Maybe[Expr]+);
   [AnalysisError] analyse(DeleteStmt stmt, [RelVar, Expr+, InsertStmt] reqrs, [EnvVar -> Type] env) {
-    if is_one_to_one_attribute(context.name, stmt.var):
-      master = master_rel_var(context.name, stmt.var);
-      if context.attr_map(master, stmt.var):
-        return [deleting_one_to_one_attribute(stmt, master_rel_var(context.name, stmt.var))];
+    args_types = (apply(a, expr_type($, env)) : a <- stmt.args);
+    return [] if not args_types :: Maybe[NeType]+;
+    phys_rel_vars = overlapping_phys_rel_vars(stmt.var, args_types);
+    for v <- isort(phys_rel_vars):
+      if is_one_to_one_attribute(context.name, v):
+        master = master_rel_var(context.name, v);
+        if context.attr_map(master, v):
+          return [deleting_one_to_one_attribute(stmt, master)];
+        ;
       ;
     ;
     return [];
