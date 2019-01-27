@@ -14,15 +14,15 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
 ////////////////////////////////////////////////////////////////////////////////
 
 implicit program : Program, typedefs : [TypeName -> NeType], context : Database {
+  // type Handler = handler(type: NeType, body: Statement*);
   [AnalysisError] analysis_errors(Handler handler) {
-    // type Handler  = handler(type: NeType, body: Statement*);
     env = [var(:this) -> handler.type];
     return analyse(handler.body, env, typed_vars = []);
   }
 
 
+  // type Update = update(name: UpdateSymbol, args: (NeType, StdVar)*, body: Statement*);
   [AnalysisError] analysis_errors(Update update) {
-    // type Update   = update(name: UpdateSymbol, args: (NeType, StdVar)*, body: Statement*);
     env = [v -> t : t, v <~ update.args];
     return analyse(update.body, env, typed_vars = []);
   }
@@ -59,9 +59,11 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Database,
     for v <- isort(phys_rel_vars):
       if is_one_to_one_attribute(context.name, v):
         key_args = take(stmt.args, |stmt.args| - 1);
-        if not reqrs(logical_rel_var(v), key_args, *):
-          bad_args = reqrs(v, *, *);
-          return [out_of_place_one_to_one_attr_insertion(stmt, master_rel_var(context.name, v), bad_args)];
+        log_rel_var = logical_rel_var(v);
+        if not reqrs(log_rel_var, key_args, *):
+          master = logical_rel_var(master_rel_var(context.name, v));
+          bad_args = reqrs(log_rel_var, *, *);
+          return [out_of_place_one_to_one_attr_insertion(stmt, master, bad_args)];
         ;
       ;
     ;
@@ -80,7 +82,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Database,
       if is_one_to_one_attribute(context.name, v):
         master = master_rel_var(context.name, v);
         if context.attr_map(master, v):
-          return [deleting_one_to_one_attribute(stmt, master)];
+          return [deleting_one_to_one_attribute(stmt, logical_rel_var(master))];
         ;
       ;
     ;

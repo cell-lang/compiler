@@ -12,12 +12,20 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
     rel_auto_by_id(rel_auto_id).rel_vars(rel_var).signature;
 
 
+  NzNat arity(DBSymbol rel_auto_id, RelVar rel_var) =
+    rel_var_arity(rel_auto_by_id(rel_auto_id), rel_var);
+
+
   NzNat arity(DBSymbol rel_auto_id, PhysRelVar rel_var) =
-    rel_var_arity(rel_auto_by_id(rel_auto_id), logical_rel_var(rel_var));
+    arity(rel_auto_id, logical_rel_var(rel_var));
+
+
+  Bool symmetric(DBSymbol rel_auto_id, RelVar rel_var) =
+    rel_var_is_symmetric(rel_auto_by_id(rel_auto_id), rel_var);
 
 
   Bool symmetric(DBSymbol rel_auto_id, PhysRelVar rel_var) =
-    rel_var_is_symmetric(rel_auto_by_id(rel_auto_id), logical_rel_var(rel_var));
+    symmetric(rel_auto_id, logical_rel_var(rel_var));
 
 
   [[+Nat]] rel_var_keys(DBSymbol rel_auto_id, RelVar rel_var) =
