@@ -62,7 +62,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 
 
   Instr* database_copy_state_code([RelVar -> [+Nat -> Nat]] rel_vars_args_perms) {
-    count = nat(|database.state_vars| + |database.rel_vars| + |database.nested_dbs|);
+    log_rel_vars = [logical_rel_var(v) : v, unused_var <- database.rel_vars];
+    count = nat(|database.state_vars| + |log_rel_vars| + |database.nested_dbs|);
     return (ret_val(empty_rel)) if count == 0;
 
     res_var, var_gen = next_obj_var(blank_var_gen);
@@ -70,9 +71,9 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
     values_var, var_gen = next_vector_var(var_gen, count);
 
     state_vars = rand_sort(keys(database.state_vars));
-    gen_rel_vars = rand_sort([logical_rel_var(v) : v, unused_var <- database.rel_vars]);
+    log_rel_vars = rand_sort(log_rel_vars);
     nested_autos = rand_sort(keys(database.nested_dbs));
-    all_vars = state_vars & gen_rel_vars & nested_autos;
+    all_vars = state_vars & log_rel_vars & nested_autos;
 
     let context = database:
       code = join(({
