@@ -132,10 +132,13 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg], actual_ar
   ExprWFError* aggr_fn_call_wf_errors(SynAggrFnCall expr, [DefVar] def_vars) {
     decls = aggr_funct_decls_by_name(expr.fn_name);
     arities = [nz_nat(1 + |d.extra_args|) : d <- decls];
-    return (
-      unknown_aggr_funct(expr) if decls == [],
-      invalid_aggr_funct_arity(expr, arities) if arities != [] and not arities(1 + |expr.extra_args|)
-    );
+    if decls == []:
+      return (unknown_aggr_funct(expr));
+    elif not arities(1 + |expr.extra_args|):
+      return (invalid_aggr_funct_arity(expr, nonempty(arities)));
+    ;
+    clause = desugar_clause(expr.clause, [v : v <- def_vars, v :: StdVar]);
+    return (non_relvar_aggr_fns_iter(expr.clause) if not clause :: RelVarClause);
   }
 
 

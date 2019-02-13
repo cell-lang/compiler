@@ -144,6 +144,7 @@ type ExprSpecWFError    = already_def_var(Var),
                           invalid_rel_var_arity(var: Atom, arity: NzNat, relvar_arity: NzNat),
                           not_a_rel_var(var: Atom, schema_def: SchemaDef),
                           unknown_rel_var(var: Atom, schema_def: SchemaDef),
+                          non_relvar_aggr_fns_iter(cls: SynIterClause),
 
                           undef_auto_var(var: Atom, is_data_var: Bool),
 
@@ -363,6 +364,7 @@ ExprSpecWFError unknown_memb_var(Atom v, SchemaDef d)             = unknown_memb
 ExprSpecWFError invalid_rel_var_arity(Atom v, NzNat a, NzNat ra)  = invalid_rel_var_arity(var: v, arity: a, relvar_arity: ra);
 ExprSpecWFError not_a_rel_var(Atom v, SchemaDef d)                = not_a_rel_var(var: v, schema_def: d);
 ExprSpecWFError unknown_rel_var(Atom v, SchemaDef d)              = unknown_rel_var(var: v, schema_def: d);
+ExprSpecWFError non_relvar_aggr_fns_iter(SynIterClause c)         = non_relvar_aggr_fns_iter(cls: c);
 
 ExprSpecWFError undef_auto_var(Atom v, Bool b)                    = undef_auto_var(var: v, is_data_var: b);
 
@@ -481,6 +483,7 @@ Any* anchor_objs(ExprSpecWFError err) =
   invalid_rel_var_arity()                 = (),
   not_a_rel_var()                         = (),
   unknown_rel_var()                       = (),
+  non_relvar_aggr_fns_iter()              = (err.cls),
 
   undef_auto_var()                        = (),
 
@@ -934,6 +937,7 @@ String* basic_err_msg(ExprSpecWFError err) =
                                 ),
   not_a_rel_var()             = ("Not a relational variable: " & _print_(err.var)),
   unknown_rel_var()           = ("Unknown relational variable: " & _print_(err.var)),
+  non_relvar_aggr_fns_iter()  = non_relvar_aggr_fns_iter_err_msg(err.cls),
 
   undef_auto_var()            = ( if err.is_data_var
                                     then _print_(err.var) & " is not an automaton variable"
@@ -944,6 +948,24 @@ String* basic_err_msg(ExprSpecWFError err) =
 
   annotated_syn_expr_error()  = basic_err_msg(err.error),
   annotated_syn_stmt_error()  = basic_err_msg(err.error);
+
+
+String* non_relvar_aggr_fns_iter_err_msg(SynIterClause cls) {
+  target = match (cls.src)
+    const_or_var(s?)  = (s),
+    syn_proj()        = cls.src.target,
+    accessor() e?     = { match (e.expr)
+                            const_or_var(t?)  = (t, e.field),
+                            _                 = ()
+                        },
+    _                 = ();
+  msg = ("Aggregate functions can only be used with mutable relation variables, not ordinary relations");
+  if target != ():
+    target_name = append((_print_(s) : s <- target), ".");
+    msg = (msg | target_name & " doesn't seem to be a mutable relation variable");
+  ;
+  return msg;
+}
 
 
 String* not_an_object_err_msg(SynExpr expr, [<SymbChainExpr, ClsVar, AnyAutoVar, AnyDBVar, AnyRelVar, FnFamilyId, PreCall>] resols) {
