@@ -142,24 +142,30 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
 
 
   [<AnyRelVar, SymbChainExpr, FnCallExpr, AutoMethodCall, DBMethodCall>]
-  resolve_by_priority_as_memb_test_target(Atom+ symbols, NzNat arity, [Var] def_vars) {
-    return resolve_by_priority_as_memb_test_target(symbols, def_vars);
-  }
-
-
-  [<AnyRelVar, SymbChainExpr, FnCallExpr, AutoMethodCall, DBMethodCall>]
-  resolve_by_priority_as_memb_test_target(Atom+ symbols, [Var] def_vars) {
-    pre_resols = resolve_symbol_chain(symbols, def_vars);
-    relvar_resols = [r : r <- pre_resols, r :: AnyRelVar];
-    expr_resols = [value(er) : r <- pre_resols, er = try_resolve_as_expr(r), er != nothing];
+  resolve_by_priority_as_expr_or_rel_var(Atom+ symbols, NzNat arity_if_relvar, [Var] def_vars) {
+    resols = resolve_symbol_chain(symbols, def_vars);
+    relvar_resols = [r : r <- resols, r :: AnyRelVar, arity_is_compatible(r, arity_if_relvar)];
+    expr_resols = [value(er) : r <- resols, er = try_resolve_as_expr(r), er != nothing];
     return min_by(relvar_resols & expr_resols, resol_priority);
   }
 
+
   ## DOES IT REALLY NEED THE SECOND PARAMETER, def_vars?
-  [AnyRelVar] resolve_by_priority_as_rel_var(Atom+ symbols, [Var] def_vars) {
+  [AnyRelVar] resolve_by_priority_as_rel_var(Atom+ symbols, Nat arity, [Var] def_vars) {
     pre_resols = resolve_symbol_chain(symbols, def_vars);
-    resols = [r : r <- pre_resols, r :: AnyRelVar];
+    resols = [r : r <- pre_resols, r :: AnyRelVar, arity_is_compatible(r, arity)];
     assert |resols| <= 1;
+    return min_by(resols, resol_priority);
+  }
+
+
+  [<AnyRelVar, SymbChainExpr, AutoMethodCall, FnCallExpr, DBMethodCall>]
+  resolve_by_priority_as_expr_or_rel_var(Atom+ symbols, [Var] def_vars) {
+    pre_resols = resolve_symbol_chain(symbols, def_vars);
+    resols = union([{
+      maybe_expr = try_resolve_as_expr(r);
+      return [value(maybe_expr) if maybe_expr != nothing, r if r :: AnyRelVar];
+    } : r <- pre_resols]);
     return min_by(resols, resol_priority);
   }
 

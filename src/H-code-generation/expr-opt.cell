@@ -1,0 +1,339 @@
+type SurrExpr = StdVar, FnArg;
+
+
+implicit program           : Program,
+         typedefs          : [TypeName -> NeType],
+         context           : Context,
+         typed_vars        : [StdVar -> NeType],
+         surrogates        : [SurrExpr -> ObjExpr],
+         options           : CompOptions {
+
+  (Instr*, ObjExpr, VarGen) opt_eval_code(Expr expr, [EnvVar -> Type] env, VarGen init_var_gen) {
+    exprs_cluster = exprs_cluster(expr);
+    rec_exprs = reconstruct_all(exprs_cluster);
+
+    cltr_size = |exprs_cluster|;
+    envs = (if i == 0 then env else [] : i < cltr_size);
+
+    let rec_exprs = rec_exprs:
+      for e @ i <- exprs_cluster:
+        for j, vs <- subenvs(e, envs(i)):
+          assert envs(j) == [];
+          envs(j) := vs;
+        ;
+      ;
+    ;
+
+    types = (expr_type(e, envs(i)) : e @ i <- rec_exprs);
+
+    let cluster = exprs_cluster, types = types, environments = envs, expr_id = 0:
+      eval_code, surr, var_gen = opt_eval_info(exprs_cluster(0), init_var_gen);
+    ;
+
+    return (eval_code, surr, var_gen);
+  }
+
+
+  (Instr*, ObjExpr*, VarGen) opt_eval_code(Expr* exprs, [EnvVar -> Type] env, VarGen init_var_gen) {
+    var_gen = init_var_gen;
+    code = ();
+    surrs = ();
+    for e <- exprs:
+      expr_code, surr, var_gen = opt_eval_code(e, env, var_gen);
+      code = code & expr_code;
+      surrs = (surrs | surr);
+    ;
+    return (code, surrs, var_gen);
+  }
+
+
+  (Instr*, Maybe[ObjExpr]*, VarGen) sparse_opt_eval_code(Maybe[Expr]* exprs, [EnvVar -> Type] env, VarGen init_var_gen) {
+    surrs : Maybe[ObjExpr]*;
+
+    var_gen = init_var_gen;
+    code = ();
+    surrs = ();
+    for e <- exprs:
+      if e != nothing:
+        expr_code, surr, var_gen = opt_eval_code(value(e), env, var_gen);
+        code = code & expr_code;
+        surrs = (surrs | just(surr));
+      else
+        surrs = (surrs | nothing);
+      ;
+    ;
+    return (code, surrs, var_gen);
+  }
+}
+
+
+implicit program     : Program,
+         typedefs    : [TypeName -> NeType],
+         context     : Context,
+         typed_vars  : [StdVar -> NeType],
+         rec_exprs   : Expr+ {
+
+  () subenvs(NonRecExpr, [EnvVar -> Type]) = ();
+
+
+  (Nat, [EnvVar -> Type])* subenvs(ExprRef, [EnvVar -> Type] env) =
+    expr_ref(i?)  = ((i, env));
+
+
+  (Nat, [EnvVar -> Type])* subenvs(RecExpr expr, [EnvVar -> Type] env) =
+    seq_expr(ses?)      = join((subenvs(se, env) : se <- ses)),
+    set_expr(ses?)      = join((subenvs(se, env) : se <- isort(ses))),
+    // map_expr(es?)       = join((subenvs((e.key, e.value), (e.cond if e.cond?), env) : e <- isort(es))),
+    ## SHOULD BE USING THE ABOVE EXPRESSION, NOT THE ONE BELOW
+    map_expr(es?)       = join((
+                            subenvs((e.key, e.value), if e.cond? then (e.cond) else (), env) : e <- isort(es)
+                          )),
+    bin_rel_expr(es?)   |
+    // tern_rel_expr(es?)  = join((subenvs(e.args, (e.cond if e.cond?), env) : e <- isort(es))),
+    ## DITTO
+    tern_rel_expr(es?)  = join((subenvs(e.args, if e.cond? then (e.cond) else (), env) : e <- isort(es))),
+    fn_call()           = fn_call_subenvs(expr, env),
+    and_expr()          = subenvs((expr.right), (expr.left), env),
+    or_expr()           = subenvs((), (expr.right), (expr.left), env),
+    if_expr()           = subenvs((expr.then), (expr.else), (expr.cond), env),
+    match_expr()        = match_expr_subenvs(expr, env),
+    do_expr()           = (),
+    aggr_fn_call()      = subenvs(expr.clause, expr.extra_args & (expr.expr, expr.cond if expr.cond?), env),
+    ex_qual()           = subenvs(expr.source, (expr.cond), env),
+    set_comp()          = subenvs(expr.source, (expr.expr), env),
+    map_comp()          = subenvs(expr.source, (expr.key_expr, expr.value_expr), env),
+    bin_rel_comp()      |
+    tern_rel_comp()     = subenvs(expr.source, expr.exprs, env),
+    seq_comp()          = seq_comp_subenvs(expr, env),
+    range_comp()        = range_comp_subenvs(expr, env),
+    tuple_expr()        |
+    seq_tail_expr()     |
+    tag_obj_expr()      |
+    cls_call()          |
+    builtin_call()      |
+    size_expr()         |
+    unary_pseudo_call() |
+    rel_memb_test()     |
+    rel_lookup()        |
+    rel_var_size_expr() |
+    relvar_memb_test()  |
+    relvar_lookup()     |
+    not_expr()          |
+    eq()                |
+    membership()        |
+    accessor()          |
+    accessor_test()     |
+    auto_method_call()  |
+    db_method_call()    = simple_subenvs(expr, env);
+
+
+  // fn_call(fn_id: FnFamilyId, args: AnyExpr*, impl_args: [ImplArg -> Expr]);
+  (Nat, [EnvVar -> Type])* fn_call_subenvs(FnCallExpr expr, [EnvVar -> Type] env) {
+    expr_refs = (a : a <- expr.args, a :: Expr) & isort(values(expr.impl_args));
+    return ((expr_ref_id_unsafe(e), env) : e <- expr_refs);
+  }
+
+
+  (Nat, [EnvVar -> Type])* subenvs(CondExpr expr, [EnvVar -> Type] env) {
+    cond_id = expr_ref_id_unsafe(expr.cond);
+    env_when_true, env_when_false = refine_env(rec_exprs(cond_id), env);
+    expr_id = expr_ref_id_unsafe(expr.expr);
+    return ((cond_id, env), (expr_id, env_when_true));
+  }
+
+
+  (Nat, [EnvVar -> Type])* subenvs(Expr+ exprs, Opt[Expr] guard, [EnvVar -> Type] env) =
+    subenvs(exprs, (), guard, env);
+
+
+  (Nat, [EnvVar -> Type])* subenvs(Expr* then_exprs, Expr* else_exprs, Opt[Expr] guard, [EnvVar -> Type] env) {
+    if guard != ():
+      then_env, else_env = refine_env(rec_exprs(expr_ref_id_unsafe(only(guard))), env);
+      guard_envs = ((expr_ref_id_unsafe(only(guard)), env));
+    else
+      then_env = env;
+      else_env = env;
+      guard_envs = ();
+    ;
+    then_subenvs = ((expr_ref_id_unsafe(e), then_env) : e <- then_exprs);
+    else_subenvs = ((expr_ref_id_unsafe(e), else_env) : e <- else_exprs);
+    return then_subenvs & else_subenvs & guard_envs;
+  }
+
+
+  (Nat, [EnvVar -> Type])* match_expr_subenvs(MatchExpr expr, [EnvVar -> Type] env) {
+    envs = ((expr_ref_id_unsafe(e), env) : e <- expr.exprs);
+    exprs = (rec_exprs(expr_ref_id_unsafe(e)) : e <- expr.exprs);
+    for c <- expr.cases:
+      case_expr_env = update_env(exprs, c.ptrns, env);
+      envs = (envs | (expr_ref_id_unsafe(c.expr), case_expr_env));
+    ;
+    return envs;
+  }
+
+
+  // seq_comp(expr: Expr, vars: StdVar+, idx_var: StdVar?, src_expr: Expr, sel_expr: Expr?);
+  (Nat, [EnvVar -> Type])* seq_comp_subenvs(SeqCompExpr expr, [EnvVar -> Type] env) {
+    ## I'M NOT SURE THIS IS SYNCRONIZED WITH seq_comp_expr_type()...
+    src_expr = rec_exprs(expr_ref_id_unsafe(expr.src_expr));
+    src_elt_type = seq_elem_supertype(expr_type(src_expr, env));
+    sel_env = env & asgnm_env_updates(expr.vars, src_elt_type) & [expr.idx_var -> type_nat if expr.idx_var?];
+    if expr.sel_expr?:
+      sel_expr = rec_exprs(expr_ref_id_unsafe(expr.sel_expr));
+      elt_env, unused_var = refine_env(sel_expr, sel_env);
+    else
+      elt_env = sel_env;
+    ;
+    return (
+      (expr_ref_id_unsafe(expr.src_expr), env),
+      (expr_ref_id_unsafe(expr.sel_expr), sel_env) if expr.sel_expr?,
+      (expr_ref_id_unsafe(expr.expr),     elt_env)
+    );
+  }
+
+
+  // range_comp(expr: Expr, var: StdVar, bound_expr: Expr, inclusive: Bool, sel_expr: Expr?);
+  (Nat, [EnvVar -> Type])* range_comp_subenvs(RangeCompExpr expr, [EnvVar -> Type] env) {
+    ## BAD: HERE WE COULD TAKE ADVANTAGE OF THE KNOWLEDGE ON THE TYPE OF THE UPPER BOUND
+    sel_env = update(env, [expr.var -> type_nat]);
+    if expr.sel_expr?:
+      sel_expr = rec_exprs(expr_ref_id_unsafe(expr.sel_expr));
+      elt_env, unused_var = refine_env(sel_expr, sel_env);
+    else
+      elt_env = sel_env;
+    ;
+    return (
+      (expr_ref_id_unsafe(expr.bound_expr), env),
+      (expr_ref_id_unsafe(expr.sel_expr),   sel_env) if expr.sel_expr?,
+      (expr_ref_id_unsafe(expr.expr),       elt_env)
+    );
+  }
+
+
+  (Nat, [EnvVar -> Type])* simple_subenvs(Expr expr, [EnvVar -> Type] env) {
+    subexpr_ids = retrieve_from_nested_exprs(expr, [expr_ref_id_unsafe($)]);
+    return ((id, env) : id <- isort(subexpr_ids));
+  }
+
+
+  // set_clause(var: StdVar, src: Expr);
+  (Nat, [EnvVar -> Type])* subenvs(SetClause cls, Expr* exprs, [EnvVar -> Type] env) {
+    src_expr = rec_exprs(expr_ref_id_unsafe(cls.src));
+    src_type = expr_type(src_expr, env);
+    src_elt_type = set_elem_supertype(src_type);
+    exprs_env = env & [cls.var -> src_elt_type];
+    return (((expr_ref_id_unsafe(e), exprs_env) : e <- exprs) | (expr_ref_id_unsafe(cls.src), env));
+  }
+
+
+  // rel_clause(vars: StdVar+, src: Expr, args: Maybe[Expr]+);
+  (Nat, [EnvVar -> Type])* subenvs(RelClause cls, Expr* exprs, [EnvVar -> Type] env) {
+    src_expr = rec_exprs(expr_ref_id_unsafe(cls.src));
+    src_type = expr_type(src_expr, env);
+    assert |cls.args| == 2 or |cls.args| == 3;
+    src_args_types = if |cls.args| == 2
+      then bin_rel_args_supertypes(src_type)
+      else tern_rel_args_supertypes(src_type);
+    free_args = (i : a @ i <- cls.args, a == nothing);
+    exprs_env = env & [v -> src_args_types(free_args(i)) : v @ i <~ cls.vars];
+    return ((expr_ref_id_unsafe(e), exprs_env) : e <- exprs) &
+           ((expr_ref_id_unsafe(value(a)), env) : a <- cls.args, a != nothing) &
+           ((expr_ref_id_unsafe(cls.src), env));
+  }
+
+
+  // relvar_clause(vars: StdVar+, rel_var: AnyRelVar, args: Maybe[Expr]+);
+  (Nat, [EnvVar -> Type])* subenvs(RelVarClause cls, Expr* exprs, [EnvVar -> Type] env) {
+    arity = |cls.args|;
+
+    signs = relvar_signatures(cls.rel_var);
+    assert not (s <- signs : |s| != arity);
+    args_supertypes = (union_superset([s(i) : s <- signs]) : i < arity);
+
+    free_args = (i : a @ i <- cls.args, a == nothing);
+    exprs_env = env & [v -> args_supertypes(free_args(i)) : v @ i <~ cls.vars];
+
+    return ((expr_ref_id_unsafe(e), exprs_env) : e <- exprs) &
+           ((expr_ref_id_unsafe(value(a)), env) : a <- cls.args, a != nothing);
+  }
+
+
+  // seq_clause(vars: Maybe[StdVar]+, idx_var: Maybe[StdVar], src: Expr);
+  (Nat, [EnvVar -> Type])* subenvs(SeqClause cls, Expr* exprs, [EnvVar -> Type] env) {
+    src_expr = rec_exprs(expr_ref_id_unsafe(cls.src));
+    src_type = expr_type(src_expr, env);
+    src_elt_type = seq_elem_supertype(src_type);
+    exprs_env = env & [value(cls.idx_var) -> type_nat if cls.idx_var? and cls.idx_var != nothing];
+    if |cls.vars| == 1:
+      var = only(cls.vars);
+      exprs_env = exprs_env & [value(var) -> src_elt_type if var != nothing];
+    else
+       exprs_env = exprs_env & [
+        value(v) -> restricted_seq_elem_supertype(src_elt_type, singleton_type(i))
+        : v @ i <~ cls.vars, v != nothing
+      ];
+    ;
+    return (((expr_ref_id_unsafe(e), exprs_env) : e <- exprs) | (expr_ref_id_unsafe(cls.src), env));
+  }
+
+
+  // and_clause(left: Clause, right: Clause);
+  (Nat, [EnvVar -> Type])* subenvs(AndClause cls, Expr* exprs, [EnvVar -> Type] env) {
+    rec_exprs_copy = rec_exprs; ## BAD BAD: WORKAROUND FOR A BUG IN THE COMPILER
+    left = replace_nested(cls.left, rec_exprs_copy(expr_ref_id_unsafe($)));
+    right_env = generate_env(left, env);
+    return subenvs(cls.left, (), env) & subenvs(cls.right, exprs, right_env);
+  }
+
+
+  // or_clause(left: Clause, right: Clause);
+  (Nat, [EnvVar -> Type])* subenvs(OrClause cls, Expr* exprs, [EnvVar -> Type] env) {
+    ## BAD BAD BAD: HORRIFYING HACK
+    fake_expr_id = 1000000000;
+    fake_exprs = (expr_ref(fake_expr_id));
+    left_envs  = [n -> e : n, e <~ subenvs(cls.left, fake_exprs, env)];
+    right_envs = [n -> e : n, e <~ subenvs(cls.right, fake_exprs, env)];
+    final_left_env = left_envs(fake_expr_id, !!);
+    final_right_env = right_envs(fake_expr_id, !!);
+    final_env = merge_envs(final_left_env, final_right_env);
+    final_envs = ((expr_ref_id_unsafe(e), final_env) : e <- exprs);
+    left_envs = isort(remove_key(left_envs, fake_expr_id));
+    right_envs = isort(remove_key(right_envs, fake_expr_id));
+    return left_envs & right_envs & final_envs;
+  }
+
+
+  // match_clause(ptrn: Pattern, expr: Expr);
+  (Nat, [EnvVar -> Type])* subenvs(MatchClause cls, Expr* exprs, [EnvVar -> Type] env) {
+    expr_id = expr_ref_id_unsafe(cls.expr);
+    expr = rec_exprs(expr_id);
+    new_env = update_env((expr), (cls.ptrn), env);
+    exprs_envs = ((expr_ref_id_unsafe(e), new_env) : e <- exprs);
+    return (exprs_envs | (expr_id, env));
+  }
+
+
+  // asgnm_clause(var: StdVar, expr: Expr);
+  (Nat, [EnvVar -> Type])* subenvs(AsgnmClause cls, Expr* exprs, [EnvVar -> Type] env) {
+    expr_id = expr_ref_id_unsafe(cls.expr);
+    expr = rec_exprs(expr_id);
+    new_env = env & [cls.var -> expr_type(expr, env)];
+    exprs_envs = ((expr_ref_id_unsafe(e), new_env) : e <- exprs);
+    return (exprs_envs | (expr_id, env));
+  }
+
+
+  // filter_clause(Expr);
+  (Nat, [EnvVar -> Type])* subenvs(FilterClause cls, Expr* exprs, [EnvVar -> Type] env) {
+    expr_id = expr_ref_id_unsafe(untag(cls));
+    expr = rec_exprs(expr_id);
+    ref_env, unused_var = refine_env(expr, env);
+    exprs_envs = ((expr_ref_id_unsafe(e), ref_env) : e <- exprs);
+    return (exprs_envs | (expr_id, env));
+  }
+}
+
+
+Nat expr_ref_id_unsafe(Expr expr) =
+  expr_ref(id?) = id,
+  _             = undefined;

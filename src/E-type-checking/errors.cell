@@ -7,6 +7,7 @@ type TypeCheckingError =
   rec_field_is_mandatory(field: SymbObj),
   unexpected_rec_field_type(field: SymbObj, actual_type: Type, exp_type: Type), ## IMPLEMENT IMPLEMENT IMPLEMENT
   tagged_values_not_in_type(tag: SymbObj, exp_type: Type),
+  lookup_key_may_overlap_but_is_not_subset(target: Expr, target_type: Type, arg: Expr, arg_idx: Nat, arg_type: Type),
 
   not_a_record_type(type: Type),
   exp_type_not_a_tag_type,
@@ -15,6 +16,7 @@ type TypeCheckingError =
   may_not_have_field(type: Type, field: SymbObj),
   invalid_var_type(var: Var, actual_type: Type, expected_type: Type),
   no_disp_fn_found(name: FnFamilyId, arity: NzNat, signatures: [+FnType], par_types: Maybe[Type]*),
+  no_disp_aggr_fn_found(name: PlainAggrFnId, signatures: [+AggrFnType], elt_type: Type, extra_args_types: Type*),
   no_disp_db_method(name: MethodSymbol, args_types: Type*, exp_ret_type: Type, signatures: [FnType]),
   no_disp_db_update(name: UpdateSymbol, args_types: Type*, signatures: [+NeType*]),
   no_matching_relvar(name: AnyRelVar, args_types: Maybe[Type]+, signatures: [+NeType+]),
@@ -83,6 +85,8 @@ TypeCheckingError unexpected_rec_field(SymbObj f)                         = unex
 TypeCheckingError rec_field_is_mandatory(SymbObj f)                       = rec_field_is_mandatory(field: f);
 TypeCheckingError unexpected_rec_field_type(SymbObj f, Type at, Type et)  = unexpected_rec_field_type(field: f, actual_type: at, exp_type: et);
 TypeCheckingError tagged_values_not_in_type(SymbObj s, Type t)            = tagged_values_not_in_type(tag: s, exp_type: t);
+TypeCheckingError lookup_key_may_overlap_but_is_not_subset(Expr e, Type rt, Expr a, Nat i, Type at) =
+  lookup_key_may_overlap_but_is_not_subset(target: e, target_type: rt, arg: a, arg_idx: i, arg_type: at);
 
 TypeCheckingError not_a_record_type(Type t) = not_a_record_type(type: t);
 TypeCheckingError exp_type_not_a_tag_type = :exp_type_not_a_tag_type;
@@ -100,6 +104,9 @@ TypeCheckingError invalid_var_type(Var v, Type at, Type et) = invalid_var_type(v
 
 TypeCheckingError no_disp_fn_found(FnFamilyId n, NzNat a, [+FnType] ss, Maybe[Type]+ ts) =
   no_disp_fn_found(name: n, arity: a, signatures: ss, par_types: ts);
+
+TypeCheckingError no_disp_aggr_fn_found(PlainAggrFnId n, [+AggrFnType] ss, Type t, Type* ts) =
+  no_disp_aggr_fn_found(name: n, signatures: ss, elt_type: t, extra_args_types: ts);
 
 TypeCheckingError no_disp_db_method(MethodSymbol n, Type* ats, Type rt, [FnType] ss) =
   no_disp_db_method(name: n, args_types: ats, exp_ret_type: rt, signatures: ss);
@@ -188,32 +195,12 @@ TypeCheckingError add_anchor_if_needed(TypeCheckingError err, Any anchor) =
   annotated_error()  = err,
   _                  = if fetch(anchor) != nothing then annotated_error(err, anchor) else err;
 
+
+TypeCheckingError unexpected_actual_type(Type at, Type et, Any anchor) =
+  add_anchor_if_needed(unexpected_actual_type(at, et), anchor);
+
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
-
-String* create_error_msgs(<Function, Database, Method, Update, Handler, Automaton, Procedure> decl, [+TypeCheckingError] errs) {
-  err_msgs = join(intermix((indent_lines(create_error_msg(e)) : e <- rand_sort(errs)), ("")));
-  fname, sl, el = source_code_location(decl);
-  loc_msg = "File " & fname & " line" & if sl == el then " " & printed(sl) else "s " & printed(sl) & "-" & printed(el);
-  return (loc_msg) & err_msgs;
-}
-
-
-String source_file(<Function, Database, Method, Update, Handler, Automaton, Procedure> fn) = source_code_location(fn)(0);
-
-
-## THERE'S AN ALMOST IDENTICAL FUNCTION IN WELL-FORMEDNESS CHECKING
-(String, NzNat, NzNat) source_code_location(<Function, Database, Method, Update, Handler, Automaton, Procedure> decl) {
-  maybe_data = fetch(decl);
-  if maybe_data != nothing:
-    data = value(maybe_data);
-    return data if data :: (String, NzNat, NzNat);
-  ;
-  err_msg = "CANNOT DETERMINE LOCATION OF OFFENDING CODE";
-  err_msg = err_msg & ": " & printed(value(maybe_data)) if maybe_data != nothing;
-  return (err_msg, 1, 1);
-}
-
 
 String* create_error_msg(TypeCheckingError err) =
   obj_does_not_belong_to_type()       = ("Object " & printed(err.obj) & " does not belong to type " & user_repr(err.type)),
@@ -239,6 +226,28 @@ String* create_error_msg(TypeCheckingError err) =
   tagged_values_not_in_type()         = ( "Expression evaluates to a tagged value of the form " & user_repr(err.tag) & "(..) but such values do not belong to the expected type",
                                           "  Expected type: " & user_repr(err.exp_type)
                                         ),
+  lookup_key_may_overlap_but_is_not_subset() = {
+    if err.target :: Var:
+      if err.arg :: Var:
+        vars_str = "variables " & user_repr(err.target) & " and " & user_repr(err.arg);
+      else
+        vars_str = "variables " & user_repr(err.target);
+      ;
+    else
+      vars_str = "all variables involved";
+    ;
+    idx_str = if err.arg_idx == 0 then "first" else "second";
+    return (
+      "Possibly invalid map or binary relation lookup operation",
+      "The type of the key is not a subset of the type of the " & idx_str & " column",
+      "of the map or relation, but it's not entirely disjoint from it either",
+      "It's entirely possible that your code is valid, but the typechecking",
+      "rules are too strict for it. One possible workaround could be to",
+      "explicitly declare the type of " & vars_str,
+      "  Collection type: " & user_repr(err.target_type),
+      "  Key type: " & user_repr(err.arg_type)
+    );
+  },
 
   not_a_record_type()                 = ( "Dot operator can only be used with records or tagged records",
                                           "  Actual target type: " & user_repr(err.type)
@@ -256,6 +265,7 @@ String* create_error_msg(TypeCheckingError err) =
                                           "  Actual type:   " & user_repr(err.actual_type)
                                         ),
   no_disp_fn_found()                  = no_disp_fn_found_err_msg(err.name, err.arity, err.signatures, err.par_types),
+  no_disp_aggr_fn_found()             = no_disp_aggr_fn_found_err_msg(err.name, err.signatures, err.elt_type, err.extra_args_types),
   no_disp_db_method()                 = no_disp_db_method_err_msg(err.name, err.args_types, err.exp_ret_type, err.signatures),
   no_disp_db_update()                 = no_disp_db_update_err_msg(err.name, err.args_types, err.signatures),
   no_matching_relvar()                = no_matching_relvar_err_msg(err.name, err.args_types, err.signatures),
@@ -372,6 +382,13 @@ String* no_disp_fn_found_err_msg(FnFamilyId name, NzNat arity, [+FnType] signatu
   ("  " & if t != nothing then user_repr(value(t)) else "CLOSURE" : t <- par_types);
 
 
+String* no_disp_aggr_fn_found_err_msg(PlainAggrFnId name, [+AggrFnType] signatures, Type elt_type, Type* extra_args_types) =
+  ("No suitable aggregate function found: " & user_repr(name) & ". Possible function signatures",) &
+  ("  " & user_repr(s) : s <- rand_sort(signatures)) &
+  ("Actual types:", "  " & user_repr(elt_type) & "..") &
+  ("  " & user_repr(t) : t <- extra_args_types);
+
+
 String* no_disp_db_method_err_msg(MethodSymbol name, Type* args_types, Type exp_ret_type, [FnType] signatures) =
   ({"No suitable function found: " & user_repr(name, |args_types|) & ". Possible method signatures:"}) &
   ("  " & user_repr(s) : s <- rand_sort(signatures)) &
@@ -436,7 +453,7 @@ String* create_annotated_error_msg(TypeCheckingError error, Any anchor) {
 
 
 String pos_name(Nat n) {
-  return if names(n, * )then names[n] else printed(n+1) & "th";
+  return if names(n, *) then names[n] else printed(n+1) & "th";
 
   [Nat -> String] names = [
     0 -> "first",

@@ -109,7 +109,7 @@ type SeqItVar       = seq_it_var(Nat);      ## DITTO
 type BinRelItVar    = bin_rel_it_var(Nat);  ## DITTO
 type TernRelItVar   = tern_rel_it_var(Nat); ## DITTO
 
-type TableItVar     = table_it_var(id: Nat, arity: NzNat); ## DITTO
+type TableItVar     = table_it_var(id: Nat, arity: NzNat, symmetric: Bool); ## DITTO
 
 type ItVar          = SeqItVar, SetItVar, BinRelItVar, TernRelItVar, TableItVar;
 
@@ -118,13 +118,21 @@ type AnyVar         = ObjVar, OptTagRecVar, VecVar, ArrayVar, BoolVar, IntVar,
 
 type AnyLocVar      = LocBoolVar, LocIntVar, LocFloatVar, LocOptTagRecVar, LocVar, StdVar;
 
+type TableVar       = table_var(PhysRelVar);
+type QualTableVar   = qual_table_var(db_var: AnyDBVar, table_var: TableVar);
+type CaptTableVar   = capt_table_var(TableVar);
+type AnyTableVar    = TableVar, QualTableVar, CaptTableVar;
+
 ////////////////////////////////////////////////////////////////////////////////
 
 type MembTestPredId = memb_test(<Symbol, Nat, (Symbol, <Symbol, Nat>)>);
 
+type SubAggrFnId    = red_var_init(AggrFnId, StdVar), red_vars_merge(AggrFnId, StdVar),
+                      final_value_yield(AggrFnId), null_value(AggrFnId);
+
 type ConvFnId       = any_tag_obj_conv, tag_rec_conv(Symbol), tag_rec_repr_conv(Symbol, Nat);
 
-type ObjFnName      = FnId, ProcSymbol, ConvFnId;
+type ObjFnName      = FnId, ProcSymbol, SubAggrFnId, ConvFnId;
 
 type InlineObj      = LeafObj, empty_seq, empty_rel;
 
@@ -150,7 +158,7 @@ type BoolNatOp      = is_symb(ObjExpr),
                       has_elem(set: ObjExpr, elt: ObjExpr),
                       has_field(record: ObjExpr, field: SymbObj),
                       contains(coll: ObjExpr, entry: ObjExpr+),
-                      table_contains(table: AnyRelVar, tuple: IntVar+);
+                      table_contains(table: AnyTableVar, tuple: Maybe[Int32Var]+, symmetric: Bool);
 
 type IntNatOp       = get_int_val(ObjExpr),
                       minus(IntExpr),
@@ -165,17 +173,18 @@ type IntNatOp       = get_int_val(ObjExpr),
                       float_bits(FloatExpr),
                       mantissa(FloatExpr),
                       dec_exp(FloatExpr),
-                      lookup_value(store: AnyValueStoreId, value: AtomicExpr),
-                      lookup_value_ex(store: ValueStoreId, value: AtomicExpr),
-                      get_tuple_field(iter: TableItVar, field: Nat),
                       rand_nat(IntExpr),  // Non-deterministic
                       unique_nat,         // Non-deterministic
                       ticks;              // Impure
 
 type Int32NatOp     = bool_to_bit(BoolExpr),
                       get_size(ObjExpr),
+                      get_count(table: AnyTableVar, args: Maybe[Int32Var]+, symmetric: Bool),
                       cast_int32(IntExpr),
-                      add32(Int32Expr, Int32Expr);
+                      add32(Int32Expr, Int32Expr),
+                      lookup_value(store: AnyValueStoreId, value: AtomicExpr),
+                      lookup_value_ex(store: ValueStoreId, value: AtomicExpr),
+                      get_unknown_arg(iter: TableItVar, arg: <0..2>);
 
 type FloatNatOp     = float_value(ObjExpr),
                       neg_float(FloatExpr),
@@ -256,7 +265,7 @@ type RefObjExpr     = mk_set_from_stream(stream: StreamVar),
                       print_value(value: AtomicExpr),
 
                       copy_state(var: AnyDBVar, type: DBSymbol),
-                      copy_table(relvar: RelVar, table: Table, perm: Nat+),
+                      copy_rel(tables: [+TableVar -> Table], applied_perm: [+Nat -> Nat]),
 
                       copy_persistent_state(var: AnyAutoVar, type: AutoSymbol),
 
@@ -295,7 +304,9 @@ type BasicInstr     = init_stream(StreamVar),
 
                       init_memb_var(var: <MembVar, SignalVar, PrevVarValue, MembObjVar, PendingInputVar, PendingStateVar>, new_state: <blank, undefined>),
                       reset_memb_var(var: <SignalVar, PrevVarValue, MembVar, PendingInputVar>, new_state: <blank, undefined>),
+
                       clear_loc_var(LocVar), ## BAD: I DON'T LIKE THE ABILITY TO CLEAR A NON-MEMBER VARIABLE
+                      nullify_var(<StdVar, LocVar, LocOptTagRecVar>),
 
                       add_ref(ObjVar),
                       release(<ObjVar, PendingInputVar>),
@@ -304,10 +315,10 @@ type BasicInstr     = init_stream(StreamVar),
 
                       no_op,
 
-                      call_proc(var: AnyWriteVar?, name: ObjFnName, args: AnyTypeExpr*, cls_args: BoundCls*),
+                      call_proc(var: AnyWriteVar?, name: ObjFnName, args: AnyTypeExpr*, cls_args: AnyLambdaExpr*),
                       call_cls(var: WriteObjVar, cls_var: AnyClsVar, args: AtomicExpr+),
 
-                      push_call_info(fn_name: ObjFnName, args: ObjExpr*),
+                      push_call_info(fn_name: <FnId, ProcSymbol>, args: ObjExpr*),
                       pop_call_info,
 
                       log_runtime_failure(
@@ -340,7 +351,7 @@ type BasicInstr     = init_stream(StreamVar),
                       cleanup_db(db_var: AnyDBVar, type: DBSymbol),
                       send_msg(db_var: AnyDBVar, type: DBSymbol, msg: AtomicExpr, is_root: Bool, res_var: BoolVar?),
                       try_update(type: DBSymbol, update_id: UpdateId, args: AtomicExpr*),
-                      set_state(res_var: BoolVar?, db_var: AnyDBVar, state: AtomicExpr, type: DBSymbol),
+                      set_state(res_var: BoolVar, db_var: AnyDBVar, state: AtomicExpr, type: DBSymbol),
 
                       invoke_auto_method(
                         res_var:    WriteObjVar,
@@ -361,15 +372,19 @@ type BasicInstr     = init_stream(StreamVar),
                       // Table instructions
                       init_value_store(store: ValueStoreId),
                       cleanup_value_store(store: ValueStoreId),
-                      init_table(rel_var: RelVar, table: Table),
-                      cleanup_table(rel_var: RelVar, table: Table),
+                      init_table(table_var: TableVar, table: Table),
+                      cleanup_table(table_var: TableVar, table: Table),
 
-                      set_table(relvar: RelVar, table: Table, state: AtomicExpr, perm: Nat+),
+                      // set_table(relvar: RelVar, table: Table, state: AtomicExpr, perm: Nat+),
 
-                      get_table_iter(it_var: TableItVar, table: AnyRelVar, args: Maybe[IntVar]+),
-                      queue_deletes(rel_var: RelVar, args: Maybe[IntVar]+),
-                      queue_insert_value(res_var: IntVar, store: ValueStoreId, value: AtomicExpr), // Ownership transfer: <value>
-                      queue_insert_tuple(rel_var: RelVar, tuple: IntVar+);
+                      get_table_iter(it_var: TableItVar, table: AnyTableVar, args: Maybe[Int32Var]+),
+                      queue_deletes(table_var: TableVar, args: Maybe[Int32Var]+, symmetric: Bool),
+                      queue_insert_value(res_var: Int32Var, store: ValueStoreId, value: AtomicExpr), // Ownership transfer: <value>
+                      lookup_or_queue_insert_value(res_var: Int32Var, store: ValueStoreId, value: AtomicExpr), // Ownership transfer: <value>
+                      queue_insert_tuple(table_var: TableVar, tuple: Int32Var+),
+
+                      immediate_insert_or_add_ref(res_var: Int32Var, store: ValueStoreId, value: AtomicExpr),
+                      immediate_insert_tuple(table_var: TableVar, tuple: Int32Var+);
 
 type JumpInstr      = break_loop,
                       exit_block,
@@ -403,7 +418,14 @@ type AnyClsVar      = ClsVar, CaptClsVar;
 
 type ClsDef         = cls_def(arity: NzNat, body: Instr+);
 
-type BoundCls       = AnyClsVar, bound_cls(cls: ClsDef, capt_vars: ObjExpr*, capt_cls_vars: AnyClsVar*);
+type LambdaExpr     = lambda_expr(
+                        cls:            ClsDef,
+                        capt_auto:      Maybe[DBSymbol],
+                        capt_vars:      ObjExpr*,
+                        capt_cls_vars:  AnyClsVar*
+                      );
+
+type AnyLambdaExpr  = AnyClsVar, LambdaExpr;
 
 type ObjProcArg     = StdVar, FnArg, LocBoolVar, BoolFnArg, LocIntVar, IntFnArg, LocFloatVar,
                       FloatFnArg, LocOptTagRecVar, OptTagRecFnArg;
@@ -446,9 +468,25 @@ type UpdateId   = main_handler, handler_id(Nat), update_id(symbol: UpdateSymbol,
 
 type ValueStoreId       = value_store_id(Nat);
 type NestedValueStoreId = nested_value_store_id(db_var: AnyDBVar, store_id: ValueStoreId);
-type AnyValueStoreId    = ValueStoreId, NestedValueStoreId;
+type CaptValueStoreId   = capt_value_store_id(ValueStoreId);
+type AnyValueStoreId    = ValueStoreId, NestedValueStoreId, CaptValueStoreId;
 
-type Table  = table(value_stores: ValueStoreId+, keys: [[+Nat]], col_types: NeType+, applied_perm: Nat+);
+type Table  = table(
+                value_stores: ValueStoreId+,
+                keys:         [[+Nat]],
+                col_types:    NeType+,
+                symmetric:    Bool
+              );
+
+type ForeignKeyType = unary_unary, unary_binary(<0..1>), unary_ternary(<0..2>),
+                      binary_unary(<0..1>), ternary_unary(<0..2>),
+                      binary_ternary, ternary_binary,
+                      unary_sym_binary, unary_sym_ternary,
+                      sym_binary_unary, sym_ternary_unary,
+                      sym_binary_sym_ternary, sym_ternary_sym_binary;
+
+
+type BlockForeignKey  = foreign_key(origin: TableVar, target: TableVar, type: ForeignKeyType);
 
 type CompiledMethod = compiled_method(
                         args_vars:        Maybe[StdVar]*,
@@ -485,20 +523,22 @@ type ReactBlock = react_block(
                   );
 
 type StaticBlock = static_block(
-                    name:             DBSymbol,
-                    links:            DBSymbol*,
-                    state_vars:       [MembVar -> NeType],
-                    value_stores:     [ValueStoreId],
-                    tables:           [RelVar -> Table],
-                    nested_blocks:    [NestedDBVar -> DBSymbol],
-                    init_code:        Instr*,
-                    cleanup_code:     Instr*,
-                    copy_state_code:  Instr*,
-                    set_state_code:   Instr*,
-                    methods:          [MethodId -> CompiledMethod],
-                    updates:          [UpdateId -> CompiledUpdate],
-                    msg_memb_pred:    Maybe[MembTestPredId], ## REPLACE THE MAYBE WITH A NULL OBJECT?
-                    state_memb_pred:  MembTestPredId
+                    name:                     DBSymbol,
+                    links:                    DBSymbol*,
+                    state_vars:               [MembVar -> NeType],
+                    value_stores:             [ValueStoreId],
+                    tables:                   [TableVar -> Table],
+                    foreign_keys:             [BlockForeignKey],
+                    nested_blocks:            [NestedDBVar -> DBSymbol],
+                    init_code:                Instr*,
+                    cleanup_code:             Instr*,
+                    copy_state_code:          Instr*,
+                    set_state_code:           Instr*,
+                    foreign_keys_check_code:  Instr*,
+                    methods:                  [MethodId -> CompiledMethod],
+                    updates:                  [UpdateId -> CompiledUpdate],
+                    accessors:                [MethodId -> CompiledMethod],
+                    msg_memb_pred:            Maybe[MembTestPredId] ## REPLACE THE MAYBE WITH A NULL OBJECT?
                   );
 
 type CompiledPrg  = compiled_prg(

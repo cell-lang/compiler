@@ -14,7 +14,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg], actual_ar
     dupl_vars = duplicates(vars);
     errs  = (already_def_var(v) : v <- vars, already_def(v, def_vars)) &
             (dupl_var_mult_asgnm(v) : v <- rand_sort(dupl_vars)) &
-            (iter_clause_wrong_arity(vars, [1, 2, 3]) if not in(arity, [1, 2, 3]));
+            (wrong_iter_arity(vars, [1, 2, 3]) if not in(arity, [1, 2, 3]));
     return errs;
   }
 
@@ -25,13 +25,21 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg], actual_ar
 
     if src_expr :: IdChain:
       symbols = destructure_id_chain(src_expr);
-      resols = resolve_by_priority_as_memb_test_target(symbols, def_vars);
+      resols = resolve_by_priority_as_expr_or_rel_var(symbols, |vars|, def_vars);
       if |resols| == 1:
         resol = only(resols);
         if resol :: AnyRelVar:
           relvar_arity = relvar_arity(resol);
-          return (iter_clause_wrong_arity(vars, [relvar_arity]) if |vars| != relvar_arity);
+          return (wrong_iter_arity(vars, [relvar_arity]) if |vars| != relvar_arity);
         ;
+      elif resols == []:
+        ## BAD BAD BAD: USING A FIXED MAXIMUM ARITY
+        // Now passing and empty set of defined vars, so we avoid unary or binary pseudocalls
+        valid_arities = set((nat(a+1) : a < 20, resolve_by_priority_as_expr_or_rel_var(symbols, nz_nat(a+1), []) != []));
+        return (wrong_rel_arity(src_expr, just(symbols), valid_arities)) if valid_arities != [];
+      else
+        assert |resols| > 1;
+        return (ambiguous_expr(src_expr, resols));
       ;
     ;
 
@@ -54,10 +62,10 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg], actual_ar
     return args_errs if args_errs != ();
 
     exp_clause_arity = nz_nat(count(args, $ == nothing));
-    return (iter_clause_wrong_arity(vars, [exp_clause_arity])) if |vars| != exp_clause_arity;
+    return (wrong_iter_arity(vars, [exp_clause_arity])) if |vars| != exp_clause_arity;
 
     // Trying to resolve the relation name
-    resols = resolve_by_priority_as_memb_test_target(target, |args|, def_vars);
+    resols = resolve_by_priority_as_expr_or_rel_var(target, |args|, def_vars);
     ## BAD BAD RETURNING THE WRONG ERRORS...
     return (undef_var_or_const(last(target))) if resols == [];
     return (ambiguous_expr(const_or_var(last(target)), resols)) if |resols| != 1;

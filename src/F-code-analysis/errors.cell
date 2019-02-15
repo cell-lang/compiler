@@ -1,0 +1,96 @@
+type AnalysisError  = annotated_analysis_error(error: AnalysisError, anchor: Any),
+                      possible_foreign_key_violation(orig_stmt: InsertStmt, missing_insertions: [+RelVar]),
+                      out_of_place_one_to_one_attr_insertion(stmt: InsertStmt, master: RelVar, bad_args: Bool),
+                      assignment_with_pending_updates(stmt: AssignmentStmt, pending: [+RelVar, StdVar]),
+                      deleting_one_to_one_attribute(stmt: DeleteStmt, master: RelVar),
+                      invalid_polymorphic_insertion(stmt: InsertStmt, insertions: [+[RelVar]]);
+
+////////////////////////////////////////////////////////////////////////////////
+
+AnalysisError annotated_analysis_error(AnalysisError e, Any a) =
+  annotated_analysis_error(error: e, anchor: a);
+
+AnalysisError possible_foreign_key_violation(InsertStmt s, [+RelVar] vs) =
+  possible_foreign_key_violation(orig_stmt: s, missing_insertions: vs);
+
+AnalysisError out_of_place_one_to_one_attr_insertion(InsertStmt s, RelVar v, Bool b) =
+  out_of_place_one_to_one_attr_insertion(stmt: s, master: v, bad_args: b);
+
+AnalysisError assignment_with_pending_updates(AssignmentStmt s, [+RelVar, StdVar] p) =
+  assignment_with_pending_updates(stmt: s, pending: p);
+
+AnalysisError deleting_one_to_one_attribute(DeleteStmt s, RelVar v) =
+  deleting_one_to_one_attribute(stmt: s, master: v);
+
+AnalysisError invalid_polymorphic_insertion(InsertStmt s, [+[RelVar]] as) =
+  invalid_polymorphic_insertion(stmt: s, insertions: as);
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+String* create_annotated_error_msg(AnalysisError error, Any anchor) {
+  err_msg = create_error_msg(error);
+  return ("Internal compiler error") if err_msg == ();
+  maybe_data = fetch(anchor);
+  if maybe_data != nothing:
+    data = value(maybe_data);
+    if data :: ((NzNat, NzNat), (NzNat, NzNat)):
+      start_pos, end_pos = data;
+      start_line = left(start_pos);
+      end_line = left(end_pos);
+      line_info = "Line" & if start_line == end_line then " " & printed(start_line) else "s " & printed(start_line) & "-" & printed(end_line);
+      return (if i == 0 then line_info & ": " & l else l : l @ i <- err_msg);
+    ;
+  ;
+  extra_line = "CANNOT DETERMINE LOCATION OF OFFENDING CODE";
+  extra_line = extra_line & ": " & printed(value(maybe_data)) if maybe_data != nothing;
+  return (err_msg | extra_line);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+String* create_error_msg(AnalysisError err) =
+  annotated_analysis_error()        = create_annotated_error_msg(err.error, err.anchor),
+  possible_foreign_key_violation()  = possible_foreign_key_violation_err_msg(err.orig_stmt, err.missing_insertions),
+  out_of_place_one_to_one_attr_insertion() = out_of_place_one_to_one_attr_insertion_err_msg(err.stmt, err.master, err.bad_args),
+  assignment_with_pending_updates() = assignment_with_pending_updates_err_msg(err.stmt, err.pending),
+  deleting_one_to_one_attribute()   = deleting_one_to_one_attribute_err_msg(err.stmt, err.master),
+  invalid_polymorphic_insertion()   = invalid_polymorphic_insertion_err_msg(err.stmt, err.insertions);
+
+////////////////////////////////////////////////////////////////////////////////
+
+String* possible_foreign_key_violation_err_msg(InsertStmt orig_stmt, [+RelVar] missing_insertions) = (
+  "Any insertion into " & user_repr(orig_stmt.var) & "(..) must be followed " &
+  "by insertions into: " & append((user_repr(v) & "(..)" : v <- isort(missing_insertions)), ", ")
+);
+
+
+String* out_of_place_one_to_one_attr_insertion_err_msg(InsertStmt stmt, RelVar master, Bool bad_args) = (
+  "Relation " & user_repr(stmt.var) & "(..) encodes a mandatory single-valued attribute of " & user_repr(master) & "(..)",
+  "In order to insert data into " & user_repr(stmt.var) & "(..) you must first insert a corresponding entry in " & user_repr(master) & "(..). Example:",
+  "  insert " & user_repr(master) & "(" & append(("x", "y" if |stmt.args| > 2), ", ") & ");",
+  "  insert " & user_repr(stmt.var) & "(" & append(("x", "y", "z" if |stmt.args| > 2), ", ") & ");",
+  "You might want to use an update " & user_repr(stmt.var) & "(..) statement here instead" if not bad_args,
+  "A preceding insertion into " & user_repr(master) & "(..) is present, but the arguments are different" if bad_args
+);
+
+
+String* assignment_with_pending_updates_err_msg(AssignmentStmt stmt, [+RelVar, StdVar] pending) = (
+  "Variable " & user_repr(v) & " cannot be assigned while pending updates to the following relations require it: " &
+  append((user_repr(r) : r <- isort([r : r <- pending(?, v)])), ", ")
+  : v <- isort([v : unused_var, v <- pending])
+);
+
+
+String* deleting_one_to_one_attribute_err_msg(DeleteStmt stmt, RelVar master) = (
+  "Relation " & user_repr(stmt.var) & "(..) encodes a mandatory single-valued attribute of " & user_repr(master) & "(..)",
+  "Such an attribute can be updated but not deleted explicitly.",
+  "It's automatically deleted when the corresponding entry in " & user_repr(master) & "(..) is"
+);
+
+
+String* invalid_polymorphic_insertion_err_msg(InsertStmt stmt, [+[RelVar]] insertions) = (
+  "Invalid attempt to insert a polymorphic value in " & user_repr(stmt.var) & "(..)",
+  "The operation is not allowed because it's not possible to verify at compile time that no foreign key is violated"
+);

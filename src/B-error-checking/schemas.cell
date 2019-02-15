@@ -30,9 +30,10 @@ implicit syn_prg : SynPrg, type_arity_map : [BasicTypeSymbol -> [+Nat]] {
       return (schema_def_duplicates_type(db_def, nonempty(confl_tdefs)));
     ;
 
-    state_vars = (d : d <- db_def.decls, d :: StateVarDecl);
-    rel_vars   = (d : d <- db_def.decls, d :: RelVarsDecl);
-    nested_dbs = (d : d <- db_def.decls, d :: NestedDBDecl);
+    state_vars   = (d : d <- db_def.decls, d :: StateVarDecl);
+    rel_vars     = (d : d <- db_def.decls, d :: RelVarsDecl);
+    nested_dbs   = (d : d <- db_def.decls, d :: NestedDBDecl);
+    foreign_keys = (d : d <- db_def.decls, d :: ForeignKeyDecl);
 
     // Starting with state variables and nested automata, whose names cannot be overloaded
     non_overloadable_decls = sort(state_vars & nested_dbs, _print_($a.name) < _print_($b.name));
@@ -53,12 +54,44 @@ implicit syn_prg : SynPrg, type_arity_map : [BasicTypeSymbol -> [+Nat]] {
     std_relvars_by_name = merge_values([[rv.name -> rv] : rv <~ rel_vars]);
     attr_relvar_by_name = merge_values([[arv.name -> (rv, i)] : rv <~ rel_vars, arv @ i <~ rv.attributes]);
     all_relvar_names = rand_sort(keys(std_relvars_by_name) & keys(attr_relvar_by_name));
-    return join(({
+    errs = join(({
         std_relvars = lookup(std_relvars_by_name, n, []);
         attr_relvars = lookup(attr_relvar_by_name, n, []);
         return relvars_overloading_errors(std_relvars, attr_relvars);
       } : n <- all_relvar_names
     ));
+    return errs if errs != ();
+
+    // Checking foreign keys
+    return join((foreign_key_decl_wf_errors(db_def.name, k) : k <- foreign_keys));
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  ExprWFError* foreign_key_decl_wf_errors(Symbol name, ForeignKeyDecl key) {
+    // Checking that all relations involved exist and have the right arity
+    info = db_interfaces(db_symbol(name), !!);
+    rels = (key.targets | (key.src_rel, key.src_args));
+    errs = ();
+    for r, as <- rels:
+      if not info.rel_vars(r, *):
+        errs = (errs | undef_rel_var(key, r));
+      elif |as| != info.rel_vars(r):
+        errs = (errs | invalid_foreign_key_relvar_arity(key, r));
+      ;
+      if not (a <~ as : a != nothing):
+        errs = (errs | empty_args_list(key, r));
+      ;
+    ;
+    return errs if errs != ();
+
+    // Checking that there are no duplicate or undefined arguments
+    args = values(key.src_args);
+    dupl_args = duplicates(args);
+    return (duplicate_foreign_key_args(key, dupl_args)) if dupl_args != [];
+    args = set(args);
+    errs = [undef_foreign_key_var(key, s) : unused_var, as <~ key.targets, a <~ as, just(s?) ?= a, not args(s)];
+    return isort(errs);
   }
 
   //////////////////////////////////////////////////////////////////////////////
@@ -74,7 +107,9 @@ implicit syn_prg : SynPrg, type_arity_map : [BasicTypeSymbol -> [+Nat]] {
 
   ExprWFError* schema_decl_wf_errors(NestedDBDecl decl) {
     db_type = db_symbol(decl.type);
-    return (unknown_auto(db_type) if not db_defs_by_id(db_type, *));
+    return () if db_defs_by_id(db_type, *);
+    is_std_type = type_arity_map(type_symbol(decl.type), *);
+    return (if is_std_type then uninitialized_memb_var(decl) else unknown_auto(db_type));
   }
 
   //////////////////////////////////////////////////////////////////////////////
@@ -89,8 +124,12 @@ implicit syn_prg : SynPrg, type_arity_map : [BasicTypeSymbol -> [+Nat]] {
     );
     return type_errs if type_errs != ();
 
+    return (diff_types_in_sym_cols(decl)) if decl.symmetric and decl.col_types(0) != decl.col_types(1);
+
     keys = [set(k) : k <~ decl.keys];
-    valid_keys = valid_key_sets_by_arity[arity];
+    valid_keys = if decl.symmetric
+      then sym_rel_vars_valid_key_sets_by_arity(arity, !!)
+      else valid_key_sets_by_arity(arity, !!);
     return (invalid_relvar_keys(decl)) if keys != [] and not valid_keys(keys);
 
     errs = (duplicate_schema_decl(decl, non_overloadable_decls_by_name[decl.name])
@@ -107,22 +146,30 @@ implicit syn_prg : SynPrg, type_arity_map : [BasicTypeSymbol -> [+Nat]] {
       if i > 0 and attributes(i-1).name == arv.name:
         errs = (errs | duplicate_schema_decl(arv, attributes(i-1)));
       ;
+      if arity == 2 and arv.cardinality.multiple and arv.unique:
+        errs = (errs | invalid_ternary_multiple_unique(arv));
+      ;
     ;
 
     return errs;
+
+
+    [Nat -> [[[Nat]]]] valid_key_sets_by_arity = [
+      1 -> [],
+      2 -> [[[0]], [[1]], [[0], [1]]],
+      3 -> {
+        bin_keys = combinations(2, 3);
+        bin_key_sets = [k : k <- power_set(bin_keys), k != []];
+        mixed_key_sets = [[nonempty(k), nonempty([0, 1, 2] - k)] : ks <- bin_key_sets, |ks| == 1, k = only(ks)];
+        return bin_key_sets & mixed_key_sets;
+      }
+    ];
+
+    [Nat -> [[[Nat]]]] sym_rel_vars_valid_key_sets_by_arity = [
+      2 -> [],
+      3 -> [[[0, 1]], [[0, 1], [2]]]
+    ];
   }
-
-
-  [Nat -> [[[Nat]]]] valid_key_sets_by_arity = [
-    1 -> [],
-    2 -> [[[0]], [[1]], [[0], [1]]],
-    3 -> {
-      bin_keys = combinations(2, 3);
-      bin_key_sets = [k : k <- power_set(bin_keys), k != []];
-      mixed_key_sets = [[nonempty(k), nonempty([0, 1, 2] - k)] : ks <- bin_key_sets, |ks| == 1, k = only(ks)];
-      return bin_key_sets & mixed_key_sets;
-    }
-  ];
 
   //////////////////////////////////////////////////////////////////////////////
 
@@ -138,12 +185,56 @@ implicit syn_prg : SynPrg, type_arity_map : [BasicTypeSymbol -> [+Nat]] {
 
     // Checking that the set of keys is the same
     std_relvars_keys = [[set(k) : k <~ rv.keys] : rv <- std_relvars];
-    attr_relvars_keys = [
-      [set((i : i < |rv.col_types|)) if not rv.attributes(idx).cardinality.multiple]
-      : arv_info <- attr_relvars, (rv?, idx?) ?= arv_info
-    ];
+    attr_relvars_keys = [{
+      rv, idx = arv_info;
+      arv = rv.attributes(idx);
+      return [
+        set((i : i < |rv.col_types|)) if not arv.cardinality.multiple,
+        [|rv.col_types|] if arv.unique
+      ];
+    } : arv_info <- attr_relvars];
     all_key_sets = std_relvars_keys & attr_relvars_keys;
     return (incomp_relvar_decls(std_relvars, attr_relvars)) if |all_key_sets| != 1;
+
+    // Checking that either none or all of them are symmetric
+    symmetric = [rv.symmetric : rv <- std_relvars] & [left(arv).symmetric : arv <- attr_relvars];
+    return (incomp_symmetries(std_relvars, attr_relvars)) if |symmetric| != 1;
+
+    // Checking that their signatures are compatible, and that there are no duplicate attributes
+    arity = only(all_arities);
+    ord_relvars = isort(std_relvars);
+    sgns = ((desugar_plain_type(t) : t <- v.col_types) : v <- ord_relvars);
+    attrs = ((a.name : a <- v.attributes) : v <- ord_relvars);
+    errs = ();
+    let typedefs = typedefs:
+      for r1 @ i1 <- ord_relvars; i2 = i1+1 .. |ord_relvars|:
+        r2 = ord_relvars(i2);
+        are_disjoint = are_ptype_disjoint(sgns(i1), sgns(i2));
+        if not are_disjoint:
+          if arity == 1:
+            type1 = only_unsafe(sgns(i1));
+            type2 = only_unsafe(sgns(i2));
+            if not is_neat_subset(type1, type2) and not is_neat_subset(type2, type1):
+              errs = (errs | incomp_relvar_decls([r1, r2], []));
+            ;
+          else
+            errs = (errs | incomp_relvar_decls([r1, r2], []));
+          ;
+        ;
+
+        for a1 @ j1 <- r1.attributes; j2 = j1 .. |r2.attributes|:
+          a2 = r2.attributes(j2);
+          if a1.name == a2.name:
+            ## FIX THE BUG IN THE COMPILER AND REPLACE THE {...} WITH (...)
+            if not are_disjoint or {a1.cardinality != a2.cardinality} or {a1.unique != a2.unique}:
+              errs = (errs | incomp_relvar_decls([], [(r1, j1), (r2, j2)]));
+            ;
+          ;
+        ;
+      ;
+    ;
+    return errs;
+
 
     // ord_std_relvars = rand_sort(std_relvars);
     // ord_attr_relvars = rand_sort(attr_relvars);
@@ -160,7 +251,5 @@ implicit syn_prg : SynPrg, type_arity_map : [BasicTypeSymbol -> [+Nat]] {
 
     ## WHAT IS IT THAT I SHOULD DO HERE? DOES THIS CHECK MAKE ANY SENSE AT ALL?
     ## AND IF IT DOES MAKE SENSE, SHOULD IT BE DONE HERE OR IN LEVEL 2?
-
-    return ();
   }
 }

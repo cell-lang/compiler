@@ -1,0 +1,450 @@
+type CompOptions  = options(
+                      debug_mode:                 Bool,
+                      ignore_assertions:          Bool,
+                      max_opt_fields_in_opt_rec:  Nat
+                    );
+
+
+implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptions {
+  CompiledPrg compiled_program([DBSymbol -> [RelVar -> [+Nat -> Nat]]] rel_vars_args_perms) {
+    memb_test_preds = [memb_test_pred(t, memb_test_preds_map) : t, unused_var <- memb_test_preds_map];
+    fndefs          = [gen_fn_code(fd) : fd <- program.fndefs];
+    proc_defs       = [gen_proc_code(pd) : pd <- program.proc_defs];
+    react_blocks    = [gen_auto_code(automaton=a) : a <- program.auto_defs];
+    static_blocks   = [compiled_database(rel_vars_args_perms(db.name), database=db) : db <- program.data_bases];
+
+    return compiled_prg(
+      typedefs:       program.typedefs,
+      opt_reprs:      optimized_tagged_records,
+      bool_procs:     memb_test_preds,
+      procs:          fndefs & proc_defs & dispatch_functions & aggregate_functions & conversion_functions,
+      react_blocks:   react_blocks,
+      static_blocks:  static_blocks,
+      int_seqs:       int_seqs
+    );
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  AnyLowLevelRepr fn_arg_low_level_repr(NeType arg_type) {
+    return reprs(arg_type, !!);
+
+    [NeType -> AnyLowLevelRepr] reprs {
+      args_types = [t : f <- program.fndefs, unused_var, t <~ f.args];
+      return [t -> opt_repr(replace_type_vars_with_type_any(t)) : t <- args_types];
+    }
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  ObjProcDef gen_proc_code(Procedure procedure) {
+    res_var, var_gen = next_obj_var(blank_var_gen);
+
+    body = rand_sort([auto_pre_init(v, t) : v, t <- procedure.auto_vars]) &
+           rand_sort([init_db(v, info.links, info.type) : v, info <- procedure.db_vars]);
+
+    // Evaluating the expression
+    if procedure.body != ():
+      code, unused_var_1, unused_var_2, var_gen = stmts_opt_code(
+        procedure.body,
+        [a.var -> a.type : a <~ procedure.args],
+        var_gen,
+        context           = procedure,
+        typed_vars        = [],
+        surrogates        = [],
+        exp_break_surrs   = nothing,
+        result_var        = res_var
+      );
+
+      body = (body | execute_block(code)) if code != ();
+    ;
+
+    body = body & rand_sort([auto_cleanup(v, t) : v, t <- procedure.auto_vars]);
+    body = body & rand_sort([cleanup_db(v, info.type) : v, info <- procedure.db_vars]);
+
+    debug_entry_instr = push_call_info(procedure.id, (a.var : a <- procedure.args));
+
+    val = if procedure.res_type != nothing then res_var else object(:void); ## BAD: HERE I'M CHEATING...
+    body = (debug_entry_instr if options.debug_mode) & body & (pop_call_info if options.debug_mode, ret_val(val));
+
+    proc_ret_type = if procedure.res_type != nothing then value(procedure.res_type) else symb_type(:void);
+
+    return obj_proc_def(
+      name:           procedure.id,
+      args:           (a.var : a <- procedure.args),
+      cls_args:       (),
+      impl_args:      [],
+      ret_val_repr:   :object,
+      type:           fn_type((a.type : a <- procedure.args), (), proc_ret_type),
+      loc_auto_vars:  procedure.auto_vars,
+      loc_db_vars:    [v -> info.type : v, info <- procedure.db_vars],
+      body:           nonempty(body),
+      cached:         false
+    );
+  }
+
+
+  ObjProcDef gen_fn_code(Function func) {
+    args = (low_level_arg(v, fn_arg_low_level_repr(t)) : v, t <- func.args);
+    args_surrs = [v -> obj_expr(args(i)) : v, unused_var @ i <~ func.args];
+
+    cls_args = (cls(v, arity(t)) : v, t <- func.cls_args);
+
+    cached = func.args == () and not is_too_simple_to_be_worth_caching(func.expr);
+
+    env = [v -> t : v, t <~ func.args] & [v -> t : v, t <- func.impl_args];
+
+    ret_val_repr = opt_repr(func.res_type);
+
+    let context = func, surrogates = args_surrs, typed_vars = []:
+      body, ret_val_surr, unused_var_2 = match (func.expr)
+        do_expr() = do_expr_opt_eval_code(func.expr, ret_val_repr, env, blank_var_gen),
+        _         = opt_eval_code(func.expr, env, blank_var_gen);
+    ;
+
+    ret_val_instr = ret_val(low_level_expr(ret_val_repr, ret_val_surr));
+
+    // Adding push_call_info/pop_call_info debug mode instructions
+    if options.debug_mode:
+      body = (push_call_info(func.id, (obj_expr(v) : v <- args))) & body & (pop_call_info);
+    ;
+
+    return obj_proc_def(
+      name:           func.id,
+      args:           args,
+      cls_args:       cls_args,
+      impl_args:      keys(func.impl_args),
+      ret_val_repr:   ret_val_repr,
+      type:           signature(func),
+      loc_auto_vars:  [],
+      loc_db_vars:    [],
+      body:           (body | ret_val_instr),
+      cached:         cached
+    );
+
+
+    Bool is_too_simple_to_be_worth_caching(Expr expr) = is_within_complexity_level(expr, 1);
+
+    Bool is_within_complexity_level(Expr expr, <0..1> max_compl) =
+      undefined           = true,
+      object()            = true,
+      float_lit()         = true,
+      set_expr(es?)       = es == [],
+      seq_expr(es?)       = es == (),
+      map_expr(es?)       = es == [],
+      bin_rel_expr(es?)   = es == [],
+      tern_rel_expr(es?)  = es == [],
+      tag_obj_expr()      = max_compl > 0 and is_within_complexity_level(expr.tag, 0) and is_within_complexity_level(expr.obj, 0),
+      _                   = false;
+  }
+
+
+  [ObjProcDef] dispatch_functions {
+    fns_by_name_and_arity = group_by(program.fndefs, family_id($.id));
+    overloaded_fns = [fns : unused_var, fns <- fns_by_name_and_arity, |fns| > 1];
+    return [dispatch_function(fns) : fns <- overloaded_fns];
+  }
+
+
+  ObjProcDef dispatch_function([+Function] fns) {
+    assert |fns| > 1;
+    assert |[family_id(f.id) : f <- fns]| == 1;
+    assert |[|fn.args| : fn <- fns]| == 1; // All functions have the same arity
+    assert |an_elem(fns).args| > 0;
+
+    count = |fns|;
+
+    rand_fn         = an_elem(fns);
+    id              = rand_fn.id;
+    rand_args       = nonempty(rand_fn.args);
+    rand_cls_args   = rand_fn.cls_args;
+    rand_impl_args  = rand_fn.impl_args;
+
+    disp_args = choose_disp_args(((t : unused_var, t <- nonempty(fn.args)) : fn <- rand_sort(fns)), program.typedefs);
+
+    low_level_signs = [fn.id -> low_level_sign(fn) : fn <- fns];
+    aggr_sign = aggr_sign([s : unused_var, s <- low_level_signs]);
+
+    args = (low_level_arg(fn_arg(i), r) : r @ i <- aggr_sign.args);
+    cls_args = (cls(cls_var(i), arity(t)) : unused_var, t @ i <- rand_cls_args);
+
+    aggr_ret_var, unused_var_1 = next_var(aggr_sign.ret_value, blank_var_gen);
+
+    cases = [{
+      types = (right(fn.args(i)) : i <- disp_args);
+
+      sign = low_level_signs(fn.id, !!);
+      call_args = (low_level_expr(r, obj_expr(args(j))) : r @ j <- sign.args);
+      call_cls_args = (cls_var(j) : j < |rand_cls_args|);
+
+      // We can reuse the same seed to generate variables
+      ret_var, unused_var_2 = next_var(sign.ret_value, blank_var_gen);
+
+      code = (
+        call_proc(ret_var, fn.id, call_args, call_cls_args),
+        ## THESE TWO INSTRUCTIONS SHOULD BE MERGED
+        set_any_var(aggr_ret_var, obj_expr(ret_var)) if ret_var != aggr_ret_var,
+        ret_val(aggr_ret_var)
+      );
+
+      return (types, code);
+    } : fn <- fns];
+
+    code = dynamic_dispatch_code((fn_arg(i) : i <- disp_args), cases);
+
+    ## IMPLICIT ARGUMENTS AND CONSTRAINTS ARE MISSING
+    ## IT PROBABLY DOESN'T MATTER
+    args_types = ();
+    cls_args_types = ();
+    ret_type = ne_union_superset([fn.res_type : fn <- fns]);
+    proc_type = fn_type(args_types, cls_args_types, ret_type);
+
+    return obj_proc_def(
+      name:           family_id(id),
+      args:           args,
+      cls_args:       cls_args,
+      impl_args:      [], ## THIS IS WRONG, BUT IT SHOULDN'T MATTER FOR NOW
+      ret_val_repr:   aggr_sign.ret_value,
+      type:           proc_type,
+      loc_auto_vars:  [],
+      loc_db_vars:    [],
+      body:           code,
+      cached:         false
+    );
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  [ObjProcDef] aggregate_functions {
+    return union([{
+      res_procs = [final_value_yield_proc(f), null_value_proc(f)];
+      init_procs = [red_var_init_proc(f, v) : v, unused_var <- f.red_vars];
+      merge_procs = [red_vars_merge_proc(f, v) : v, unused_var <- f.red_vars];
+      return res_procs & init_procs & merge_procs;
+    } : f <- program.aggr_fn_defs]);
+
+
+    ObjProcArg* extra_args(AggrFunct aggr_fn) = (low_level_arg(v, opt_repr(t)) : v, t <- aggr_fn.extra_args);
+
+    NeType* extra_args_types(AggrFunct aggr_fn) = (t : unused_var, t <- aggr_fn.extra_args);
+
+    [SurrExpr -> ObjExpr] extra_surrs(AggrFunct aggr_fn) =
+      [v -> obj_expr(low_level_arg(v, opt_repr(t))) : v, t <~ aggr_fn.extra_args];
+
+    [StdVar -> NeType] extra_env(AggrFunct aggr_fn) = [v -> t : v, t <~ aggr_fn.extra_args];
+
+
+    ObjProcDef final_value_yield_proc(AggrFunct aggr_fn) {
+      repr = opt_repr(aggr_fn.type);
+      env = [v -> info.type : v, info <- aggr_fn.red_vars];
+      red_vars = ord_red_vars(aggr_fn);
+      args_types = (aggr_fn.red_vars(v).type : v <- red_vars);
+      args = (low_level_arg(v, opt_repr(args_types(i))) : v @ i <- red_vars);
+      surrs = [v -> obj_expr(args(i)) : v @ i <~ red_vars];
+      body = proc_body(aggr_fn.final_value, repr, surrs & extra_surrs(aggr_fn), env & extra_env(aggr_fn));
+      return obj_proc_def(
+        name:           final_value_yield(aggr_fn.id),
+        args:           args & extra_args(aggr_fn),
+        cls_args:       (),
+        impl_args:      [],
+        ret_val_repr:   repr,
+        type:           fn_type(args_types & extra_args_types(aggr_fn), (), aggr_fn.type),
+        loc_auto_vars:  [],
+        loc_db_vars:    [],
+        body:           body,
+        cached:         false
+      );
+    }
+
+
+    ObjProcDef null_value_proc(AggrFunct aggr_fn) {
+      type = aggr_fn.type;
+      repr = opt_repr(type);
+      body = proc_body(aggr_fn.null_value, repr, extra_surrs(aggr_fn), extra_env(aggr_fn));
+      return obj_proc_def(
+        name:           null_value(aggr_fn.id),
+        args:           extra_args(aggr_fn),
+        cls_args:       (),
+        impl_args:      [],
+        ret_val_repr:   repr,
+        type:           fn_type(extra_args_types(aggr_fn), (), type),
+        loc_auto_vars:  [],
+        loc_db_vars:    [],
+        body:           body,
+        cached:         false
+      );
+    }
+
+
+    ObjProcDef red_var_init_proc(AggrFunct aggr_fn, StdVar red_var) {
+      elt_repr = opt_repr(aggr_fn.elt_type);
+      info = aggr_fn.red_vars(red_var);
+      var_type = info.type;
+      var_repr = opt_repr(var_type);
+      arg = low_level_arg(aggr_fn.elt_var, elt_repr);
+      surrs = [aggr_fn.elt_var -> obj_expr(arg)];
+      env = [aggr_fn.elt_var -> aggr_fn.elt_type];
+      body = proc_body(info.init_value, var_repr, surrs & extra_surrs(aggr_fn), env & extra_env(aggr_fn));
+      return obj_proc_def(
+        name:           red_var_init(aggr_fn.id, red_var),
+        args:           (arg) & extra_args(aggr_fn),
+        cls_args:       (),
+        impl_args:      [],
+        ret_val_repr:   var_repr,
+        type:           fn_type((aggr_fn.elt_type) & extra_args_types(aggr_fn), (), var_type),
+        loc_auto_vars:  [],
+        loc_db_vars:    [],
+        body:           body,
+        cached:         false
+      );
+    }
+
+    ObjProcDef red_vars_merge_proc(AggrFunct aggr_fn, StdVar red_var) {
+      info = aggr_fn.red_vars(red_var);
+      var_type = info.type;
+      var_repr = opt_repr(var_type);
+      var1, var2, aggr_expr = info.merge_op;
+      args = (low_level_arg(v, var_repr) : v <- (var1, var2));
+      surrs = [v -> obj_expr(args(i)) : v @ i <~ (var1, var2)];
+      env = [var1 -> var_type, var2 -> var_type];
+      body = proc_body(aggr_expr, var_repr, surrs & extra_surrs(aggr_fn), env & extra_env(aggr_fn));
+      return obj_proc_def(
+        name:           red_vars_merge(aggr_fn.id, red_var),
+        args:           args & extra_args(aggr_fn),
+        cls_args:       (),
+        impl_args:      [],
+        ret_val_repr:   var_repr,
+        type:           fn_type((var_type, var_type) & extra_args_types(aggr_fn), (), var_type),
+        loc_auto_vars:  [],
+        loc_db_vars:    [],
+        body:           body,
+        cached:         false
+      );
+    }
+
+
+    Instr+ proc_body(Expr expr, AnyLowLevelRepr repr, [SurrExpr -> ObjExpr] surrs, [StdVar -> Type] env) {
+      let context = :null_context, surrogates = surrs, typed_vars = []:
+        body, surr, unused_var = match (expr)
+          do_expr() = do_expr_opt_eval_code(expr, repr, env, blank_var_gen),
+          _         = opt_eval_code(expr, env, blank_var_gen);
+      ;
+      return (body | ret_val(low_level_expr(repr, surr)));
+    }
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptions {
+  [NeType] rel_auto_runtime_checked_types(Database db) {
+    exprs_types = retrieve_from_nested_exprs(db, retrieve_types);
+    method_args_types = [t : m <- db.methods, t, unused_var <~ m.args];
+    msg_type = [ne_union_type([h.type : h <- db.handlers]) if db.handlers != []];
+    memb_vars_types = [info.type : unused_var, info <- db.state_vars];
+    rel_vars_types = [t : unused_var, info <- db.rel_vars, t <~ info.signature];
+    return union([exprs_types, method_args_types, msg_type, memb_vars_types, rel_vars_types]);
+  }
+
+
+  [NeType] runtime_checked_root_types =
+    [low_level_repr_type(r) : unused_var, rs <- optimized_tagged_records, r <~ rs] &
+    union([retrieve_types(fd.expr) : fd <- program.fndefs]) &
+    union([retrieve_from_nested_exprs(pd.body, retrieve_types) : pd <- program.proc_defs]) &
+    union([rel_auto_runtime_checked_types(db) : db <- program.data_bases]) &
+    union([retrieve_from_nested_exprs(a, retrieve_types) : a <- program.auto_defs]) &
+    [info.type : a <- program.auto_defs, unused_var, info <- a.inputs] &
+    [t : a <- program.auto_defs, m <- a.methods, t, unused_var <~ m.args] &
+    [deep_state_type(a) : a <- program.auto_defs];
+
+
+  ## CASE STUDY: THINK OF A BETTER WAY TO WRITE THIS FUNCTION
+  [NeType] runtime_checked_types {
+    root_type_symbs = union([retrieve_type_symbs(t) : t <- runtime_checked_root_types]);
+    type_symbs = root_type_symbs;
+    new_type_symbs = type_symbs;
+    while new_type_symbs != []:
+      new_types = [expand_type_ref(ts, schema_and_typedefs) : ts <- new_type_symbs];
+      new_type_symbs = union([retrieve_type_symbs(t) : t <- new_types]) - type_symbs;
+      type_symbs = type_symbs & new_type_symbs;
+    ;
+    nested_types = [type_ref(ts) : ts <- type_symbs];
+    return runtime_checked_root_types & nested_types;
+  }
+
+
+  ## CASE STUDY: THINK OF A BETTER WAY TO WRITE THIS FUNCTION, WITHOUT LOOPS OR SORTING
+  [NeType -> MembTestPredId] memb_test_preds_map {
+    entries = ();
+    next_id = 0;
+    for type <- rand_sort(runtime_checked_types):
+      pred_name, next_id = match (type)
+        type_ref(type_symbol(a?))         |
+        type_ref(schema_type_symbol(a?))  = (memb_test(a), next_id),
+        type_ref(par_type_symbol() ts?)   = pred_name(ts, next_id),
+        _                                 = (memb_test(next_id), nat(next_id + 1));
+      entries = (entries | [type -> pred_name]);
+    ;
+    return merge(entries);
+
+
+    (MembTestPredId, Nat) pred_name(ParTypeSymbol type_symb, Nat next_id) {
+      outer_id = match (type_symb.symbol) type_symbol(a?) = a;
+      inner_id, new_next_id = match (type_symb.params)
+        (type_ref(type_symbol(a?))) = (a, next_id),
+        _                           = (next_id, nat(next_id + 1));
+      return (memb_test(outer_id, inner_id), new_next_id);
+    }
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+implicit typedefs : [TypeName -> NeType] {
+  Instr+ dynamic_dispatch_code(ObjExpr+ disp_args, [+(NeType+, Instr+)] cases) {
+    if |disp_args| == 1:
+      disp_arg = only(disp_args);
+      disp_arg_type = ne_union_superset([only_unsafe(left(c)) : c <- cases]);
+
+      ptrn_cases = ({
+        ptype = pseudotype(only_unsafe(ts), typedefs);
+        fail if not ptype :: NePseudoType;
+        ptrn = pseudotype_pattern(ptype);
+        return (ptrn, is, []);
+      } : ts, is <- isort(cases));
+
+      return nonempty(single_ptrn_match_expr_opt_code(disp_arg, disp_arg_type, ptrn_cases));
+
+    else
+      disp_args_types = (ne_union_superset([ts(i) : c <- cases, ts = left(c)]) : i < |disp_args|);
+
+      cases_code = ({
+        ptypes = (pseudotype(t, typedefs) : t <- ts);
+        fail if not ptypes :: NePseudoType+;
+        ptrns = (pseudotype_pattern(pt) : pt <- ptypes);
+        code = is;
+        for p, t, s <- reverse(zip(ptrns, disp_args_types, disp_args)):
+          ## FOR THE LAST CASE, WE WOULDN'T EVEN NEED ANY CHECKS
+          ## IT WOULD ALSO BE BETTER TO LEAVE THE MOST EXPENSIVE CASE
+          ## TO CHECK LAST
+          code = opt_ptrn_match_code(p, s, t, code, vars_reprs = []);
+        ;
+        return code;
+      } : ts, is <- isort(cases));
+
+      return (join(cases_code) | terminate(true));
+    ;
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+[TypeSymbol] retrieve_type_symbs(Type type) =
+  type_ref(ts?) = [ts] & retrieve_from_nested_types(ts, retrieve_type_symbs),
+  _             = retrieve_from_nested_types(type, retrieve_type_symbs);
+
+[NeType] retrieve_types(Expr expr) =
+  membership()  = [expr.type] & retrieve_from_nested_exprs(expr, retrieve_types),
+  _             = retrieve_from_nested_exprs(expr, retrieve_types);

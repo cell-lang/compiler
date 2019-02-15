@@ -81,6 +81,8 @@ SynBuiltInCall syn_builtin_call(BuiltIn bi, SynExpr+ ps) = builtin_call(name: bi
 
 SynSizeExpr syn_size_expr(SynExpr e) = size_expr(coll: e);
 
+SynRelVarSizeExpr syn_rel_var_size_expr(Symbol+ ss, Maybe[SynExpr]+ as) = rel_var_size_expr(rel_var_path: ss, args: as);
+
 SynCallLookalike syn_call_lookalike(SynExpr t, SynExpr+ as) = call_lookalike(target: t, args: as);
 
 SynRelMembTest  syn_rel_memb_test(SynExpr t, Maybe[SynExpr]+ as)  = rel_memb_test(target: t, args: as);
@@ -94,7 +96,6 @@ SynCmpExpr syn_eq(SynExpr l, SynExpr r)   = eq(left: l, right: r);
 SynCmpExpr syn_neq(SynExpr l, SynExpr r)  = neq(left: l, right: r);
 
 SynMembExpr syn_membership(SynExpr e, SynType t) = membership(obj: e, type: t);
-// type SynCastExpr    = cast_expr(expr: SynExpr, type: SynType);
 
 SynAccExpr syn_accessor(SynExpr e, Atom f) = accessor(expr: e, field: f);
 
@@ -129,7 +130,6 @@ SynAtomicUpdateStmt syn_send_msg_stmt(Atom v, SynExpr m)          = send_msg_stm
 SynAtomicUpdateStmt syn_try_update_stmt(Atom n, SynExpr* as)      = try_update_stmt(name: n, args: as);
 SynAtomicUpdateStmt syn_set_memb_var_stmt(Atom v, SynExpr e)      = set_memb_var_stmt(var: v, value: e);
 SynAtomicUpdateStmt syn_delete_stmt((Atom, Maybe[SynExpr]+)+ es)  = delete_stmt(entries: ((var: v, args: as) : v, as <- es));
-SynAtomicUpdateStmt syn_insert_stmt((Atom, SynExpr+)+ es, Bool f) = insert_stmt(entries: ((var: v, args: as) : v, as <- es), force: f);
 
 SynAtomicProcStmt syn_proc_call_stmt(ProcSymbol n, SynExpr* ps)            = proc_call_stmt(proc_name: n, args: ps);
 SynAtomicProcStmt syn_proc_call_stmt(StdVar v, ProcSymbol n, SynExpr* ps)  = proc_call_stmt(res_var: v, proc_name: n, args: ps);
@@ -142,16 +142,18 @@ SynCtrlStmt syn_send_msg_ctrl_stmt(Atom rv, Atom av, SynExpr m) = send_msg_ctrl_
 SynCtrlStmt syn_read_state_ctrl_stmt(Atom rv, Atom dv)          = read_state_ctrl_stmt(res_var: rv, db_var: dv);
 SynCtrlStmt syn_restore_state_ctrl_stmt(Atom rv, Atom dv, SynExpr e)  = restore_state_ctrl_stmt(res_var: rv, db_var: dv, state: e);
 
-SynIfStmt[T]      syn_if_stmt(SynExpr c, T+ ss)                     = syn_if_stmt(((cond: c, body: ss)), ());
-SynIfStmt[T]      syn_if_stmt((cond: SynExpr, body: T+)+ bs, T* e)  = if_stmt(branches: bs, else: e);
-SynLoopStmt[T]    syn_loop_stmt(SynExpr c, T+ b)                    = syn_loop_stmt(c, b, false);
-SynLoopStmt[T]    syn_loop_stmt(SynExpr c, T+ b, Bool s)            = loop_stmt(cond: c, skip_first: s, body: b);
-SynInfLoopStmt[T] syn_inf_loop_stmt(T+ ss)                          = :inf_loop_stmt(ss);
-SynForStmt[T]     syn_for_stmt(SynIter+ ls, T+ b)                   = for_stmt(loops: ls, body: b);
-SynLetStmt[T]     syn_let_stmt((ImplArg, SynExpr)+ a, T+ b)         = let_stmt(asgnms: a, body: b);
+SynIfStmt syn_if_stmt((cond: SynExpr, body: SynStmt+)+ bs, SynStmt* e) = if_stmt(branches: bs, else: e);
+SynIfStmt      syn_if_stmt(SynExpr c, SynStmt+ ss)              = syn_if_stmt(((cond: c, body: ss)), ());
+SynLoopStmt    syn_loop_stmt(SynExpr c, SynStmt+ b)             = syn_loop_stmt(c, b, false);
+SynLoopStmt    syn_loop_stmt(SynExpr c, SynStmt+ b, Bool s)     = loop_stmt(cond: c, skip_first: s, body: b);
+SynInfLoopStmt syn_inf_loop_stmt(SynStmt+ ss)                   = :inf_loop_stmt(ss);
+SynForStmt     syn_for_stmt(SynIter+ ls, SynStmt+ b)            = for_stmt(loops: ls, body: b);
+SynLetStmt     syn_let_stmt((ImplArg, SynExpr)+ a, SynStmt+ b)  = let_stmt(asgnms: a, body: b);
 
-SynIter syn_seq_iter(StdVar+ vs, SynExpr e)             = seq_iter(vars: vs, values: e);
-SynIter syn_seq_iter(StdVar+ vs, StdVar iv, SynExpr e)  = seq_iter(vars: vs, idx_var: iv, values: e);
+SynIter syn_coll_iter(Maybe[StdVar]+ vs, SynExpr e)             = coll_value_iter(vars: vs, src_expr: e);
+SynIter syn_coll_iter(Maybe[StdVar]+ vs, StdVar iv, SynExpr e)  = coll_value_iter(vars: vs, idx_var: iv, src_expr: e);
+
+SynFilteredIter syn_filtered_iter(Maybe[Symbol]+ vs, Symbol+ t, Maybe[SynExpr]+ as) = filtered_iter(vars: vs, target: t, args: as);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -216,14 +218,19 @@ InputDecl     input_decl(Atom n, SynType t, Bool d)         = input_decl(name: n
 OutputDecl    output_decl(Atom n, SynType t, Bool d)        = output_decl(name: n, type: t, discrete: d);
 StateVarDecl  state_var_decl(Atom n, SynType t, SynExpr d)  = state_var_decl(name: n, type: t, init_value: d);
 
-RelVarsDecl relvars_decl(Atom n, SynType+ ts, Nat+* ks, (Atom, SynType, AttrCard)* as) {
-  attrs = (attr_relvar(name: an, type: t, cardinality: c) : an, t, c <- as);
-  return relvars_decl(name: n, col_types: ts, keys: ks, attributes: attrs);
-}
+RelVarsDecl relvars_decl(Atom n, SynType+ ts, Nat+* ks, Bool s, AttrRelVar* as) =
+  relvars_decl(name: n, col_types: ts, keys: ks, symmetric: s, attributes: as);
+
+AttrRelVar attr_relvar(Symbol n, SynType t, AttrCard c, Bool u) =
+  attr_relvar(name: n, type: t, cardinality: c, unique: u);
 
 AttrCard attr_card(Bool r, Bool m)  = attr_card(required: r, multiple: m);
 
-NestedDBDecl  nested_db_decl(Atom n, Atom t)            = nested_db_decl(name: n, type: t);
+NestedDBDecl nested_db_decl(Atom n, Atom t) = nested_db_decl(name: n, type: t);
+
+ForeignKeyDecl foreign_key_decl(Symbol s, Maybe[Symbol]+ sas, (Symbol, Maybe[Symbol]+)+ ts) =
+  foreign_key_decl(src_rel: s, src_args: sas, targets: ts);
+
 ConstDecl     const_decl(Atom n, SynExpr e)             = const_decl(name: n, value: e);
 ConstDecl     const_decl(Atom n, SynType t, SynExpr e)  = const_decl(name: n, type: t, value: e);
 

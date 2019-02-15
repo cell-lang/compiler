@@ -29,6 +29,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     cls_call()            = closures[cast_cls_var(expr.name)].out_type,
     builtin_call()        = builtin_call_expr_type(expr.name, expr.args, env),
     size_expr()           = size_expr_type(expr.coll, env),
+    rel_var_size_expr()   = type_nat,
     unary_pseudo_call()   = unary_pseudo_call_expr_type(expr.target, expr.arg, env),
     rel_memb_test()       = type_bool,
     rel_lookup()          = rel_lookup_expr_type(expr, env),
@@ -39,9 +40,9 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     not_expr(e?)          = not_expr_type(e, env),
     eq()                  = eq_expr_type(expr.left, expr.right, env),
     membership()          = memb_expr_type(expr.obj, expr.type, env),
-    cast_expr()           = expr.type,
     accessor()            = accessor_expr_type(expr.expr, expr.field, env),
     accessor_test()       = type_bool,
+    aggr_fn_call()        = aggr_fn_call_expr_type(expr, env),
     auto_method_call()    = auto_method_call_expr_type(expr, env),
     db_method_call()      = db_method_call_expr_type(expr, env),
     if_expr()             = if_expr_type(expr.cond, expr.then, expr.else, env),
@@ -58,59 +59,42 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     output_is_set()       = type_bool;
 
 
-  Type memb_var_type(MembVar var) = match (context)
-    data_base() = context.state_vars[var].type;
-
-
-  Type qual_memb_var_type(QualMembVar var) {
-    db_type = var_type(var.db_var);
-    db = automaton_by_id(db_type);
-    return db.state_vars[var.memb_var].type;
-  }
-
-
-  Type qual_signal_var_type(QualSignalVar var) {
-    auto_type = var_type(var.auto_var);
-    auto = automaton_by_id(auto_type);
-    memb_var = var.memb_var;
-    if auto.outputs(memb_var, *):
-      return auto.outputs[memb_var].type;
-    elif auto.state(memb_var, *):
-      return auto.state[memb_var].type;
-    else
-      ## WHAT ELSE IS ACCESSIBLE FROM INSIDE A PROCEDURE?
-      return auto.inputs[memb_var].type;
-    ;
+  Type aggr_fn_call_expr_type(AggrFnCallExpr expr, [EnvVar -> Type] env) {
+    equiv_clause = expr.clause;
+    equiv_clause = and_clause(equiv_clause, filter_clause(expr.cond)) if expr.cond?;
+    iter_tree = full_iter_tree(equiv_clause, env);
+    elt_type = elt_type(iter_tree, expr.expr);
+    return empty_type if elt_type == empty_type;
+    aggr_fns = aggr_functs(expr.fn_id, |expr.extra_args|);
+    aggr_fn = only([f : f <- aggr_fns, is_subset(elt_type, f.elt_type)]);
+    return aggr_fn.type;
   }
 
 
   Type rel_lookup_expr_type(RelLookup expr, [EnvVar -> Type] env) {
+    arity = |expr.args|;
     rel_type = expr_type(expr.rel, env);
-    args_types = (expr_type(a, env) : a <- expr.set_args);
-    if args_types == ():
-      return set_elem_supertype(rel_type);
-    elif |args_types| == 1 and expr.unknown_arg_idx :: <0..1>:
-      return if expr.unknown_arg_idx == 1
-        then restricted_bin_rel_arg1_supertype(rel_type, only(args_types))
-        else bin_rel_arg_supertype(rel_type, expr.unknown_arg_idx);
-    elif |args_types| == 2 and expr.unknown_arg_idx :: <0..2>:
-      return tern_rel_arg_supertype(rel_type, expr.unknown_arg_idx);
-    else
-      fail;
+    return set_elem_supertype(rel_type) if arity == 1;
+    args_types = (apply(a, expr_type($, env)) : a <- expr.args);
+    target_idx = index_only(expr.args, nothing);
+    if arity == 2:
+      return if target_idx == 1
+        then restricted_bin_rel_arg1_supertype(rel_type, value_unsafe(args_types(0)))
+        else bin_rel_arg_supertype(rel_type, 0);
     ;
+    assert arity == 3;
+    fail if not target_idx :: <0..2>;
+    return tern_rel_arg_supertype(rel_type, target_idx);
   }
 
 
   Type relvar_lookup_expr_type(RelVarLookup expr, [EnvVar -> Type] env) {
-    set_args_types = (expr_type(a, env) : a <- expr.set_args);
-    sgns = relvar_signatures(expr.rel_var);
-    target_idx = expr.unknown_arg_idx;
-    ret_types = [
-      s(target_idx) : s <- sgns,
-      not (t @ i <~ set_args_types : are_ptype_disjoint(t, s(i + bit(i >= target_idx))))
+    args_types = (apply(a, expr_type($, env)) : a <- expr.args);
+    overlapping_sgns = [
+      s : s <- relvar_signatures(expr.rel_var), signature_overlaps_partial_signature(s, args_types)
     ];
-    assert ret_types != [];
-    return union_superset(ret_types);
+    target_idx = index_only(expr.args, nothing);
+    return union_superset(nonempty([s(target_idx) : s <- overlapping_sgns]));
   }
 
 
@@ -712,6 +696,54 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////
 
+  // [EnvVar -> Type] downstream_env(CollValueIter iter, [EnvVar -> Type] env) {
+  //   src_type = expr_type(iter.src_expr, env);
+
+  //   if is_subset(src_type, type_seq):
+  //     return seq_iter_env(iter, src_type, env);
+  //   elif |iter.vars| == 1:
+  //     var = only(iter.vars);
+  //     return env & [value(var) -> set_elem_supertype(src_type) if var != nothing];
+  //   else
+  //     return rel_iter_env(iter.vars, (nothing : unused_var <- iter.vars), src_type, env);
+  //   ;
+
+
+  //   [EnvVar -> Type] seq_iter_env(CollValueIter iter, Type src_type, [EnvVar -> Type] env) {
+  //     elem_type = seq_elem_supertype(src_type);
+
+  //     nvars = nz_nat(|iter.vars|);
+  //     if nvars == 1:
+  //       var = iter.vars(0);
+  //       env_delta = [value(var) -> elem_type if var != nothing];
+  //     else
+  //       types = tuple_field_supertypes(elem_type, nvars);
+  //       env_delta = merge(([value(v) -> t] : v, t <- zip(iter.vars, types), v != nothing));
+  //     ;
+  //     env_delta = env_delta & [iter.idx_var -> type_nat] if iter.idx_var?;
+
+  //     return env & env_delta;
+  //   }
+
+
+  //   [EnvVar -> Type] rel_iter_env(Maybe[StdVar]+ vars, Maybe[StdVar]+ args, Type src_type, [EnvVar -> Type] env) {
+  //     env_delta : [EnvVar -> Type];
+
+  //     assert |args| == 2 or |args| == 3;
+  //     assert |vars| == count(args, $ == nothing);
+
+  //     args_types = if |args| == 2
+  //       then bin_rel_args_supertypes(src_type)
+  //       else tern_rel_args_supertypes(src_type);
+  //     idxs = packed_seq_idxs((a == nothing : a <- args));
+  //     env_delta = [value(v) -> args_types(i) : a @ i <~ args, a == nothing, v = vars(idxs(i)), v != nothing];
+  //     return env & env_delta;
+  //   }
+  // }
+
+  //////////////////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////
+
   [EnvVar -> Type] generate_env(Clause cls, [EnvVar -> Type] env) =
     set_clause()        = env & [cls.var -> set_elem_supertype(expr_type(cls.src, env))],
     rel_clause()        = gen_rel_clause_env(cls.vars, cls.src, cls.args, env),
@@ -774,15 +806,19 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   //////////////////////////////////////////////////////////////////////////////
 
   // We assume the assignment typechecks
-  [EnvVar -> Type] asgnm_env_updates(EnvVar+ vars, Type value_type) {
-    nvars = nz_nat(|vars|);
-    if nvars == 1:
-      return [vars(0) -> value_type];
+  [EnvVar -> Type] partial_asgnm_env_updates(Maybe[EnvVar]+ vars, Type value_type) {
+    if |vars| == 1:
+      var = only(vars);
+      return [value(var) -> value_type if var != nothing];
     else
-      types = tuple_field_supertypes(value_type, nvars);
-      return merge(([v -> t] : v, t <- zip(vars, types)));
+      types = tuple_field_supertypes(value_type, |vars|);
+      return [value(v) -> types(i) : v @ i <~ vars, v != nothing];
     ;
   }
+
+
+  [EnvVar -> Type] asgnm_env_updates(EnvVar+ vars, Type value_type) =
+    partial_asgnm_env_updates((just(v) : v <- vars), value_type);
 
 
   [EnvVar -> Type] merge_envs([EnvVar -> Type] env1, [EnvVar -> Type] env2) {
@@ -924,6 +960,79 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
     return new_env & generate_env(ptrn, type);
   }
+
+
+  //////////////////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////
+
+  [EnvVar -> Type] loop_vars(CollValueIter iter, [EnvVar -> Type] env) {
+    src_type = expr_type(iter.src_expr, env);
+    if is_subset(src_type, type_seq):
+      return seq_loop_vars(iter, env);
+    elif is_subset(src_type, type_set):
+      return set_loop_vars(iter, env);
+    elif is_subset(src_type, type_bin_rel):
+      return bin_rel_loop_vars(iter, env);
+    else
+      assert is_subset(src_type, type_tern_rel);
+      return tern_rel_loop_vars(iter, env);
+    ;
+  }
+
+
+  [EnvVar -> Type] loop_vars(RelSubsetIter iter, [EnvVar -> Type] env) {
+    src_type = expr_type(iter.src_expr, env);
+    arity = |iter.args|;
+    rel_args_types = match (arity)
+      1   = (set_elem_supertype(src_type)),
+      2   = bin_rel_args_supertypes(src_type),
+      3   = tern_rel_args_supertypes(src_type);
+    vars_types = (rel_args_types(i) : a @ i <- iter.args, a == nothing);
+    return [value(v) -> vars_types(i) : v @ i <~ iter.vars, v != nothing];
+  }
+
+
+  [EnvVar -> Type] loop_vars(RelVarIter iter, [EnvVar -> Type] env) {
+    sgns = relvar_signatures(iter.rel_var);
+    args_types = (apply(a, expr_type($, env)) : a <- iter.args);
+    return [value(v) -> empty_type : v @ i <~ iter.vars, v != nothing] if not args_types :: Maybe[NeType]+;
+    filtered_sgns = [s : s <- sgns, signature_overlaps_partial_signature(s, args_types)];
+    vars_types = (ne_union_superset(nonempty([s(i) : s <- filtered_sgns])) : v @ i <- iter.args, v == nothing);
+    return [value(v) -> vars_types(i) : v @ i <~ iter.vars, v != nothing];
+  }
+
+
+  [EnvVar -> Type] seq_loop_vars(CollValueIter iter, [EnvVar -> Type] env) {
+    elem_type = seq_elem_supertype(expr_type(iter.src_expr, env));
+    if |iter.vars| == 1:
+      var = only(iter.vars);
+      loop_vars = [value(var) -> elem_type if var != nothing];
+    else
+      field_types = tuple_field_supertypes(elem_type, |iter.vars|);
+      loop_vars = [value(v) -> field_types(i) : v @ i <~ iter.vars, v != nothing];
+    ;
+    loop_vars = loop_vars & [iter.idx_var -> type_nat] if iter.idx_var?;
+    return loop_vars;
+  }
+
+
+  [EnvVar -> Type] set_loop_vars(CollValueIter iter, [EnvVar -> Type] env) {
+    elem_type = set_elem_supertype(expr_type(iter.src_expr, env));
+    var = only_unsafe(iter.vars);
+    return [value(var) -> elem_type if var != nothing];
+  }
+
+
+  [EnvVar -> Type] bin_rel_loop_vars(CollValueIter iter, [EnvVar -> Type] env) {
+    args_types = bin_rel_args_supertypes(expr_type(iter.src_expr, env));
+    return [value(v) -> args_types(i) : v @ i <~ iter.vars, v != nothing];
+  }
+
+
+  [EnvVar -> Type] tern_rel_loop_vars(CollValueIter iter, [EnvVar -> Type] env) {
+    args_types = tern_rel_args_supertypes(expr_type(iter.src_expr, env));
+    return [value(v) -> args_types(i) : v @ i <~ iter.vars, v != nothing];
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1055,6 +1164,14 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////
+
+  ## NOT SURE ABOUT THIS, IT'S A BIT OF A HACK
+  Type elt_type(IterTree tree, Expr expr) =
+    match (set_comp_type(tree, expr))
+      empty_rel_type    = empty_type,
+      ne_set_type() t?  = t.elem_type,
+      union_type(ts?)   = union_type([if t == empty_rel_type then empty_type else t.elem_type : t <- ts]);
+
 
   SetType set_comp_type(IterTree tree, Expr expr) =
     never         = empty_rel_type,
@@ -1387,7 +1504,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     return_stmt(e?)     = expr_type(e, env),
     if_stmt()           = if_stmt_return_type(stmt.cond, stmt.body, stmt.else, env),
     loop_stmt(ss?)      = loop_stmt_return_type(ss, env),
-    foreach_stmt()      = foreach_stmt_return_type(stmt.vars, if stmt.idx_var? then just(stmt.idx_var) else nothing, stmt.values, stmt.body, env),
+    foreach_stmt()      = foreach_stmt_return_type(stmt.iter, stmt.body, env),
     for_stmt()          = for_stmt_return_type(if stmt.var? then just(stmt.var) else nothing, stmt.start_val, stmt.end_val, stmt.end_val_incl, stmt.body, env),
     let_stmt()          = let_stmt_return_type(stmt.asgnms, stmt.body, env),
     assignment_stmt()   |
@@ -1415,12 +1532,11 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   }
 
 
-  Type foreach_stmt_return_type(StdVar+ vars, Maybe[StdVar] maybe_idx_var, Expr values, Statement+ body, [EnvVar -> Type] env) {
-    elem_type = seq_elem_supertype(expr_type(values, env));
-    assert elem_type != empty_type;
-    env_delta = asgnm_env_updates(vars, elem_type) & [value(maybe_idx_var) -> type_nat if maybe_idx_var != nothing];
-    env_0 = update(env, env_delta);
+  Type foreach_stmt_return_type(Iter iter, Statement+ body, [EnvVar -> Type] env) {
+    loop_vars = loop_vars(iter, env);
+    env_0 = env & loop_vars;
     env_1 = update_env(body, env_0);
+    exit_env = remove_keys(env_1, keys(loop_vars));
     ret_type_0 = return_type(body, env_0);
     ret_type_1 = return_type(body, env_1);
     return union_superset(ret_type_0, ret_type_1);
@@ -1462,7 +1578,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     return_stmt(e?)     = unreachable_env(env),
     if_stmt()           = if_stmt_update_env(stmt.cond, stmt.body, stmt.else, env),
     loop_stmt(ss?)      = loop_stmt_update_env(ss, env),
-    foreach_stmt()      = foreach_stmt_update_env(stmt.vars, if stmt.idx_var? then just(stmt.idx_var) else nothing, stmt.values, stmt.body, env),
+    foreach_stmt()      = foreach_stmt_update_env(stmt.iter, stmt.body, env),
     for_stmt()          = for_stmt_update_env(if stmt.var? then just(stmt.var) else nothing, stmt.start_val, stmt.end_val, stmt.end_val_incl, stmt.body, env),
     let_stmt()          = let_stmt_update_env(stmt.asgnms, stmt.body, env),
     break_stmt          = unreachable_env(env),
@@ -1473,7 +1589,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     try_update_stmt()   |
     set_memb_var_stmt() |
     delete_stmt()       |
-    insert_stmt()       = env,
+    insert_stmt()       |
+    update_stmt()       = env,
 
     return_stmt         = unreachable_env(env),
     proc_call_stmt()    = if stmt.res_var?
@@ -1548,21 +1665,14 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   }
 
 
-  [EnvVar -> Type] foreach_stmt_update_env(StdVar+ vars, Maybe[StdVar] maybe_idx_var, Expr values, Statement+ body, [EnvVar -> Type] env) {
-    elem_type = seq_elem_supertype(expr_type(values, env));
-    // assert elem_type != empty_type;
-    loop_vars = set(vars) & [value(maybe_idx_var) if maybe_idx_var != nothing];
-    assert disjoint(keys(env), loop_vars);
-    nvars = nz_nat(|vars|);
-    if nvars == 1:
-      non_idx_typed_loop_vars = [vars(0) -> elem_type];
-    else
-      field_types = tuple_field_supertypes(elem_type, nvars);
-      non_idx_typed_loop_vars = merge(([v -> t] : v, t <- zip(vars, field_types)));
-    ;
-    env_0 = env & non_idx_typed_loop_vars & [value(maybe_idx_var) -> type_nat if maybe_idx_var != nothing];
+  [EnvVar -> Type] foreach_stmt_update_env(Iter iter, Statement+ body, [EnvVar -> Type] env) {
+    loop_vars = loop_vars(iter, env);
+    env_0 = env & loop_vars;
     env_1 = update_env(body, env_0);
-    return merge_envs([env, remove_keys(env_1, loop_vars), break_env(body, env_0), break_env(body, env_1)]);
+    exit_env = remove_keys(env_1, keys(loop_vars));
+    break_env_0 = break_env(body, env_0);
+    break_env_1 = break_env(body, env_1);
+    return merge_envs([env, exit_env, break_env_0, break_env_1]);
   }
 
 

@@ -71,7 +71,8 @@ implicit {
       try_update_stmt()       = join((expr_wf_errors(e, all_vars) : e <- stmt.args)),
       set_memb_var_stmt()     = expr_wf_errors(stmt.value, all_vars),
       delete_stmt()           = join((join((expr_wf_errors(value(a), all_vars) : a <- e.args, a != nothing)) : e <- stmt.entries)),
-      insert_stmt()           = join((join((expr_wf_errors(a, all_vars) : a <- e.args)) : e <- stmt.entries)),
+      insert_stmt()           = insert_stmt_wf_errors(stmt.entries, all_vars),
+      insert_with_attrs_stmt()  = insert_with_attrs_stmt_wf_errors(stmt, all_vars),
 
       set_input_ctrl_stmt()         = expr_wf_errors(stmt.value, all_vars),
       clear_input_ctrl_stmt()       = (),
@@ -90,7 +91,7 @@ implicit {
     }
 
 
-    ExprWFError* if_stmt_wf_errors(SynIfStmt[SynStmt] stmt, [DefVar] ro_vars, [StdVar] rw_vars, [DefVar] all_vars) {
+    ExprWFError* if_stmt_wf_errors(SynIfStmt stmt, [DefVar] ro_vars, [StdVar] rw_vars, [DefVar] all_vars) {
       branches_errs = join((expr_wf_errors(b.cond, all_vars) & stmts_wf_errors(b.body, ro_vars, rw_vars) : b <- stmt.branches));
       else_body = stmt.else;
       else_errs = if else_body != () then stmts_wf_errors(else_body, ro_vars, rw_vars) else ();
@@ -98,7 +99,7 @@ implicit {
     }
 
 
-    ExprWFError* for_stmt_wf_errors(SynForStmt[SynStmt] stmt, [DefVar] ro_vars, [StdVar] rw_vars, [DefVar] all_vars) {
+    ExprWFError* for_stmt_wf_errors(SynForStmt stmt, [DefVar] ro_vars, [StdVar] rw_vars, [DefVar] all_vars) {
       iter_errs = ();
       new_vars = [];
       for it <- stmt.loops:
@@ -113,9 +114,79 @@ implicit {
     }
 
 
-    ExprWFError* iter_wf_errors(SynIter iter, [DefVar] vars) =
-      seq_iter()    = expr_wf_errors(iter.values, vars),
-      range_iter()  = expr_wf_errors(iter.start_val, vars) & expr_wf_errors(iter.end_val, vars);
+    ExprWFError* insert_stmt_wf_errors((var: Symbol, args: SynExpr+, iter: SynCollIter?)+ entries, [DefVar] vars) =
+      join(({
+        if e.iter?:
+          errs = iter_wf_errors(e.iter, vars);
+          return errs if errs != ();
+        ;
+        args_vars = vars & if e.iter? then syn_new_vars(e.iter) else [];
+        return join((expr_wf_errors(a, args_vars) : a <- e.args));
+      } : e <- entries));
+
+
+    ExprWFError* insert_with_attrs_stmt_wf_errors(SynInsertWithAttrsStmt stmt, [DefVar] vars) {
+      errs = join((expr_wf_errors(a, vars) : a <- stmt.args));
+      return errs if errs != ();
+      for a <- stmt.attrs:
+        if a.iter?:
+          errs = iter_wf_errors(a.iter, vars);
+          return errs if errs != ();
+        ;
+        attr_vars = vars & if a.iter? then syn_new_vars(a.iter) else [];
+        errs = expr_wf_errors(a.value, attr_vars);
+        errs = errs & expr_wf_errors(a.cond, attr_vars) if a.cond?;
+        return errs if errs != ();
+      ;
+      return ();
+    }
+
+
+    // type SynCollIter = coll_value_iter(vars: Maybe[StdVar]+, idx_var: StdVar?, src_expr: SynExpr);
+    ExprWFError* iter_wf_errors(SynCollIter iter, [DefVar] vars) {
+      if not iter.idx_var? and iter.src_expr :: IdChain:
+        symbs = destructure_id_chain(iter.src_expr);
+        resols = resolve_by_priority_as_expr_or_rel_var(symbs, |iter.vars|, vars);
+        if |resols| == 1:
+          return ();
+        elif |resols| > 1:
+          return (ambiguous_expr(iter.src_expr, resols));
+        ;
+      ;
+      return expr_wf_errors(iter.src_expr, vars);
+    }
+
+
+    // type SynFilteredIter = filtered_iter(vars: Maybe[Symbol]+, target: Symbol+, args: Maybe[SynExpr]+);
+    ExprWFError* iter_wf_errors(SynFilteredIter iter, [DefVar] vars) {
+      errs = join((expr_wf_errors(value(a), vars) : a <- iter.args, a != nothing));
+      return errs if errs != ();
+
+      target = iter.target;
+      resols = resolve_by_priority_as_expr_or_rel_var(target, |iter.args|, vars);
+      if |resols| == 1:
+        resol = only(resols);
+        if resol :: AnyRelVar:
+          exp_arity = relvar_arity(resol);
+          return (invalid_rel_var_arity(last(target), |iter.args|, exp_arity) if |iter.args| != exp_arity);
+        else
+          return ();
+        ;
+      elif |resols| > 1:
+        // Building a "fake" expression to feed to ambiguous_expr()
+        expr = const_or_var(head(target));
+        for i = 1 .. |target|:
+          expr = syn_accessor(expr, target(i));
+        ;
+        return (ambiguous_expr(expr, resols));
+      ;
+      return join((expr_wf_errors(value(a), vars) : a <- iter.args, a != nothing));
+    }
+
+
+    // type SynRangeIter = range_iter(var: StdVar?, start_val: SynExpr, end_val: SynExpr, end_val_incl: Bool);
+    ExprWFError* iter_wf_errors(SynRangeIter iter, [DefVar] vars) =
+      expr_wf_errors(iter.start_val, vars) & expr_wf_errors(iter.end_val, vars);
   }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -136,6 +207,7 @@ implicit {
     set_memb_var_stmt()       = set_memb_var_stmt_local_wf_errors(stmt.var, stmt.value, ro_vars, rw_vars),
     delete_stmt()             = join((delete_or_insert_stmt_local_wf_errors(e.var, |e.args|) : e <- stmt.entries)),
     insert_stmt()             = join((delete_or_insert_stmt_local_wf_errors(e.var, |e.args|) : e <- stmt.entries)),
+    insert_with_attrs_stmt()  = insert_with_attrs_stmt_local_wf_errors(stmt),
 
     set_input_ctrl_stmt()     |
     clear_input_ctrl_stmt()   = set_or_clear_input_ctrl_stmt_local_wf_errors(stmt.var, stmt.input, ro_vars, rw_vars),
@@ -207,6 +279,17 @@ implicit {
   }
 
 
+  ExprWFError* insert_with_attrs_stmt_local_wf_errors(SynInsertWithAttrsStmt stmt) {
+    errs = delete_or_insert_stmt_local_wf_errors(stmt.relvar, |stmt.args|);
+    return errs if errs != ();
+    for a <- stmt.attrs:
+      errs = delete_or_insert_stmt_local_wf_errors(a.name, nz_nat(1 + |stmt.args|));
+      return errs if errs != ();
+    ;
+    return ();
+  }
+
+
   ExprWFError* delete_or_insert_stmt_local_wf_errors(Atom var, NzNat arity) {
     // <var> must be a relational variable of the specified arity in the target database
     interface = db_interfaces[db_symbol(curr_db_def.name)];
@@ -236,24 +319,35 @@ implicit {
   );
 
 
-  ExprWFError* for_stmt_local_wf_errors(SynForStmt[SynStmt] stmt, [DefVar] ro_vars, [StdVar] rw_vars) {
+  ExprWFError* for_stmt_local_wf_errors(SynForStmt stmt, [DefVar] ro_vars, [StdVar] rw_vars) {
     errs = ();
     new_vars = [];
     for it <- stmt.loops:
       dupl_vars = match (it)
-        seq_iter()    = duplicates(it.vars & (it.idx_var if it.idx_var?)),
-        range_iter()  = [];
+        coll_value_iter() = duplicates(values(it.vars) & (it.idx_var if it.idx_var?)),
+        filtered_iter()   = [var(v) : v <- duplicates(values(it.vars))],
+        range_iter()      = [];
       errs = errs & (dupl_var_mult_asgnm(v) : v <- rand_sort(dupl_vars));
       it_vars = syn_new_vars(it);
       bad_vars = already_def_vars(it_vars, union([ro_vars, rw_vars, new_vars]));
       errs = (errs | vars_redef(stmt, bad_vars)) if bad_vars != [];
+      errs = errs & match (it)
+        filtered_iter()   = iter_wf_errors(it),
+        coll_value_iter() |
+        range_iter()      = ();
       new_vars = new_vars & it_vars;
     ;
     return errs;
+
+
+    ExprWFError* iter_wf_errors(SynFilteredIter iter) {
+      free_args_count = count(iter.args, $ == nothing);
+      return (wrong_iter_arity(iter.vars, nz_nat(free_args_count)) if |iter.vars| != free_args_count);
+    }
   }
 
 
-  ExprWFError* let_stmt_local_wf_errors(SynLetStmt[SynStmt] stmt, [DefVar] ro_vars, [StdVar] rw_vars) {
+  ExprWFError* let_stmt_local_wf_errors(SynLetStmt stmt, [DefVar] ro_vars, [StdVar] rw_vars) {
     ## CHECK THAT THERE ARE NOT DUPLICATES AMONG IMPLICIT ARGUMENTS
     ## AND THAT THERE ARE NOT MUTUAL DEPENDENCIES
     exprs_errs = join((expr_wf_errors(e, ro_vars & rw_vars) : unused_var, e <- stmt.asgnms));

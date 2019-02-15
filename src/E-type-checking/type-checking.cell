@@ -6,12 +6,13 @@ type EnvVar   = StdVar, FnArg, ImplArg, SignalVar;
 
 
 implicit program : Program, typedefs : [TypeName -> NeType] {
-  [<Function, Database, Method, Update, Handler, Automaton, Procedure> -> [+TypeCheckingError]] typechecking_errors {
+  [<Function, AggrFunct, Database, Method, Update, Handler, Automaton, Procedure> -> [+TypeCheckingError]] typechecking_errors {
     fn_errs = [fd -> es : fd <- program.fndefs, es = typecheck_function(fd), es != []];
+    aggr_fn_errs = [af -> es : af <- program.aggr_fn_defs, es = typecheck_aggr_funct(af), es != []];
+    proc_errs = [proc -> es : proc <- program.proc_defs, es = typecheck_procedure(proc), es != []];
     db_errs = merge([typecheck_database(db) : db <- program.data_bases]);
     ra_errs = merge([typecheck_automaton(auto) : auto <- program.auto_defs]);
-    proc_errs = [proc -> es : proc <- program.proc_defs, es = typecheck_procedure(proc), es != []];
-    return fn_errs & db_errs & ra_errs & proc_errs;
+    return fn_errs & aggr_fn_errs & proc_errs & db_errs & ra_errs;
   }
 
 
@@ -37,6 +38,25 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
     env = [a.var -> a.type : a <~ proc.args];
     ret_type = if proc.res_type != nothing then value(proc.res_type) else empty_type;
     return typecheck(proc.body, ret_type, env, context=proc, typed_vars=[]);
+  }
+
+
+  [TypeCheckingError] typecheck_aggr_funct(AggrFunct aggr_fn) {
+    base_env = [v -> t : v, t <~ aggr_fn.extra_args];
+    res_env = base_env & [v -> info.type : v, info <- aggr_fn.red_vars];
+    let context=:null_context, typed_vars = []:
+      errs = typecheck(aggr_fn.null_value, aggr_fn.type, res_env) &
+             typecheck(aggr_fn.final_value, aggr_fn.type, res_env) &
+             union([{
+               var_type = info.type;
+               init_env = base_env & [aggr_fn.elt_var -> aggr_fn.elt_type];
+               var1, var2, merge_expr = info.merge_op;
+               merge_env = base_env & [var1 -> var_type, var2 -> var_type];
+               return typecheck(info.init_value, var_type, init_env) &
+                      typecheck(merge_expr, var_type, merge_env);
+             } : v, info <- aggr_fn.red_vars]);
+    ;
+    return errs;
   }
 }
 

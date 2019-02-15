@@ -2,6 +2,7 @@ implicit syn_prg : SynPrg {
   Program desugared_prg = program(
     typedefs:     typedefs,
     fndefs:       desugared_fn_defs,
+    aggr_fn_defs: desugared_aggr_fn_defs,
     proc_defs:    [desugar_proc_def(pd) : pd <- syn_proc_defs],
     auto_defs:    [desugar_automaton(artifact=a) : a <- resolve_inheritance(react_auto_defs)],
     data_bases:   [desugared_data_base(artifact=db) : db <- schema_defs]
@@ -9,6 +10,53 @@ implicit syn_prg : SynPrg {
 
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////
+
+  [AggrFunct] desugared_aggr_fn_defs {
+    return [
+      transfer(desugar(d, maybe(i, |ds| > 1)), d)
+      : n, ds <- group_by(aggr_funct_decls, $.name), d @ i <~ isort(ds)
+    ];
+
+    AggrFunct desugar(AggrFunctDecl decl, Maybe[Nat] unique_id) {
+      type = desugar_plain_type(decl.type);
+      id = if unique_id == nothing
+        then aggr_fn_id(decl.name)
+        else unique_aggr_fn_id(decl.name, value(unique_id));
+      elt_type = desugar_plain_type(decl.elt_type);
+      elt_var = var(decl.elt_name);
+      extra_args = ((var(s), desugar_plain_type(t)) : t, s <- decl.extra_args);
+      extra_args_vars = [s : s, unused_var <~ extra_args];
+      red_vars = [
+        var(v.name) -> (
+          type:       desugar_plain_type(v.type),
+          init_value: desugar_aggr_fn_expr(v.init_value, extra_args_vars & [elt_var]),
+          merge_op: {
+            v1, v2, e = v.merge_op;
+            v1 = var(v1);
+            v2 = var(v2);
+            e = desugar_aggr_fn_expr(e, extra_args_vars & [v1, v2]);
+            return (v1, v2, e);
+          }
+        ) : v <~ decl.red_vars
+      ];
+      null_value = desugar_aggr_fn_expr(decl.null_value, extra_args_vars);
+      final_value = desugar_aggr_fn_expr(decl.final_value, extra_args_vars & keys(red_vars));
+      return aggr_funct(
+        id:           id,
+        type:         type,
+        elt_type:     elt_type,
+        elt_var:      elt_var,
+        extra_args:   extra_args,
+        red_vars:     red_vars,
+        null_value:   null_value,
+        final_value:  final_value
+      );
+    }
+
+    Expr desugar_aggr_fn_expr(SynExpr expr, [StdVar] def_vars) =
+      desugar_expr(expr, def_vars, artifact = :null_artifact, impl_args = []);
+  }
+
 
   Procedure desugar_proc_def(SynProcDef pd) {
     args = ((var: p.var, type: desugar_schema_aware_type(p.type, schema_names)) : p <- pd.args);

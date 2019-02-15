@@ -1,0 +1,17 @@
+[RelVar] logical_rel_vars(Database rel_auto) = [logical_rel_var(v) : v, unused_var <- rel_auto.rel_vars];
+
+[+PhysRelVar] physical_rel_vars(Database rel_auto, RelVar rel_var) =
+  nonempty([v : v, unused_var <- rel_auto.rel_vars, logical_rel_var(v) == rel_var]);
+
+[+NeType+] rel_var_signatures(Database rel_auto, RelVar rel_var) =
+  nonempty([info.signature : v, info <- rel_auto.rel_vars, logical_rel_var(v) == rel_var]);
+
+NzNat rel_var_arity(Database rel_auto, RelVar rel_var) =
+  only([|s| : s <- rel_var_signatures(rel_auto, rel_var)]);
+
+Bool rel_var_is_symmetric(Database rel_auto, RelVar rel_var) =
+  only([info.symmetric : v, info <- rel_auto.rel_vars, logical_rel_var(v) == rel_var]);
+
+[[+Nat]] rel_var_keys(Database rel_auto, RelVar rel_var) =
+  only([info.keys : v, info <- rel_auto.rel_vars, logical_rel_var(v) == rel_var]);
+

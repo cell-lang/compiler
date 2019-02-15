@@ -1,0 +1,106 @@
+implicit program : Program, typedefs : [TypeName -> NeType], context : Context {
+  DBSymbol var_type(NestedDBVar var) =
+    match (context)
+      automaton()   = context.nested_dbs[var].type,
+      data_base()   = context.nested_dbs[var];
+
+
+  DBSymbol var_type(LinkedDBVar var) =
+    match (context)
+      data_base() = context.links(match (var) linked_db_var(i?) = i);
+
+
+  DBSymbol var_type(LocDBVar var) =
+    match (context)
+      procedure()    = context.db_vars[var].type;
+
+
+  DBSymbol var_type(QualDBVar var) = rel_auto_by_id(var_type(var.outer)).nested_dbs[var.inner];
+
+
+  DBSymbol this_db_symbol = ## RENAME THIS
+    match (context)
+      data_base()   = context.name,
+      lambda_ctx()  = if context.rel_auto? then context.rel_auto.name else undefined;
+
+
+  [+NeType+] relvar_signatures(AnyRelVar rel_var) =
+    rel_var_signatures(rel_auto_by_id(rel_auto_type(rel_var)), unqualified(rel_var));
+
+
+  DBSymbol rel_auto_type(AnyRelVar var) =
+    rel_var()       = this_db_symbol,
+    qual_rel_var()  = var_type(var.db_var);
+
+  ////////////////////////////////////////////////////////////////////////////////
+  ////////////////////////////////////////////////////////////////////////////////
+
+  ## CHECK THESE FUNCTIONS, THEY MIGHT BE REDUNDANT
+
+  Type memb_var_type(MembVar var) = match (context)
+    data_base() = context.state_vars[var].type;
+
+
+  Type qual_memb_var_type(QualMembVar var) {
+    db_type = var_type(var.db_var);
+    db = automaton_by_id(db_type);
+    return db.state_vars[var.memb_var].type;
+  }
+
+  ////////////////////////////////////////////////////////////////////////////////
+  ////////////////////////////////////////////////////////////////////////////////
+
+  NzNat arity(RelVar rel_var)     = arity(this_db_symbol, rel_var);
+  NzNat arity(PhysRelVar rel_var) = arity(this_db_symbol, rel_var);
+
+
+  Bool symmetric(RelVar var)          = symmetric(this_db_symbol, var);
+  Bool symmetric(QualRelVar rel_var)  = symmetric(var_type(rel_var.db_var), unqualified(rel_var));
+
+
+  [[+Nat]] relvar_keys(AnyRelVar relvar) =
+    rel_var()       = rel_var_keys(this_db_symbol, relvar),
+    qual_rel_var()  = rel_var_keys(var_type(relvar.db_var), relvar.rel_var);
+
+
+  NeType+ table_signature(TableVar var) =
+    rel_var_signature(this_db_symbol, original_rel_var(var));
+
+
+  NeType+ table_signature(QualTableVar var) =
+    rel_var_signature(var_type(var.db_var), original_rel_var(var.table_var));
+
+
+  [[+Nat]] table_var_keys(TableVar var)     = table_var_keys(this_db_symbol, var);
+  [[+Nat]] table_var_keys(QualTableVar var) = table_var_keys(var_type(var.db_var), var.table_var);
+
+
+  ValueStoreId table_col_store_id(TableVar rel_var, Nat col_idx) =
+    table_col_store_id(this_db_symbol, rel_var, col_idx);
+
+
+  NestedValueStoreId table_col_store_id(QualTableVar table_var, Nat col_idx) {
+    rel_auto_type = var_type(table_var.db_var);
+    store_id = table_col_store_id(rel_auto_type, table_var.table_var, col_idx);
+    return nested_value_store_id(table_var.db_var, store_id);
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////
+
+  [PhysRelVar] physical_rel_vars(RelVar rel_var, NeType+ args_types) =
+    nonempty(physical_rel_vars(rel_auto_type(rel_var), rel_var, args_types));
+
+
+  [+PhysRelVar] overlapping_phys_rel_vars(RelVar rel_var, Maybe[NeType]+ args_types) =
+    nonempty(overlapping_phys_rel_vars(rel_auto_type(rel_var), rel_var, args_types));
+
+
+  [+TableVar] overlapping_tables(RelVar rel_var, Maybe[NeType]+ args_types) =
+    nonempty(overlapping_tables(rel_auto_type(rel_var), rel_var, args_types));
+
+  [+QualTableVar] overlapping_tables(QualRelVar rel_var, Maybe[NeType]+ args_types) {
+    table_vars = overlapping_tables(rel_auto_type(rel_var), rel_var.rel_var, args_types);
+    return [qual_table_var(rel_var.db_var, v) : v <- nonempty(table_vars)];
+  }
+}

@@ -9,6 +9,46 @@ A transfer(A to, B from) =
 
 ////////////////////////////////////////////////////////////////////////////////
 
+String* format_error_msgs(Any decl, String*+ msgs) {
+  merged_msgs = join(intermix((indent_lines(m) : m <- msgs), ("")));
+  fname, sl, el = source_code_location(decl);
+  loc_msg = "File " & fname & " line" & if sl == el then " " & printed(sl) else "s " & printed(sl) & "-" & printed(el);
+  return (loc_msg) & merged_msgs;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+String source_file(Any decl) = source_code_location(decl)(0);
+
+NzNat source_line(Any decl) = source_code_location(decl)(1);
+
+(String, NzNat, NzNat) source_code_location(Any decl) {
+  maybe_data = fetch(decl);
+  if maybe_data != nothing:
+    data = value(maybe_data);
+    return data if data :: (String, NzNat, NzNat);
+  ;
+  err_msg = "CANNOT DETERMINE LOCATION OF OFFENDING CODE";
+  err_msg = err_msg & ": " & printed(value(maybe_data)) if maybe_data != nothing;
+  return (err_msg, 1000000, 1000000);
+}
+
+
+// (String, NzNat, NzNat) source_code_location(<PrgDecl, DBMethodDef, UpdateDef, ImplArgDecl> decl_or_sgn) {
+//   maybe_data = fetch(decl_or_sgn);
+//   if maybe_data != nothing:
+//     data = value(maybe_data);
+//     if data :: (String, NzNat, NzNat):
+//       return data;
+//     else
+//       print data;
+//     ;
+//   ;
+//   return ("Unknown source file", 1, 1);
+// }
+
+////////////////////////////////////////////////////////////////////////////////
+
 (String, NzNat) file_and_line(Maybe[Any] maybe_decl_loc, Maybe[Any] maybe_err_loc) {
   file = "FILE UNKNOWN";
   line = 1000000000;
@@ -210,9 +250,14 @@ String user_repr(AnyDBVar v) =
   qual_db_var()     = user_repr(v.outer) & "." & user_repr(v.inner);
 
 
-String user_repr(AnyRelVar v) =
-  rel_var(a?)     = _print_(a),
-  qual_rel_var()  = user_repr(v.db_var) & "." & user_repr(v.rel_var);
+String user_repr(RelVar) =
+  rel_var(s?) = _print_(s);
+
+String user_repr(PhysRelVar) =
+  phys_rel_var(a?)      = _print_(a),
+  split_rel_var(v?, _)  = user_repr(v);
+
+String user_repr(QualRelVar v) = user_repr(v.db_var) & "." & user_repr(v.rel_var);
 
 
 String user_repr(ProcSymbol) =
@@ -232,6 +277,9 @@ String user_repr(FnSymbol fn_symb, Nat arity) =
   op_symbol(op?)        = user_repr(op);
 
 
+String user_repr(PlainAggrFnId id) = aggr_fn_id(s?) = _print_(s);
+
+
 String user_repr(ConvFnId) = undefined;
 
 
@@ -246,6 +294,10 @@ String cls_type_user_repr(Type+ arg_types, Type ret_type) =
 
 String user_repr(FnType type) = append((user_repr(t) : t <- type.args), ", ") & " -> " & user_repr(type.ret_type);
 
+String user_repr(AggrFnType type) {
+  args_reprs = (user_repr(type.elt_type) & "..",) & (user_repr(t) : t <- type.extra_args_types);
+  return append(args_reprs, " ") & " -> " & user_repr(type.ret_type);
+}
 
 ## BUG BUG BUG: THIS IS PROBABLY ALL WRONG...
 String user_repr(Pattern ptrn) =
@@ -303,3 +355,16 @@ String user_repr(Operator) =
   lower_eq      = "(_<=_)",
   greater_eq    = "(_>=_)",
   brackets      = "(_[_])";
+
+
+String user_repr(ForeignKey key) {
+  src_args_list = (
+    match (v)
+      just(s?)  = printed(s),
+      nothing   = "_"
+    : v @ i <- key.source_args
+  );
+  tgt_args_list = (if a != nothing then printed(value(a)) else "_" : a <- key.target_args);
+  return user_repr(key.source_rel_var) & "(" & append(src_args_list, ", ") & ") -> " &
+         user_repr(an_elem(key.target_rel_vars)) & "(" & append(tgt_args_list, ", ") & ")";
+}

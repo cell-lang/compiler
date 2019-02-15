@@ -31,10 +31,13 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg], actual_ar
     unary_op_call()     = expr_wf_errors(expr.expr, def_vars),
     binary_op_call()    = expr_wf_errors(expr.left_arg, def_vars) & expr_wf_errors(expr.right_arg, def_vars),
     builtin_call()      = join((expr_wf_errors(e, def_vars) : e <- expr.args)),
-    size_expr()         = expr_wf_errors(expr.coll, def_vars),
+    size_expr()         = (),
+    rel_var_size_expr() = join((expr_wf_errors(value(a), def_vars) : a <- expr.args, a != nothing)),
     call_lookalike()    = if not expr.target :: IdChain
                             then join((expr_wf_errors(e, def_vars) : e <- (expr.target) & expr.args))
                             else (),
+    aggr_fn_call()      = clauses_exprs_wf_errors((expr.clause), (expr.expr, expr.cond if expr.cond?), def_vars) &
+                          join((expr_wf_errors(e, def_vars) : e <- expr.extra_args)),
     rel_memb_test()     = join((expr_wf_errors(value(e), def_vars) : e <- expr.args, e != nothing)),
     rel_lookup()        = join((expr_wf_errors(value(a), def_vars) : a <- expr.args, a != nothing)),
     and()               = expr_wf_errors(expr.left, def_vars) & expr_wf_errors(expr.right, def_vars),
@@ -43,7 +46,6 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg], actual_ar
     eq()                = expr_wf_errors(expr.left, def_vars) & expr_wf_errors(expr.right, def_vars),
     neq()               = expr_wf_errors(expr.left, def_vars) & expr_wf_errors(expr.right, def_vars),
     membership()        = expr_wf_errors(expr.obj, def_vars) & schema_aware_type_wf_errors(expr.type),
-    cast_expr()         = expr_wf_errors(expr.expr, def_vars) & plain_type_wf_errors(expr.type),
     accessor()          = if expr :: AccessorChain then () else expr_wf_errors(expr.expr, def_vars),
     accessor_test()     = if expr.expr :: IdChain then () else expr_wf_errors(expr.expr, def_vars),
     output_is_def()     = (),
@@ -108,20 +110,64 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg], actual_ar
                             then accessor_test_local_wf_errors(expr, def_vars)
                             else (),
     cls_par(n?)         = (undef_impl_cls_arg(expr) if n >= actual_arg_arity),
-    call_lookalike()    = if expr :: <call_lookalike(target: IdChain, args: SynExpr+)> ## BAD BAD: WORKING AROUND TYPE CHECKING "BUG"
+    size_expr()         = size_expr_local_wf_errors(expr, def_vars),
+    call_lookalike()    = if expr.target :: IdChain
                             then call_lookalike_local_wf_errors(expr, def_vars)
                             else (wrong_pseudocall_arity(expr) if not in(|expr.args|, [1, 2])),
+    aggr_fn_call()      = aggr_fn_call_wf_errors(expr, def_vars),
     rel_memb_test()     = rel_memb_test_local_wf_errors(expr, def_vars),
     rel_lookup()        = rel_lookup_local_wf_errors(expr, def_vars),
     unary_op_call()     |
     binary_op_call()    = (undefined_operator(expr) if not top_level_fndefs_by_name_arity(op_symbol(expr.op), *)),
     impl_args_call()    = impl_args_call_local_wf_errors(expr, def_vars),
     builtin_call()      = (wrong_builtin_arity(expr.name, expr.args) if |expr.args| != builtin_arities[expr.name]),
+    rel_var_size_expr() = rel_var_size_expr_wf_errors(expr, def_vars),
     seq_comp()          = seq_comp_expr_local_wf_errors(expr, def_vars),
     range_comp()        = (already_def_var(expr.var) if already_def(expr.var, def_vars)), ## BUG BUG BUG
     match_expr()        = match_expr_local_wf_errors(expr, def_vars),
     output_is_def()     = output_is_def_local_wf_errors(expr.var, expr.output, def_vars),
     _                   = ();
+
+
+  ExprWFError* aggr_fn_call_wf_errors(SynAggrFnCall expr, [DefVar] def_vars) {
+    decls = aggr_funct_decls_by_name(expr.fn_name);
+    arities = [nz_nat(1 + |d.extra_args|) : d <- decls];
+    if decls == []:
+      return (unknown_aggr_funct(expr));
+    elif not arities(1 + |expr.extra_args|):
+      return (invalid_aggr_funct_arity(expr, nonempty(arities)));
+    ;
+    clause = desugar_clause(expr.clause, [v : v <- def_vars, v :: StdVar]);
+    return (non_relvar_aggr_fns_iter(expr.clause) if not clause :: RelVarClause);
+  }
+
+
+  // type SynRelVarSizeExpr = rel_var_size_expr(rel_var_path: Symbol+, args: Maybe[SynExpr]+);
+  ExprWFError* rel_var_size_expr_wf_errors(SynRelVarSizeExpr expr, [DefVar] def_vars) {
+    return (invalid_expr(expr)) if not (a <~ expr.args : a == nothing);
+    resols = resolve_by_priority_as_rel_var(expr.rel_var_path, |expr.args|, def_vars);
+    return (ambiguous_expr(expr, resols)) if |resols| > 1;
+    return () if resols != [];
+    valid_arities = set((a : a <- (1, 2, 3), resolve_by_priority_as_rel_var(expr.rel_var_path, a, def_vars) != []));
+    return if valid_arities != []
+      then (wrong_rel_arity(expr, just(expr.rel_var_path), valid_arities))
+      else (invalid_expr(expr));
+  }
+
+
+  // type SynSizeExpr = size_expr(coll: SynExpr);
+  ExprWFError* size_expr_local_wf_errors(SynSizeExpr expr, [DefVar] def_vars) {
+    if expr.coll :: IdChain:
+      symbs = destructure_id_chain(expr.coll);
+      resols = resolve_by_priority_as_expr_or_rel_var(symbs, def_vars);
+      if |resols| == 1:
+        return ();
+      elif |resols| > 1:
+        return (ambiguous_expr(expr.coll, resols));
+      ;
+    ;
+    return expr_wf_errors(expr.coll, def_vars);
+  }
 
 
   ExprWFError* rel_lookup_local_wf_errors(SynRelLookup expr, [DefVar] def_vars) {
@@ -130,19 +176,19 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg], actual_ar
     arity = |expr.args|;
     return (wrong_rel_lookup_arity(expr.target, [1, 2, 3])) if arity > 3;
 
-    resols = resolve_by_priority_as_memb_test_target(expr.target, arity, def_vars);
+    resols = resolve_by_priority_as_expr_or_rel_var(expr.target, arity, def_vars);
     return (ambiguous_expr(expr, resols)) if |resols| > 1;
 
     if resols == []:
       ## BAD BAD BAD: USING A FIXED MAXIMUM ARITY
       // Now passing and empty set of defined vars, so we avoid unary or binary pseudocalls
-      valid_arities = set((a : a < 20, resolve_by_priority_as_memb_test_target(expr.target, arity, def_vars) != []));
+      valid_arities = set((nat(a+1) : a < 20, resolve_by_priority_as_expr_or_rel_var(expr.target, nz_nat(a+1), []) != []));
       return if valid_arities != []
         then (wrong_rel_lookup_arity(expr.target, valid_arities))
         else (invalid_expr(expr));
     ;
 
-    return ();
+    return (invalid_expr(expr) if only(resols) :: AnyRelVar and expr.args == (nothing));
   }
 
 
@@ -153,15 +199,15 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg], actual_ar
     arity = nz_nat(|expr.args|);
     if target :: IdChain:
       symbols = destructure_id_chain(target);
-      resols = resolve_by_priority_as_memb_test_target(symbols, arity, def_vars);
+      resols = resolve_by_priority_as_expr_or_rel_var(symbols, arity, def_vars);
       return (ambiguous_expr(expr, resols)) if |resols| > 1;
 
       if resols == []:
         ## BAD BAD BAD: USING A FIXED MAXIMUM ARITY
         // Now passing and empty set of defined vars, so we avoid unary or binary pseudocalls
-        valid_arities = set((a : a < 20, resolve_by_priority_as_memb_test_target(symbols, arity, def_vars) != []));
+        valid_arities = set((nat(a+1) : a < 20, resolve_by_priority_as_expr_or_rel_var(symbols, nz_nat(a+1), []) != []));
         return if valid_arities != []
-          then (wrong_rel_test_arity(expr, valid_arities))
+          then (wrong_rel_arity(expr, just(symbols), valid_arities))
           else (invalid_expr(expr));
       ;
 
@@ -173,7 +219,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg], actual_ar
     ;
 
     return if arity != 2 and arity != 3
-        then (wrong_rel_test_arity(expr, [2, 3]))
+        then (wrong_rel_arity(expr, nothing, [2, 3]))
       elif all((a == nothing : a <- expr.args))
         then (invalid_expr(expr))
       else

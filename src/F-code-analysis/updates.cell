@@ -1,0 +1,81 @@
+implicit program : Program, typedefs : [TypeName -> NeType] {
+  [+[RelVar]] required_insertions(DBSymbol rel_auto_id, RelVar rel_var, NeType+ args_types) {
+    phys_rel_vars = physical_rel_vars(rel_auto_id, rel_var, args_types);
+    fail if phys_rel_vars == [];
+    rel_auto_map = required_insertions_map(rel_auto_id, !!);
+    return [rel_auto_map(v) : v <- phys_rel_vars];
+
+
+    [DBSymbol -> [PhysRelVar -> [RelVar]]] required_insertions_map = [
+      a.name -> required_insertions_map(a) : a <- program.data_bases
+    ];
+
+
+    [PhysRelVar -> [RelVar]] required_insertions_map(Database rel_auto) {
+      ins_keys = [k : k <- rel_auto.foreign_keys, requires_insertion(k)];
+      links = [k.source_rel_var, only(k.target_rel_vars) : k <- ins_keys];
+      return [sv -> [logical_rel_var(tv) : tv <- links(sv, ?)] : sv <- keys(rel_auto.rel_vars)];
+    }
+
+
+    Bool requires_insertion(ForeignKey key) =
+      match (key.source_args, key.target_args)
+        (just()),         (just(), nothing)           = true,
+        (just(), just()), (just(), just(), nothing)   = true,
+        _,                _                           = false;
+  }
+
+
+  Bool is_one_to_one_attribute(DBSymbol rel_auto, PhysRelVar rel_var) {
+    ## CHECK THE GENERATED CODE HERE
+    rel_auto_map = slave_master_map(rel_auto, !!);
+    return rel_auto_map(rel_var, *);
+  }
+
+
+  PhysRelVar master_rel_var(DBSymbol rel_auto, PhysRelVar rel_var) {
+    rel_auto_map = slave_master_map(rel_auto, !!);
+    return rel_auto_map(rel_var);
+  }
+
+
+  [DBSymbol -> [PhysRelVar -> PhysRelVar]] slave_master_map {
+    return [a.name -> slave_master_map(a) : a <- program.data_bases];
+
+
+    [PhysRelVar -> PhysRelVar] slave_master_map(Database rel_auto) {
+      std_attrs = [only(k.target_rel_vars), k.source_rel_var : k <- rel_auto.foreign_keys, is_std_attr_key(k)];
+      mand_attrs = [k.source_rel_var, only(k.target_rel_vars) : k <- rel_auto.foreign_keys, is_mand_attr_key(k)];
+      return [v -> std_attrs(!!, v) : v, info <- rel_auto.rel_vars, is_slave(v, info, std_attrs, mand_attrs)];
+    }
+
+
+    Bool is_slave(PhysRelVar rel_var, RelVarInfo info, [PhysRelVar, PhysRelVar] std_attrs_map, [PhysRelVar, PhysRelVar] mand_attrs_map) {
+      arity = |info.signature|;
+      if arity == 2:
+        return false if info.keys != [[0]]; ## WHAT IF IT HAS TWO KEYS? WOULDN'T THAT BE OK?
+      elif arity == 3:
+        return false if info.keys != [[0, 1]]; ## DITTO
+      else
+        return false;
+      ;
+      std_masters = [v : v <- std_attrs_map(?, rel_var)];
+      mand_masters = [v : v <- mand_attrs_map(?, rel_var)];
+      return |std_masters| == 1 and std_masters == mand_masters;
+    }
+  }
+}
+
+
+Bool is_std_attr_key(ForeignKey key) =
+  match (key.source_args, key.target_args)
+    (just(), nothing),          (just())          = true,
+    (just(), just(), nothing),  (just(), just())  = true,
+    _,                          _                 = false;
+
+
+Bool is_mand_attr_key(ForeignKey key) =
+  match (key.source_args, key.target_args)
+    (just()),         (just(), nothing)         = true,
+    (just(), just()), (just(), just(), nothing) = true,
+    _,                _                         = false;

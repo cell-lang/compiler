@@ -1,0 +1,648 @@
+Type replace_type_vars(Type type, [TypeVar -> Type] substitutions) =
+  replace_type_vars_computed(type, substitutions[$]);
+
+
+ClsType replace_type_vars(ClsType type, [TypeVar -> NeType] substitutions) =
+  cls_type(
+    (nonempty_type(replace_type_vars(t, substitutions)) : t <- type.in_types),
+    nonempty_type(replace_type_vars(type.out_type, substitutions))
+  );
+
+
+## BAD: FIND DECENT NAME, OR EVEN BETTER, REMOVE THE RESTRICTIONS ABOUT CLOSURE PARAMETERS FOR FUNCTIONS WITH SAME NAME AND ARITY
+Type replace_type_vars_computed(Type type, (TypeVar -> Type) replace) =
+  empty_type          = empty_type,
+  symb_type()         |
+  atom_type           |
+  integer             |
+  low_ints()          |
+  high_ints()         |
+  int_range()         |
+  float_type          |
+  empty_seq_type      |
+  empty_rel_type      = type,
+  type_var()          = replace(type),
+  type_ref(ts?)       = type_ref(replace_type_vars_computed(ts, replace)),
+  ne_seq_type()       = ne_seq_type(replace_type_vars_computed(type.elem_type, replace)),
+  ne_set_type()       = ne_set_type(replace_type_vars_computed(type.elem_type, replace)),
+  ne_map_type()       = ne_map_type(
+                          replace_type_vars_computed(type.key_type, replace),
+                          replace_type_vars_computed(type.value_type, replace)
+                        ),
+  ne_bin_rel_type()   = ne_bin_rel_type([(replace_type_vars_computed(t, replace) : t <- s) : s <- type.signatures]),
+  ne_tern_rel_type()  = ne_tern_rel_type([(replace_type_vars_computed(t, replace) : t <- s) : s <- type.signatures]),
+  ne_record_type(fs?) = record_type([ ## BAD: WOULD BE GOOD TO HAVE A "DECLARATIVE" UPDATE OPERATION
+                          l -> (type: replace_type_vars_computed(f.type, replace), optional: f.optional)
+                          : l, f <- fs
+                        ]),
+  tuple_type(ts?)     = tuple_type((replace_type_vars_computed(t, replace) : t <- ts)),
+  tag_obj_type()      = tag_obj_type(type.tag_type, replace_type_vars_computed(type.obj_type, replace)),
+  union_type(ts?)     = union_type([replace_type_vars_computed(t, replace) : t <- ts]);
+
+
+TypeSymbol replace_type_vars_computed(TypeSymbol type_symb, (TypeVar -> Type) replace) =
+  type_symbol()           = type_symb,
+  builtin_type_symbol()   = type_symb,
+  par_type_symbol()       = par_type_symbol(
+                              type_symb.symbol,
+                              (replace_type_vars_computed(t, replace) : t <- type_symb.params)
+                            );
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+[T] retrieve_from_nested_types(Type type, (Type -> [T]) retrieve) =
+  empty_type          = [],
+  symb_type()         |
+  atom_type           |
+  integer             |
+  low_ints()          |
+  high_ints()         |
+  int_range()         |
+  float_type          |
+  empty_seq_type      |
+  empty_rel_type      = [],
+  type_ref(ts?)       = retrieve_from_nested_types(ts, retrieve),
+  type_var()          = [],
+  ne_seq_type()       = retrieve(type.elem_type),
+  ne_set_type()       = retrieve(type.elem_type),
+  ne_map_type()       = retrieve(type.key_type) & retrieve(type.value_type),
+  ne_bin_rel_type()   |
+  ne_tern_rel_type()  = union([seq_union((retrieve(t) : t <- s)) : s <- type.signatures]),
+  ne_record_type(fs?) = union([retrieve(f.type) : unused_var, f <- fs]),
+  tuple_type(ts?)     = seq_union((retrieve(t) : t <- ts)),
+  tag_obj_type()      = retrieve(type.tag_type) & retrieve(type.obj_type),
+  union_type(ts?)     = union([retrieve(t) : t <- ts]);
+
+
+[] retrieve_from_nested_types(BasicTypeSymbol type_symb, (Type -> [T]) retrieve) = [];
+
+[T] retrieve_from_nested_types(ParTypeSymbol type_symb, (Type -> [T]) retrieve) =
+  seq_union((retrieve(t) : t <- type_symb.params));
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+Type expand_type_ref(TypeSymbol type_symb, [TypeName -> Type] typedefs) {
+  return exp_type_any if type_symb == :builtin_type_symbol(:any);
+
+  type_name = type_symb_to_name(type_symb);
+  raw_type = typedefs[type_name];
+  return raw_type if type_name.arity == 0;
+  subst_map = merge(([type_var(i) -> p] : p @ i <- params(type_symb)));
+  return replace_type_vars(raw_type, subst_map);
+
+
+  Type exp_type_any =
+    union_type([
+      atom_type,
+      integer,
+      float_type,
+      empty_seq_type,
+      empty_rel_type,
+      type_ne_seq,
+      type_ne_set,
+      type_ne_bin_rel,
+      type_ne_tern_rel,
+      tag_obj_type(atom_type, type_any)
+    ]);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+[TypeVar] get_type_vars(Type type) =
+  type_var()  = [type],
+  _           = retrieve_from_nested_types(type, get_type_vars);
+
+
+Bool is_param_type(Type type) = get_type_vars(type) != [];
+
+Bool is_param_type(ClsType type) = (t <~ type.in_types : is_param_type(t)) or is_param_type(type.out_type);
+
+Bool is_param_type(FnType type) = (t <~ type.args : is_param_type(t)) or is_param_type(type.ret_type);
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+[T] retrieve_from_nested_exprs(Expr expr, (Expr -> [T]) retrieve) {
+  return [] if expr :: Var;
+  return match (expr)
+    undefined             = [],
+    object()              = [],
+    float_lit()           = [],
+    set_expr(ses?)        = union([subexpr_retrieve(se, retrieve) : se <- ses]),
+    seq_expr(ses?)        = seq_union((subexpr_retrieve(se, retrieve) : se <- ses)),
+    tuple_expr(es?)       = seq_union((retrieve(e) : e <- es)),
+    seq_tail_expr()       = retrieve(expr.seq) & seq_union((retrieve(e) : e <- expr.tail)),
+    map_expr(es?)         = union([retrieve(e.key) & retrieve(e.value) & if e.cond? then retrieve(e.cond) else [] : e <- es]),
+    bin_rel_expr(es?)     |
+    tern_rel_expr(es?)    = union([seq_union((retrieve(e2) : e2 <- e1.args & (e1.cond if e1.cond?))) : e1 <- es]),
+    tag_obj_expr()        = retrieve(expr.tag) & retrieve(expr.obj),
+    fn_call()             = union([retrieve(e) : e <- set(expr.args) & values(expr.impl_args)]) &
+                            union([retrieve_from_nested_exprs(e, retrieve) : e <~ expr.cls_args]),
+    cls_call()            = seq_union((retrieve(p) : p <- expr.args)),
+    builtin_call()        = seq_union((retrieve(p) : p <- expr.args)),
+    size_expr()           = retrieve(expr.coll),
+    rel_var_size_expr()   = union([retrieve(value(a)) : a <~ expr.args, a != nothing]),
+    unary_pseudo_call()   = retrieve(expr.target) & retrieve(expr.arg),
+    rel_memb_test()       = retrieve(expr.rel) & seq_union((retrieve(value(a)) : a <- expr.args, a != nothing)),
+    rel_lookup()          = retrieve(expr.rel) & seq_union((retrieve(value(a)) : a <- expr.args, a != nothing)),
+    relvar_memb_test()    = seq_union((retrieve(value(a)) : a <- expr.args, a != nothing)),
+    relvar_lookup()       = union([retrieve(value(a)) : a <~ expr.args, a != nothing]),
+    and_expr()            = retrieve(expr.left) & retrieve(expr.right),
+    or_expr()             = retrieve(expr.left) & retrieve(expr.right),
+    not_expr(e?)          = retrieve(e),
+    eq()                  = retrieve(expr.left) & retrieve(expr.right),
+    membership()          = retrieve(expr.obj),
+    accessor()            = retrieve(expr.expr),
+    accessor_test()       = retrieve(expr.expr),
+    aggr_fn_call()        = retrieve(expr.expr) & retrieve_from_nested_exprs(expr.clause, retrieve) &
+                            if expr.cond? then retrieve(expr.cond) else [],
+    auto_method_call()    = seq_union((retrieve(a) : a <- expr.args)),
+    db_method_call()      = seq_union((retrieve(a) : a <- expr.args)),
+    if_expr()             = retrieve(expr.cond) & retrieve(expr.then) & retrieve(expr.else),
+    match_expr()          = seq_union((retrieve(e) : e <- expr.exprs)) &
+                            seq_union((retrieve(c.expr) : c <- expr.cases)),
+    do_expr()             = retrieve_from_nested_exprs(expr.body, retrieve),
+    ex_qual()             = retrieve_from_nested_exprs(expr.source, retrieve) & retrieve(expr.cond),
+    set_comp()            = retrieve_from_nested_exprs(expr.source, retrieve) & retrieve(expr.expr),
+    map_comp()            = retrieve_from_nested_exprs(expr.source, retrieve) & retrieve(expr.key_expr) & retrieve(expr.value_expr),
+    bin_rel_comp()        |
+    tern_rel_comp()       = retrieve_from_nested_exprs(expr.source, retrieve) & seq_union((retrieve(e) : e <- expr.exprs)),
+    seq_comp()            = retrieve(expr.expr) & retrieve(expr.src_expr)   & if expr.sel_expr? then retrieve(expr.sel_expr) else [],
+    range_comp()          = retrieve(expr.expr) & retrieve(expr.bound_expr) & if expr.sel_expr? then retrieve(expr.sel_expr) else [],
+    output_is_def()       = [],
+    output_is_set()       = [];
+}
+
+
+[T] subexpr_retrieve(Expr expr, (Expr -> [T]) retrieve)     = retrieve(expr);
+[T] subexpr_retrieve(CondExpr expr, (Expr -> [T]) retrieve) = retrieve(expr.expr) & retrieve(expr.cond);
+
+
+[T] retrieve_from_nested_exprs(AnyClsExpr expr, (Expr -> [T]) retrieve) =
+  cls_var()   = [],
+  fn_ptr()    = [],
+  cls_expr()  = retrieve(expr.expr);
+
+
+[T] retrieve_from_nested_exprs(Statement stmt, (Expr -> [T]) retrieve) =
+  assignment_stmt()         = retrieve(stmt.value),
+  return_stmt(e?)           = retrieve(e),
+  if_stmt()                 = retrieve(stmt.cond) & retrieve_from_nested_exprs(stmt.body, retrieve) &
+                              retrieve_from_nested_exprs(stmt.else, retrieve),
+  loop_stmt(ss?)            = retrieve_from_nested_exprs(ss, retrieve),
+  foreach_stmt()            = retrieve_from_nested_exprs(stmt.iter, retrieve) & retrieve_from_nested_exprs(stmt.body, retrieve),
+  for_stmt()                = retrieve(stmt.start_val) & retrieve(stmt.end_val) & retrieve_from_nested_exprs(stmt.body, retrieve),
+  let_stmt()                = union([retrieve(e) : unused_var, e <- stmt.asgnms]) & retrieve_from_nested_exprs(stmt.body, retrieve),
+  break_stmt                = [],
+  fail_stmt()               = [],
+  assert_stmt()             = retrieve(stmt.cond) & union([retrieve(v) : v <- stmt.env]), ## NOT SURE ABOUT THIS ONE. THE VARIABLES ARE KEPT ARTIFICIALLY ALIVE...
+  print_stmt(e?)            = retrieve(e),
+  seq_update_stmt()         = retrieve(stmt.idx) & retrieve(stmt.value),
+  return_stmt               = [],
+  proc_call_stmt()          = seq_union((retrieve(p) : p <- stmt.args)),
+  send_msg_stmt()           = retrieve(stmt.msg),
+  try_update_stmt()         = seq_union((retrieve(a) : a <- stmt.args)),
+  set_memb_var_stmt()       = retrieve(stmt.value), ## NOT SURE ABOUT THIS ONE, IT MIGHT BE NECESSARY TO ALSO RETRIEVE THE TARGET VARIABLE IN ORDER TO MAKE extern_vars() WORK. BUT WHAT ABOUT THE ASSIGNMENT STATEMENTS THEN?
+  delete_stmt()             = seq_union((retrieve(value(a)) : a <- stmt.args, a != nothing)),
+  insert_stmt()             = seq_union((retrieve(e) : e <- stmt.args)),
+  update_stmt()             = seq_union((retrieve(e) : e <- stmt.args)),
+  set_input_ctrl_stmt()     = retrieve(stmt.value),
+  clear_input_ctrl_stmt()   = [],
+  set_elapsed_time_ctrl_stmt()  = retrieve(stmt.time),
+  apply_ctrl_stmt()         = [],
+  send_msg_ctrl_stmt()      = retrieve(stmt.msg),
+  read_state_ctrl_stmt()    = [],
+  restore_state_ctrl_stmt() = retrieve(stmt.state);
+
+
+[T] retrieve_from_nested_exprs(Statement* stmts, (Expr -> [T]) retrieve) = seq_union((retrieve_from_nested_exprs(s, retrieve) : s <- stmts));
+
+
+[T] retrieve_from_nested_exprs(Clause cls, (Expr -> [T]) retrieve) =
+  set_clause()      = retrieve(cls.src),
+  rel_clause()      = retrieve(cls.src) & seq_union((retrieve(value(a)) : a <- cls.args, a != nothing)),
+  relvar_clause()   = seq_union((retrieve(value(a)) : a <- cls.args, a != nothing)),
+  seq_clause()      = retrieve(cls.src),
+  and_clause()      = retrieve_from_nested_exprs(cls.left, retrieve) & retrieve_from_nested_exprs(cls.right, retrieve),
+  or_clause()       = retrieve_from_nested_exprs(cls.left, retrieve) & retrieve_from_nested_exprs(cls.right, retrieve),
+  match_clause()    = retrieve(cls.expr),
+  asgnm_clause()    = retrieve(cls.expr),
+  filter_clause(e?) = retrieve(e);
+
+
+[T] retrieve_from_nested_exprs(Iter iter, (Expr -> [T]) retrieve) =
+  coll_value_iter()   = retrieve(iter.src_expr),
+  rel_subset_iter()   = retrieve(iter.src_expr) & union([retrieve(a) : a <~ values(iter.args)]),
+  rel_var_iter()      = union([retrieve(a) : a <~ values(iter.args)]);
+
+////////////////////////////////////////////////////////////////////////////////
+
+[T] retrieve_from_nested_exprs(Function fn, (Expr -> [T]) retrieve) = retrieve(fn.expr);
+
+[T] retrieve_from_nested_exprs(Procedure pc, (Expr -> [T]) retrieve) =
+  retrieve_from_nested_exprs(pc.body, retrieve);
+
+////////////////////////////////////////////////////////////////////////////////
+
+[T] retrieve_from_nested_exprs(TimeRule rule, (Expr -> [T]) retrieve) =
+  boolean_time_rule()   = retrieve(rule.expr),
+  unchanged_time_rule() = retrieve(rule.expr),
+  since_time_rule()     = [];
+
+
+[T] retrieve_from_nested_exprs(StateVar var, (Expr -> [T]) retrieve) =
+  retrieve(var.init_value) & union([retrieve(u.value) & retrieve(u.cond.cond) : u <- var.updates]);
+
+
+[T] retrieve_from_nested_exprs(DiscreteRule rule, (Expr -> [T]) retrieve) =
+  retrieve(rule.value) & retrieve(rule.cond.cond);
+
+
+[T] retrieve_from_nested_exprs(MsgSendRule rule, (Expr -> [T]) retrieve) =
+  retrieve(rule.message) & retrieve(rule.cond.cond);
+
+
+[T] retrieve_from_nested_exprs(Automaton automaton, (Expr -> [T]) retrieve) {
+  objs = union([
+    values(automaton.state),
+    values(automaton.time_rules),
+    union(values(automaton.discrete_rules)),
+    [db.msg_send_rule : unused_var, db <- automaton.nested_dbs, db.msg_send_rule?]
+  ]);
+  exprs = union([
+    [p.value : unused_var, p <- automaton.params],
+    values(automaton.rules),
+    [e : unused_var, na <- automaton.nested_autos, unused_var_2, e <- na.args],
+    [m.expr : m <- automaton.methods]
+  ]);
+  return union([retrieve_from_nested_exprs(o, retrieve) : o <- objs] & [retrieve(e) : e <- exprs]);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+[T] retrieve_from_nested_exprs(Database data_base, (Expr -> [T]) retrieve) =
+  union(
+    [retrieve(v.init_value) : unused_var, v <- data_base.state_vars] &
+    [retrieve(m.expr) : m <- data_base.methods] &
+    [retrieve_from_nested_exprs(u.body, retrieve) : u <- data_base.updates] &
+    [retrieve_from_nested_exprs(h.body, retrieve) : h <- data_base.handlers]
+  );
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+[T] retrieve_from_nested_stmts(Statement* stmts, (Statement -> [T]) retrieve) = seq_union((retrieve(s) : s <- stmts));
+
+[T] retrieve_from_nested_stmts(Statement stmt, (Statement -> [T]) retrieve) =
+  if_stmt()                 = seq_union((retrieve_from_nested_stmts(ss, retrieve) : ss <- (stmt.body, stmt.else))),
+  loop_stmt(ss?)            = retrieve_from_nested_stmts(ss, retrieve),
+  foreach_stmt()            |
+  for_stmt()                |
+  let_stmt()                = retrieve_from_nested_stmts(stmt.body, retrieve),
+  assignment_stmt()         |
+  return_stmt()             |
+  break_stmt                |
+  fail_stmt()               |
+  assert_stmt()             |
+  print_stmt()              |
+  seq_update_stmt()         |
+
+  return_stmt               |
+  proc_call_stmt()          |
+
+  send_msg_stmt()           |
+  try_update_stmt()         |
+  set_memb_var_stmt()       |
+  insert_stmt()             |
+  delete_stmt()             |
+  set_input_ctrl_stmt()     |
+  clear_input_ctrl_stmt()   |
+  apply_ctrl_stmt()         |
+  send_msg_ctrl_stmt()      |
+  read_state_ctrl_stmt()    |
+  restore_state_ctrl_stmt() = [];
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+[StdVar] pattern_vars(Pattern ptrn) =
+  ptrn_symbol       |
+  ptrn_float        |
+  ptrn_empty_seq    |
+  ptrn_empty_rel    |
+  ptrn_ne_seq       |
+  ptrn_ne_set       |
+  ptrn_ne_map       |
+  ptrn_ne_bin_rel   |
+  ptrn_ne_tern_rel  |
+  ptrn_any          |
+  ptrn_symbol()     |
+  ptrn_integer()    = [],
+  ptrn_tuple(ps?)   = union([pattern_vars(p) : p <~ ps]),
+  ptrn_tag_obj()    = pattern_vars(ptrn.tag) & pattern_vars(ptrn.obj),
+  ptrn_var()        = [ptrn.var] & pattern_vars(ptrn.ptrn),
+  ptrn_union(ps?)   = only([pattern_vars(p) : p <- ps]);
+
+
+## BUG BUG BUG: THIS IS INCOMPLETE, A PATTERN UNION COULD BE A PATTERN "ANY" TOO
+Bool is_pattern_any(Pattern ptrn) =
+  ptrn_any    = true,
+  ptrn_var()  = is_pattern_any(ptrn.ptrn),
+  _           = false;
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+## IS THIS CODE OK? IN CALCULATING THE NEW VARS, IT DOESN'T
+## CONSIDER THE VARIABLES THAT ARE ALREADY DEFINED
+
+## THIS IS ALL BUGGY. REMOVE ALL THOSE "CATCH ALL" PATTERNS, AND ANALYZE THIS CASE BY CASE
+## ALSO DECIDE WHAT "CREATES/DEFINES" A NEW VARIABLE. DOES AN ASSIGNMENT TO A PENDING STATE VARIABLE,
+## FOR EXAMPLE, COUNT AS THE DEFINITION OF A NEW VARIABLE, OR JUST A CHANGE TO AN EXISTING ONE?
+## DECIDE EXACTLY WHAT VARIABLES ARE INCLUDED, AND WHAT ONES ARE NOT. AND REVISIT ALL USAGES OF THESE
+## FUNCTIONS.
+
+[StdVar] new_vars(Pattern ptrn) = pattern_vars(ptrn);
+
+
+[StdVar] new_vars(Clause cls) =
+  set_clause()      = [cls.var],
+  rel_clause()      = set(cls.vars),
+  relvar_clause()   = set(cls.vars),
+  seq_clause()      = [value(v) : v <~ (cls.vars | cls.idx_var), v != nothing],
+  and_clause()      = new_vars(cls.left) & new_vars(cls.right),
+  or_clause()       = intersection(new_vars(cls.left), new_vars(cls.right)),
+  match_clause()    = new_vars(cls.ptrn),
+  asgnm_clause()    = [cls.var],
+  filter_clause()   = [];
+
+
+[StdVar] new_vars(Statement stmt) =
+  assignment_stmt() = set(stmt.vars),
+  if_stmt()         = intersection([new_vars(stmt.body) if may_fall_through(stmt.body), new_vars(stmt.else) if may_fall_through(stmt.else)]),
+  let_stmt()        = new_vars(stmt.body),
+  proc_call_stmt()  = [stmt.res_var if stmt.res_var?],
+  _                 = [];
+
+[StdVar] new_vars(Statement* stmts) = seq_union((new_vars(s) : s <- stmts));
+
+
+[StdVar] new_vars(Iter iter) =
+  coll_value_iter()   = set(values(iter.vars)) & [iter.idx_var if iter.idx_var?],
+  rel_subset_iter()   = set(values(iter.vars)),
+  rel_var_iter()      = set(values(iter.vars));
+
+///////////////////////////////////////////////////////////////////////////////
+
+## THIS FUNCTION DOES NOT RETRIEVE QUALIFIED MEMBER VARIABLES LIKE auto_var.public_var OR db_var.var
+[Var] extern_vars(Expr expr) {
+  return [expr] if expr :: Var;
+  return match (expr)
+    fn_call()       = union([extern_vars(e) : e <- set(expr.args) & set(expr.cls_args) & values(expr.impl_args)]),
+    aggr_fn_call()  = aggr_fn_call_extern_vars(expr),
+    ex_qual()       = comp_extern_vars((expr.cond), expr.source),
+    set_comp()      = comp_extern_vars((expr.expr), expr.source),
+    map_comp()      = comp_extern_vars((expr.key_expr, expr.value_expr), expr.source),
+    bin_rel_comp()  |
+    tern_rel_comp() = comp_extern_vars(expr.exprs, expr.source),
+    seq_comp()      = seq_comp_extern_vars(expr),
+    range_comp()    = range_comp_extern_vars(expr),
+    do_expr()       = stmts_extern_vars(expr.body),
+    match_expr()    = match_expr_extern_vars(expr.exprs, expr.cases),
+    _               = retrieve_from_nested_exprs(expr, extern_vars);
+}
+
+
+[Var] aggr_fn_call_extern_vars(AggrFnCallExpr expr) {
+  source_vars = clause_extern_vars(expr.clause);
+  new_vars = new_vars(expr.clause);
+  expr_vars = extern_vars(expr.expr);
+  cond_vars = if expr.cond? then extern_vars(expr.cond) else [];
+  return source_vars & ((expr_vars & cond_vars) - new_vars);
+}
+
+
+[Var] comp_extern_vars(Expr+ exprs, Clause source) {
+  source_vars = clause_extern_vars(source);
+  new_vars = new_vars(source);
+  exprs_vars = seq_union((extern_vars(e) : e <- exprs)) - new_vars;
+  return source_vars & exprs_vars;
+}
+
+
+[Var] seq_comp_extern_vars(SeqCompExpr expr) {
+  src_expr_vars = extern_vars(expr.src_expr);
+  new_vars = set(expr.vars) & [expr.idx_var if expr.idx_var?];
+  expr_vars = extern_vars(expr.expr) - new_vars;
+  sel_expr_vars = if expr.sel_expr? then extern_vars(expr.sel_expr) - new_vars else [];
+  return src_expr_vars & expr_vars & sel_expr_vars;
+}
+
+
+[Var] range_comp_extern_vars(RangeCompExpr expr) {
+  bound_expr_vars = extern_vars(expr.bound_expr);
+  new_vars = [expr.var];
+  expr_vars = extern_vars(expr.expr) - new_vars;
+  sel_expr_vars = if expr.sel_expr? then extern_vars(expr.sel_expr) - new_vars else [];
+  return bound_expr_vars & expr_vars & sel_expr_vars;
+}
+
+
+[Var] match_expr_extern_vars(Expr+ exprs, (ptrns: Pattern+, expr: Expr)+ cases) {
+  exprs_vars = seq_union((extern_vars(e) : e <- exprs));
+  cases_vars = seq_union((extern_vars(c.expr) - seq_union((new_vars(p) : p <- c.ptrns)) : c <- cases));
+  return exprs_vars & cases_vars;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+[Var] extern_vars(AnyClsExpr expr) =
+  cls_var()   = [],
+  fn_ptr()    = [],
+  cls_expr()  = { new_vars = set((fn_arg(i) : i < expr.arity));
+                  ext_vars = extern_vars(expr.expr) - new_vars;
+                  assert not (v <- ext_vars : v :: FnArg);
+                  return ext_vars;
+                };
+
+///////////////////////////////////////////////////////////////////////////////
+
+[Var] clause_extern_vars(Clause cls) =
+  set_clause()        = extern_vars(cls.src),
+  rel_clause()        = extern_vars(cls.src) & seq_union((extern_vars(value(a)) : a <- cls.args, a != nothing)),
+  relvar_clause()     = seq_union((extern_vars(value(a)) : a <- cls.args, a != nothing)),
+  seq_clause()        = extern_vars(cls.src),
+  and_clause()        = clause_extern_vars(cls.left) & (clause_extern_vars(cls.right) - new_vars(cls.left)),
+  or_clause()         = clause_extern_vars(cls.left) & clause_extern_vars(cls.right),
+  match_clause()      = extern_vars(cls.expr),
+  asgnm_clause()      = extern_vars(cls.expr),
+  filter_clause(e?)   = extern_vars(e);
+
+
+[Var] stmts_extern_vars(Statement* stmts) {
+  def_vs = [];
+  ext_vs = [];
+  for s <- stmts:
+    ext_vs = ext_vs & (stmt_extern_vars(s) - def_vs);
+    def_vs = def_vs & new_vars(s);
+  ;
+  return ext_vs;
+}
+
+
+[Var] stmt_extern_vars(Statement s) =
+  assignment_stmt() = extern_vars(s.value),
+  return_stmt       = [],
+  return_stmt(e?)   = extern_vars(e),
+  if_stmt()         = extern_vars(s.cond) & stmts_extern_vars(s.body) & stmts_extern_vars(s.else),
+  loop_stmt(ss?)    = stmts_extern_vars(ss),
+  foreach_stmt()    = iter_extern_vars(s.iter) & (stmts_extern_vars(s.body) - new_vars(s.iter)),
+  for_stmt()        = extern_vars(s.start_val) & extern_vars(s.end_val) & (stmts_extern_vars(s.body) - [s.var if s.var?]),
+  break_stmt        = [],
+  fail_stmt()       = [],
+  assert_stmt()     = extern_vars(s.cond),
+  print_stmt(e?)    = extern_vars(e),
+  seq_update_stmt() = [s.seq_var] & extern_vars(s.idx) & extern_vars(s.value),
+  proc_call_stmt()  = seq_union((extern_vars(p) : p <- s.args));
+
+
+[Var] cls_expr_extern_vars(AnyClsExpr expr) =
+  cls_var()   = [],
+  fn_ptr()    = [],
+  cls_expr()  = extern_vars(expr.expr) - set((fn_arg(i) : i < expr.arity));
+
+
+[Var] iter_extern_vars(Iter iter) =
+  coll_value_iter()   = extern_vars(iter.src_expr),
+  rel_subset_iter()   = extern_vars(iter.src_expr) & union([extern_vars(e) : e <~ values(iter.args)]),
+  rel_var_iter()      = union([extern_vars(e) : e <~ values(iter.args)]);
+
+////////////////////////////////////////////////////////////////////////////////
+
+[ClsVar] cls_vars(Expr expr) =
+  fn_call()   = union([cls_vars(e) : e <- set(expr.args) & set(expr.cls_args) & values(expr.impl_args)]),
+  cls_call()  = { res = [expr.name] & seq_union((cls_vars(a) : a <- expr.args));
+                  return if res :: [ClsVar] then res else undefined; ## BAD BAD BAD
+                },
+  _           = retrieve_from_nested_exprs(expr, cls_vars);
+
+
+[ClsVar] cls_vars(AnyClsExpr expr) =
+  cls_var()   = [expr],
+  fn_ptr()    = [],
+  cls_expr()  = cls_vars(expr.expr);
+
+////////////////////////////////////////////////////////////////////////////////
+
+[<AnySignalVar, PrevVarValue, QualMembVar>] auto_expr_extern_vars(Expr expr) {
+  vars = extern_vars(expr);
+  fail if not vars :: [<AnySignalVar, PrevVarValue, QualMembVar>];
+  return vars;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+type StmtOutcome = fails, returns, breaks, falls_through;
+
+
+[+StmtOutcome] outcomes(Statement* stmts) {
+  os = [:falls_through];
+  for s <- stmts:
+    os = (os - [:falls_through]) & outcomes(s);
+    break if not in(:falls_through, os);
+  ;
+  return nonempty(os);
+}
+
+
+[+StmtOutcome] outcomes(Statement stmt) =
+  assignment_stmt()             = [:fails, :falls_through],
+  return_stmt                   = [:returns],
+  return_stmt()                 = [:fails, :returns],
+  if_stmt()                     = nonempty([:fails] & outcomes(stmt.body) & outcomes(stmt.else)), // Shutting up the type checker
+  loop_stmt(ss?)                = loop_stmt_outcomes(ss),
+  foreach_stmt()                = nonempty([:fails, :falls_through] & outcomes(stmt.body) - [:breaks]), // Shutting up the type checker
+  for_stmt()                    = nonempty([:fails, :falls_through] & outcomes(stmt.body) - [:breaks]), // Shutting up the type checker ## BAD: SAME AS ABOVE
+  let_stmt()                    = nonempty([:fails] & outcomes(stmt.body)), // Shutting up the type checker
+  break_stmt                    = [:breaks],
+  fail_stmt()                   = [:fails],
+  assert_stmt()                 |
+  print_stmt()                  |
+  seq_update_stmt()             |
+  proc_call_stmt()              |
+  send_msg_stmt()               |
+  try_update_stmt()             |
+  set_memb_var_stmt()           |
+  delete_stmt()                 |
+  insert_stmt()                 |
+  update_stmt()                 |
+  set_input_ctrl_stmt()         |
+  clear_input_ctrl_stmt()       |
+  set_elapsed_time_ctrl_stmt()  |
+  apply_ctrl_stmt()             |
+  send_msg_ctrl_stmt()          |
+  restore_state_ctrl_stmt()     |
+  read_state_ctrl_stmt()        = [:falls_through, :fails];
+
+
+[+StmtOutcome] loop_stmt_outcomes(Statement+ body) {
+  os = outcomes(body);
+  // Failures and returns in the body are transferred to the loop.
+  // Fall throughs in the body are neutralized by the loop, but they
+  // create the possibility of an infinite loop, which counts as failure.
+  os = (os - [:falls_through]) & [:fails] if in(:falls_through, os);
+  // A break in the body becomes a fall through for the loop itself
+  os = (os - [:breaks]) & [:falls_through] if in(:breaks, os);
+  return nonempty(os); // Shutting up the type checker
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+Bool may_fall_through(Statement stmt) = in(:falls_through, outcomes(stmt));
+
+Bool may_fall_through(Statement* stmts) = in(:falls_through, outcomes(stmts));
+
+////////////////////////////////////////////////////////////////////////////////
+
+[BuiltIn -> NzNat] builtin_arities = (
+  neg:         1,
+  add:         2,
+  sub:         2,
+  mult:        2,
+  div:         2,
+  mod:         2,
+  lt:          2,
+  le:          2,
+  and:         2,
+  or:          2,
+  xor:         2,
+  slice:       3,
+  cat:         2,
+  rev:         1,
+  isort:       1,
+  tag:         1,
+  untag:       1,
+  parse:       1,
+  print:       1,
+  fneg:        1,
+  fadd:        2,
+  fsub:        2,
+  fmult:       2,
+  fdiv:        2,
+  flt:         2,
+  fle:         2,
+  fexp:        2,
+  fsqrt:       1,
+  floor:       1,
+  ceiling:     1,
+  float:       1,
+  bits:        1,
+  mantissa:    1,
+  dec_exp:     1,
+  rand_nat:    1,
+  rand_elem:   1,
+  counter:     1,
+  ticks:       1
+);

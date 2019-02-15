@@ -1,0 +1,148 @@
+implicit program : Program, typedefs : [TypeName -> NeType] {
+  Bool signature_overlaps_partial_signature(NeType+ signature, Maybe[Type]+ partial_signature) {
+    assert |signature| == |partial_signature|;
+    for mt2 @ i <- partial_signature:
+      if mt2 != nothing:
+        t2 = value(mt2);
+        return false if t2 == empty_type or are_ptype_disjoint(signature(i), t2);
+      ;
+    ;
+    return true;
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+// ## THESE ARE NOT SUPPOSED TO COMPILE, BUT THEY DO...
+// Bool are_disjoint(NeType+ types1, Maybe[NeType]+ types2)    = any(types2, types1, are_ptype_disjoint);
+// Bool match_exactly(NeType+ types1, Maybe[NeType]+ types2)   = all(types2, types1, is_eq);
+// Bool is_subsignature(Maybe[NeType]+ types2, NeType+ types1) = all(types2, types1, is_subset);
+
+implicit typedefs : [TypeName -> NeType] {
+  Bool are_disjoint(NeType+ types1, Maybe[NeType]+ types2) {
+    assert |types1| == |types2|;
+    for t1 @ i <- types1:
+      t2 = types2(i);
+      return true if t2 != nothing and are_ptype_disjoint(t1, value(t2));
+    ;
+    return false;
+  }
+
+
+  Bool match_exactly(NeType+ types1, Maybe[NeType]+ types2) {
+    assert |types1| == |types2|;
+    for t1 @ i <- types1:
+      t2 = types2(i);
+      return false if t2 != nothing and not is_eq(t1, value(t2));
+    ;
+    return true;
+  }
+
+
+  Bool is_subsignature(Maybe[NeType]+ types2, NeType+ types1) {
+    assert |types1| == |types2|;
+    for t1 @ i <- types1:
+      t2 = types2(i);
+      return false if t2 != nothing and not is_subset(value(t2), t1);
+    ;
+    return true;
+  }
+
+
+  Bool signatures_overlap(NeType+ sgn1, NeType+ sgn2) = not (t @ i <~ sgn1 : are_ptype_disjoint(t, sgn2(i)));
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+implicit typedefs : [TypeName -> NeType] {
+
+  Bool is_neat_subset(NeType subset, NeType superset) =
+    maybe_neat_difference(superset, subset) != nothing;
+
+
+  NeType neat_difference(NeType minuend, NeType subtrahend) =
+    value_unsafe(maybe_neat_difference(minuend, subtrahend));
+
+
+  Type neat_difference(NeType minuend, [NeType] subtrahends) {
+    diff = minuend;
+    for t @ i <- isort(subtrahends):
+      if is_eq(diff, t):
+        assert i == |subtrahends| - 1;
+        return empty_type;
+      ;
+      diff = neat_difference(diff, t);
+    ;
+    return diff;
+  }
+
+
+  Maybe[NeType] maybe_neat_difference(NeType minuend, NeType subtrahend) {
+    return match (minuend)
+      union_type(ts?)   = union_difference(ts, subtrahend),
+      type_ref(ts?)     = maybe_neat_difference(nonempty_type(expand_type_ref(ts, typedefs)), subtrahend),
+      _                 = nothing;
+
+
+    Maybe[NeType] union_difference([+NeType] minuends, NeType subtrahend) {
+      difference = [];
+      for t <- isort(minuends):
+        if not is_eq(t, subtrahend):
+          if are_ptype_disjoint(t, subtrahend):
+            difference = difference & [t];
+          else
+            maybe_diff = maybe_neat_difference(t, subtrahend);
+            return nothing if maybe_diff == nothing;
+            difference = difference & [value(maybe_diff)];
+          ;
+        ;
+      ;
+      return if difference != [] then just(ne_union_type(difference)) else nothing;
+    }
+  }
+
+
+  // Maybe[NeType+] maybe_neat_difference(NeType+ sgn1, NeType+ sgn2) {
+  //   assert |sgn1| == |sgn2|;
+
+  //   diff_idxs = (is_eq(t, sgn2(i)) : t @ i <- sgn1);
+  //   return nothing if |diff_idxs| != 1;
+  //   diff_idx = only(diff_idxs);
+  //   type1 = sgn1(diff_idx);
+  //   type2 = sgn2(diff_idx);
+  //   type_diff = maybe_neat_difference(type1, type2);
+  //   return nothing if type_diff == nothing;
+  //   type_diff = value(type_diff);
+  //   return (if i != diff_idx then t else type_diff : t @ i <- sgn1);
+  // }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+type TypeTree = [NeType -> TypeTree];
+
+implicit typedefs : [TypeName -> NeType] {
+  TypeTree type_tree([NeType] types) {
+    assert not (t <- types :
+      (ot <- types : ot != t and not (is_subset(t, ot) or is_subset(ot, t)) and not are_ptype_disjoint(t, ot))
+    );
+
+    return [] if types == [];
+    root_types = [t : t <- types, not (ot <- types : t != ot and is_subset(t, ot))];
+    return [t -> type_tree([ot : ot <- types, ot != t, is_subset(ot, t)]) : t <- root_types];
+
+
+    // Bool is_subset(NeType+ subset_sgn, NeType+ superset_sgn) {
+    //   assert |subset_sgn| == |superset_sgn|;
+    //   return not (t @ i <~ subset_sgn : not is_subset(t, superset_sgn(i)));
+    // }
+
+    // Bool are_ptype_disjoint(NeType+ sgn1, NeType+ sgn2) {
+    //   assert |sgn1| == |sgn2|;
+    //   return (s @ i <~ sgn1 : are_ptype_disjoint(s, sgn2(i)));
+    // }
+  }
+}

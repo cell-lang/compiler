@@ -1,4 +1,3 @@
-
 type SynParTypeSymbol = par_type_symbol(symbol: BasicTypeSymbol, params: SynType+);
 type SynTypeSymbol    = BasicTypeSymbol, SynParTypeSymbol;
 
@@ -47,10 +46,10 @@ type AnyTypedef = Typedef, ParTypedef;
 type SynExpr  = undefined, LeafObj, FloatLit, FnArg, ConstOrVar, ClsPar, PrevVarValue, SynGroupedExpr,
                 SynSeqExpr, SynSetExpr, SynMapExpr, SynBinRelExpr, SynTernRelExpr, SynTagObjExpr,
                 SynImplArgsCall, SynUnaryOpCall, SynBinaryOpCall, SynBuiltInCall,
-                SynSizeExpr,
-                SynCallLookalike, SynRelMembTest, SynRelLookup,
+                SynSizeExpr, SynRelVarSizeExpr,
+                SynCallLookalike, SynAggrFnCall, SynRelMembTest, SynRelLookup,
                 SynBoolExpr, SynCmpExpr,
-                SynMembExpr, SynCastExpr,
+                SynMembExpr,
                 SynAccExpr, SynAccTestExpr,
                 SynExQualExpr, SynSCExpr, SynMCExpr, SynRelCompExpr, SynLCExpr, SynRCExpr,
                 SynIfExpr, SynTryExpr,
@@ -77,8 +76,17 @@ type SynBinaryOpCall  = binary_op_call(op: BinaryOperator, left_arg: SynExpr, ri
 type SynBuiltInCall   = builtin_call(name: BuiltIn, args: SynExpr+);
 
 type SynSizeExpr      = size_expr(coll: SynExpr);
+type SynRelVarSizeExpr  = rel_var_size_expr(rel_var_path: Symbol+, args: Maybe[SynExpr]+);
 
 type SynCallLookalike = call_lookalike(target: SynExpr, args: SynExpr+);
+
+type SynAggrFnCall    = aggr_fn_call(
+                          fn_name:    Symbol,
+                          expr:       SynExpr,
+                          clause:     SynIterClause,
+                          cond:       SynExpr?,
+                          extra_args: SynExpr*
+                        );
 
 type SynRelMembTest   = rel_memb_test(target: SynExpr, args: Maybe[SynExpr]+);
 type SynRelLookup     = rel_lookup(target: Symbol+, args: Maybe[SynExpr]+);
@@ -91,7 +99,6 @@ type SynCmpExpr       = eq(left: SynExpr, right: SynExpr),
                         neq(left: SynExpr, right: SynExpr);
 
 type SynMembExpr      = membership(obj: SynExpr, type: SynType);
-type SynCastExpr      = cast_expr(expr: SynExpr, type: SynType);
 
 type SynAccExpr       = accessor(expr: SynExpr, field: Symbol);
 type SynAccTestExpr   = accessor_test(expr: SynExpr, field: Symbol);
@@ -140,7 +147,9 @@ type SynPtrn    = ptrn_symbol,
                   ptrn_var(var: StdVar, ptrn: SynPtrn),
                   ptrn_union(SynPtrn+);
 
-type SynClause  = iter_clause(vars: StdVar+, src: <SynExpr, SynProj>),
+type SynIterClause = iter_clause(vars: StdVar+, src: <SynExpr, SynProj>);
+
+type SynClause  = SynIterClause,
                   seq_clause(vars: Maybe[Symbol]+, idx_var: Maybe[Symbol], src: SynExpr),
                   and_clause(SynClause+),
                   or_clause(SynClause+),
@@ -155,7 +164,7 @@ type SynCase    = case(patterns: SynPtrn+, expr: SynExpr);
 /////////////////////////////////////////////////////////////////////////////////////
 
 type SynStmt  = SynAtomicFnStmt, SynAtomicUpdateStmt, SynAtomicProcStmt,
-                SynCtrlStmt, SynCompStmt[SynStmt];
+                SynCtrlStmt, SynCompStmt;
 
 type SynAtomicFnStmt  = SynAsgnStmt, SynReturnStmt, SynBreakStmt, SynFailStmt,
                         SynAssertStmt, SynPrintStmt, SynSeqUpdateStmt;
@@ -168,11 +177,24 @@ type SynAssertStmt    = assert_stmt(cond: SynExpr, file: String, line: NzNat, te
 type SynPrintStmt     = print_stmt(SynExpr);
 type SynSeqUpdateStmt = seq_update_stmt(obj: StdVar, idx: SynExpr, value: SynExpr);
 
-type SynAtomicUpdateStmt  = send_msg_stmt(var: Symbol, msg: SynExpr),
-                            try_update_stmt(name: Symbol, args: SynExpr*),
-                            set_memb_var_stmt(var: Symbol, value: SynExpr),
-                            delete_stmt(entries: (var: Symbol, args: Maybe[SynExpr]+)+),
-                            insert_stmt(entries: (var: Symbol, args: SynExpr+)+, force: Bool);
+type SynAtomicUpdateStmt  = SynSendMsgStmt, SynTryUpdateStmt, SynSetMembVarStmt,
+                            SynDeleteStmt, SynInsertStmt, SynInsertWithAttrsStmt;
+
+type SynSendMsgStmt         = send_msg_stmt(var: Symbol, msg: SynExpr);
+type SynTryUpdateStmt       = try_update_stmt(name: Symbol, args: SynExpr*);
+type SynSetMembVarStmt      = set_memb_var_stmt(var: Symbol, value: SynExpr);
+type SynDeleteStmt          = delete_stmt(entries: (var: Symbol, args: Maybe[SynExpr]+)+);
+
+type SynInsertStmt          = insert_stmt(
+                                entries: (var: Symbol, args: SynExpr+, iter: SynCollIter?)+,
+                                force:   Bool
+                              );
+
+type SynInsertWithAttrsStmt = insert_with_attrs_stmt(
+                                relvar: Symbol,
+                                args:   SynExpr+,
+                                attrs:  (name: Symbol, value: SynExpr, cond: SynExpr?, iter: SynCollIter?)+
+                              );
 
 type SynAtomicProcStmt  = SynNoValRetStmt, SynProcCallStmt;
 
@@ -188,20 +210,21 @@ type SynCtrlStmt  = set_input_ctrl_stmt(var: Symbol, input: Symbol, value: SynEx
                     restore_state_ctrl_stmt(res_var: Symbol, db_var: Symbol, state: SynExpr);
 
 
-type SynCompStmt[T] = SynIfStmt[T], SynLoopStmt[T], SynInfLoopStmt[T], SynForStmt[T], SynLetStmt[T];
+type SynCompStmt = SynIfStmt, SynLoopStmt, SynInfLoopStmt, SynForStmt, SynLetStmt;
 
-type SynIfStmt[T]       = if_stmt(branches: (cond: SynExpr, body: T+)+, else: T*);
-type SynLoopStmt[T]     = loop_stmt(cond: SynExpr, skip_first: Bool, body: T+);
-type SynInfLoopStmt[T]  = inf_loop_stmt(T+);
-type SynForStmt[T]      = for_stmt(loops: SynIter+, body: T+);
-type SynLetStmt[T]      = let_stmt(asgnms: (ImplArg, SynExpr)+, body: T+);
+type SynIfStmt       = if_stmt(branches: (cond: SynExpr, body: SynStmt+)+, else: SynStmt*);
+type SynLoopStmt     = loop_stmt(cond: SynExpr, skip_first: Bool, body: SynStmt+);
+type SynInfLoopStmt  = inf_loop_stmt(SynStmt+);
+type SynForStmt      = for_stmt(loops: SynIter+, body: SynStmt+);
+type SynLetStmt      = let_stmt(asgnms: (ImplArg, SynExpr)+, body: SynStmt+);
 
 /////////////////////////////////////////////////////////////////////////////////////
 
-type SynSeqIter     = seq_iter(vars: StdVar+, idx_var: StdVar?, values: SynExpr);
-type SynRangeIter   = range_iter(var: StdVar?, start_val: SynExpr, end_val: SynExpr, end_val_incl: Bool);
+type SynCollIter      = coll_value_iter(vars: Maybe[StdVar]+, idx_var: StdVar?, src_expr: SynExpr);
+type SynFilteredIter  = filtered_iter(vars: Maybe[Symbol]+, target: Symbol+, args: Maybe[SynExpr]+);
+type SynRangeIter     = range_iter(var: StdVar?, start_val: SynExpr, end_val: SynExpr, end_val_incl: Bool);
 
-type SynIter = SynSeqIter, SynRangeIter;
+type SynIter = SynCollIter, SynFilteredIter, SynRangeIter;
 
 /////////////////////////////////////////////////////////////////////////////////////
 
@@ -233,6 +256,24 @@ type ImplBlock    = impl_block(args: ImplArgDecl+, fn_defs: SynFnDef+);
 type ProtDecl     = prot_decl(types: Symbol+, methods: (FnSymbol, SynType+, SynType)+);
 
 type TypeVarDecl  = typevar_decl(type_vars: Symbol+, prot_types: Symbol++);
+
+////////////////////////////////////////////////////////////////////////////////
+
+type AggrFunctDecl  = aggr_funct_decl(
+                        type:         SynType,
+                        name:         Symbol,
+                        elt_type:     SynType,
+                        elt_name:     Symbol,
+                        extra_args:   (SynType, Symbol)*,
+                        red_vars: (
+                          type:       SynType,
+                          name:       Symbol,
+                          init_value: SynExpr,
+                          merge_op:   (Symbol, Symbol, SynExpr)
+                        )+,
+                        null_value:   SynExpr,
+                        final_value:  SynExpr
+                      );
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -308,15 +349,22 @@ type RelVarsDecl    = relvars_decl(
                         name:       Symbol,
                         col_types:  SynType+,
                         keys:       Nat+*,
+                        symmetric:  Bool,
                         attributes: AttrRelVar*
                       );
 
-type AttrRelVar     = attr_relvar(name: Symbol, type: SynType, cardinality: AttrCard);
+type AttrRelVar     = attr_relvar(name: Symbol, type: SynType, cardinality: AttrCard, unique: Bool);
 type AttrCard       = attr_card(required: Bool, multiple: Bool);
+
+type ForeignKeyDecl = foreign_key_decl(
+                        src_rel:  Symbol,
+                        src_args: Maybe[Symbol]+,
+                        targets:  (Symbol, Maybe[Symbol]+)+
+                      );
 
 type NestedDBDecl   = nested_db_decl(name: Symbol, type: Symbol);
 
-type SchemaItemDecl = StateVarDecl, RelVarsDecl, NestedDBDecl;
+type SchemaItemDecl = StateVarDecl, RelVarsDecl, ForeignKeyDecl, NestedDBDecl;
 
 type SchemaDef      = schema_def(
                         name:   Symbol,
@@ -326,7 +374,7 @@ type SchemaDef      = schema_def(
 
 ////////////////////////////////////////////////////////////////////////////////
 
-type PrgDecl        = Typedef, ParTypedef, SynFnDef, ImplBlock, ProtDecl, TypeVarDecl,
-                      SynProcDef, ReactAutoDef, SchemaDef, AutoMethodDef, HandlerDef, UsingBlock;
+type PrgDecl        = Typedef, ParTypedef, SynFnDef, ImplBlock, ProtDecl, TypeVarDecl, SynProcDef,
+                      AggrFunctDecl, ReactAutoDef, SchemaDef, AutoMethodDef, HandlerDef, UsingBlock;
 
 type SynPrg         = syn_prg(parsed_src_files: [String -> PrgDecl*]);

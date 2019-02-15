@@ -43,6 +43,24 @@ Stack[T] replace_top(Stack[T] stack, T new_top) =
 // Replace this with === or ~=
 Bool is_eq(T x, Maybe[T] maybe) = maybe == :just(x);
 
+
+Bool all(Maybe[A]+ maybes, B+ values, (A B -> Bool) p) {
+  assert |maybes| == |values|;
+  for m @ i <- maybes:
+    return false if m != nothing and not p(value(m), values(i));
+  ;
+  return true;
+}
+
+
+Bool any(Maybe[A]+ maybes, B+ values, (A B -> Bool) p) {
+  assert |maybes| == |values|;
+  for m @ i <- maybes:
+    return true if m != nothing and p(value(m), values(i));
+  ;
+  return false;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 
 <success(T)> success(T r) = :success(r);
@@ -73,6 +91,7 @@ NzNat nz_nat(Int n) = if n :: NzNat then n else undefined;
 T+        nonempty(T* seq)            = if seq != () then seq else undefined;
 [+T]      nonempty([T] set)           = if set != [] then set else undefined;
 [+K -> V] nonempty_map([K -> V] map)  = if map != [] then map else undefined;
+[+A, B]   nonempty_rel([A, B] rel)    = if rel != [] then rel else undefined;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -139,6 +158,16 @@ Nat index_first(Any e, Seq s) {
     return i if x == e;
   ;
   fail;
+}
+
+Nat index_only(Any* s, Any e) = only_unsafe(indexes(s, $ == e));
+
+Nat* indexes(X* xs, (X -> Bool) p) {
+  idxs = ();
+  for x @ i <- xs:
+    idxs = (idxs | i) if p(x);
+  ;
+  return idxs;
 }
 
 
@@ -265,7 +294,7 @@ Maybe[B] maybe_lookup([A -> B] map, A key) = if map(key, *) then just(map[key]) 
 
 Bool is_key(Any key, [Any -> Any] map) = map(key, *);
 
-[]    keys([]) = [];
+[]   keys([]) = [];
 [+A] keys([+A -> B] map) = [k : k, unused_var <- map];
 
 [K -> [+V]] merge_values([[K -> V]] maps) {
@@ -561,6 +590,8 @@ T max_by(T+ xs, (T T -> Bool) lt) {
 
 [Nat] range(Nat n) = set((i : i < n));
 
+[+Nat] ne_range(NzNat n) = set((i : i < n));
+
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -647,3 +678,68 @@ Int pow(Int b, Nat e) {
   ;
   return res;
 }
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+[A, B] merge_rels([[A, B]] rels) = [a, b : r <- rels, a, b <- r];
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+T+ permutate(T+ xs, [+Nat -> Nat] p) {
+  assert |xs| == |p|;
+  return (xs(p(!!, i)) : i < |xs|);
+}
+
+
+() ord_idxs([]) = ();
+Nat+ ord_idxs([+Nat -> Any] xs) = nonempty(sort_set(keys(xs), $a < $b));
+
+[] packed_idxs([]) = [];
+[+Nat -> Nat] packed_idxs([+Nat -> Any] xs) = [j -> i : i @ j <~ ord_idxs(xs)];
+
+() values_ord_by_idx([]) = ();
+T+ values_ord_by_idx([+Nat -> T] xs) = (xs(i, !!) : i <- ord_idxs(xs));
+
+
+Nat first_unused_idx([Nat -> Any] xs) {
+  idx = 0;
+  loop
+    return idx if not xs(idx, *);
+    idx = nat(idx + 1);
+  ;
+}
+
+
+Maybe[T]+ maybe_seq([Nat -> T] map, NzNat arity) {
+  assert not (i, unused_var <- map : i >= arity);
+  return (if map(i, *) then just(map(i, !!)) else nothing : i < arity);
+}
+
+[Nat -> T] map(Maybe[T]+ xs) = [i -> value(x) : x @ i <~ xs, x != nothing];
+
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+## THESE SHOULD PROBABLY GO IN A SEPARATE FILE
+type CounterSet[T]    = counter_set(nz_ctrs: [T -> NzNat]);
+type BlankCounterSet  = counter_set(nz_ctrs: []);
+
+
+BlankCounterSet blank_counter_set = counter_set(nz_ctrs: []);
+
+Nat next_value(CounterSet[T] ctr_set, T ctr) = lookup(ctr_set.nz_ctrs, ctr, 0);
+
+CounterSet[T] increment(CounterSet[T] ctr_set, T ctr) {
+  nz_ctrs = ctr_set.nz_ctrs;
+  new_nz_ctrs = if nz_ctrs(ctr, *)
+    then [c -> nz_nat(n + bit(c == ctr)) : c, n <- nz_ctrs]
+    else nz_ctrs & [ctr -> 1];
+  return counter_set(nz_ctrs: new_nz_ctrs);
+}
+
+(Nat, CounterSet[T]) claim_next(CounterSet[T] ctr_set, T ctr) = ( next_value(ctr_set, ctr),
+                                                                  increment(ctr_set, ctr)
+                                                                );

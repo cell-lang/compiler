@@ -1,0 +1,125 @@
+implicit program : Program {
+  ## DEPRECATED: REPLACE WITH rel_auto_by_id()
+  Database automaton_by_id(DBSymbol rel_auto_id) = rel_auto_by_id(rel_auto_id);
+
+  Database rel_auto_by_id(DBSymbol rel_auto_id) =
+    rel_autos_by_id(rel_auto_id, !!);
+}
+
+
+implicit program : Program, typedefs : [TypeName -> NeType] {
+  NeType+ rel_var_signature(DBSymbol rel_auto_id, PhysRelVar rel_var) =
+    rel_auto_by_id(rel_auto_id).rel_vars(rel_var).signature;
+
+
+  NzNat arity(DBSymbol rel_auto_id, RelVar rel_var) =
+    rel_var_arity(rel_auto_by_id(rel_auto_id), rel_var);
+
+
+  NzNat arity(DBSymbol rel_auto_id, PhysRelVar rel_var) =
+    arity(rel_auto_id, logical_rel_var(rel_var));
+
+
+  Bool symmetric(DBSymbol rel_auto_id, RelVar rel_var) =
+    rel_var_is_symmetric(rel_auto_by_id(rel_auto_id), rel_var);
+
+
+  Bool symmetric(DBSymbol rel_auto_id, PhysRelVar rel_var) =
+    symmetric(rel_auto_id, logical_rel_var(rel_var));
+
+
+  [[+Nat]] rel_var_keys(DBSymbol rel_auto_id, RelVar rel_var) =
+    rel_var_keys(rel_auto_by_id(rel_auto_id), rel_var);
+
+
+  [PhysRelVar] physical_rel_vars(DBSymbol rel_auto_id, RelVar rel_var, NeType+ args_types) {
+    rel_auto = rel_auto_by_id(rel_auto_id);
+    phys_rel_vars = physical_rel_vars(rel_auto, rel_var);
+    return [v : v <- phys_rel_vars, signatures_overlap(rel_auto.rel_vars(v).signature, args_types)];
+  }
+
+
+  [PhysRelVar] overlapping_phys_rel_vars(DBSymbol rel_auto_id, RelVar rel_var, Maybe[NeType]+ args_types) {
+    rel_auto = rel_auto_by_id(rel_auto_id);
+    phys_rel_vars = physical_rel_vars(rel_auto, rel_var);
+    return [v : v <- phys_rel_vars, signature_overlaps_partial_signature(rel_auto.rel_vars(v).signature, args_types)];
+  }
+
+
+  NeType+ table_signature(DBSymbol rel_auto_id, TableVar table_var) =
+    rel_var_signature(rel_auto_id, original_rel_var(table_var));
+
+
+  [[+Nat]] table_var_keys(DBSymbol rel_auto_id, TableVar table_var) =
+    rel_var_keys(rel_auto_id, logical_rel_var(original_rel_var(table_var)));
+
+
+  ValueStoreId table_col_store_id(DBSymbol rel_auto_id, TableVar var, Nat col_idx) =
+    tables_by_db(rel_auto_id, !!)(var).value_stores(col_idx);
+
+
+  [TableVar] overlapping_tables(DBSymbol rel_auto_id, RelVar rel_var, Maybe[NeType]+ args_types) {
+    rel_auto = rel_auto_by_id(rel_auto_id);
+    rel_vars = physical_rel_vars(rel_auto, rel_var);
+    return [
+      table_var(v) : v <- rel_vars, signature_overlaps_partial_signature(rel_auto.rel_vars(v).signature, args_types)
+    ];
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  ## TODO: CHANGE THE NAME IN message_type()
+  Type db_msg_type(DBSymbol type) = msg_type_by_db(type, !!);
+
+
+  [+NeType*] update_signatures(DBSymbol rel_auto_id, UpdateSymbol update_id) =
+    updates_signatures_by_rel_auto_update(rel_auto_id, !!)(update_id);
+
+
+  [NeType*] update_aggregate_signatures(DBSymbol rel_auto_id, UpdateSymbol update_id) =
+    aggregated_signatures_by_rel_auto_update(rel_auto_id, !!)(update_id);
+
+
+  [NeType+] relvar_aggregated_signatures(DBSymbol rel_auto_id, RelVar rel_var) =
+    aggregated_signatures_by_rel_var(rel_auto_id, !!)(rel_var);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+implicit program : Program {
+  [DBSymbol -> Database] rel_autos_by_id = [db.name -> db : db <- program.data_bases];
+
+
+  [DBSymbol -> Type] msg_type_by_db = [
+    db.name -> union_superset([h.type : h <- db.handlers]) : db <- program.data_bases
+  ];
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+implicit program : Program, typedefs : [TypeName -> NeType] {
+  [DBSymbol -> [UpdateSymbol -> [NeType*]]] aggregated_signatures_by_rel_auto_update = [
+    db -> [u -> aggregated_relation_signatures(ss) : u, ss <- us]
+    : db, us <- updates_signatures_by_rel_auto_update
+  ];
+
+
+  [DBSymbol -> [UpdateSymbol -> [+NeType*]]] updates_signatures_by_rel_auto_update = [
+    db.name -> merge_values([[u.name -> (t : t, unused_var <- u.args)] : u <- db.updates])
+    : db <- program.data_bases
+  ];
+
+
+  [DBSymbol -> [RelVar -> [NeType+]]] aggregated_signatures_by_rel_var = [
+    db.name -> [
+      v -> aggregated_relation_signatures(rel_var_signatures(db, v)) : v <- logical_rel_vars(db)
+    ] : db <- program.data_bases
+  ];
+
+
+  ## DEPRECATED
+  [DBSymbol -> [TableVar -> Table]] tables_by_db = [
+    db.name -> tables_info(database=db) : db <- program.data_bases
+  ];
+}

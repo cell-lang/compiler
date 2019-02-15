@@ -1,0 +1,226 @@
+type AtomicPseudoType = symbol(Atom), integers, floats, empty_seq, ne_seqs, empty_rel,
+                        ne_sets, ne_bin_rels, ne_tern_rels, tag_obj(Atom);
+
+type BasicPseudoType  = symbols, tag_objs, AtomicPseudoType;
+
+type PseudoType       = pseudotype([BasicPseudoType]); ## BAD: THIS ALLOWS FOR INVALID COMBINATIONS, LIKE {symbol(a), symbols}
+
+type NePseudoType     = pseudotype([+BasicPseudoType]);
+
+///////////////////////////////////////////////////////////////////////////////
+
+PseudoType pseudotype([]) = :pseudotype([]);
+
+NePseudoType pseudotype([+BasicPseudoType] pts) {
+  red_symb_pts    = if in(:symbols, pts)  then [pt : pt <- pts, symbol() ?= pt] else [];
+  red_tag_obj_pts = if in(:tag_objs, pts) then [pt : pt <- pts, tag_obj() ?= pt] else [];
+  return :pseudotype(nonempty(pts - (red_symb_pts & red_tag_obj_pts)));
+}
+
+
+[BasicPseudoType] basic_pseudotypes(PseudoType pt) =
+  pseudotype(pts?)  = pts;
+
+
+PseudoType pseudotype_union([]) = pseudotype_empty;
+NePseudoType pseudotype_union([+NePseudoType] pseudotypes) = pseudotype(nonempty(union([pts : pt <- pseudotypes, pseudotype(pts?) ?= pt])));
+
+
+NePseudoType pseudotype_any = pseudotype([
+  :symbols, :integers, :floats, :empty_seq, :ne_seqs, :empty_rel, :ne_sets, :ne_bin_rels, :ne_tern_rels, :tag_objs
+]);
+
+
+PseudoType pseudotype_empty = pseudotype([]);
+
+NePseudoType pseudotype_symbol(Atom a)  = pseudotype([:symbol(a)]);
+NePseudoType pseudotype_symbols         = pseudotype([:symbols]);
+NePseudoType pseudotype_integers        = pseudotype([:integers]);
+NePseudoType pseudotype_floats          = pseudotype([:floats]);
+NePseudoType pseudotype_empty_seq       = pseudotype([:empty_seq]);
+NePseudoType pseudotype_empty_rel       = pseudotype([:empty_rel]);
+NePseudoType pseudotype_ne_seqs         = pseudotype([:ne_seqs]);
+NePseudoType pseudotype_ne_sets         = pseudotype([:ne_sets]);
+NePseudoType pseudotype_ne_bin_rels     = pseudotype([:ne_bin_rels]);
+NePseudoType pseudotype_ne_tern_rels    = pseudotype([:ne_tern_rels]);
+NePseudoType pseudotype_seqs            = pseudotype([:empty_seq, :ne_seqs]);
+NePseudoType pseudotype_sets            = pseudotype([:empty_rel, :ne_sets]);
+NePseudoType pseudotype_bin_rels        = pseudotype([:empty_rel, :ne_bin_rels]);
+NePseudoType pseudotype_tern_rels       = pseudotype([:empty_rel, :ne_tern_rels]);
+NePseudoType pseudotype_tag_obj(Atom a) = pseudotype([:tag_obj(a)]);
+NePseudoType pseudotype_tag_objs        = pseudotype([:tag_objs]);
+
+///////////////////////////////////////////////////////////////////////////////
+
+Bool is_subset(BasicPseudoType basic_ptype, PseudoType pseudotype) =
+  symbol(),   pseudotype(pts?)  = in(basic_ptype, pts) or in(:symbols, pts),
+  tag_obj(),  pseudotype(pts?)  = in(basic_ptype, pts) or in(:tag_objs, pts),
+  _,          pseudotype(pts?)  = in(basic_ptype, pts);
+
+Bool is_subset(PseudoType subset, PseudoType superset) = not (bpt <- basic_pseudotypes(subset) : not is_subset(bpt, superset));
+
+
+Bool are_disjoint(PseudoType pseudotype, BasicPseudoType basic_pseudotype) {
+  pts = basic_pseudotypes(pseudotype);
+  if basic_pseudotype == :symbols:
+    return not pts(:symbols) and not (pt <- pts, symbol() ?= pt : true); ## BAD BAD BAD
+  elif basic_pseudotype == :tag_objs:
+    return not pts(:tag_objs) and not (pt <- pts, tag_obj() ?= pt : true); ## BAD BAD BAD
+  else
+    return not is_subset(basic_pseudotype, pseudotype);
+  ;
+}
+
+Bool are_disjoint(PseudoType pt1, PseudoType pt2) = not (bpt1 <- basic_pseudotypes(pt1) : not are_disjoint(pt2, bpt1));
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+PseudoType pseudotype(Obj obj) = pseudotype([atomic_pseudotype(obj)]);
+
+AtomicPseudoType atomic_pseudotype(Obj) =
+  object(<+> a?)      = :symbol(a),
+  object(<*..*>)      = :integers,
+  object(<!>)         = :floats,
+  object(() s?)       = if s == () then :empty_seq else :ne_seqs,
+  object([] s?)       = if s == [] then :empty_rel else :ne_sets,
+  object([,] r?)      = :ne_bin_rels,
+  object([,,] r?)     = :ne_tern_rels,
+  object(tag?(obj?))  = :tag_obj(tag); ## REPLACE THE obj VARIABLE WITH _ AS SOON AS THE PARSER ALLOWS IT
+
+///////////////////////////////////////////////////////////////////////////////
+
+NePseudoType pseudotype(Pattern ptrn) =
+  ptrn_symbol             = pseudotype_symbols,
+  ptrn_float              = pseudotype_floats,
+  ptrn_empty_rel          = pseudotype_empty_rel,
+  ptrn_ne_set             = pseudotype_ne_sets,
+  ptrn_empty_seq          = pseudotype_empty_seq,
+  ptrn_ne_seq             = pseudotype_ne_seqs,
+  ptrn_ne_map             = pseudotype_ne_bin_rels,
+  ptrn_ne_bin_rel         = pseudotype_ne_bin_rels,
+  ptrn_ne_tern_rel        = pseudotype_ne_tern_rels,
+  ptrn_any                = pseudotype_any,
+  ptrn_symbol(object(a?)) = pseudotype_symbol(a),
+  ptrn_integer()          = pseudotype_integers,
+  ptrn_var()              = pseudotype(ptrn.ptrn),
+  ptrn_tuple()            = pseudotype_ne_seqs,
+  ptrn_union(ps?)         = pseudotype_union([pseudotype(p) : p <- ps]),
+  ptrn_tag_obj()          = match (ptrn.tag)
+                              ptrn_symbol             = pseudotype_tag_objs,
+                              ptrn_symbol(object(a?)) = pseudotype_tag_obj(a),
+                              ptrn_var()              = pseudotype_tag_objs;
+
+///////////////////////////////////////////////////////////////////////////////
+
+Pattern pseudotype_pattern(NePseudoType pseudotype) =
+  pseudotype(bpts?) = ptrn_union([pseudotype_pattern(pt) : pt <- bpts]);
+
+Pattern pseudotype_pattern(BasicPseudoType pseudotype) =
+  symbol(a?)      = ptrn_symbol(a),
+  symbols         = ptrn_symbol,
+  integers        = ptrn_integer,
+  floats          = ptrn_float,
+  empty_rel       = ptrn_empty_rel,
+  ne_sets         = ptrn_ne_set,
+  empty_seq       = ptrn_empty_seq,
+  ne_seqs         = ptrn_ne_seq,
+  ne_bin_rels     = ptrn_ne_bin_rel,
+  ne_tern_rels    = ptrn_ne_tern_rel,
+  tag_obj(a?)     = ptrn_tag_obj(ptrn_symbol(a), ptrn_any),
+  tag_objs        = ptrn_tag_obj(ptrn_symbol, ptrn_any);
+
+///////////////////////////////////////////////////////////////////////////////
+
+Bool matches(Pattern ptrn, PseudoType ptype) = not are_disjoint(pseudotype(ptrn), ptype);
+
+///////////////////////////////////////////////////////////////////////////////
+
+Maybe[Pattern] restrict(Pattern ptrn, NePseudoType ptype) =
+  ptrn_symbol       = restrict_ptrn_symbol(ptype),
+  ptrn_any          = just(pseudotype_pattern(ptype)),
+  ptrn_tag_obj()    = { match (ptrn.tag)
+                          ptrn_symbol             = restrict_ptrn_any_tag_obj(ptrn.obj, ptype),
+                          ptrn_symbol(object(s?)) = if is_subset(pseudotype_tag_obj(s), ptype) then just(ptrn) else nothing,
+                          ptrn_var()              = if not are_disjoint(ptype, pseudotype_tag_objs) then just(ptrn) else nothing
+                      },
+  ptrn_var()        = restrict_ptrn_var(ptrn.var, ptrn.ptrn, ptype),
+  ptrn_union(ps?)   = restrict_ptrn_union(ps, ptype),
+  _                 = if matches(ptrn, ptype) then just(ptrn) else nothing;
+
+
+Maybe[Pattern] restrict_ptrn_symbol(PseudoType ptype) {
+  return just(ptrn_symbol) if is_subset(pseudotype_symbols, ptype);
+  ptrns = [ptrn_symbol(a) : pt <- basic_pseudotypes(ptype), symbol(a?) ?= pt];
+  return if ptrns != [] then just(ptrn_union(ptrns)) else nothing;
+}
+
+
+Maybe[Pattern] restrict_ptrn_any_tag_obj(Pattern obj_ptrn, PseudoType ptype) {
+  return just(ptrn_tag_obj(ptrn_symbol, obj_ptrn)) if is_subset(pseudotype_tag_objs, ptype);
+  ptrns = [ptrn_tag_obj(ptrn_symbol(s), obj_ptrn) : pt <- basic_pseudotypes(ptype), tag_obj(s?) ?= pt];
+  return if ptrns != [] then just(ptrn_union(ptrns)) else nothing;
+}
+
+
+Maybe[Pattern] restrict_ptrn_var(StdVar var, Pattern ptrn, NePseudoType ptype) {
+  restr_ptrn = restrict(ptrn, ptype);
+  return if restr_ptrn != nothing then just(ptrn_var(var, value(restr_ptrn))) else nothing;
+}
+
+
+Maybe[Pattern] restrict_ptrn_union([+Pattern] ptrns, NePseudoType ptype) {
+  restr_ptrns = [value(rp) : p <- ptrns, rp = restrict(p, ptype), rp != nothing];
+  return if restr_ptrns != [] then just(ptrn_union(restr_ptrns)) else nothing;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+PseudoType pseudotype(Type type, [TypeName -> Type] typedefs) =
+  empty_type            = pseudotype_empty,
+  symb_type(object(a?)) = pseudotype_symbol(a),
+  atom_type             = pseudotype_symbols,
+  integer               |
+  low_ints()            |
+  high_ints()           |
+  int_range()           = pseudotype_integers,
+  float_type            = pseudotype_floats,
+  empty_seq_type        = pseudotype_empty_seq,
+  empty_rel_type        = pseudotype_empty_rel,
+  type_var()            = pseudotype_any, ## NOT SURE HERE...
+  type_ref(ts?)         = pseudotype(expand_type_ref(ts, typedefs), typedefs),
+  ne_seq_type()         = pseudotype_ne_seqs,
+  ne_set_type()         = pseudotype_ne_sets,
+  ne_map_type()         = pseudotype_ne_bin_rels,
+  ne_bin_rel_type()     = pseudotype_ne_bin_rels,
+  ne_tern_rel_type()    = pseudotype_ne_tern_rels,
+  ne_record_type()      = pseudotype_ne_bin_rels,
+  tuple_type()          = pseudotype_ne_seqs,
+  tag_obj_type()        = { match (type.tag_type)
+                              atom_type             = pseudotype_tag_objs,
+                              symb_type(object(a?)) = pseudotype_tag_obj(a)
+                          },
+  union_type(ts?)       = pseudotype_union([pt : t <- ts, pt = pseudotype(t, typedefs), pt :: NePseudoType]);
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+[<symbols, symbol(Atom)> -> Pattern] split_by_tag_ptype(Pattern ptrn) =
+  ptrn_tag_obj()  = { tag_ptrn = ptrn.tag;
+                      return [ match (tag_ptrn)
+                          ptrn_symbol             = :symbols,
+                          ptrn_symbol(object(a?)) = :symbol(a),
+                          ptrn_var()              = {assert tag_ptrn.ptrn == ptrn_symbol; return :symbols;}
+                        -> ptrn
+                      ];
+                    },
+  ptrn_var()      = [pt -> ptrn_var(ptrn.var, p) : pt, p <- split_by_tag_ptype(ptrn.ptrn)],
+  ptrn_union(ps?) = [pt -> ptrn_union(ps2) : pt, ps2 <- merge_values([split_by_tag_ptype(p) : p <- ps])];
+
+
+[<symbols, symbol(Atom)> -> Pattern] split_by_ptype(Pattern ptrn) =
+  ptrn_symbol     = [:symbols -> ptrn],
+  ptrn_symbol(s?) = [:symbol(untag(s)) -> ptrn],
+  ptrn_var()      = [pt -> ptrn_var(ptrn.var, p) : pt, p <- split_by_ptype(ptrn.ptrn)],
+  ptrn_union(ps?) = [pt -> ptrn_union(ps2) : pt, ps2 <- merge_values([split_by_ptype(p) : p <- ps])];

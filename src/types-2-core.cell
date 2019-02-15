@@ -57,6 +57,8 @@ type FnType   = fn_type(
                   constrs:    [FnSymbol -> [+ClsType]]
                 );
 
+type AggrFnType = aggr_fn_type(elt_type: NeType, extra_args_types: NeType*, ret_type: NeType);
+
 type BuiltInType  = builtin_type(args_types: NeType+, ret_type: NeType);
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -86,6 +88,10 @@ type NestedFnId       = nested_fn_id(outer: PlainFnId, inner: PlainFnId);
 
 type FnFamilyId       = PlainFnFamilyId, NestedFnFamilyId;
 type FnId             = PlainFnId, NestedFnId;
+
+type PlainAggrFnId    = aggr_fn_id(Symbol);
+type UniqueAggrFnId   = unique_aggr_fn_id(Symbol, Nat);
+type AggrFnId         = PlainAggrFnId, UniqueAggrFnId;
 
 type MethodSymbol   = method_symbol(Symbol);
 type UpdateSymbol   = msg_handler, update_symbol(Symbol);
@@ -119,13 +125,14 @@ type LinkedDBVar  = linked_db_var(Nat);
 type QualDBVar    = qual_db_var(outer: AnyDBVar, inner: <NestedDBVar, LinkedDBVar>);
 type AnyDBVar     = LocDBVar, NestedDBVar, LinkedDBVar, QualDBVar;
 
-type Var        = StdVar, FnArg, ImplArg, AnyMembVar, AnySignalVar, PrevVarValue;
+type Var          = StdVar, FnArg, ImplArg, AnyMembVar, AnySignalVar, PrevVarValue;
 
-type RelVar     = rel_var(Symbol);
-type QualRelVar = qual_rel_var(db_var: AnyDBVar, rel_var: RelVar);
-type AnyRelVar  = RelVar, QualRelVar;
+type RelVar       = rel_var(Symbol);
+type PhysRelVar   = phys_rel_var(Symbol), split_rel_var(PhysRelVar, Nat);
+type QualRelVar   = qual_rel_var(db_var: AnyDBVar, rel_var: RelVar);
+type AnyRelVar    = RelVar, QualRelVar;
 
-type ClsVar     = cls_var(<Symbol, Nat>);
+type ClsVar   = cls_var(<Symbol, Nat>);
 
 type CondExpr = cond_expr(expr: Expr, cond: Expr);
 
@@ -138,13 +145,13 @@ type ExprRef  = expr_ref(Nat);
 type Expr     = undefined, LeafObj, FloatLit, Var, ExprRef,
                 SeqExpr, TupleExpr, SeqTailExpr, SetExpr,
                 MapExpr, BinRelExpr, TernRelExpr, TagObjExpr,
-                FnCallExpr, ClsCall, BuiltinCall,
-                SizeExpr,
+                FnCallExpr, ClsCall, BuiltinCall, AggrFnCallExpr,
+                SizeExpr, RelVarSizeExpr,
                 UnaryPseudoCall, RelMembTest, RelLookup,
                 RelVarMembTest, RelVarLookup,
                 AndExpr, OrExpr, NotExpr,
                 EqExpr,
-                MembExpr, CastExpr,
+                MembExpr,
                 AccExpr, AccTestExpr,
                 AutoMethodCall, DBMethodCall,
                 IfExpr, MatchExpr, DoExpr,
@@ -166,14 +173,15 @@ type ClsCall        = cls_call(name: ClsVar, args: Expr+);
 type BuiltinCall    = builtin_call(name: BuiltIn, args: Expr+);
 
 type SizeExpr       = size_expr(coll: Expr);
+type RelVarSizeExpr = rel_var_size_expr(rel_var: AnyRelVar, args: Maybe[Expr]+);
 
 type UnaryPseudoCall  = unary_pseudo_call(target: Expr, arg: Expr);
 
 type RelMembTest    = rel_memb_test(rel: Expr, args: Maybe[Expr]+);
-type RelLookup      = rel_lookup(rel: Expr, set_args: Expr*, unknown_arg_idx: Nat);
+type RelLookup      = rel_lookup(rel: Expr, args: Maybe[Expr]+);
 
 type RelVarMembTest = relvar_memb_test(rel_var: AnyRelVar, args: Maybe[Expr]+);
-type RelVarLookup   = relvar_lookup(rel_var: AnyRelVar, set_args: Expr*, unknown_arg_idx: Nat);
+type RelVarLookup   = relvar_lookup(rel_var: AnyRelVar, args: Maybe[Expr]+);
 
 type AndExpr        = and_expr(left: Expr, right: Expr); ## NOT SURE HERE
 type OrExpr         = or_expr(left: Expr, right: Expr);  ## NOT SURE HERE
@@ -182,10 +190,17 @@ type NotExpr        = not_expr(Expr);                    ## NOT SURE HERE
 type EqExpr         = eq(left: Expr, right: Expr);
 
 type MembExpr       = membership(obj: Expr, type: NeType);
-type CastExpr       = cast_expr(expr: Expr, type: NeType);
 
 type AccExpr        = accessor(expr: Expr, field: SymbObj);      ## SHOULD <field> BE AN OBJECT OR JUST A PLAIN SYMBOL?
 type AccTestExpr    = accessor_test(expr: Expr, field: SymbObj); ## DITTO
+
+type AggrFnCallExpr = aggr_fn_call(
+                        fn_id:      PlainAggrFnId,
+                        expr:       Expr,
+                        clause:     RelVarClause,
+                        cond:       Expr?,
+                        extra_args: Expr*
+                      );
 
 type AutoMethodCall = auto_method_call(var: AnyAutoVar?, name: MethodSymbol, args: Expr*);
 type DBMethodCall   = db_method_call(var: AnyDBVar?, name: MethodSymbol, args: Expr*);
@@ -243,12 +258,12 @@ type TagPtrn  = ptrn_symbol, ptrn_symbol(SymbObj), ptrn_var(var: StdVar, ptrn: p
 
 ////////////////////////////////////////////////////////////////////////////////
 
-type Clause = SetClause, RelClause, RelvarClause, SeqClause, AndClause,
+type Clause = SetClause, RelClause, RelVarClause, SeqClause, AndClause,
               OrClause, MatchClause, AsgnmClause, FilterClause;
 
 type SetClause    = set_clause(var: StdVar, src: Expr);
 type RelClause    = rel_clause(vars: StdVar+, src: Expr, args: Maybe[Expr]+);
-type RelvarClause = relvar_clause(vars: StdVar+, rel_var: AnyRelVar, args: Maybe[Expr]+);
+type RelVarClause = relvar_clause(vars: StdVar+, rel_var: AnyRelVar, args: Maybe[Expr]+);
 type SeqClause    = seq_clause(vars: Maybe[StdVar]+, idx_var: Maybe[StdVar], src: Expr);
 type AndClause    = and_clause(left: Clause, right: Clause);
 type OrClause     = or_clause(left: Clause, right: Clause);
@@ -267,18 +282,26 @@ type AssertStmt     = assert_stmt(
                       );
 
 type FailStmt       = fail_stmt(env: [<StdVar, ImplArg>], file: String, line: NzNat);
-
 type SeqUpdateStmt  = seq_update_stmt(seq_var: StdVar, idx: Expr, value: Expr);
+type AssignmentStmt = assignment_stmt(vars: StdVar+, value: Expr);
+type PrintStmt      = print_stmt(Expr);
 
-type AtomicFnStmt   = assignment_stmt(vars: StdVar+, value: Expr),
-                      print_stmt(Expr),
-                      SeqUpdateStmt, AssertStmt, FailStmt;
+type AtomicFnStmt   = AssignmentStmt, PrintStmt, SeqUpdateStmt, AssertStmt, FailStmt;
 
-type AtomicUpdateStmt = send_msg_stmt(target: NestedDBVar, msg: Expr),
-                        try_update_stmt(name: UpdateSymbol, args: Expr*),
-                        set_memb_var_stmt(var: MembVar, value: Expr),
-                        delete_stmt(var: RelVar, fields: Maybe[Expr]+),
-                        insert_stmt(var: RelVar, fields: Expr+, force: Bool);
+type AtomicUpdateStmt = SendMsgStmt, TryUpdateStmt, SetMembVarStmt, DeleteStmt, InsertStmt, UpdateStmt;
+
+type SendMsgStmt    = send_msg_stmt(target: NestedDBVar, msg: Expr);
+type TryUpdateStmt  = try_update_stmt(name: UpdateSymbol, args: Expr*);
+type SetMembVarStmt = set_memb_var_stmt(var: MembVar, value: Expr);
+type DeleteStmt     = delete_stmt(var: RelVar, args: Maybe[Expr]+);
+type InsertStmt     = insert_stmt(var: RelVar, args: Expr+);
+type UpdateStmt     = update_stmt(var: RelVar, args: Expr+);
+
+type Iter           = CollValueIter, RelSubsetIter, RelVarIter;
+
+type CollValueIter  = coll_value_iter(vars: Maybe[StdVar]+, idx_var: StdVar?, src_expr: Expr);
+type RelSubsetIter  = rel_subset_iter(vars: Maybe[StdVar]+, src_expr: Expr, args: Maybe[Expr]+);
+type RelVarIter     = rel_var_iter(vars: Maybe[StdVar]+, rel_var: AnyRelVar, args: Maybe[Expr]+);
 
 type ProcCallStmt   = proc_call_stmt(res_var: StdVar?, proc_name: ProcSymbol, args: Expr*);
 
@@ -295,21 +318,15 @@ type CtrlStmt = SetInputCtrlStmt, ClearInputCtrlStmt, SetElapsedTimeCtrlStmt, Ap
 
 type JumpStmt = return_stmt(Expr), break_stmt, return_stmt;
 
-type IfStmt[T]      = if_stmt(cond: Expr, body: T+, else: T*);
-type LoopStmt[T]    = loop_stmt(T+);
-type ForeachStmt[T] = foreach_stmt(vars: StdVar+, idx_var: StdVar?, values: Expr, body: T+);
-type ForStmt[T]     = for_stmt(var: StdVar?, start_val: Expr, end_val: Expr, end_val_incl: Bool, body: T+);
-type LetStmt[T]     = let_stmt(asgnms: [ImplArg -> Expr], body: T+);
+type IfStmt      = if_stmt(cond: Expr, body: Statement+, else: Statement*);
+type LoopStmt    = loop_stmt(Statement+);
+type ForeachStmt = foreach_stmt(iter: Iter, body: Statement+);
+type ForStmt     = for_stmt(var: StdVar?, start_val: Expr, end_val: Expr, end_val_incl: Bool, body: Statement+);
+type LetStmt     = let_stmt(asgnms: [ImplArg -> Expr], body: Statement+);
 
-type CompositeStmt[T] = IfStmt[T], LoopStmt[T], ForeachStmt[T], ForStmt[T], LetStmt[T];
+type CompositeStmt = IfStmt, LoopStmt, ForeachStmt, ForStmt, LetStmt;
 
-type Statement  = AtomicFnStmt, AtomicUpdateStmt, ProcCallStmt, CtrlStmt, JumpStmt, CompositeStmt[Statement];
-
-type IfStmt       = IfStmt[Statement];
-type LoopStmt     = LoopStmt[Statement];
-type ForeachStmt  = ForeachStmt[Statement];
-type ForStmt      = ForStmt[Statement];
-type LetStmt      = LetStmt[Statement];
+type Statement  = AtomicFnStmt, AtomicUpdateStmt, ProcCallStmt, CtrlStmt, JumpStmt, CompositeStmt;
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -321,6 +338,17 @@ type Function   = function(
                     res_type:   NeType,
                     expr:       Expr,
                     constrs:    [FnSymbol -> [+ClsType]]
+                  );
+
+type AggrFunct  = aggr_funct(
+                    id:          AggrFnId,
+                    type:        NeType,
+                    elt_type:    NeType,
+                    elt_var:     StdVar,
+                    extra_args:  (StdVar, NeType)*,
+                    red_vars:    [StdVar -> (type: NeType, init_value: Expr, merge_op: (StdVar, StdVar, Expr))],
+                    null_value:  Expr,
+                    final_value: Expr
                   );
 
 type ProcSymbol = proc_symbol(Symbol);
@@ -390,23 +418,35 @@ type Handler  = handler(type: NeType, body: Statement*);
 
 ///////////////////////////////////////////////////////////////////////////////
 
-type Database   = data_base(
-                    name:       DBSymbol,
-                    links:      DBSymbol*,
-                    state_vars: [MembVar -> (type: NeType, init_value: Expr)],
-                    rel_vars:   [RelVar -> (signatures: [+NeType+], keys: [[+Nat]])], ## HOW TO ENFORCE THE FACT THAT ALL SIGNATURE MUST HAVE THE SAME ARITY?
-                    nested_dbs: [NestedDBVar -> DBSymbol],
-                    methods:    [Method],
-                    updates:    [Update],
-                    handlers:   [Handler]
+type ForeignKey = foreign_key(
+                    source_rel_var:   PhysRelVar,
+                    source_args:      Maybe[Symbol]+,
+                    target_rel_vars:  [+PhysRelVar],
+                    target_args:      Maybe[Symbol]+
                   );
+
+type Database = data_base(
+                  name:         DBSymbol,
+                  links:        DBSymbol*,
+                  state_vars:   [MembVar -> (type: NeType, init_value: Expr)],
+                  rel_vars:     [PhysRelVar -> RelVarInfo],
+                  attr_map:     [PhysRelVar, PhysRelVar],
+                  foreign_keys: [ForeignKey],
+                  nested_dbs:   [NestedDBVar -> DBSymbol],
+                  methods:      [Method],
+                  updates:      [Update],
+                  handlers:     [Handler]
+                );
+
+type RelVarInfo = (signature: NeType+, keys: [[+Nat]], symmetric: Bool);
 
 ///////////////////////////////////////////////////////////////////////////////
 
-type Program    = program(
-                    typedefs:     [TypeName -> NeType],
-                    fndefs:       [Function],
-                    proc_defs:    [Procedure],
-                    auto_defs:    [Automaton],
-                    data_bases:   [Database]
-                  );
+type Program  = program(
+                  typedefs:     [TypeName -> NeType],
+                  fndefs:       [Function],
+                  proc_defs:    [Procedure],
+                  aggr_fn_defs: [AggrFunct],
+                  auto_defs:    [Automaton],
+                  data_bases:   [Database]
+                );

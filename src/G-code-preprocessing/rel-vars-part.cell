@@ -1,0 +1,39 @@
+implicit program : Program, typedefs : [TypeName -> NeType] {
+  Program post_rel_vars_part_prg =
+    program(
+      typedefs:     program.typedefs,
+      fndefs:       program.fndefs,
+      proc_defs:    program.proc_defs,
+      aggr_fn_defs: program.aggr_fn_defs,
+      auto_defs:    program.auto_defs,
+      data_bases:   [partition_rel_vars(a) : a <- program.data_bases]
+    );
+
+
+  Database partition_rel_vars(Database rel_auto) {
+    sgns = [v -> info.signature : v, info <- rel_auto.rel_vars];
+    keys = [logical_rel_var(v) -> info.keys : v, info <- rel_auto.rel_vars];
+    res = try_to_split(sgns, rel_auto.foreign_keys, keys);
+    fail if not succeeded(res);
+    rel_vars_sgns, foreign_keys = get_result(res);
+    rel_vars = [
+      v -> (
+        signature: s,
+        keys:      rel_var_keys(rel_auto, lv),
+        symmetric: rel_var_is_symmetric(rel_auto, lv)
+      ) : v, s <- rel_vars_sgns, lv = logical_rel_var(v)
+    ];
+    return data_base(
+      name:         rel_auto.name,
+      links:        rel_auto.links,
+      state_vars:   rel_auto.state_vars,
+      rel_vars:     rel_vars,
+      attr_map:     rel_auto.attr_map,
+      foreign_keys: foreign_keys,
+      nested_dbs:   rel_auto.nested_dbs,
+      methods:      rel_auto.methods,
+      updates:      rel_auto.updates,
+      handlers:     rel_auto.handlers
+    );
+  }
+}

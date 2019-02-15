@@ -1,0 +1,121 @@
+implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automaton, options : CompOptions {
+  Instr+ safe_eval_code(Expr expr, <SignalVar, LocVar> target_var, VarGen var_gen) =
+    and_expr()    = and_expr_safe_eval_code(expr, target_var, var_gen),
+    or_expr()     = or_expr_safe_eval_code(expr, target_var, var_gen),
+    _             = default_safe_eval_code(expr, target_var, var_gen);
+
+
+  Instr+ and_expr_safe_eval_code(AndExpr expr, <SignalVar, LocVar> target_var, VarGen var_gen) {
+    left_tmp_var, next_var_gen = next_obj_var(var_gen);
+    right_tmp_var, next_var_gen = next_obj_var(next_var_gen);
+
+    left_eval_code = safe_eval_code(expr.left, left_tmp_var, next_var_gen);
+    right_eval_code = safe_eval_code(expr.right, right_tmp_var, next_var_gen);
+
+    // If the left term is false, there's no need to compute the right value
+    if_false_code = (set_var(target_var, obj_false));
+    // If the left term is true, the right one decides the final value
+    if_true_code = (set_var(target_var, right_tmp_var));
+    // If the left term is undefined, then we need to check the value of the right term
+    if_undef_code = (branch(is_false(right_tmp_var), (set_var(target_var, obj_false)), (make_var_undef(target_var))));
+    // true + undefined cases, they both require the evaluation of the right term
+    if_not_false_code = (right_eval_code | branch(is_true(left_tmp_var), if_true_code, if_undef_code));
+    // Putting it all together
+    return (left_eval_code | branch(is_false(left_tmp_var), if_false_code, if_not_false_code));
+  }
+
+
+  Instr+ or_expr_safe_eval_code(OrExpr expr, <SignalVar, LocVar> target_var, VarGen var_gen) {
+    left_tmp_var, next_var_gen = next_obj_var(var_gen);
+    right_tmp_var, next_var_gen = next_obj_var(next_var_gen);
+
+    left_eval_code = safe_eval_code(expr.left, left_tmp_var, next_var_gen);
+    right_eval_code = safe_eval_code(expr.right, right_tmp_var, next_var_gen);
+
+    // If the left term is true, there's no need to compute the right value
+    if_true_code = (set_var(target_var, obj_true));
+    // If the left term is false, the right one decides the final value
+    if_false_code = (set_var(target_var, right_tmp_var));
+    // If the left term is undefined, then we need to check the value of the right term
+    if_undef_code = (branch(is_true(right_tmp_var), (set_var(target_var, obj_true)), (make_var_undef(target_var))));
+    // false + undefined cases, they both require the evaluation of the right term
+    if_not_true_code = (right_eval_code | branch(is_false(left_tmp_var), if_false_code, if_undef_code));
+    // Putting it all together
+    return (left_eval_code | branch(is_true(left_tmp_var), if_true_code, if_not_true_code));
+  }
+
+
+  Instr+ default_safe_eval_code(Expr expr, <SignalVar, LocVar> target_var, VarGen var_gen) {
+    let context = automaton, typed_vars = [], surrogates = []:
+      eval_code, expr_surr, unused_var = opt_eval_code(expr, react_auto_env, var_gen);
+      eval_code = (eval_code | set_var(target_var, expr_surr));
+    ;
+    vars_to_safeguard = vars_that_may_be_null(expr);
+    if vars_to_safeguard != []:
+      cond = and((is_not_null(v) : v <- rand_sort(vars_to_safeguard)));
+      eval_code = (branch(cond, eval_code, (make_var_undef(target_var))));
+    ;
+    return eval_code;
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+Nat* trigger_times_table(BasicTimeExpr time_expr) {
+  trigger_times = trigger_times(time_expr);
+  assert trigger_times != ();
+  interval_lengths = (nz_nat(t - if i == 0 then 0 else trigger_times(i-1)) : t @ i <- trigger_times);
+  return (interval_lengths | 0); ## DO I REALLY NEED TO ADD THAT 0 AT THE END?
+}
+
+
+Nat* trigger_times_table(CyclicTimeExpr time_expr) {
+  trigger_times = trigger_times(time_expr);
+  return () if trigger_times == ();
+  interval_lengths = (nz_nat(t - if i == 0 then 0 else trigger_times(i-1)) : t @ i <- trigger_times);
+  count = |trigger_times|;
+  if mod(count, 2) != 0:
+    head_seq = interval_lengths;
+    tail_elem = nat(time_expr.nanosecs - last(trigger_times));
+  else
+    head_seq = tail(interval_lengths);
+    tail_elem = nat(time_expr.nanosecs - last(trigger_times) + head(interval_lengths));
+  ;
+  return (head_seq | tail_elem);
+}
+
+
+IntConst time_slot_length(BasicTimeExpr time_expr, AutoSymbol auto_name, Atom expr_id, IntExpr time_slot_expr) =
+  time_slot_length(auto_name, expr_id, time_slot_expr);
+
+
+IntConst time_slot_length(CyclicTimeExpr time_expr, AutoSymbol auto_name, Atom expr_id, IntExpr time_slot_expr) {
+  trigger_times = trigger_times(time_expr);
+  assert trigger_times != ();
+  fail if trigger_times == ();
+  count = |trigger_times|;
+  if mod(count, 2) != 0:
+    final_time_slot_expr = mod_op(time_slot_expr, count + 1);
+  else
+    final_time_slot_expr = mod_op(sub(time_slot_expr, 1), count);
+  ;
+  return time_slot_length(auto_name, expr_id, final_time_slot_expr);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+## THIS FUNCTION HAS A REALLY STRANGE NAME. SHOULDN'T IT BE THE OPPOSITE?
+[<SignalVar, PrevVarValue>] vars_that_may_be_null(Expr expr) {
+  ## BUG BUG BUG: THIS IS WRONG. VARIABLES IN is-def EXPRESSIONS SHOULD NOT BE COUNTED HERE
+  vs = extern_vars(expr);
+  return [v : v <- vs, v :: <SignalVar, PrevVarValue>];
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+[AnySignalVar] signals_whose_old_value_is_used(Expr expr) =
+  prev_var_value(v?)  = [v],
+  _                   = retrieve_from_nested_exprs(expr, signals_whose_old_value_is_used);

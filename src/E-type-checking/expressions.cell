@@ -54,6 +54,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
       cls_call()          = seq_union((typecheck(e, t, env) : e, t <- zip(expr.args, closures[expr.name].in_types))),
       builtin_call()      = pre_typecheck_builtin_call(expr.name, expr.args, env),
       size_expr()         = typecheck(expr.coll, type_coll, env),
+      rel_var_size_expr() = pre_typecheck_rel_var_size_expr(expr.rel_var, expr.args, env),
       unary_pseudo_call() = pre_typecheck_unary_pseudo_call(expr.target, expr.arg, env),
       rel_memb_test()     = pre_typecheck_rel_memb_test(expr.rel, expr.args, env),
       rel_lookup()        = pre_typecheck_rel_lookup(expr, env),
@@ -64,9 +65,9 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
       not_expr(e?)        = typecheck(e, type_bool, env),
       eq()                = pre_typecheck_eq_expr(expr.left, expr.right, env),
       membership()        = pre_typecheck_membership(expr.obj, expr.type, env),
-      cast_expr()         = pre_typecheck_cast_expr(expr.expr, expr.type, env),
       accessor()          = pre_typecheck_accessor_expr(expr.expr, expr.field, env),
       accessor_test()     = typecheck(expr.expr, type_dot_access_target, env),
+      aggr_fn_call()      = pre_typecheck_aggr_fn_call(expr, env),
       auto_method_call()  = fully_typecheck_auto_method_call(expr, exp_type, env),
       db_method_call()    = fully_typecheck_db_method_call(expr, exp_type, env),
       if_expr()           = fully_typecheck_if_expr(expr.cond, expr.then, expr.else, exp_type, env),
@@ -81,6 +82,32 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
       range_comp()        = pre_typecheck_range_comp_expr(expr, env),
       output_is_def()     = [],
       output_is_set()     = [];
+  }
+
+
+  [TypeCheckingError] pre_typecheck_aggr_fn_call(AggrFnCallExpr expr, [EnvVar -> Type] env) {
+    equiv_clause = expr.clause;
+    equiv_clause = and_clause(equiv_clause, filter_clause(expr.cond)) if expr.cond?;
+    errs = typecheck(equiv_clause, env);
+    return errs if errs != [];
+
+    iter_tree = full_iter_tree(equiv_clause, env);
+    errs = pre_typecheck(iter_tree, expr.expr);
+    return errs if errs != [];
+
+    errs = seq_union((typecheck(e, type_any, env) : e <- expr.extra_args));
+    return errs if errs != [];
+
+    elt_type = elt_type(iter_tree, expr.expr);
+    aggr_fns = aggr_functs(expr.fn_id, |expr.extra_args|);
+    for f <- isort(aggr_fns):
+      if is_subset(elt_type, f.elt_type):
+        return union([typecheck(e, right(f.extra_args(i)), env) : e @ i <~ expr.extra_args]);
+      ;
+    ;
+
+    extra_args_types = (expr_type(e, env) : e <- expr.extra_args);
+    return [no_disp_aggr_fn_found(expr.fn_id, [signature(f) : f <- aggr_fns], elt_type, extra_args_types)];
   }
 
 
@@ -224,34 +251,36 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
 
   [TypeCheckingError] pre_typecheck_rel_lookup(RelLookup expr, [EnvVar -> Type] env) {
-    args = expr.set_args;
-    return typecheck(expr.rel, type_set, env) if args == ();
-    return match(args)
-      (a?)        = pre_typecheck(expr.rel, a, expr.unknown_arg_idx, env),
-      (a1?, a2?)  = pre_typecheck(expr.rel, a1, a2, expr.unknown_arg_idx, env);
+    return match (expr.args)
+      (nothing)           = typecheck(expr.rel, type_set, env),
+      (just(a?), nothing) = pre_typecheck(expr.rel, a, 0, env),
+      (nothing, just(a?)) = pre_typecheck(expr.rel, a, 1, env),
+      (_, _, _)           = pre_typecheck(expr.rel, expr.args, env);
 
 
-    [TypeCheckingError] pre_typecheck(Expr rel, Expr known_arg, Nat unknown_arg_idx, [EnvVar -> Type] env) {
+    [TypeCheckingError] pre_typecheck(Expr rel, Expr set_arg, Nat set_arg_idx, [EnvVar -> Type] env) {
       errs = typecheck(rel, type_bin_rel, env);
       return errs if errs != [];
       rel_type = expr_type(rel, env);
-      assert unknown_arg_idx == 0 or unknown_arg_idx == 1;
-      known_arg_idx = if unknown_arg_idx == 0 then 1 else 0;
-      exp_arg_type = bin_rel_arg_supertype(rel_type, known_arg_idx);
-      return typecheck(known_arg, exp_arg_type, env);
+      fail if not set_arg_idx :: Bit;
+      exp_arg_type = bin_rel_arg_supertype(rel_type, set_arg_idx);
+      errs = typecheck(set_arg, exp_arg_type, env);
+      if errs != [] and typecheck(set_arg, type_any, env) == []:
+        set_arg_type = expr_type(set_arg, env);
+        if not are_ptype_disjoint(set_arg_type, exp_arg_type):
+          return [lookup_key_may_overlap_but_is_not_subset(rel, rel_type, set_arg, set_arg_idx, set_arg_type)];
+        ;
+      ;
+      return errs;
     }
 
 
-    [TypeCheckingError] pre_typecheck(Expr rel, Expr known_arg_1, Expr known_arg_2, Nat unknown_arg_idx, [EnvVar -> Type] env) {
+    [TypeCheckingError] pre_typecheck(Expr rel, Maybe[Expr]+ args, [EnvVar -> Type] env) {
       errs = typecheck(rel, type_tern_rel, env);
       return errs if errs != [];
       rel_type = expr_type(rel, env);
-      assert unknown_arg_idx :: <0..2>;
-      arg_1_idx = if unknown_arg_idx == 0 then 1 else 0;
-      arg_2_idx = if unknown_arg_idx == 2 then 1 else 2;
-      exp_arg_1_type = tern_rel_arg_supertype(rel_type, arg_1_idx);
-      exp_arg_2_type = tern_rel_arg_supertype(rel_type, arg_2_idx);
-      return typecheck(known_arg_1, exp_arg_1_type, env) & typecheck(known_arg_2, exp_arg_2_type, env);
+      exp_args_types = tern_rel_args_supertypes(rel_type);
+      return union([typecheck(value(a), exp_args_types(i), env) : a @ i <~ args, a != nothing]);
     }
   }
 
@@ -272,20 +301,23 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   }
 
 
+  [TypeCheckingError] pre_typecheck_rel_var_size_expr(AnyRelVar rel_var, Maybe[Expr]+ args, [EnvVar -> Type] env) {
+    return pre_typecheck_relvar_memb_test(rel_var, args, env); ## BAD BAD BAD
+  }
+
+
   [TypeCheckingError] pre_typecheck_relvar_lookup(RelVarLookup expr, [EnvVar -> Type] env) {
-    errs = seq_union((typecheck(a, type_any, env) : a <- expr.set_args));
+    errs = union([typecheck(value(a), type_any, env) : a <~ expr.args, a != nothing]);
     return errs if errs != [];
-    set_args_types = (expr_type(a, env) : a <- expr.set_args);
+    args_types = (apply(a, expr_type($, env)) : a <- expr.args);
     sgns = relvar_signatures(expr.rel_var);
-    target_idx = expr.unknown_arg_idx;
     for s <- rand_sort(sgns):
-      return [] if not (t @ i <~ set_args_types : not is_subset(t, s(i + bit(i >= target_idx))));
+      return [] if not (t @ i <~ args_types : t != nothing and not is_subset(value(t), s(i)));
     ;
     agg_sgns = aggregated_relation_signatures(sgns); ## BAD BAD BAD: AGGREGATED SIGNATURES SHOULD BE CACHED
     for s <- rand_sort(agg_sgns):
-      return [] if not (t @ i <~ set_args_types : not is_subset(t, s(i + bit(i >= target_idx))));
+      return [] if not (t @ i <~ args_types : t != nothing and not is_subset(value(t), s(i)));
     ;
-    args_types = insert((just(t) : t <- set_args_types), target_idx, nothing);
     return [no_matching_relvar(expr.rel_var, args_types, sgns)];
   }
 
@@ -330,16 +362,6 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     // No error is produced if the expression is never evaluated, i.e. the actual type is empty
     always_false = actual_type != empty_type and are_ptype_disjoint(actual_type, type);
     return [expression_can_never_belong_to_type(actual_type, type) if always_false];
-  }
-
-
-  [TypeCheckingError] pre_typecheck_cast_expr(Expr expr, NeType type, [EnvVar -> Type] env) {
-    errs = typecheck(expr, type_any, env);
-    return errs if errs != [];
-    actual_type = expr_type(expr, env);
-    // No error is produced if the expression is never evaluated, i.e. the actual type is empty
-    never_succeeds = actual_type != empty_type and are_ptype_disjoint(actual_type, type);
-    return [expression_can_never_belong_to_type(actual_type, type) if never_succeeds];
   }
 
 
@@ -438,14 +460,6 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     return errs if errs != [];
     iter_tree = full_iter_tree(source, env);
     return seq_union((pre_typecheck(iter_tree, e) : e <- exprs));
-
-
-    [TypeCheckingError] pre_typecheck(IterTree tree, Expr expr) =
-      never         = [], ## CAN WE DO BETTER HERE?
-      once(e?)      = typecheck(expr, type_any, e),
-      repeated(t?)  = pre_typecheck(t, expr),
-      any(ts?)      = union([pre_typecheck(t, expr) : t <- ts]),
-      all(ts?)      = seq_union((pre_typecheck(t, expr) : t <- ts));
   }
 
 
@@ -485,4 +499,13 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
     return typecheck(expr.expr, type_any, new_env);
   }
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  [TypeCheckingError] pre_typecheck(IterTree tree, Expr expr) =
+    never         = [], ## CAN WE DO BETTER HERE?
+    once(e?)      = typecheck(expr, type_any, e),
+    repeated(t?)  = pre_typecheck(t, expr),
+    any(ts?)      = union([pre_typecheck(t, expr) : t <- ts]),
+    all(ts?)      = seq_union((pre_typecheck(t, expr) : t <- ts));
 }

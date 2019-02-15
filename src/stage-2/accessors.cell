@@ -1,0 +1,124 @@
+type Context = null_context, Function, Procedure, Automaton, Database, LambdaCtx;
+
+type LambdaCtx  = lambda_ctx(
+                    var_subst_map     : [StdVar -> CaptVar],
+                    cls_var_subst_map : [ClsVar -> CaptClsVar],
+                    parent            : Context,
+                    rel_auto          : Database? ## THIS IS PROBABLY REDUNDANT NOW...
+                  );
+
+////////////////////////////////////////////////////////////////////////////////
+
+implicit context : Context {
+  Context lambda_ctx([StdVar -> CaptVar] vs, [ClsVar -> CaptClsVar] cs) =
+    match (context)
+      null_context    |
+      function()      |
+      procedure()     |
+      automaton()     = lambda_ctx(var_subst_map: vs, cls_var_subst_map: cs, parent: context),
+      data_base()     = lambda_ctx(var_subst_map: vs, cls_var_subst_map: cs, parent: context, rel_auto: context),
+      lambda_ctx()    = lambda_ctx(
+                          var_subst_map:      vs,
+                          cls_var_subst_map:  cs,
+                          parent:             context,
+                          rel_auto:           context.rel_auto if context.rel_auto?
+                        );
+
+  [StdVar -> CaptVar] var_subst_map =
+    match (context)
+      lambda_ctx()  = context.var_subst_map,
+      _             = [];
+
+  [ClsVar -> CaptClsVar] cls_var_subst_map =
+    match (context)
+      lambda_ctx()  = context.cls_var_subst_map,
+      _             = [];
+
+  AnyTableVar substitute(TableVar var) =
+    match (context)
+      lambda_ctx()  = capt_table_var(var),
+      _             = var;
+
+  QualTableVar substitute(QualTableVar var) = var;
+
+  AnyValueStoreId substitute(ValueStoreId id) =
+    match (context)
+      lambda_ctx()  = capt_value_store_id(id),
+      _             = id;
+
+  NestedValueStoreId substitute(NestedValueStoreId id) = id;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+implicit program : Program, typedefs : [TypeName -> NeType] {
+  [FnFamilyId -> SgnSet] signatures {
+    signatures = merge_values([[family_id(fd.id) -> signature(fd)] : fd <- program.fndefs]);
+    return [id -> preprocess_signatures(ss) : id, ss <- signatures];
+  }
+
+
+  [+AggrFunct] aggr_functs(PlainAggrFnId id, Nat extra_arity) {
+    return nonempty([f : f <- aggr_functs(id, extra_arity, ?)]);
+
+    [PlainAggrFnId, Nat, AggrFunct] aggr_functs =
+      [plain_id(f.id), |f.extra_args|, f : f <- program.aggr_fn_defs];
+  }
+
+
+  (NeType*, Maybe[NeType]) procedure_signature(ProcSymbol name) {
+    if builtin_procedures_signatures(name, *):
+      return builtin_procedures_signatures[name];
+    else
+      proc = procs_by_name[name];
+      return ((a.type : a <- proc.args), proc.res_type);
+    ;
+
+    [ProcSymbol -> Procedure] procs_by_name = [p.id -> p : p <- program.proc_defs];
+  }
+
+
+  SgnSet method_signatures(<AutoSymbol, DBSymbol> type, MethodSymbol name, Nat arity) {
+    return signatures[type][(name, arity)];
+
+    [<AutoSymbol, DBSymbol> -> [(MethodSymbol, Nat) -> SgnSet]] signatures = [
+        auto_or_db.name -> {
+          sgns = merge_values([[(m.name, |m.args|) -> signature(m)] : m <- auto_or_db.methods]);
+          return [n -> preprocess_signatures(ss) : n, ss <- sgns];
+        }
+      : auto_or_db <- program.auto_defs | auto_or_db <- program.data_bases
+    ];
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+implicit program : Program, context : Context {
+  [ClsVar -> ClsType] closures = closures(context);
+
+
+  [PlainFnFamilyId -> [+ClsType]] constraints =
+    match (context)
+      function()  = merge_values([[fn_family_id(n, arity(s)) -> s] : n, ss <- context.constrs, s <- ss]),
+      _           = [];
+}
+
+
+[ClsVar -> ClsType] closures(Context context) =
+  function()      = [v -> t : v, t <~ context.cls_args],
+  lambda_ctx()    = closures(context.parent),
+  _               = [];
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+implicit program : Program {
+  [TypeName -> NeType] schema_and_typedefs {
+    schema_typedefs = [type_name(schema_type_symbol(bare_id(db.name)), 0) -> state_type(db) : db <- program.data_bases];
+    return program.typedefs & schema_typedefs;
+  }
+
+  Int+* int_seqs = rand_sort(retrieve_nested_int_seqs(program));
+
+  [Int+ -> Nat] int_seqs_ids = merge(([s -> i] : s @ i <- int_seqs));
+}

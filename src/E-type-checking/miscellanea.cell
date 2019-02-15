@@ -36,6 +36,14 @@ implicit typedefs : [TypeName -> NeType] {
     are_disjoint(pseudotype(t1, typedefs), pseudotype(t2, typedefs));
 
 
+  Bool are_ptype_disjoint(NeType+ ts1, NeType+ ts2) {
+    assert |ts1| == |ts2|;
+    for t @ i <- ts1:
+      return true if are_ptype_disjoint(t, ts2(i));
+    ;
+    return false;
+  }
+
   // ## FIND BETTER NAME
   // Bool unsafe_is_eq(AnyType t1, AnyType t2):
   //   Type,     Type      = is_eq(t1, t2),
@@ -157,22 +165,23 @@ AnyClsExpr rewrite_cls_expr(AnyClsExpr expr) =
 NeType state_type(Database db) {
   state_vars = [bare_id(v) -> info.type : v, info <- db.state_vars];
   nested_dbs = [bare_id(v) -> type_ref(schema_type_symbol(bare_id(t))) : v, t <- db.nested_dbs];
+
   rel_vars = [bare_id(v) -> {
-      sgns = info.signatures;
-      arity = only([|s| : s <- sgns]);
-      if arity == 1:
-        assert sgns :: [+(NeType)];
-        elem_type = ne_union_superset([only_unsafe(s) : s <- sgns]);
-        return type_set(elem_type);
-      elif arity == 2:
-        fail if not sgns :: [+(NeType, NeType)];
-        return type_bin_rel(sgns, false);
-      else
-        fail if not sgns :: [+(NeType, NeType, NeType)];
-        return type_tern_rel(sgns, false);
-      ;
-    } : v, info <- db.rel_vars
-  ];
+    sgns = rel_var_signatures(db, v);
+    arity = only([|s| : s <- sgns]);
+    if arity == 1:
+      assert sgns :: [+(NeType)];
+      elem_type = ne_union_superset([only_unsafe(s) : s <- sgns]);
+      return type_set(elem_type);
+    elif arity == 2:
+      fail if not sgns :: [+(NeType, NeType)];
+      return type_bin_rel(sgns, false);
+    else
+      fail if not sgns :: [+(NeType, NeType, NeType)];
+      return type_tern_rel(sgns, false);
+    ;
+  } : v <- [logical_rel_var(v) : v, unused_var <- db.rel_vars]];
+
   fields = [object(f) -> (type: t, optional: false) : f, t <- state_vars | f, t <- nested_dbs | f, t <- rel_vars];
   return if fields != [] then ne_record_type(fields) else empty_rel_type;
 }

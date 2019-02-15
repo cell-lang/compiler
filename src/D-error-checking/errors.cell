@@ -1,4 +1,4 @@
-type SgnDecl = Function, Method, Update, Handler;
+type SgnDecl = Function, AggrFunct, Method, Update, Handler;
 
 type AnyAuto = Database, Automaton;
 
@@ -7,6 +7,15 @@ type AnyReactAutoVar = SignalVar, NestedAutoVar, NestedDBVar;
 type CoreWFError  = error_cluster(AnyAuto, [+CoreWFError]),
                     recursively_defined_auto_or_db(AnyAuto),
                     overlapping_signatures(SgnDecl, SgnDecl),
+                    multiple_rel_var_arities(rel_var: RelVar, arities: [+Nat]),
+                    differing_keys_in_poly_rel_var(rel_var: RelVar, keys1: [[+Nat]], keys2: [[+Nat]]),
+                    overlapping_rel_var_signatures(rel_var: RelVar, signatures: (NeType+, NeType+)),
+                    overlapping_rel_var_key_subsignatures(rel_var: RelVar, signatures: (NeType+, NeType+), key: [+Nat]),
+                    no_signature_match(key: ForeignKey, rel_var: RelVar, signatures: [+NeType+], args: Maybe[NeType]+),
+                    multiple_signature_matches(key: ForeignKey, rel_var: RelVar, signatures: [+NeType+], args: Maybe[NeType]+),
+                    no_exact_signature_match(key: ForeignKey, rel_var: RelVar, signature: NeType+, args: Maybe[NeType]+),
+                    unsupported_foreign_key_type(key: ForeignKey),
+                    foreign_key_symmetry_mismatch(key: ForeignKey, src_is_sym: Bool),
                     dependency_loop(signal: AnyReactAutoVar, deps: [AnyReactAutoVar]),
                     invalid_auto_var(var: Var, signal: SignalVar, expr: <Expr, TimeRule>),
                     invalid_nested_auto_input_var(var: Var, auto_id: NestedAutoVar, input_id: Atom, expr: Expr),
@@ -16,13 +25,24 @@ type CoreWFError  = error_cluster(AnyAuto, [+CoreWFError]),
                     invalid_input(var: NestedAutoVar, type: AutoSymbol, input: Atom),
                     undefined_input(var: NestedAutoVar, type: AutoSymbol, input: Atom),
                     continous_expr_for_discrete_input(var: NestedAutoVar, input: Atom),
-                    non_nested_self_ref(type: TypeName);
+                    non_nested_self_ref(type: TypeName),
+                    unspecified_foreign_key_error(key: ForeignKey),
+                    unpartitionable_foreign_key(key: ForeignKey);
 
 ////////////////////////////////////////////////////////////////////////////////
 
 CoreWFError error_cluster(AnyAuto db, [+CoreWFError] es) = :error_cluster(db, es);
 CoreWFError recursively_defined_auto_or_db(AnyAuto db) = :recursively_defined_auto_or_db(db);
 CoreWFError overlapping_signatures(SgnDecl f1, SgnDecl f2) = :overlapping_signatures(f1, f2);
+CoreWFError multiple_rel_var_arities(RelVar v, [+Nat] as) = multiple_rel_var_arities(rel_var: v, arities: as);
+CoreWFError differing_keys_in_poly_rel_var(RelVar v, [[+Nat]] ks1, [[+Nat]] ks2) = differing_keys_in_poly_rel_var(rel_var: v, keys1: ks1, keys2: ks2);
+CoreWFError overlapping_rel_var_signatures(RelVar v, NeType+ s1, NeType+ s2) = overlapping_rel_var_signatures(rel_var: v, signatures: (s1, s2));
+CoreWFError overlapping_rel_var_key_subsignatures(RelVar v, (NeType+, NeType+) ss, [+Nat] k) = overlapping_rel_var_key_subsignatures(rel_var: v, signatures: ss, key: k);
+CoreWFError no_signature_match(ForeignKey k, RelVar v, [+NeType+] ss, Maybe[NeType]+ as) = no_signature_match(key: k, rel_var: v, signatures: ss, args: as);
+CoreWFError multiple_signature_matches(ForeignKey k, RelVar v, [+NeType+] ss, Maybe[NeType]+ as) = multiple_signature_matches(key: k, rel_var: v, signatures: ss, args: as);
+CoreWFError no_exact_signature_match(ForeignKey k, RelVar v, NeType+ s, Maybe[NeType]+ as) = no_exact_signature_match(key: k, rel_var: v, signature: s, args: as);
+CoreWFError unsupported_foreign_key_type(ForeignKey k) = unsupported_foreign_key_type(key: k);
+CoreWFError foreign_key_symmetry_mismatch(ForeignKey k, Bool s) = foreign_key_symmetry_mismatch(key: k, src_is_sym: s);
 CoreWFError invalid_auto_var(Var v, SignalVar s, <Expr, TimeRule> e) = invalid_auto_var(var: v, signal: s, expr: e);
 CoreWFError dependency_loop(AnyReactAutoVar s, [+AnyReactAutoVar] ds) = dependency_loop(signal: s, deps: ds);
 CoreWFError invalid_nested_auto_input_var(Var v, NestedAutoVar a, Atom i, Expr e) = invalid_nested_auto_input_var(var: v, auto_id: a, input_id: i, expr: e);
@@ -33,6 +53,8 @@ CoreWFError invalid_input(NestedAutoVar v, AutoSymbol t, Atom i) = invalid_input
 CoreWFError undefined_input(NestedAutoVar v, AutoSymbol t, Atom i) = undefined_input(var: v, type: t, input: i);
 CoreWFError continous_expr_for_discrete_input(NestedAutoVar v, Atom i) = continous_expr_for_discrete_input(var: v, input: i);
 CoreWFError non_nested_self_ref(TypeName t) = non_nested_self_ref(type: t);
+CoreWFError unspecified_foreign_key_error(ForeignKey key) = unspecified_foreign_key_error(key: key);
+CoreWFError unpartitionable_foreign_key(ForeignKey key) = unpartitionable_foreign_key(key: key);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -40,6 +62,15 @@ String* error_message(CoreWFError err) =
   error_cluster(db?, es?)             = error_cluster_error_message(db, es),
   recursively_defined_auto_or_db(db?) = recursively_defined_auto_or_db_error_message(db),
   overlapping_signatures(f1?, f2?)    = overlapping_signatures_error_message(f1, f2),
+  multiple_rel_var_arities()          = multiple_rel_var_arities_error_message(err.rel_var, err.arities),
+  differing_keys_in_poly_rel_var()    = differing_keys_in_poly_rel_var_error_message(err.rel_var, err.keys1, err.keys2),
+  overlapping_rel_var_signatures()    = overlapping_rel_var_signatures_error_message(err.rel_var, err.signatures),
+  overlapping_rel_var_key_subsignatures() = overlapping_rel_var_key_subsignatures_error_message(err.rel_var, err.signatures, err.key),
+  no_signature_match()                = no_signature_match_error_message(err.key, err.rel_var, err.signatures, err.args),
+  multiple_signature_matches()        = multiple_signature_matches_error_message(err.key, err.rel_var, err.signatures, err.args),
+  no_exact_signature_match()          = no_exact_signature_match_error_message(err.key, err.rel_var, err.signature, err.args),
+  unsupported_foreign_key_type()      = unsupported_foreign_key_type_error_message(err.key),
+  foreign_key_symmetry_mismatch()     = foreign_key_symmetry_mismatch_error_message(err.key, err.src_is_sym),
   dependency_loop()                   = dependency_loop_error_message(err.signal, err.deps),
   invalid_auto_var()                  = invalid_auto_var_error_message(err.var, err.signal, err.expr),
   invalid_nested_auto_input_var()     = invalid_nested_auto_input_var_error_message(err.var, err.auto_id, err.input_id, err.expr),
@@ -49,7 +80,9 @@ String* error_message(CoreWFError err) =
   invalid_input()                     = invalid_input_error_message(err.var, err.type, err.input),
   undefined_input()                   = undefined_input_error_message(err.var, err.type, err.input),
   continous_expr_for_discrete_input() = continous_expr_for_discrete_input_error_message(err.var, err.input),
-  non_nested_self_ref()               = non_nested_self_ref_error_message(err.type);
+  non_nested_self_ref()               = non_nested_self_ref_error_message(err.type),
+  unspecified_foreign_key_error()     = unspecified_foreign_key_error_error_message(err.key),
+  unpartitionable_foreign_key()       = unpartitionable_foreign_key_error_message(err.key);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -58,6 +91,77 @@ String* overlapping_signatures_error_message(SgnDecl d1, SgnDecl d2) = (
   "    " & source_code_location_string(source_code_location(d1)),
   "    " & source_code_location_string(source_code_location(d2))
 );
+
+
+String* multiple_rel_var_arities_error_message(RelVar rel_var, [+Nat] arities) = (
+  "Polymorphic relation variables " & user_repr(rel_var) & " have different arities: "
+                                          & append((printed(a) : a <- isort(arities)))
+);
+
+
+String* differing_keys_in_poly_rel_var_error_message(RelVar rel_var, [[+Nat]] keys1, [[+Nat]] keys2) = (
+  "Polymorphic relation variables " & user_repr(rel_var) & " have different keys: " &
+  append((append((_print_(i) : i <- isort(k)), ":") : k <- isort(keys1)), ", ") & " and " &
+  append((append((_print_(i) : i <- isort(k)), ":") : k <- isort(keys2)), ", ")
+);
+
+
+String* overlapping_rel_var_signatures_error_message(RelVar rel_var, (NeType+, NeType+) signatures) = (
+  "Some signatures of polymorphic relation variable " & user_repr(rel_var) & " overlap:",
+  "    " & append((user_repr(t) : t <- left(signatures)), ", "),
+  "    " & append((user_repr(t) : t <- right(signatures)), ", ")
+);
+
+
+String* overlapping_rel_var_key_subsignatures_error_message(RelVar rel_var, (NeType+, NeType+) signatures, [+Nat] key) = (
+  "Signatures of polymorphic relation variable " & user_repr(rel_var) & " overlap when projected over key: " &
+    append((_print_(i) : i <- isort(key)), ":"),
+  "    " & append((user_repr(t) : t <- left(signatures)), ", "),
+  "    " & append((user_repr(t) : t <- right(signatures)), ", ")
+);
+
+
+String* no_signature_match_error_message(ForeignKey key, RelVar rel_var, [+NeType+] signatures, Maybe[NeType]+ args) = (
+  "Foreign key does not match any signature of " & user_repr(rel_var),
+  "    " & user_repr(key),
+  "Available signatures:"
+) & ("    " & append((user_repr(t) : t <- s), ", ") : s <- isort(signatures)) & (
+  "Arguments types: " & append((if a != nothing then user_repr(value(a)) else "_" : a <- args), ", "),
+);
+
+
+String* multiple_signature_matches_error_message(ForeignKey key, RelVar rel_var, [+NeType+] signatures, Maybe[NeType]+ args) = (
+  "Foreign key matches multiple signatures of " & user_repr(rel_var),
+  "    " & user_repr(key),
+  "Available signatures:"
+) & ("    " & append((user_repr(t) : t <- s), ", ") : s <- isort(signatures)) & (
+  "Arguments types: " & append((if a != nothing then user_repr(value(a)) else "_" : a <- args), ", "),
+);
+
+
+String* no_exact_signature_match_error_message(ForeignKey key, RelVar rel_var, NeType+ signature, Maybe[NeType]+ args) = (
+  "Foreign key does not match exactly any signature for " & user_repr(rel_var),
+  "    " & user_repr(key),
+  "  Signature:       " & append((user_repr(t) : t <- signature), ", "),
+  "  Arguments types: " & append((if a != nothing then user_repr(value(a)) else "_" : a <- args), ", ")
+);
+
+
+String* unsupported_foreign_key_type_error_message(ForeignKey key) = (
+  "Unsupported foreign key type: " & user_repr(key)
+);
+
+
+String* foreign_key_symmetry_mismatch_error_message(ForeignKey key, Bool src_is_sym) {
+  src_neg = if src_is_sym then "" else "not ";
+  tgt_neg = if src_is_sym then " not" else "";
+  src_repr = user_repr(key.source_rel_var);
+  tgt_repr = user_repr(an_elem(key.target_rel_vars));
+  return (
+    "Unsupported foreign key type: " & user_repr(key),
+    src_repr & " is " & src_neg & "symmetric, while " & tgt_repr & " is" & tgt_neg
+  );
+}
 
 
 String* recursively_defined_auto_or_db_error_message(AnyAuto auto_or_db) {
@@ -75,7 +179,7 @@ String* recursively_defined_auto_or_db_error_message(AnyAuto auto_or_db) {
 String* error_cluster_error_message(AnyAuto decl, [+CoreWFError] errs) =
   ( "Error" & plural(errs) & " in automaton definition: " & user_repr(decl.name),
     source_code_location_string(source_code_location(decl))) &
-  ("    " & l : l <- join((error_message(e) : e <- rand_sort(errs))));
+  ("  " & l : l <- join(((error_message(e) | "") : e <- rand_sort(errs))));
 
 
 String* dependency_loop_error_message(AnyReactAutoVar signal, [AnyReactAutoVar]  deps) = (
@@ -125,6 +229,21 @@ String* continous_expr_for_discrete_input_error_message(NestedAutoVar var, Atom 
 String* non_nested_self_ref_error_message(TypeName type) =
   ("Types are not allowed to contain themselves: " & user_repr(type));
 
+
+String* unspecified_foreign_key_error_error_message(ForeignKey key) = (
+  "There was a problem involving the following foreign key: " & user_repr(key),
+  "I'm sorry I cannot be more specific than that"
+);
+
+
+String* unpartitionable_foreign_key_error_message(ForeignKey key) = (
+  "Unsupported foreign key: " & user_repr(key),
+  "  For reasons that are a bit complicated to explain, the compiler is not (yet) able",
+  "  to deal with certain kinds of foreign keys that involve polymorphic relations.",
+  "  This problem is expected to arise only in very unusual circumstances, but it looks",
+  "  like you've come across one of such cases. Try reporting the problem in the Cell forum."
+);
+
 ////////////////////////////////////////////////////////////////////////////////
 
 String source_code_location_string((String, NzNat, NzNat) loc_info) {
@@ -135,14 +254,16 @@ String source_code_location_string((String, NzNat, NzNat) loc_info) {
 ////////////////////////////////////////////////////////////////////////////////
 
 String artifact_type_name(SgnDecl) =
-  function()  = "function",
-  method()    = "method",
-  update()    = "update",
-  handler()   = "message handler";
+  function()    = "function",
+  aggr_funct()  = "aggregate function",
+  method()      = "method",
+  update()      = "update",
+  handler()     = "message handler";
 
 
 String artifact_name(SgnDecl decl) =
-  function()  = user_repr(decl.id),
-  method()    |
-  update()    = user_repr(decl.name, |decl.args|),
-  handler()   = "";
+  function()    = user_repr(decl.id),
+  aggr_funct()  = user_repr(plain_id(decl.id)),
+  method()      |
+  update()      = user_repr(decl.name, |decl.args|),
+  handler()     = "";

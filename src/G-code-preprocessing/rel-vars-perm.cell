@@ -1,0 +1,208 @@
+implicit program : Program, typedefs : [TypeName -> NeType] {
+  (Program, [DBSymbol -> [RelVar -> [+Nat -> Nat]]]) post_rel_vars_perm_program {
+    new_prg = program(
+      typedefs:       program.typedefs,
+      fndefs:         program.fndefs,
+      proc_defs:      [permutate_rel_vars(p) : p <- program.proc_defs],
+      aggr_fn_defs:   program.aggr_fn_defs,
+      auto_defs:      [permutate_rel_vars(a) : a <- program.auto_defs],
+      data_bases:     [permutate_rel_vars(a) : a <- program.data_bases]
+    );
+    applied_perms = rel_vars_perm_map;
+    return (new_prg, applied_perms);
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////
+
+  Database permutate_rel_vars(Database rel_auto) {
+    let context = rel_auto:
+      perms = rel_vars_perm_map(rel_auto.name, !!);
+
+      rel_vars = [v -> {
+        perm = perms(logical_rel_var(v));
+        return (
+          signature:  permutate(info.signature, perm),
+          keys:       [[perm(i) : i <- k] : k <- info.keys],
+          symmetric:  info.symmetric
+        );
+      } : v, info <- rel_auto.rel_vars];
+
+      foreign_keys = [rewrite(k, perms) : k <- rel_auto.foreign_keys];
+
+      methods = [method(m.name, m.args, m.ret_type, perm_expr_rel_vars(m.expr)) : m <- rel_auto.methods];
+      updates  = [update(u.name, u.args, (perm_stmt_rel_vars(s) : s <- u.body)) : u <- rel_auto.updates];
+      handlers = [handler(h.type, (perm_stmt_rel_vars(s) : s <- h.body)) : h <- rel_auto.handlers];
+    ;
+
+    return data_base(
+      name:         rel_auto.name,
+      links:        rel_auto.links,
+      state_vars:   rel_auto.state_vars,
+      rel_vars:     rel_vars,
+      attr_map:     rel_auto.attr_map,
+      foreign_keys: foreign_keys,
+      nested_dbs:   rel_auto.nested_dbs,
+      methods:      methods,
+      updates:      updates,
+      handlers:     handlers
+    );
+
+
+    ForeignKey rewrite(ForeignKey key, [RelVar -> [+Nat -> Nat]] perms) {
+      src_perm = perms(logical_rel_var(key.source_rel_var));
+      tgt_perm = perms(only([logical_rel_var(v) : v <- key.target_rel_vars]));
+      return foreign_key(
+        key.source_rel_var,
+        permutate(key.source_args, src_perm),
+        key.target_rel_vars,
+        permutate(key.target_args, tgt_perm)
+      );
+    }
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  Automaton permutate_rel_vars(Automaton react_auto) {
+    ## IMPLEMENT IMPLEMENT IMPLEMENT
+    return react_auto;
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  Procedure permutate_rel_vars(Procedure proc) {
+    let context = proc:
+      body = (perm_stmt_rel_vars(s) : s <- proc.body);
+    ;
+    return procedure(
+      id:         proc.id,
+      args:       proc.args,
+      res_type:   proc.res_type,
+      auto_vars:  proc.auto_vars,
+      db_vars:    proc.db_vars,
+      body:       body
+    );
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+implicit program : Program, typedefs : [TypeName -> NeType], context : Context {
+  Expr perm_expr_rel_vars(Expr expr) =
+    rel_var_size_expr()   = rel_var_size_expr(expr.rel_var, rewrite_maybe_args(expr.args, expr.rel_var)),
+    relvar_memb_test()    = relvar_memb_test(expr.rel_var, rewrite_maybe_args(expr.args, expr.rel_var)),
+    relvar_lookup()       = relvar_lookup(expr.rel_var, rewrite_maybe_args(expr.args, expr.rel_var)),
+    _                     = rewrite_expr(expr, perm_expr_rel_vars, perm_cls_rel_vars, perm_stmt_rel_vars);
+
+
+  Clause perm_cls_rel_vars(Clause cls) {
+    return match (cls)
+      relvar_clause() = rewrite(cls),
+      _               = rewrite_clause(cls, perm_expr_rel_vars, perm_cls_rel_vars);
+
+
+    // type RelVarClause = relvar_clause(vars: StdVar+, rel_var: AnyRelVar, args: Maybe[Expr]+);
+    RelVarClause rewrite(RelVarClause cls) {
+      perm = rel_var_args_perm(cls.rel_var);
+      args = permutate(cls.args, perm);
+      args = (apply(a, perm_expr_rel_vars) : a <- args);
+      var_arg_idxs = (i : a @ i <- cls.args, a == nothing);
+      vars = values_ord_by_idx([perm(var_arg_idxs(i)) -> v : v @ i <~ cls.vars]);
+      return relvar_clause(vars, cls.rel_var, args);
+    }
+  }
+
+
+  Statement perm_stmt_rel_vars(Statement stmt) {
+    return match (stmt)
+      delete_stmt()   = delete_stmt(stmt.var, rewrite_maybe_args(stmt.args, stmt.var)),
+      insert_stmt()   = insert_stmt(stmt.var, rewrite_args(stmt.args, stmt.var)),
+      update_stmt()   = update_stmt(stmt.var, rewrite_args(stmt.args, stmt.var)),
+      foreach_stmt()  = rewrite(stmt),
+      _               = rewrite_stmt(stmt, perm_expr_rel_vars, perm_stmt_rel_vars);
+
+
+    // type ForeachStmt = foreach_stmt(iter: Iter, body: Statement+);
+    ForeachStmt rewrite(ForeachStmt stmt) {
+      iter = match (stmt.iter)
+        coll_value_iter() |
+        rel_subset_iter() = stmt.iter,
+        rel_var_iter()    = rewrite(stmt.iter);
+      return foreach_stmt(iter, (perm_stmt_rel_vars(s) : s <- stmt.body));
+    }
+
+
+    // type RelVarIter = rel_var_iter(vars: Maybe[StdVar]+, rel_var: AnyRelVar, args: Maybe[Expr]+);
+    RelVarIter rewrite(RelVarIter iter) {
+      perm = rel_var_args_perm(iter.rel_var);
+      args = permutate(iter.args, perm);
+      args = (apply(a, perm_expr_rel_vars) : a <- args);
+      var_arg_idxs = (i : a @ i <- iter.args, a == nothing);
+      vars = values_ord_by_idx([perm(i) -> v : v @ i <~ iter.vars]);
+      return rel_var_iter(vars, iter.rel_var, args);
+    }
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  Expr+ rewrite_args(Expr+ args, AnyRelVar rel_var) {
+    perm = rel_var_args_perm(rel_var);
+    return (perm_expr_rel_vars(e) : e <- permutate(args, perm));
+  }
+
+
+  Maybe[Expr]+ rewrite_maybe_args(Maybe[Expr]+ args, AnyRelVar rel_var) {
+    perm = rel_var_args_perm(rel_var);
+    return (apply(a, perm_expr_rel_vars) : a <- permutate(args, perm));
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+implicit program : Program, typedefs : [TypeName -> NeType], context : Context {
+  [+Nat -> Nat] rel_var_args_perm(AnyRelVar rel_var) {
+    rel_auto = rel_auto_type(rel_var);
+    perms_map = rel_vars_perm_map(rel_auto, !!);
+    return perms_map(unqualified(rel_var));
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+implicit program : Program {
+  [DBSymbol -> [RelVar -> [+Nat -> Nat]]] rel_vars_perm_map {
+    return [
+      a.name -> [
+        logical_rel_var(r) -> rel_var_args_perm(|info.signature|, info.keys) : r, info <- a.rel_vars
+      ] : a <- program.data_bases
+    ];
+
+
+    [+Nat -> Nat] rel_var_args_perm(NzNat arity, [[+Nat]] keys) {
+      idxs = (i : i < arity);
+      return [i -> i : i <~ idxs] if keys == [];
+      ps = [[i -> p(i) : i <~ idxs] : p <- permutations(arity)];
+      valid_keys = valid_keys_by_arity[arity];
+      for p <- rand_sort(ps):
+        perm_keys = [[p(i) : i <- k] : k <- keys];
+        return p if valid_keys(perm_keys);
+      ;
+      fail;
+    }
+
+
+    [NzNat -> [+[[+Nat]]]] valid_keys_by_arity = [
+      1 -> [[]],
+      2 -> [[[0]], [[0], [1]]],
+      3 -> [
+        [[0, 1]],
+        [[0, 1], [2]],
+        [[0, 1], [1, 2]],
+        [[0, 1], [1, 2], [0, 2]]
+      ]
+    ];
+  }
+}

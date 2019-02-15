@@ -1,0 +1,640 @@
+type TopLevelFnDef        = top_level_fn_def(fndef: SynFnDef, unique_name: PlainFnId, impl_args: [ImplArgDecl]);
+type NestedFnDef          = nested_fn_def(
+                              fndef:              SynFnDef,
+                              parent_fndef:       SynFnDef,
+                              parent_unique_name: PlainFnId,
+                              impl_args:          [ImplArgDecl]
+                            );
+type UsingBlockFnDef      = using_block_method_def(target: Atom, fndef: DBMethodDef);
+type UsingBlockUpdateDef  = using_block_update_def(target: Atom, fndef: UpdateDef);
+
+type Artifact = null_artifact, SynProcDef, ReactAutoDef, SchemaDef, AutoMethodDef, HandlerDef,
+                NestedFnDef, TopLevelFnDef, UsingBlockFnDef, UsingBlockUpdateDef;
+
+////////////////////////////////////////////////////////////////////////////////
+
+type PreFnCall        = pre_fn_call(symbol: FnSymbol);
+type PreNestedFnCall  = pre_nested_fn_call(symbol: FnSymbol, parent_id: PlainFnId);
+type PreAutoCall      = pre_auto_method_call(var: AnyAutoVar?, method: MethodSymbol);
+type PreDBCall        = pre_db_method_call(var: AnyDBVar?, method: MethodSymbol);
+type PreCall          = PreFnCall, PreNestedFnCall, PreAutoCall, PreDBCall;
+
+////////////////////////////////////////////////////////////////////////////////
+
+TopLevelFnDef top_level_fn_def(SynFnDef fd, PlainFnId un, [ImplArgDecl] ias) =
+  top_level_fn_def(fndef: fd, unique_name: un, impl_args: ias);
+
+NestedFnDef nested_fn_def(SynFnDef fd, SynFnDef pfd, PlainFnId pun, [ImplArgDecl] ias) =
+  nested_fn_def(fndef: fd, parent_fndef: pfd, parent_unique_name: pun, impl_args: ias);
+
+UsingBlockFnDef     using_block_method_def(Atom t, DBMethodDef fd)  = using_block_method_def(target: t, fndef: fd);
+UsingBlockUpdateDef using_block_update_def(Atom t, UpdateDef ud)    = using_block_update_def(target: t, fndef: ud);
+
+////////////////////////////////////////////////////////////////////////////////
+
+PreFnCall pre_fn_call(FnSymbol s) = pre_fn_call(symbol: s);
+
+PreNestedFnCall pre_nested_fn_call(FnSymbol s, PlainFnId p) = pre_nested_fn_call(symbol: s, parent_id: p);
+
+PreAutoCall pre_auto_method_call(MethodSymbol m)                = pre_auto_method_call(method: m);
+PreAutoCall pre_auto_method_call(AnyAutoVar v, MethodSymbol m)  = pre_auto_method_call(var: v, method: m);
+
+PreDBCall pre_db_method_call(MethodSymbol m)              = pre_db_method_call(method: m);
+PreDBCall pre_db_method_call(AnyDBVar v, MethodSymbol m)  = pre_db_method_call(var: v, method: m);
+
+////////////////////////////////////////////////////////////////////////////////
+
+FnFamilyId fn_family_id(PreFnCall precall, Nat arity) = fn_family_id(precall.symbol, arity);
+
+FnFamilyId fn_family_id(PreNestedFnCall precall, Nat arity) =
+  nested_fn_id(precall.parent_id, fn_family_id(precall.symbol, arity));
+
+AutoMethodCall apply_args(PreAutoCall pre_call, Expr* args) =
+  auto_method_call(
+    var: pre_call.var if pre_call.var?,
+    name: pre_call.method,
+    args: args
+  );
+
+DBMethodCall apply_args(PreDBCall pre_call, Expr* args) =
+  db_method_call(
+    var:  pre_call.var if pre_call.var?,
+    name: pre_call.method,
+    args: args
+  );
+
+////////////////////////////////////////////////////////////////////////////////
+
+Artifact closure_artifact(Artifact artifact) =
+  null_artifact             |
+  syn_proc_def()            |
+  react_auto_def()          |
+  schema_def()              |
+  auto_method_def()         = :null_artifact,
+  handler_def()             |
+  nested_fn_def()           |
+  top_level_fn_def()        |
+  using_block_method_def()  |
+  using_block_update_def()  = artifact;
+
+////////////////////////////////////////////////////////////////////////////////
+
+[[+TypeVar -> Atom]] typevar_bindings(TypeVarDecl decl) =
+  [nonempty_map(merge(([type_var(v) -> t] : v, t <- zip(decl.type_vars, types)))) : types <~ decl.prot_types];
+
+
+implicit syn_prg : SynPrg {
+  [PrgDecl] all_syn_decls {
+    return union([process_src_file(ds) : unused_var, ds <- syn_prg.parsed_src_files]);
+
+    [PrgDecl] process_src_file(PrgDecl* decls) {
+      decl_set = set(decls);
+      tvar_binds = union([typevar_bindings(d) : d <- decl_set, typevar_decl() ?= d]);
+      return [
+        match (d)
+          syn_fn_def()  = process_fn_def(d, tvar_binds),
+          impl_block()  = process_impl_block(d, tvar_binds),
+          _             = d
+        : d <- decl_set
+      ];
+    }
+
+    SynFnDef process_fn_def(SynFnDef fn_def, [[+TypeVar -> Atom]] tvar_binds) {
+      assert fn_def.typevars == [];
+      tvars = seq_union((syn_type_vars(a.type) : a <- fn_def.args));
+      local_tvar_binds = [fb : b <- tvar_binds, fb = [v -> t : v, t <- b, tvars(v)], fb != []];
+      local_fns = (transfer(process_fn_def(fd, tvar_binds), fd) : fd <- fn_def.local_fns);
+      new_fn_def = syn_fn_def(
+        name:       fn_def.name,
+        args:       fn_def.args,
+        res_type:   fn_def.res_type,
+        expr:       fn_def.expr,
+        local_fns:  local_fns,
+        typevars:   local_tvar_binds
+      );
+      return transfer(new_fn_def, fn_def);
+    }
+
+
+    ImplBlock process_impl_block(ImplBlock block, [[+TypeVar -> Atom]] tvar_binds) {
+      fn_defs = (process_fn_def(fd, tvar_binds) : fd <- block.fn_defs);
+      return transfer(impl_block(block.args, fn_defs), block);
+    }
+  }
+
+
+  [Typedef]       syn_tdefs         = [d : d <- all_syn_decls, typedef()          ?= d];
+  [ParTypedef]    syn_par_tdefs     = [d : d <- all_syn_decls, par_typedef()      ?= d];
+  [SynFnDef]      syn_fn_defs       = [d : d <- all_syn_decls, syn_fn_def()       ?= d];
+  [AggrFunctDecl] aggr_funct_decls  = [d : d <- all_syn_decls, aggr_funct_decl()  ?= d];
+  [SynProcDef]    syn_proc_defs     = [d : d <- all_syn_decls, syn_proc_def()     ?= d];
+  [ImplBlock]     impl_blocks       = [d : d <- all_syn_decls, impl_block()       ?= d];
+  [ReactAutoDef]  react_auto_defs   = [d : d <- all_syn_decls, react_auto_def()   ?= d];
+  [SchemaDef]     schema_defs       = [d : d <- all_syn_decls, schema_def()       ?= d];
+  [AutoMethodDef] auto_methods      = [d : d <- all_syn_decls, auto_method_def()  ?= d];
+  [HandlerDef]    handler_defs      = [d : d <- all_syn_decls, handler_def()      ?= d];
+  [UsingBlock]    using_blocks      = [d : d <- all_syn_decls, using_block()      ?= d];
+  [ProtDecl]      prot_decls        = [d : d <- all_syn_decls, prot_decl()        ?= d];
+
+
+  [AggrFunctDecl] aggr_funct_decls_by_name(Symbol name) {
+    return if aggr_fns_map(name, *) then aggr_fns_map(name, !!) else [];
+
+    [Symbol -> [+AggrFunctDecl]] aggr_fns_map =
+      group_by(aggr_funct_decls, $.name);
+  }
+
+
+  [BasicTypeSymbol -> [+Nat]] type_arity_map =
+    merge_values(
+      [[td.name -> 0]         : td <- syn_tdefs] &
+      [[td.name -> arity(td)] : td <- syn_par_tdefs]
+    );
+
+
+  [BasicTypeSymbol -> [+Nat]] type_prot_arity_map {
+    prot_types_arity_map = [type_symbol(t) -> [0] : d <- prot_decls, t <~ d.types];
+    return type_arity_map & prot_types_arity_map;
+  }
+
+
+  [TypeName -> NeType] typedefs = create_type_map(syn_tdefs, syn_par_tdefs);
+
+
+  [Atom] schema_names = [d.name : d <- schema_defs];
+
+
+  SchemaDef schema_by_id(Atom id) {
+    return schemas_by_id[id];
+
+    [Atom -> SchemaDef] schemas_by_id = [d.name -> d : d <- schema_defs];
+  }
+
+
+  [Atom] protocol_types = [t : pd <- prot_decls, t <~ pd.types];
+
+
+  ProtDecl prot_decl_by_type(Atom type_id) {
+    return prot_decls_by_type(type_id, !!);
+    [Atom -> ProtDecl] prot_decls_by_type = [t -> pd : pd <- prot_decls, t <~ pd.types];
+  }
+
+
+  [ProcSymbol -> SynProcDef] proc_defs_by_id = [p.name -> p : p <- syn_proc_defs];
+
+
+  [Atom -> [+AutoMethodDef]] methods_by_automaton =
+    merge_values([[m.target -> m] : m <- auto_methods]);
+
+
+  [Atom -> [+HandlerDef]] handlers_by_db =
+    merge_values([[h.target -> h] : h <- handler_defs]);
+
+
+  [Atom -> [+UsingBlock]] using_blocks_by_db =
+    merge_values([[u.target -> u] : u <- using_blocks]);
+
+
+  [Atom -> [+DBMethodDef]] methods_by_db =
+    merge_values([[db -> d] : db, ubs <- using_blocks_by_db, ub <- ubs, d <~ ub.decls, db_method_def() ?= d]);
+
+
+  [Atom -> [Atom]] method_ids_by_db_id =
+    [db.name -> [m.name : m <- lookup(methods_by_db, db.name, [])] : db <- schema_defs];
+
+
+  [Atom -> [+UpdateDef]] updates_by_db =
+    merge_values([[db -> d] : db, ubs <- using_blocks_by_db, ub <- ubs, d <~ ub.decls, update_def() ?= d]);
+
+
+  [(SynFnDef, [ImplArgDecl])] ext_syn_fn_defs = [(fd, []) : fd <- syn_fn_defs] &
+                                                [(fd, set(b.args)) : b <- impl_blocks, fd <~ b.fn_defs];
+
+
+  [FnSymbol -> [Nat -> [+(SynFnDef, [ImplArgDecl])]]] top_level_fndefs_by_name_arity =
+    [s -> group_by(fs, arity(left($))) : s, fs <- group_by(ext_syn_fn_defs, left($).name)];
+
+
+  [FnSymbol -> [Nat -> Nat*]] fn_defs_arg_arities {
+    arities = merge_values([
+      [fd.name -> [arity(fd) -> (arity(a) : a <- fd.args)]]
+      : efd <- ext_syn_fn_defs, (fd?, _) ?= efd
+    ]);
+    return [sgn -> merge(pas) : sgn, pas <- arities];
+  }
+
+
+  [AutoSymbol -> ReactAutoDef] auto_defs_by_id = [auto_symbol(a.name) -> a : a <- resolve_inheritance(react_auto_defs)];
+
+
+  [DBSymbol -> SchemaDef] db_defs_by_id = [db_symbol(db.name) -> db : db <- schema_defs];
+
+
+  Bool automaton_is_static(Atom id) =
+    if   db_defs_by_id(db_symbol(id), *)      then true
+    elif auto_defs_by_id(auto_symbol(id), *)  then false
+    else                                           undefined;
+
+
+  Bool automaton_is_reactive(Atom id) =
+    if   auto_defs_by_id(auto_symbol(id), *) then true
+    elif db_defs_by_id(db_symbol(id), *)     then false
+    else                                          undefined;
+
+
+  [AutoSymbol -> AutoInterface] auto_interfaces = [id -> interface_info(a) : id, a <- auto_defs_by_id];
+
+
+  [DBSymbol -> DBInterface] db_interfaces = [id -> interface_info(db) : id, db <- db_defs_by_id];
+
+
+  [AutoSymbol -> (memb_vars: [Atom], nested_autos: [Atom -> Atom], nested_dbs: [Atom -> Atom])] auto_internals {
+    res = ();
+    for a <- rand_sort(values(auto_defs_by_id)):
+      let artifact = a:
+        info = (
+          memb_vars:    [bare_id(v) : v <- auto_memb_vars],
+          nested_autos: [na.name -> na.auto_name : na <- nested_auto_decls],
+          // BUG BUG BUG: FIX RESOLUTION
+          // nested_dbs:   [db.name -> db.type | db <~ artifact.nested_dbs]
+          nested_dbs:   [db.name -> db.type : db <~ a.nested_dbs]
+        );
+        res = (res | [auto_symbol(a.name) -> info]);
+      ;
+    ;
+    return merge(res);
+  }
+
+
+  [AutoSymbol -> AutoSymbol*] automata_ancestors {
+    resolved = [auto_symbol(a.name) -> () : a <- react_auto_defs, not a.parent?];
+    remaining = [a : a <- react_auto_defs, a.parent?];
+    loop
+      newly_resolved = [auto_symbol(a.name) -> (p) & resolved[p] : a <- remaining, p = auto_symbol(a.parent), resolved(p, *)];
+      break if newly_resolved == [];
+      remaining = [a : a <- remaining, p = auto_symbol(a.parent), not resolved(p, *)];
+      resolved = resolved & newly_resolved;
+    ;
+    assert remaining == [];
+    return resolved;
+  }
+
+
+  [AutoSymbol -> [AutoMethodDef]] all_methods_by_automaton {
+    return [auto -> methods(auto) & seq_union((methods(a) : a <- ancestors)) : auto, ancestors <- automata_ancestors];
+
+    [AutoMethodDef] methods(AutoSymbol a) = lookup(methods_by_automaton, bare_id(a), []);
+  }
+
+
+  [Atom -> [Atom]] method_ids_by_automaton_id = [
+    bare_id(a) -> [m.name : m <- ms] : a, ms <- all_methods_by_automaton
+  ];
+
+  //////////////////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////
+
+  [NestedAutoVar -> AutoSymbol] nested_auto_vars(AutoSymbol auto_symb) =
+    [nested_auto_var(n) -> auto_symbol(t) : n, t <- auto_internals[auto_symb].nested_autos];
+
+
+  [NestedDBVar -> DBSymbol] nested_db_vars(AutoSymbol auto_symb) =
+    [nested_db_var(n) -> db_symbol(t) : n, t <- auto_internals[auto_symb].nested_dbs];
+
+
+  [NestedDBVar -> DBSymbol] nested_db_vars(DBSymbol db_symb) =
+    [nested_db_var(n) -> db_symbol(t) : n, t <- db_interfaces[db_symb].nested_dbs];
+
+
+  [LinkedDBVar -> DBSymbol] linked_db_vars(DBSymbol db_symb) =
+    merge(([linked_db_var(i) -> db_symbol(t)] : t @ i <- schema_by_id(bare_id(db_symb)).links));
+
+
+  ## BAD BAD BAD: THESE TWO FUNCTIONS EXISTS ONLY BECAUSE OF A LIMITATION OF THE TYPECHECKER...
+
+  Bool non_nested_function_exists(FnSymbol fn_symb) = fn_defs_arg_arities(fn_symb, *);
+
+
+  Bool non_nested_function_exists(FnSymbol fn_symb, Nat arity) =
+    fn_defs_arg_arities(fn_symb, *) and fn_defs_arg_arities[fn_symb](arity, *);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+implicit syn_prg : SynPrg, artifact : SchemaDef {
+  [SchemaItemDecl] all_db_decls = set(artifact.decls);
+
+  [StateVarDecl]   db_state_vars    = [d : d <- all_db_decls, state_var_decl() ?= d];
+  [RelVarsDecl]    db_rel_vars      = [d : d <- all_db_decls, relvars_decl() ?= d];
+  [ForeignKeyDecl] db_foreign_keys  = [d : d <- all_db_decls, foreign_key_decl() ?= d];
+  [NestedDBDecl]   db_nested_dbs    = [d : d <- all_db_decls, nested_db_decl() ?= d];
+
+  [MembVar] db_memb_vars = [memb_var(d.name) : d <- db_state_vars];
+
+  [NestedDBVar -> DBSymbol] db_vars_types = [nested_db_var(d.name) -> db_symbol(d.type) : d <- db_nested_dbs];
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+implicit syn_prg : SynPrg, artifact : ReactAutoDef {
+  [Atom] auto_def_state_vars_ids = [sv.name : sv <~ artifact.state_vars];
+
+  [RuleDecl] rule_decls = set(artifact.rules);
+
+  [PlainRuleDecl]   plain_rules_lookalike_decls = [d : d <- rule_decls, plain_rule_decl()   ?= d];
+  [WhenRuleDecl]    when_rule_decls             = [d : d <- rule_decls, when_rule_decl()    ?= d];
+  [CondRuleDecl]    cond_rule_decls             = [d : d <- rule_decls, cond_rule_decl()    ?= d];
+  [ForeachRuleDecl] foreach_rule_decls          = [d : d <- rule_decls, foreach_rule_decl() ?= d];
+  [NestedAutoDecl]  nested_auto_decls           = [d : d <- rule_decls, nested_auto_decl()  ?= d];
+  [MsgSendDecl]     msg_send_decls              = [d : d <- rule_decls, msg_send_decl()     ?= d];
+
+
+  [TimeRuleDecl] time_rule_lookalike_decls  = [d : d <- rule_decls, true_for_rule_decl()      ?= d] &
+                                              [d : d <- rule_decls, unchanged_for_rule_decl() ?= d] &
+                                              [d : d <- rule_decls, inactive_for_rule_decl()  ?= d];
+
+
+  [PlainRuleDecl] plain_rule_decls  = plain_rules_lookalike_decls &
+                                      [rewrite_fake_time_rule(r) : r <- time_rule_decls, is_fake(r)];
+
+
+  [TimeRuleDecl] time_rule_decls = [r : r <- time_rule_lookalike_decls, not is_fake(r)];
+
+
+  [SignalVar] auto_memb_vars {
+    memb_var_def_decls = [
+      set(artifact.inputs),
+      set(artifact.outputs),
+      set(artifact.state_vars),
+      set(artifact.consts),
+      plain_rule_decls,
+      when_rule_decls,
+      cond_rule_decls,
+      foreach_rule_decls,
+      time_rule_decls
+    ];
+    return union([[signal_var(d.name) : d <- decls] : decls <- memb_var_def_decls]);
+  }
+
+
+  Bool signal_is_discrete(SignalVar signal) {
+    return in(bare_id(signal), discrete_signals);
+
+    [Atom] discrete_signals {
+      decls = union([set(artifact.inputs), plain_rule_decls, when_rule_decls, cond_rule_decls, foreach_rule_decls]);
+      return [d.name : d <- decls, d.discrete];
+    }
+  }
+
+
+  Bool signal_is_discrete(QualSignalVar signal) {
+    auto_type = syn_auto_vars_types[signal.auto_var];
+    interface = auto_interfaces[auto_type];
+    ## HERE I ASSUME THE SIGNAL THAT IS BEING READ IS AN OUTPUT
+    ## BUT IT WOULD BE (MUCH) BETTER IF WE COULD READ ANY FIELD...
+    return interface.outputs[bare_id(signal.memb_var)].discrete;
+  }
+
+
+  [NestedAutoVar -> AutoSymbol] syn_auto_vars_types =
+    [nested_auto_var(a.name) -> auto_symbol(a.auto_name) : a <- nested_auto_decls];
+
+
+  [NestedDBVar -> DBSymbol] db_in_auto_vars_types =
+    [nested_db_var(d.name) -> db_symbol(d.type) : d <~ artifact.nested_dbs];
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+implicit syn_prg : SynPrg, artifact : Artifact {
+  [FnSymbol -> [+NzNat]] protocol_methods {
+    args, typevars = match (artifact)
+      top_level_fn_def()  |
+      nested_fn_def()     = (artifact.fndef.args, artifact.fndef.typevars),
+      _                   = ((), []);
+
+    // All the protocol types that are mentioned in the current function signatures,
+    // either directly or via an explicitly declared type variable
+    expl_prot_types = union([values(tvs) : tvs <- typevars]);
+    impl_prot_types = seq_union((refd_prot_types(a.type, protocol_types) : a <- args));
+    prot_types = expl_prot_types & impl_prot_types;
+
+    // All relevant protocols and their methods
+    prots = [prot_decl_by_type(t) : t <- prot_types];
+    methods = [m : p <- prots, m <~ p.methods];
+
+    // Methods that do not contain protocol types that are not used in the current signature
+    filtered_methods = [m : m <- methods, (unused_var?, ats?, rt?) ?= m,
+                            subset(refd_prot_types(ats, rt, protocol_types), prot_types)];
+
+    return merge_values([[n -> |ats| : m <- filtered_methods, (n?, ats?, unused_var?) ?= m]]);
+  }
+
+
+  [TypeVar] def_type_vars {
+    return match (artifact)
+      top_level_fn_def()  |
+      nested_fn_def()     = syn_type_vars(artifact.fndef),
+      _                   = [];
+  }
+
+
+  [LocAutoVar -> AutoSymbol] loc_auto_vars =
+    match (artifact)
+      syn_proc_def()  = [ loc_auto_var(v.var) -> auto_symbol(v.type)
+                          : v <~ artifact.auto_or_db_vars, automaton_is_reactive(v.type)
+                        ],
+      _               = [];
+
+
+  [LocDBVar -> DBSymbol] loc_db_vars =
+    match (artifact)
+      syn_proc_def()  = [ loc_db_var(v.var) -> db_symbol(v.type)
+                          : v <~ artifact.auto_or_db_vars, automaton_is_static(v.type)
+                        ],
+      _               = [];
+
+
+  [NestedAutoVar -> AutoSymbol] nested_auto_vars =
+    match (artifact)
+      react_auto_def()  = nested_auto_vars(auto_symbol(artifact.name)),
+      auto_method_def() = nested_auto_vars(auto_symbol(artifact.target)),
+      _                 = [];
+
+
+  [NestedDBVar -> DBSymbol] nested_db_vars =
+    match (artifact)
+      react_auto_def()          = nested_db_vars(auto_symbol(artifact.name)),
+      auto_method_def()         = nested_db_vars(auto_symbol(artifact.target)),
+      schema_def()              = nested_db_vars(db_symbol(artifact.name)),
+      handler_def()             |
+      using_block_method_def()  |
+      using_block_update_def()  = nested_db_vars(db_symbol(artifact.target)),
+      _                         = [];
+
+  [LinkedDBVar -> DBSymbol] linked_db_vars =
+    match (artifact)
+      schema_def()              = linked_db_vars(db_symbol(artifact.name)),
+      handler_def()             |
+      using_block_method_def()  |
+      using_block_update_def()  = linked_db_vars(db_symbol(artifact.target)),
+      _                         = [];
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  [AnyDBVar -> DBSymbol] all_db_vars {
+    db_vars : [AnyDBVar -> DBSymbol];
+
+    db_vars = loc_db_vars & nested_db_vars & linked_db_vars;
+    last_round = db_vars;
+    while last_round != []:
+      new_round = merge([nested_db_vars(v, t) & linked_db_vars(v, t) : v, t <- last_round]);
+      db_vars = db_vars & new_round;
+      last_round = new_round;
+    ;
+    return db_vars;
+
+
+    [QualDBVar -> DBSymbol] nested_db_vars(AnyDBVar var, DBSymbol type) {
+      nested_dbs = db_interfaces[type].nested_dbs;
+      return [qual_db_var(var, nested_db_var(v)) -> db_symbol(t) : v, t <- nested_dbs];
+    }
+
+
+    [QualDBVar -> DBSymbol] linked_db_vars(AnyDBVar var, DBSymbol type) =
+      [qual_db_var(var, v) -> t : v, t <- linked_db_vars(type)];
+  }
+
+
+  [AnyRelVar -> NzNat] rel_vars_arities {
+    ## BAD BAD BAD
+    has_self_db = match (artifact)
+      schema_def()              |
+      handler_def()             |
+      using_block_method_def()  |
+      using_block_update_def()  = true,
+      _                         = false;
+
+    unqual_rel_vars_arities = if has_self_db
+      then [rel_var(v) -> a : v, a <- db_interfaces[self_db_type].rel_vars]
+      else [];
+
+    qual_rel_vars_arities = [
+      qual_rel_var(dbv, rel_var(rv)) -> a
+      : dbv, t <- all_db_vars, rv, a <- db_interfaces[t].rel_vars
+    ];
+
+    return unqual_rel_vars_arities & qual_rel_vars_arities;
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  SchemaDef curr_db_def {
+    db_name = match (artifact)
+      handler_def()             = artifact.target,
+      using_block_method_def()  = artifact.target,
+      using_block_update_def()  = artifact.target;
+    return db_defs_by_id[db_symbol(db_name)];
+  }
+
+
+  NzNat relvar_arity(AnyRelVar v) =
+    rel_var(a?)       = db_interfaces[self_db_type].rel_vars[a],
+    qual_rel_var()    = db_interfaces[syn_db_var_type(v.db_var)].rel_vars[match (v.rel_var) rel_var(a?) = a];
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  AutoSymbol self_auto_type =
+    match (artifact)
+      react_auto_def()  = auto_symbol(artifact.name),
+      auto_method_def() = auto_symbol(artifact.target);
+
+
+  DBSymbol self_db_type =
+    match (artifact)
+      schema_def()              = db_symbol(artifact.name),
+      handler_def()             = db_symbol(artifact.target),
+      using_block_method_def()  = db_symbol(artifact.target),
+      using_block_update_def()  = db_symbol(artifact.target);
+
+
+  AutoSymbol auto_var_type(AnyAutoVar var) =
+    loc_auto_var()    = loc_auto_vars[var],
+    nested_auto_var() = nested_auto_vars[var];
+
+
+  DBSymbol syn_db_var_type(AnyDBVar var) =
+    loc_db_var()      = loc_db_vars[var],
+    nested_db_var()   = nested_db_vars[var],
+    linked_db_var()   = linked_db_vars[var],
+    qual_db_var()     = { interface = db_interfaces[syn_db_var_type(var.outer)];
+                          type_name = match (var.inner)
+                            nested_db_var(a?) = interface.nested_dbs(a, !!),
+                            linked_db_var(n?) = interface.linked_dbs(n);
+                          return db_symbol(type_name);
+                        };
+
+
+  [SynFnDef] local_fn_defs =
+    match (artifact)
+      top_level_fn_def()  = set(artifact.fndef.local_fns),
+      nested_fn_def()     = set(artifact.parent_fndef.local_fns), ## NOT SURE ABOUT THIS ONE...
+      _                   = [];
+
+
+  [FnSymbol -> [+Nat]] local_fn_defs_arities =
+    merge_values([[fd.name -> arity(fd)] : fd <- local_fn_defs]);
+
+
+  // [FnSymbol -> [+Nat -> Nat*]] local_fn_defs_arg_arities {
+  //   arities = merge_values([
+  //     [fd.name -> [arity(fd) -> (arity(a) : a <- fd.args)]]
+  //     : fd <- local_fn_defs]
+  //   );
+  //   return [sgn -> nonempty_map(merge(pas)) : sgn, pas <- arities];
+  // }
+
+  [FnSymbol, Nat, Nat*] local_fn_arity_args_arities = [
+    fd.name, arity(fd), (arity(a) : a <- fd.args) : fd <- local_fn_defs
+  ];
+
+
+
+  [ClsVar -> NzNat] cls_vars_arities =
+    match (artifact)
+      top_level_fn_def()  = [cls_var(a.name) -> syn_type_arity(a.type) : a <~ artifact.fndef.args, cls_arg() ?= a],
+      nested_fn_def()     = [cls_var(a.name) -> syn_type_arity(a.type) : a <~ artifact.fndef.args, cls_arg() ?= a],
+      _                   = [];
+
+  //////////////////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////
+
+  Bool nested_function_exists(FnSymbol fn_symb, Nat arity) = local_fn_arity_args_arities(fn_symb, arity, *);
+
+
+  Nat* arg_arities(PlainFnFamilyId id) =
+    if id.arity == 0 or lookup(protocol_methods, id.symbol, [])(id.arity)
+      then (0 : i < id.arity)
+      else fn_defs_arg_arities[id.symbol][id.arity];
+      ## BUG BUG BUG: THIS CRASHES THE COMPILER...
+      // else fn_defs_arg_arities(id.symbol)(arity);
+
+
+  Nat* arg_arities(NestedFnFamilyId id) =
+    local_fn_arity_args_arities(id.inner.symbol, id.inner.arity, !!);
+
+
+  [+[ImplArg]] fn_impl_args(PlainFnFamilyId id) {
+    return [[]] if id.arity != 0 and lookup(protocol_methods, id.symbol, [])(id.arity);
+    ext_fds = top_level_fndefs_by_name_arity[id.symbol][id.arity];
+    return [[a.name : a <- ias] : efd <- ext_fds, ias = right(efd)];
+  }
+
+
+  [+[ImplArg]] fn_impl_args(NestedFnFamilyId) =
+    match (artifact)
+      top_level_fn_def() | nested_fn_def()  = [[a.name : a <- artifact.impl_args]];
+}
