@@ -264,7 +264,14 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
       rel_type = expr_type(rel, env);
       fail if not set_arg_idx :: Bit;
       exp_arg_type = bin_rel_arg_supertype(rel_type, set_arg_idx);
-      return typecheck(set_arg, exp_arg_type, env);
+      errs = typecheck(set_arg, exp_arg_type, env);
+      if errs != [] and typecheck(set_arg, type_any, env) == []:
+        set_arg_type = expr_type(set_arg, env);
+        if not are_ptype_disjoint(set_arg_type, exp_arg_type):
+          return [lookup_key_may_overlap_but_is_not_subset(rel, rel_type, set_arg, set_arg_idx, set_arg_type)];
+        ;
+      ;
+      return errs;
     }
 
 

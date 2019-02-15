@@ -7,6 +7,7 @@ type TypeCheckingError =
   rec_field_is_mandatory(field: SymbObj),
   unexpected_rec_field_type(field: SymbObj, actual_type: Type, exp_type: Type), ## IMPLEMENT IMPLEMENT IMPLEMENT
   tagged_values_not_in_type(tag: SymbObj, exp_type: Type),
+  lookup_key_may_overlap_but_is_not_subset(target: Expr, target_type: Type, arg: Expr, arg_idx: Nat, arg_type: Type),
 
   not_a_record_type(type: Type),
   exp_type_not_a_tag_type,
@@ -84,6 +85,8 @@ TypeCheckingError unexpected_rec_field(SymbObj f)                         = unex
 TypeCheckingError rec_field_is_mandatory(SymbObj f)                       = rec_field_is_mandatory(field: f);
 TypeCheckingError unexpected_rec_field_type(SymbObj f, Type at, Type et)  = unexpected_rec_field_type(field: f, actual_type: at, exp_type: et);
 TypeCheckingError tagged_values_not_in_type(SymbObj s, Type t)            = tagged_values_not_in_type(tag: s, exp_type: t);
+TypeCheckingError lookup_key_may_overlap_but_is_not_subset(Expr e, Type rt, Expr a, Nat i, Type at) =
+  lookup_key_may_overlap_but_is_not_subset(target: e, target_type: rt, arg: a, arg_idx: i, arg_type: at);
 
 TypeCheckingError not_a_record_type(Type t) = not_a_record_type(type: t);
 TypeCheckingError exp_type_not_a_tag_type = :exp_type_not_a_tag_type;
@@ -219,6 +222,28 @@ String* create_error_msg(TypeCheckingError err) =
   tagged_values_not_in_type()         = ( "Expression evaluates to a tagged value of the form " & user_repr(err.tag) & "(..) but such values do not belong to the expected type",
                                           "  Expected type: " & user_repr(err.exp_type)
                                         ),
+  lookup_key_may_overlap_but_is_not_subset() = {
+    if err.target :: Var:
+      if err.arg :: Var:
+        vars_str = "variables " & user_repr(err.target) & " and " & user_repr(err.arg);
+      else
+        vars_str = "variables " & user_repr(err.target);
+      ;
+    else
+      vars_str = "all variables involved";
+    ;
+    idx_str = if err.arg_idx == 0 then "first" else "second";
+    return (
+      "Possibly invalid map or binary relation lookup operation",
+      "The type of the key is not a subset of the type of the " & idx_str & " column",
+      "of the map or relation, but it's not entirely disjoint from it either",
+      "It's entirely possible that your code is valid, but the typechecking",
+      "rules are too strict for it. One possible workaround could be to",
+      "explicitly declare the type of " & vars_str,
+      "  Collection type: " & user_repr(err.target_type),
+      "  Key type: " & user_repr(err.arg_type)
+    );
+  },
 
   not_a_record_type()                 = ( "Dot operator can only be used with records or tagged records",
                                           "  Actual target type: " & user_repr(err.type)
