@@ -138,15 +138,39 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     }
 
 
-    // type RelSubsetIter  = rel_subset_iter(vars: Maybe[StdVar]+, src_expr: Expr, args: Maybe[Expr]+);
+    // type RelSubsetIter = rel_subset_iter(vars: Maybe[StdVar]+, src_expr: Expr, args: Maybe[Expr]+);
     [TypeCheckingError] typecheck_iter(RelSubsetIter iter, [EnvVar -> Type] env) {
-      return []; ## IMPLEMENT IMPLEMENT IMPLEMENT
+      exp_src_type = match (|iter.args|)
+        1   = type_set,
+        2   = type_bin_rel,
+        3   = type_tern_rel;
+      errs = typecheck(iter.src_expr, exp_src_type, env);
+      return errs if errs != [];
+      src_type = expr_type(iter.src_expr, env);
+      args_types = match (|iter.args|)
+        1   = (set_elem_supertype(src_type)),
+        2   = bin_rel_args_supertypes(src_type),
+        3   = tern_rel_args_supertypes(src_type);
+      return union([typecheck(value(a), args_types(i), env) : a @ i <~ iter.args, a != nothing]);
     }
 
 
-    // type RelVarIter     = rel_var_iter(vars: Maybe[StdVar]+, rel_var: AnyRelVar, args: Maybe[Expr]+);
+    // type RelVarIter = rel_var_iter(vars: Maybe[StdVar]+, rel_var: AnyRelVar, args: Maybe[Expr]+);
     [TypeCheckingError] typecheck_iter(RelVarIter iter, [EnvVar -> Type] env) {
-      return []; ## IMPLEMENT IMPLEMENT IMPLEMENT
+      sgns = relvar_signatures(iter.rel_var);
+      for a @ i <- iter.args:
+        if a != nothing:
+          expr = value(a);
+          errs = typecheck(expr, type_any, env);
+          return errs if errs != [];
+          exp_type = union_superset([s(i) : s <- sgns]);
+          actual_type = expr_type(expr, env);
+          if are_ptype_disjoint(actual_type, exp_type):
+            return [unexpected_actual_type(actual_type, exp_type, expr)];
+          ;
+        ;
+      ;
+      return [];
     }
 
 
