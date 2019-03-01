@@ -228,14 +228,14 @@ implicit program           : Program,
     // not contain the argument that is being looked up
     is_unique = (k <- relvar_keys(rel_var) : not k(target_idx));
 
-    res_var, ret_var_gen = next_obj_var(init_var_gen);
+    res_surr_var, var_gen = next_int32_var(init_var_gen);
+    res_var, ret_var_gen = next_obj_var(var_gen);
 
     // Evaluation of arguments
     args_eval_code, args_aliases, var_gen = opt_eval_info(ord_args, ret_var_gen);
 
     surr_vars, var_gen = next_int32_vars(var_gen, |args|);
     surr_vars_map = [i -> surr_vars(j) : i @ j <~ args_idxs];
-    it_var, var_gen = next_table_it_var(var_gen, arity, symmetric(rel_var));
 
     // Selecting the candidate tables among those the logical relation is partitioned into
     args_types = [i -> subexpr_type(e) : i, e <- args];
@@ -260,13 +260,10 @@ implicit program           : Program,
       res_store_id = substitute(table_col_store_id(tv, target_idx));
 
       lookup_code = (
-        get_table_iter(it_var, substitute(tv), maybe_seq(surr_vars_map, arity)),
+        set_ivar32(res_surr_var, table_lookup(substitute(tv), maybe_seq(surr_vars_map, arity), symmetric(rel_var))),
         branch(
-          neg(is_out_of_range(it_var)),
-          ( lookup_surrogate(res_var, res_store_id, get_unknown_arg(it_var, 0)),
-            move_forward(it_var) if not is_unique,
-            do_if_not(is_out_of_range(it_var), terminate) if not is_unique
-          ),
+          neg(are_eq(int_obj(res_surr_var), object(-1))),
+          (lookup_surrogate(res_var, res_store_id, res_surr_var)),
           // If the lookup on this table fails we keep going, unless this is the last table left
           code
         )
