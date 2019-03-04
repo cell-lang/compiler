@@ -64,6 +64,7 @@ Nothing maybe_var(AtomicBoolExpr) = undefined;
 [TrkVar] tracked_vars_used(RefObjExpr expr) =
   retrieve_from_nested_low_level_exprs(expr, tracked_vars_used_by_any_type_expr);
 
+## BUG BUG BUG: I THINK THIS MIGHT BE BUGGY
 [TrkVar] tracked_vars_used_by_any_type_expr(AnyTypeExpr expr) {
   return [expr] if expr :: TrkObjVar;
   return match (expr)
@@ -106,6 +107,7 @@ Nothing maybe_var(AtomicBoolExpr) = undefined;
   set_var()               = trk_vars(instr.var),
   set_bvar()              = [],
   set_ivar()              = [],
+  set_ivar32()            = [],
   set_rc_var()            = trk_vars(instr.var),
   init_memb_var()         = [], ## NOT SURE ABOUT THIS ONE...
   reset_memb_var()        = [], ## NOT SURE ABOUT THIS ONE...
@@ -137,14 +139,14 @@ Nothing maybe_var(AtomicBoolExpr) = undefined;
   cleanup_value_store()   = [],
   init_table()            = [],
   cleanup_table()         = [],
-  set_table()             = [],
+  // set_table()             = [],
   get_table_iter()        = trk_vars(instr.it_var),
   queue_deletes()         = [],
   queue_insert_value()    = [],
   queue_insert_tuple()    = [],
   push_call_info()        = [],
-  pop_call_info           = [],
-  runtime_check()         = [];
+  pop_call_info           = [];
+  // runtime_check()         = [];
 
 
 [TrkVar] vars_set(JumpInstr) = [];
@@ -171,6 +173,7 @@ Nothing maybe_var(AtomicBoolExpr) = undefined;
   set_var()             = tracked_vars_used(instr.value),
   set_bvar()            = tracked_vars_used(instr.value),
   set_ivar()            = tracked_vars_used(instr.value),
+  set_ivar32()          = tracked_vars_used(instr.value),
   set_rc_var()          = tracked_vars_used(instr.value),
   init_memb_var()       = [],
   reset_memb_var()      = [],
@@ -203,17 +206,17 @@ Nothing maybe_var(AtomicBoolExpr) = undefined;
   init_table()          = [],
   cleanup_table()       = [],
   get_table_iter()      = [],
-  set_table()           = tracked_vars_used(instr.state),
+  // set_table()           = tracked_vars_used(instr.state),
   queue_deletes()       = [],
   queue_insert_value()  = tracked_vars_used(instr.value),
   queue_insert_tuple()  = [],
   push_call_info()      = [],
-  pop_call_info         = [],
-  runtime_check()       = tracked_vars_used(instr.cond) & [v : v <~ instr.vars, v :: TrkVar];
+  pop_call_info         = [];
+  // runtime_check()       = tracked_vars_used(instr.cond) & [v : v <~ instr.vars, v :: TrkVar];
 
 
 [TrkVar] vars_used(JumpInstr instr) =
   break_loop    = [],
   exit_block    = [],
   ret_val(e?)   = tracked_vars_used(e),
-  terminate     = [];
+  terminate()   = [];

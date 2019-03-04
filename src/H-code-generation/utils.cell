@@ -129,6 +129,11 @@ VarGen blank_var_gen = counter_set(nz_ctrs: []);
 (LocVar*,     VarGen) next_obj_vars(VarGen gen, Nat count)    = apply_seed(count, gen, next_obj_var);
 (StreamVar*,  VarGen) next_stream_vars(VarGen gen, Nat count) = apply_seed(count, gen, next_stream_var);
 
+([T -> Int32Var], VarGen) next_int32_vars(VarGen gen, [T] keys) {
+  vars, ret_gen = next_int32_vars(gen, |keys|);
+  return ([k -> vars(i) : k @ i <~ isort(keys)], ret_gen);
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 

@@ -88,7 +88,7 @@ type IntVar         = LocIntVar,
                       MembIntVar,
                       LocAutoIntVar;
 
-type Int32Var       = ivar32(Nat);
+type Int32Var       = ivar32(Nat), shadow_surr_var(StdVar);
 
 type LocFloatVar    = fvar(<Symbol, Nat>);
 type FloatFnArg     = float_arg(Nat);
@@ -183,8 +183,8 @@ type Int32NatOp     = bool_to_bit(BoolExpr),
                       table_lookup(table: AnyTableVar, args: Maybe[Int32Var]+, symmetric: Bool),
                       cast_int32(IntExpr),
                       add32(Int32Expr, Int32Expr),
-                      lookup_value(store: AnyValueStoreId, value: AtomicExpr),
-                      lookup_value_ex(store: ValueStoreId, value: AtomicExpr),
+                      value_to_surr(store: AnyValueStoreId, value: AtomicExpr),
+                      value_to_surr_ex(store: ValueStoreId, value: AtomicExpr),
                       get_unknown_arg(iter: TableItVar, arg: <0..2>);
 
 type FloatNatOp     = float_value(ObjExpr),
@@ -273,7 +273,7 @@ type RefObjExpr     = mk_set_from_stream(stream: StreamVar),
                       // Can be used only once per pending variable, and does not automatically clear it,
                       // it has to be manually cleared with init_memb_var(...)
                       read_pending_var(<PendingStateVar, PendingInputVar>),
-                      lookup_surrogate(store: AnyValueStoreId, surrogate: IntExpr); ## THIS SHOULD BELONG IN ObjNatOp, NOT HERE...
+                      surr_to_value(store: AnyValueStoreId, surrogate: Int32Var); ## THIS SHOULD BELONG IN ObjNatOp, NOT HERE...
 
 type BasicInstr     = init_stream(StreamVar),
                       append(stream: StreamVar, obj: AtomicExpr),  // Ownership transfer: <obj>

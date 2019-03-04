@@ -61,7 +61,7 @@ implicit leaf_nodes : NodeInfo+, next_node : NodeId, loop_break_target : Maybe[N
       break_loop  = (value_unsafe(loop_break_target)),
       exit_block  = (value_unsafe(block_exit_target)),
       ret_val()   = (),
-      terminate   = ();
+      terminate() = ();
 
     NodeId* node_exit(BasicInstr) = (next_node);
   }
@@ -90,7 +90,9 @@ implicit leaf_nodes : NodeInfo+, next_node : NodeId, loop_break_target : Maybe[N
 
 
   NodeId** build_flow_map(CodeTree* code_trees) {
-    next_nodes = (first_node(code_trees(i+1)) : i < |code_trees|-1);
+    // next_nodes = (first_node(code_trees(i+1)) : i < |code_trees|-1);
+    ## BAD BAD BAD: WORKAROUND FOR A BUG IN THE COMPILER
+    next_nodes = (first_node(code_trees(i+1)) : i < if code_trees != () then |code_trees| - 1 else 0);
     next_nodes = (next_nodes | next_node);
     flow_maps = (build_flow_map(t, next_node=next_nodes(i)) : t @ i <- code_trees);
     return join(flow_maps);

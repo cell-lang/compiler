@@ -151,7 +151,7 @@ implicit program           : Program,
         store_id = substitute(table_col_store_id(t, rat(unfiltered_idxs, j)));
         surr_var = rat(surr_vars, j);
         table_code = (
-          set_ivar32(surr_var, lookup_value(store_id, e)),
+          set_ivar32(surr_var, value_to_surr(store_id, e)),
           branch(neg(are_eq(int_obj(surr_var), int_obj(-1))), table_code, (set_ivar32(res_var, 0) if i == 0))
         );
       ;
@@ -200,7 +200,7 @@ implicit program           : Program,
         store_id = substitute(table_col_store_id(tv, rat(unfiltered_idxs, j)));
         surr_var = rat(surr_vars, j);
         table_code = (
-          set_ivar32(surr_var, lookup_value(store_id, e)),
+          set_ivar32(surr_var, value_to_surr(store_id, e)),
           do_if_not(are_eq(int_obj(surr_var), int_obj(-1)), table_code)
         );
       ;
@@ -234,8 +234,8 @@ implicit program           : Program,
     // Evaluation of arguments
     args_eval_code, args_aliases, var_gen = opt_eval_info(ord_args, ret_var_gen);
 
-    surr_vars, var_gen = next_int32_vars(var_gen, |args|);
-    surr_vars_map = [i -> surr_vars(j) : i @ j <~ args_idxs];
+    def_surr_vars, var_gen = next_int32_vars(var_gen, |args|);
+    def_surr_vars_map = [i -> def_surr_vars(j) : i @ j <~ args_idxs];
 
     // Selecting the candidate tables among those the logical relation is partitioned into
     args_types = [i -> subexpr_type(e) : i, e <- args];
@@ -247,12 +247,23 @@ implicit program           : Program,
 
     // Iterating through all the candidate tables
     for tv <- isort(candidate_tables):
+      surr_vars = def_surr_vars;
+      surr_vars_map = def_surr_vars_map;
+      if maybe_args :: (Just[ExprRef], Nothing):
+        arg1 = expand_subexpr(value(maybe_args(0)));
+        if arg1 :: StdVar:
+          surr_var = shadow_surr_var(arg1);
+          surr_vars = (surr_var);
+          surr_vars_map = [0 -> surr_var];
+        ;
+      ;
+
       // Looking up all arguments
       args_lookup_code = join(({
         store_id = substitute(table_col_store_id(tv, args_idxs(i)));
         surr_var = surr_vars(i);
         return (
-          set_ivar32(surr_var, lookup_value(store_id, e)),
+          set_ivar32(surr_var, value_to_surr(store_id, e)),
           check(neg(is_eq(surr_var, -1)))
         );
       } : e @ i <- args_aliases));
@@ -263,7 +274,7 @@ implicit program           : Program,
         set_ivar32(res_surr_var, table_lookup(substitute(tv), maybe_seq(surr_vars_map, arity), symmetric(rel_var))),
         branch(
           neg(are_eq(int_obj(res_surr_var), object(-1))),
-          (lookup_surrogate(res_var, res_store_id, res_surr_var)),
+          (surr_to_value(res_var, res_store_id, res_surr_var)),
           // If the lookup on this table fails we keep going, unless this is the last table left
           code
         )

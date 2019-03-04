@@ -160,7 +160,7 @@ implicit program           : Program,
           store_id = table_col_store_id(table_var, i);
           arg_surr = value_unsafe(args_surrs(i));
           code = (
-            set_ivar32(arg_surr, lookup_value(store_id, value(a))),
+            set_ivar32(arg_surr, value_to_surr(store_id, value(a))),
             do_if_not(is_eq(arg_surr, -1), code)
           );
         ;
@@ -856,6 +856,7 @@ implicit program           : Program,
     entry_code, args_aliases, var_gen = opt_eval_code(set_args, env, init_var_gen);
 
     surr_vars, var_gen = next_int32_vars(var_gen, |set_args|);
+    shadow_surr_vars, var_gen = next_int32_vars(var_gen, [i : v @ i <~ iter.vars, v != nothing]);
     it_var, var_gen = next_table_it_var(var_gen, |table_args|, symmetric(iter.rel_var));
 
     surr_args = (apply(mi, surr_vars($)) : mi <- filtered_idxs);
@@ -872,10 +873,21 @@ implicit program           : Program,
     surrs = surrogates;
     for tv <- isort(candidate_tables):
       assert (a <~ surr_args : a == nothing);
-      lookup_exprs = (
-        lookup_surrogate(substitute(table_col_store_id(tv, i)), get_unknown_arg(it_var, j))
-        : i @ j <- blank_idxs
-      );
+
+      // lookup_exprs = (
+      //   surr_to_value(substitute(table_col_store_id(tv, i)), get_unknown_arg(it_var, j))
+      //   : i @ j <- blank_idxs
+      // );
+      // vars_setup_code = (set_var(value(v), lookup_exprs(i)) : v @ i <- iter.vars, v != nothing);
+
+      vars_setup_code = join(({
+        shadow_surr_var = shadow_surr_vars(i);
+        value_store_id = substitute(table_col_store_id(tv, blank_idxs(i)));
+        return (
+          set_ivar32(shadow_surr_var, get_unknown_arg(it_var, i)),
+          set_var(value(v), surr_to_value(value_store_id, shadow_surr_var))
+        );
+      } : v @ i <- iter.vars, v != nothing));
 
       // Environment the body runs in
       args_types = table_signature(tv);
@@ -897,7 +909,6 @@ implicit program           : Program,
       ;
       entry_code = entry_code & entry_code_fixes;
 
-      vars_setup_code = (set_var(value(v), lookup_exprs(i)) : v @ i <- iter.vars, v != nothing);
       loop_code = (break_if(is_out_of_range(it_var))) & vars_setup_code & body_code & (move_forward(it_var));
       table_code = (
         get_table_iter(it_var, substitute(tv), nonempty(surr_args)),
@@ -908,7 +919,7 @@ implicit program           : Program,
         store_id = table_col_store_id(tv, rat(unfiltered_idxs, i));
         surr_var = rat(surr_vars, i);
         table_code = (
-          set_ivar32(surr_var, lookup_value(store_id, e)),
+          set_ivar32(surr_var, value_to_surr(store_id, e)),
           do_if_not(is_eq(surr_var, -1), table_code)
         );
       ;

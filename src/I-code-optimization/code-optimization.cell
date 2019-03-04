@@ -1,0 +1,238 @@
+CompiledPrg optimize_compiled_code(CompiledPrg prg) {
+  opt_static_blocks = [optimize_static_block(b) : b <- prg.static_blocks];
+  return compiled_prg(
+    typedefs:       prg.typedefs,
+    opt_reprs:      prg.opt_reprs,
+    bool_procs:     prg.bool_procs,
+    procs:          prg.procs,
+    react_blocks:   prg.react_blocks,
+    static_blocks:  opt_static_blocks,
+    int_seqs:       prg.int_seqs
+  );
+}
+
+
+StaticBlock optimize_static_block(StaticBlock block) =
+  static_block(
+    name:                     block.name,
+    links:                    block.links,
+    state_vars:               block.state_vars,
+    value_stores:             block.value_stores,
+    tables:                   block.tables,
+    foreign_keys:             block.foreign_keys,
+    nested_blocks:            block.nested_blocks,
+    init_code:                block.init_code,
+    cleanup_code:             block.cleanup_code,
+    copy_state_code:          block.copy_state_code,
+    set_state_code:           block.set_state_code,
+    foreign_keys_check_code:  block.foreign_keys_check_code,
+    methods:                  [id -> optimize_static_block_method(def) : id, def <- block.methods],
+    updates:                  block.updates,
+    accessors:                block.accessors,
+    msg_memb_pred:            block.msg_memb_pred
+  );
+
+
+CompiledMethod optimize_static_block_method(CompiledMethod method) {
+  opt_code = if method.code != () then optimize_code(method.code) else ();
+  return compiled_method(
+    args_vars:        method.args_vars,
+    args_types:       method.args_types,
+    args_memb_preds:  method.args_memb_preds,
+    ret_type:         method.ret_type,
+    code:             opt_code
+  );
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+Instr+ optimize_code(Instr+ instrs) {
+  leaf_nodes, code_tree = build_root_code_graph(instrs);
+  assert reconstruct_code(code_tree, leaf_nodes) == instrs;
+  flow_map = build_flow_map(code_tree, leaf_nodes);
+  no_end_node_flow_map = ((n : n <- ns, n != end_node) : ns <- flow_map);
+  rev_flow_map = reverse_flow_map(no_end_node_flow_map);
+
+  prop_info = propagate(leaf_nodes, ([] : unused_var <- leaf_nodes), rev_flow_map);
+  rewritten_nodes = (rewrite_node(n, prop_info(i)) : n @ i <- leaf_nodes);
+  live_vars_before_map, live_vars_after_map = build_live_vars_maps(rewritten_nodes, no_end_node_flow_map);
+  assert |rewritten_nodes| == |live_vars_after_map|;
+  rewritten_nodes_2 = (erase_useless_instrs(n, live_vars_after_map(i)) : n @ i <- rewritten_nodes);
+  opt_instrs = reconstruct_code(code_tree, rewritten_nodes_2);
+
+print "----------------------------------------------------------";
+print "instrs";
+print instrs;
+print "leaf_nodes";
+print leaf_nodes;
+print "code_tree";
+print code_tree;
+print "flow_map";
+print flow_map;
+print "no_end_node_flow_map";
+print no_end_node_flow_map;
+print "rev_flow_map";
+print rev_flow_map;
+print "(outgoing_prop_info(n, []) : n <- leaf_nodes)";
+print (outgoing_prop_info(n, []) : n <- leaf_nodes);
+print "prop_info";
+print prop_info;
+print "rewritten_nodes";
+print rewritten_nodes;
+print "rewritten_nodes_2";
+print rewritten_nodes_2;
+print "opt_instrs";
+print opt_instrs;
+
+  return nonempty(opt_instrs);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+type PropExpr       = surr_to_value(store: AnyValueStoreId, surrogate: Int32Var);
+type PropInt32Expr  = value_to_surr(store: AnyValueStoreId, value: StdVar);
+
+type PropInfo = [<StdVar, Int32Var> -> <PropExpr, PropInt32Expr>]; ## BAD BAD BAD
+
+
+PropInfo* propagate(NodeInfo* nodes, PropInfo* init_prop_info, [Nat]* rev_flow_map) {
+  assert |nodes| == |rev_flow_map|;
+  prop_info = init_prop_info;
+  loop
+    in_prop_info  = (merge_prop_info(ns, prop_info) : ns <- rev_flow_map);
+    out_prop_info = (outgoing_prop_info(n, in_prop_info(i)) : n @ i <- nodes);
+    return in_prop_info if out_prop_info == prop_info;
+    prop_info = out_prop_info;
+  ;
+}
+
+
+PropInfo merge_prop_info([Nat] in_nodes, PropInfo* prop_info) {
+  common_keys = intersection([[v : v, unused_var <- prop_info(n)] : n <- in_nodes]);
+  return [k -> only(vs) : k <- common_keys, vs = [prop_info(n)(k) : n <- in_nodes], |vs| == 1];
+}
+
+
+PropInfo outgoing_prop_info(NodeInfo node, PropInfo in_prop_info) {
+  return match (node)
+    std_node(i?)    = std_node_prop_info(i, in_prop_info),
+    _               = in_prop_info;
+
+
+  PropInfo std_node_prop_info(<BasicInstr, JumpInstr> instr, PropInfo in_prop_info) =
+    set_rc_var()          = set_rc_var_prop_info(in_prop_info, instr.var, instr.value),
+    set_var()             = clear_constr(in_prop_info, instr.var),
+    call_proc()           = if instr.var? then clear_constr(in_prop_info, instr.var) else in_prop_info,
+    call_cls()            = clear_constr(in_prop_info, instr.var),
+    invoke_auto_method()  = clear_constr(in_prop_info, instr.res_var),
+    invoke_db_method()    = clear_constr(in_prop_info, instr.res_var),
+    ## THESE SHOULD NOT AFFECT ANYTHING, BUT...
+    // set_at()              =
+    // write_rec_field()     =
+    // finish_init()         =
+
+    set_ivar32()          = set_ivar32_updated_info(in_prop_info, instr.var, instr.value),
+
+    _                     = in_prop_info;
+
+
+  PropInfo set_ivar32_updated_info(PropInfo in_info, Int32Var var, Int32Expr value) =
+    if value :: PropInt32Expr then update(in_info, var, value) else in_info;
+
+
+  PropInfo set_rc_var_prop_info(PropInfo in_prop_info, <WriteObjVar, LocOptTagRecVar> var, RefObjExpr value) {
+    if var :: StdVar:
+      prop_info = if in_prop_info(var, *) then remove_key(in_prop_info, var) else in_prop_info;
+      prop_info = prop_info & [var -> value] if value :: PropExpr;
+      return prop_info;
+    else
+      return in_prop_info;
+    ;
+  }
+
+
+  PropInfo clear_constr(PropInfo in_prop_info, <AnyWriteVar, ImplArg> var) =
+    if var :: StdVar and in_prop_info(var, *)
+      then remove_key(in_prop_info, var)
+      else in_prop_info;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+NodeInfo rewrite_node(NodeInfo node, PropInfo prop_info) =
+  std_node(set_ivar32() i?) = std_node(
+                                if prop_info(i.var, *) and prop_info(i.var) == i.value
+                                  then :no_op
+                                  else set_ivar32(i.var, rewrite_int32_expr(i.value, prop_info))
+                              ),
+  _                         = node;
+
+
+Int32Expr rewrite_int32_expr(Int32Expr expr, PropInfo prop_info) =
+  value_to_surr() = if expr.value :: StdVar and prop_info(expr.value, *)
+                      then rewrite_value_to_surr_expr(expr, prop_info)
+                      else expr,
+  _               = expr;
+
+
+Int32Expr rewrite_value_to_surr_expr(PropInt32Expr expr, PropInfo prop_info) {
+  prop_value = prop_info(expr.value);
+  fail if not prop_value :: PropExpr;
+  if expr.store == prop_value.store:
+    return prop_value.surrogate;
+  else
+    return expr;
+  ;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+NodeInfo erase_useless_instrs(NodeInfo node, [TrkVar] live_vars_after) =
+  std_node(set_rc_var() i?) = if not live_vars_after(i.var) then std_node(:no_op) else node,
+  _                         = node;
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+Instr* reconstruct_code(CodeTree code_tree, NodeInfo+ nodes) {
+  return match (code_tree)
+    std_node(id?)       = {match (nodes(id)) std_node(i?) = (i if i != :no_op)},
+    branch_node()       = reconstruct_branch(code_tree.idx, code_tree.if_body, code_tree.else_body, nodes),
+    nat_switch_node()   = reconstruct_nat_switch(code_tree.idx, code_tree.cases, nodes),
+    symb_switch_node()  = reconstruct_symb_switch(code_tree.idx, code_tree.cases, code_tree.else, nodes),
+    loop_node(ts?)      = (repeat(nonempty(reconstruct(ts, nodes)))),
+    block_node(ts?)     = (execute_block(nonempty(reconstruct(ts, nodes)))),
+    try_block_node()    = (try_block(code_tree.var, nonempty(reconstruct(code_tree.body, nodes)))),
+    root_node(ts?)      = reconstruct(ts, nodes);
+
+
+  Instr* reconstruct_branch(Nat idx, CodeTree+ if_code_trees, CodeTree* else_code_trees, NodeInfo+ nodes) {
+    cond = match (nodes(idx)) branch_node(e?) = e;
+    if_body = reconstruct(if_code_trees, nodes);
+    else_body = reconstruct(else_code_trees, nodes);
+    return (branch(cond, if_body, else_body));
+  }
+
+
+  Instr* reconstruct_nat_switch(Nat idx, CodeTree*+ cases, NodeInfo+ nodes) {
+    expr = match (nodes(idx)) nat_switch_node(e?) = e;
+    cases_code = (reconstruct(c, nodes) : c <- cases);
+    return (switch_on_nat(expr, cases_code));
+  }
+
+
+  Instr* reconstruct_symb_switch(Nat idx, CodeTree++ cases, CodeTree* else, NodeInfo+ nodes) {
+    node = match (nodes(idx)) symb_switch_node() n? = n;
+    cases_code = (nonempty(reconstruct(c, nodes)) : c <- cases);
+    else_code = reconstruct(else, nodes);
+    return (symb_switch(node.value, set(nonempty(zip(node.cases, cases_code))), else_code));
+  }
+
+
+  Instr* reconstruct(CodeTree* code_trees, NodeInfo+ nodes) =
+    join((reconstruct_code(t, nodes) : t <- code_trees));
+}
