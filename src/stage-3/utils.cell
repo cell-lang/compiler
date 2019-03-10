@@ -113,7 +113,6 @@ type CodeOutcome = fails, returns, breaks_loop, exits_block, falls_through;
   dec_exp(e?)           = retrieve(e),
   ## MOVED TO Int32NatOp (WHICH IS NOT EVEN HERE. WHY?)
   // value_to_surr()       = retrieve(expr.value),
-  // value_to_surr_ex()    = retrieve(expr.value),
   // get_unknown_arg()     = [],
   rand_nat(e?)          = retrieve(e),
   unique_nat            = [],
@@ -131,7 +130,6 @@ type CodeOutcome = fails, returns, breaks_loop, exits_block, falls_through;
   cast_int32(e?)      = retrieve(e),
   add32(e1?, e2?)     = retrieve(e1) & retrieve(e2),
   value_to_surr()     = retrieve(op.value),
-  value_to_surr_ex()  = retrieve(op.value),
   get_unknown_arg()   = [];
 
 
@@ -217,3 +215,86 @@ type CodeOutcome = fails, returns, breaks_loop, exits_block, falls_through;
 
 
 [T] retrieve_from_nested_low_level_instrs(Instr* instrs, (Instr -> [T]) retrieve) = seq_union((retrieve(i) : i <- instrs));
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+[ValueStoreId] updated_value_stores(CompiledUpdate update) {
+  return retrieve_from_nested_low_level_instrs(update.body, updated_value_stores);
+
+  [ValueStoreId] updated_value_stores(Instr instr) =
+    init_value_store()              |
+    cleanup_value_store()           |
+    immediate_insert_or_add_ref()   = undefined,
+    queue_insert_value()            |
+    lookup_or_queue_insert_value()  = [instr.store],
+    _                               = retrieve_from_nested_low_level_instrs(instr, updated_value_stores);
+}
+
+
+[TableVar] table_vars_with_insertions(CompiledUpdate update) {
+  return retrieve_from_nested_low_level_instrs(update.body, table_vars);
+
+  [TableVar] table_vars(Instr instr) =
+    init_table()              |
+    cleanup_table()           |
+    immediate_insert_tuple()  = undefined,
+    queue_insert_tuple()      = [instr.table_var],
+    _                         = retrieve_from_nested_low_level_instrs(instr, table_vars);
+}
+
+
+[TableVar] table_vars_with_deletions(CompiledUpdate update) {
+  return retrieve_from_nested_low_level_instrs(update.body, table_vars);
+
+  [TableVar] table_vars(Instr instr) =
+    init_table()              |
+    cleanup_table()           |
+    immediate_insert_tuple()  = undefined,
+    queue_deletes()           = [instr.table_var],
+    _                         = retrieve_from_nested_low_level_instrs(instr, table_vars);
+}
+
+
+## THE RETURNED TYPE IS ACTUALLY MORE SPECIFIC THAN THAT
+[UpdateId] invoked_mutators(CompiledUpdate update) {
+  return retrieve_from_nested_low_level_instrs(update.body, mutators);
+
+  [UpdateId] mutators(Instr instr) =
+    try_update()  = [instr.update_id],
+    _             = retrieve_from_nested_low_level_instrs(instr, mutators);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+implicit block : StaticBlock {
+  [UpdateId, UpdateId] call_graph_transitive_closure {
+    shallow_graph = [id -> invoked_mutators(u) : id, u <- block.updates];
+    deep_graph = transitive_closure(shallow_graph);
+    return [s, t : s, ts <- deep_graph, t <- ts];
+  }
+
+
+  [UpdateId, ValueStoreId] updated_value_stores {
+    directly_touched = [id -> updated_value_stores(u) : id, u <- block.updates];
+    deep_call_map = call_graph_transitive_closure;
+    indirectly_touched = [s, v : s, t <- deep_call_map, v <- directly_touched(t)];
+    return [u, s : u, ss <- directly_touched, s <- ss | s <- indirectly_touched(u, ?)];
+  }
+
+
+  [UpdateId, TableVar] table_vars_with_insertions {
+    directly_touched = [id -> table_vars_with_insertions(u) : id, u <- block.updates];
+    deep_call_map = call_graph_transitive_closure;
+    indirectly_touched = [s, v : s, t <- deep_call_map, v <- directly_touched(t)];
+    return [u, v : u, vs <- directly_touched, v <- vs | v <- indirectly_touched(u, ?)];
+  }
+
+
+  [UpdateId, TableVar] table_vars_with_deletions {
+    directly_touched = [id -> table_vars_with_deletions(u) : id, u <- block.updates];
+    deep_call_map = call_graph_transitive_closure;
+    indirectly_touched = [s, v : s, t <- deep_call_map, v <- directly_touched(t)];
+    return [u, v : u, vs <- directly_touched, v <- vs | v <- indirectly_touched(u, ?)];
+  }
+}

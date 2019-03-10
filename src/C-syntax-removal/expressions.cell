@@ -526,7 +526,18 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
 
   Statement+ desugar_insert_with_attrs_stmt(SynInsertWithAttrsStmt stmt, [StdVar] def_vars) {
     relvar = rel_var(stmt.relvar);
-    args = (desugar_expr(a, def_vars) : a <- stmt.args);
+    args_exprs = (desugar_expr(a, def_vars) : a <- stmt.args);
+    args_code = ();
+    args = ();
+    for a @ i <- args_exprs:
+      if a :: StdVar:
+        args = (args | a);
+      else
+        hidden_var = hidden_var(i);
+        args_code = (args_code | assignment_stmt((hidden_var), a));
+        args = (args | hidden_var);
+      ;
+    ;
     attrs_inserts = ({
       assert not (attr.cond? and attr.iter?);
       if attr.iter?:
@@ -539,7 +550,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
         return attr_stmt;
       ;
     } : attr <- stmt.attrs);
-    return (insert_stmt(relvar, args)) & attrs_inserts;
+    return (args_code | insert_stmt(relvar, nonempty(args))) & attrs_inserts;
   }
 
 
