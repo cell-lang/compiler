@@ -3,9 +3,10 @@ type TaggedRecordType = tag_obj_type(tag_type: SymbType, obj_type: RecordType);
 
 implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptions {
   [Symbol -> OptRecRepr+] optimized_tagged_records {
+    types = values(program.typedefs) & [h.type : a <- program.data_bases, h <- a.handlers];
     tag_recs = [
       untag(untag(tr.tag_type)), tr.obj_type
-      : unused_var, t <- program.typedefs, tr <- tagged_records(t, options.max_opt_fields_in_opt_rec)
+      : t <- types, tr <- tagged_records(t, options.max_opt_fields_in_opt_rec)
     ];
     recs_by_tag = group_by_left_arg(tag_recs);
     return [s -> isort(rs) : s, ts <- recs_by_tag, rs = optimized_reprs(ts), rs != []];
