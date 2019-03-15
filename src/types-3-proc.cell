@@ -318,7 +318,7 @@ type BasicInstr     = init_stream(StreamVar),
                       call_proc(var: AnyWriteVar?, name: ObjFnName, args: AnyTypeExpr*, cls_args: AnyLambdaExpr*),
                       call_cls(var: WriteObjVar, cls_var: AnyClsVar, args: AtomicExpr+),
 
-                      push_call_info(fn_name: <FnId, ProcSymbol>, args: ObjExpr*),
+                      push_call_info(fn_name: <FnId, ProcSymbol, MethodSymbol>, args: ObjExpr*),
                       pop_call_info,
 
                       log_runtime_failure(
@@ -362,11 +362,11 @@ type BasicInstr     = init_stream(StreamVar),
                       ),
 
                       invoke_db_method(
-                        res_var:    WriteObjVar,
+                        res_var:    AnyWriteVar,
                         db_var:     AnyDBVar?,
                         type:       DBSymbol,
                         method_id:  MethodId,
-                        args:       AtomicExpr*
+                        args:       AnyTypeExpr*
                       ),
 
                       // Table instructions
@@ -497,6 +497,15 @@ type CompiledMethod = compiled_method(
                         code:             Instr*
                       );
 
+type OptCompMethod  = opt_comp_method(
+                        args:             ObjProcArg*, ## WHAT HAPPENS IF THE NAME OF THE ARGUMENT IS MISSING?
+                        args_types:       NeType*, ## PROBABLY NEEDED FOR THE WRAPPER CLASSES
+                        args_memb_preds:  [+MembTestPredId*], ## BAD BAD BAD
+                        ret_type:         NeType,
+                        ret_val_repr:     AnyLowLevelRepr,
+                        body:             Instr*
+                      );
+
 type CompiledUpdate = compiled_update(args_vars: <StdVar, FnArg>*, body: Instr*);
 
 type ReactBlock = react_block(
@@ -536,7 +545,7 @@ type StaticBlock = static_block(
                     copy_state_code:          Instr*,
                     set_state_code:           Instr*,
                     foreign_keys_check_code:  Instr*,
-                    methods:                  [MethodId -> CompiledMethod],
+                    methods:                  [MethodId -> OptCompMethod],
                     updates:                  [UpdateId -> CompiledUpdate],
                     accessors:                [MethodId -> CompiledMethod],
                     msg_memb_pred:            Maybe[MembTestPredId] ## REPLACE THE MAYBE WITH A NULL OBJECT?
