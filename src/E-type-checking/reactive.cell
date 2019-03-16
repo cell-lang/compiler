@@ -1,11 +1,11 @@
 implicit program : Program, typedefs : [TypeName -> NeType] {
-  [<Automaton, Method> -> [+TypeCheckingError]] typecheck_automaton(Automaton auto) =
+  [<Automaton, ReactMethod> -> [+TypeCheckingError]] typecheck_automaton(Automaton auto) =
     typecheck_automaton(context=auto, typed_vars=[]);
 }
 
 
 implicit program : Program, typedefs : [TypeName -> NeType], context : Automaton, typed_vars : [] {
-  [<Automaton, Method> -> [+TypeCheckingError]] typecheck_automaton {
+  [<Automaton, ReactMethod> -> [+TypeCheckingError]] typecheck_automaton {
     // Typechecking and inferring type of constants
     consts = context.params;
     consts_vars = [id -> type_dependencies(info.value) : id, info <- consts];
@@ -136,7 +136,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Automaton
   }
 
 
-  [TypeCheckingError] typecheck_auto_method(Method method, [EnvVar -> Type] env) {
+  [TypeCheckingError] typecheck_auto_method(ReactMethod method, [EnvVar -> Type] env) {
     env_delta = merge([[fn_arg(i) -> t, value(v) -> t if v != nothing] : t, v @ i <~ method.args]);
     return typecheck(method.expr, method.ret_type, env & env_delta);
   }

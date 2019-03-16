@@ -94,12 +94,11 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
 
   //////////////////////////////////////////////////////////////////////////////
 
-  ## COMPILATION OF METHODS FOR BOTH TYPES OF AUTOMATA IS ALMOST IDENTICAL, CAN WE SHARE SOME CODE HERE?
-  [MethodId -> CompiledMethod] compiled_methods([Method] methods) {
+  [MethodId -> CompiledMethod] compiled_methods([ReactMethod] methods) {
     return merge([compiled(ms) : unused_var, ms <- group_by(methods, ($.name, |$.args|))]);
 
 
-    [MethodId -> CompiledMethod] compiled([+Method] methods) {
+    [MethodId -> CompiledMethod] compiled([+ReactMethod] methods) {
       a_method = an_elem(methods);
       name = a_method.name;
       arity = |a_method.args|;
@@ -120,7 +119,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
     }
 
 
-    CompiledMethod compiled(Method method) =
+    CompiledMethod compiled(ReactMethod method) =
       compiled_method(
         (v : unused_var, v <- method.args),
         (t : t, unused_var <- method.args),
@@ -130,7 +129,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
       );
 
 
-    Instr* gen_code(Method method) {
+    Instr* gen_code(ReactMethod method) {
       args_env = [if a != nothing then value(a) else fn_arg(i) -> t : t, a @ i <~ method.args];
       let context = automaton, typed_vars = [], surrogates = []:
         eval_code, surr, unused_var = opt_eval_code(method.expr, args_env & react_auto_env, blank_var_gen);
@@ -412,7 +411,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
 ////////////////////////////////////////////////////////////////////////////////
 
 implicit typedefs : [TypeName -> NeType] {
-  Instr* gen_dispatch_auto_method_body(AutoSymbol auto_type, Method+ methods) {
+  Instr* gen_dispatch_auto_method_body(AutoSymbol auto_type, ReactMethod+ methods) {
     assert |methods| > 1;                     // There must be more than one method
     assert |[m.name : m <~ methods]| == 1;    // All methods must have the same name
     assert |[|m.args| : m <~ methods]| == 1;  // All methods have the same arity

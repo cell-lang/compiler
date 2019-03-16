@@ -124,12 +124,12 @@ implicit syn_prg : SynPrg, artifact : ReactAutoDef {
   }
 
 
-  Method desugar_method(AutoMethodDef method_def) {
+  ReactMethod desugar_method(AutoMethodDef method_def) {
     args = ((desugar_plain_type(t), just(v)) : t, v <- method_def.args);
     ret_type = desugar_plain_type(method_def.ret_type);
     arg_vars = [v : _, v <~ method_def.args];
     expr = desugar_expr(method_def.expr, arg_vars, artifact = method_def, impl_args = []);
-    method = method(method_symbol(method_def.name), args, ret_type, expr);
+    method = react_method(method_symbol(method_def.name), args, ret_type, expr);
     return transfer(method, method_def);
   }
 
