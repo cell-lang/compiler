@@ -287,6 +287,8 @@ UpdateId update_id(UpdateSymbol s, Nat a) = update_id(symbol: s, arity: a);
 MethodId method_id(MethodSymbol s, Nat a, Nat id) = method_id(symbol: s, arity: a, id: id);
 UpdateId update_id(UpdateSymbol s, Nat a, Nat id) = update_id(symbol: s, arity: a, id: id);
 
+MethodId method_id(Symbol s, Nat a) = method_id(symbol: method_symbol(s), arity: a);
+
 UpdateId main_handler        = :main_handler;
 UpdateId handler_id(Nat n)   = :handler_id(n);
 
@@ -499,7 +501,13 @@ ReactMethod react_method(MethodSymbol n, (NeType, Maybe[StdVar])* as, NeType t, 
 
 ////////////////////////////////////////////////////////////////////////////////
 
-Method method(MethodSymbol n, (NeType, Maybe[StdVar])* as, NeType t, Expr e) = method(name: n, args: as, ret_type: t, expr: e);
+Method method(MethodId id, (NeType, Maybe[StdVar])* as, NeType t, Expr e) {
+  assert id.arity == |as|;
+  return method(id: id, name: id.symbol, args: as, ret_type: t, expr: e);
+}
+
+Method method(MethodSymbol name, (NeType, Maybe[StdVar])* as, NeType t, Expr e) =
+  method(method_id(name, |as|), as, t, e);
 
 Update update(UpdateSymbol n, (NeType, StdVar)* as, Statement* ss) = update(name: n, args: as, body: ss);
 

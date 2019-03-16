@@ -7,7 +7,7 @@ implicit syn_prg : SynPrg, artifact : SchemaDef {
       ) : v <- db_state_vars
     ];
 
-    methods  = [desugar_db_method(m) : m <- lookup(methods_by_db, artifact.name, [])];
+    // methods  = [desugar_db_method(m) : m <- lookup(methods_by_db, artifact.name, [])];
     updates  = [desugar_update(u)    : u <- lookup(updates_by_db, artifact.name, [])];
     handlers = [desugar_handler(h)   : h <- lookup(handlers_by_db, artifact.name, [])];
 
@@ -24,7 +24,7 @@ implicit syn_prg : SynPrg, artifact : SchemaDef {
       attr_map:     attr_map,
       foreign_keys: impl_fkeys & expl_fkeys,
       nested_dbs:   db_vars_types,
-      methods:      methods,
+      methods:      desugared_rel_auto_methods(lookup(methods_by_db, artifact.name, [])),
       updates:      updates,
       handlers:     handlers
     );
@@ -49,13 +49,25 @@ implicit syn_prg : SynPrg, artifact : SchemaDef {
   }
 
 
-  Method desugar_db_method(DBMethodDef method_def) {
+  [Method] desugared_rel_auto_methods([DBMethodDef] methods) =
+    union([
+      [desugared_rel_auto_method(m, maybe(i, |ms| > 1)) : m @ i <~ isort(ms)]
+      : unused_var, ms <- group_by(methods, ($.name, |$.args|))
+    ]);
+
+
+  Method desugared_rel_auto_method(DBMethodDef method_def, Maybe[Nat] unique_id) {
     args = ((desugar_plain_type(t), just(var(n))) : t, n <- method_def.args);
     ret_type = desugar_plain_type(method_def.ret_type);
     arg_vars = [var(n) : _, n <~ method_def.args];
     method_artifact = using_block_method_def(artifact.name, method_def);
     expr = desugar_expr(method_def.expr, arg_vars, artifact = method_artifact, impl_args = []);
-    method = method(method_symbol(method_def.name), args, ret_type, expr);
+    method_id = method_id(
+      symbol: method_symbol(method_def.name),
+      arity:  |args|,
+      id:     value(unique_id) if unique_id != nothing
+    );
+    method = method(method_id, args, ret_type, expr);
     return transfer(method, method_def);
   }
 
