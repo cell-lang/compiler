@@ -30,7 +30,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
     return reprs(arg_type, !!);
 
     [NeType -> AnyLowLevelRepr] reprs {
-      args_types = [t : f <- program.fndefs, unused_var, t <~ f.args];
+      args_types = [t : f <- program.fndefs, unused_var, t <~ f.args] &
+                   [t : a <- program.data_bases, m <- a.methods, t, unused_var <~ m.args];
       return [t -> opt_repr(replace_type_vars_with_type_any(t)) : t <- args_types];
     }
   }

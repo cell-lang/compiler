@@ -287,21 +287,50 @@ implicit program           : Program,
   }
 
 
+  // type FnCallExpr = fn_call(fn_id: FnFamilyId, args: Expr*, ...);
   // db_method_call(var: AnyDBVar?, name: MethodSymbol, args: Expr*)
   (Instr*, ObjExpr, VarGen) db_method_call_opt_eval_info(DBMethodCall expr, VarGen init_var_gen) {
-    res_var, ret_var_gen = next_obj_var(init_var_gen);
-    args_eval_code, args_surrs, var_gen = opt_eval_info(expr.args, ret_var_gen);
+    // Actual arguments' types
+    args_types = (subexpr_type(a) : a <- expr.args);
 
-    invoke_method_instr = invoke_db_method(
+    // Low-level signature of the target method
+    method_id, low_level_sign = low_level_sign(expr.name, args_types);
+
+    // Result variable and returned variable generator
+    res_var, ret_var_gen = next_var(low_level_sign.ret_value, init_var_gen);
+
+    // Evaluation of the arguments
+    args_eval_code, args_surrs, unused_var = opt_eval_info(expr.args, ret_var_gen);
+
+    // Low-level actual arguments
+    low_level_args = (low_level_expr(low_level_sign.args(i), s) : s @ i <- args_surrs);
+
+    // Evaluation code for the call only
+    method_call_instr = invoke_db_method(
       res_var:    res_var,
       db_var:     expr.var if expr.var?,
       type:       if expr.var? then var_type(expr.var) else this_db_symbol,
-      method_id:  method_id(expr.name, |expr.args|),
-      args:       args_surrs
+      method_id:  method_id,
+      args:       low_level_args
     );
 
-    code = (args_eval_code | invoke_method_instr);
-    return (code, res_var, ret_var_gen);
+    return ((args_eval_code | method_call_instr), obj_expr(res_var), ret_var_gen);
+
+
+
+    // res_var, ret_var_gen = next_obj_var(init_var_gen);
+    // args_eval_code, args_surrs, var_gen = opt_eval_info(expr.args, ret_var_gen);
+
+    // invoke_method_instr = invoke_db_method(
+    //   res_var:    res_var,
+    //   db_var:     expr.var if expr.var?,
+    //   type:       if expr.var? then var_type(expr.var) else this_db_symbol,
+    //   method_id:  method_id(expr.name, |expr.args|),
+    //   args:       args_surrs
+    // );
+
+    // code = (args_eval_code | invoke_method_instr);
+    // return (code, res_var, ret_var_gen);
   }
 
 

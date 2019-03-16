@@ -608,33 +608,33 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 ////////////////////////////////////////////////////////////////////////////////
 
 implicit typedefs : [TypeName -> NeType] {
-  ## THIS IS AN ALMOST PERFECT DUPLICATE OF gen_dispatch_auto_method_body().
-  Instr* method_dispatch_code(DBSymbol db_type, Method+ methods) {
-    assert |methods| > 1;
-    assert |[m.name : m <~ methods]| == 1;    // All methods must have the same name
-    assert |[|m.args| : m <~ methods]| == 1;  // All methods have the same arity
-    assert |head(methods).args| > 0;          // No-argument methods cannot be polymorphic
+  // ## THIS IS AN ALMOST PERFECT DUPLICATE OF gen_dispatch_auto_method_body().
+  // Instr* method_dispatch_code(DBSymbol db_type, Method+ methods) {
+  //   assert |methods| > 1;
+  //   assert |[m.name : m <~ methods]| == 1;    // All methods must have the same name
+  //   assert |[|m.args| : m <~ methods]| == 1;  // All methods have the same arity
+  //   assert |head(methods).args| > 0;          // No-argument methods cannot be polymorphic
 
 
-    l0 = lvar(0);
-    count = |methods|;
+  //   l0 = lvar(0);
+  //   count = |methods|;
 
-    a_method  = head(methods);
-    name      = a_method.name;
-    arity     = |a_method.args|;
+  //   a_method  = head(methods);
+  //   name      = a_method.name;
+  //   arity     = |a_method.args|;
 
-    disp_args = choose_disp_args(((t : t, unused_var <- nonempty(m.args)) : m <- methods), typedefs);
+  //   disp_args = choose_disp_args(((t : t, unused_var <- nonempty(m.args)) : m <- methods), typedefs);
 
-    cases = [{
-      types = (left(m.args(j)) : j <- disp_args);
-      invoke_method_instr = invoke_db_method(l0, db_type, method_id(name, arity, i), (fn_arg(j) : j < arity));
-      code = (invoke_method_instr, ret_val(l0));
-      return (types, code);
-    } : m @ i <~ methods];
+  //   cases = [{
+  //     types = (left(m.args(j)) : j <- disp_args);
+  //     invoke_method_instr = invoke_db_method(l0, db_type, method_id(name, arity, i), (fn_arg(j) : j < arity));
+  //     code = (invoke_method_instr, ret_val(l0));
+  //     return (types, code);
+  //   } : m @ i <~ methods];
 
-    code = dynamic_dispatch_code((fn_arg(i) : i <- disp_args), cases);
-    return (code | ret_val(l0));
-  }
+  //   code = dynamic_dispatch_code((fn_arg(i) : i <- disp_args), cases);
+  //   return (code | ret_val(l0));
+  // }
 
 
   Instr* update_dispatch_code(DBSymbol db_type, <Update+, Handler+> updates) {
