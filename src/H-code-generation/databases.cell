@@ -302,33 +302,30 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 
 
   [MethodId -> OptCompMethod] compiled_database_methods([Method] methods) {
-    return merge([compiled(ms) : unused_var, ms <- group_by(methods, ($.name, |$.args|))]);
+    return merge([compiled(ms) : unused_var, ms <- group_by(methods, family_id($.id))]);
 
 
     [MethodId -> OptCompMethod] compiled([+Method] methods) {
-      a_method = an_elem(methods);
-      name = a_method.name;
-      arity = |a_method.args|;
-      return [method_id(name, arity) -> compiled(a_method)] if |methods| == 1;
-
-      methods_by_unique_id = [method_id(m.name, arity, i) -> m : m @ i <~ isort(methods)];
-      comp_methods = [id -> compiled(m) : id, m <- methods_by_unique_id];
-
-      return comp_methods & [method_id(name, arity) -> dispatch_method(methods_by_unique_id)];
+      comp_methods = [m.id -> compiled(m) : m <- methods];
+      if |methods| > 1:
+        id = only([family_id(m.id) : m <- methods]);
+        comp_methods = comp_methods & [id -> dispatch_method(methods)];
+      ;
+      return comp_methods;
     }
 
 
-    OptCompMethod dispatch_method([+MethodId -> Method] methods) {
+    OptCompMethod dispatch_method([+Method] methods) {
       assert |methods| > 1;
-      assert |[m.name : unused_var, m <- methods]| == 1;
-      assert |[|m.args| : unused_var, m <- methods]| == 1; // All functions have the same arity
-      assert only([|m.args| : unused_var, m <- methods]) > 0;
+      assert |[m.id.symbol : m <- methods]| == 1;
+      assert |[|m.args| : m <- methods]| == 1; // All functions have the same arity
+      assert only([|m.args| : m <- methods]) > 0;
 
       count = |methods|;
 
-      disp_args = choose_disp_args((nonempty(left(unzip(m.args))) : id, m <- isort(methods)), program.typedefs);
+      disp_args = choose_disp_args((nonempty(left(unzip(m.args))) : m <- isort(methods)), program.typedefs);
 
-      low_level_signs = [id -> low_level_sign(m) : id, m <- methods];
+      low_level_signs = [m.id -> low_level_sign(m) : m <- methods];
       aggr_sign = aggr_sign([s : unused_var, s <- low_level_signs]);
 
       args = (low_level_arg(fn_arg(i), r) : r @ i <- aggr_sign.args);
@@ -337,26 +334,26 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 
       cases = [{
         types = (left(m.args(i)) : i <- disp_args);
-        sign = low_level_signs(id);
+        sign = low_level_signs(m.id);
         call_args = (low_level_expr(r, obj_expr(args(j))) : r @ j <- sign.args);
         // We can reuse the same seed to generate variables
         ret_var, unused_var_2 = next_var(sign.ret_value, blank_var_gen);
         code = (
-          invoke_db_method(ret_var, database.name, id, args),
+          invoke_db_method(ret_var, database.name, m.id, args),
           ## THESE TWO INSTRUCTIONS SHOULD BE MERGED
           set_any_var(aggr_ret_var, obj_expr(ret_var)) if ret_var != aggr_ret_var,
           ret_val(aggr_ret_var)
         );
         return (types, code);
-      } : id, m <- methods];
+      } : m <- methods];
 
       body = dynamic_dispatch_code((fn_arg(i) : i <- disp_args), cases);
 
       return opt_comp_method(
         args:             args,
-        args_types:       (ne_union_superset([left(m.args(i)) : unused_var, m <- methods]) : i < |args|),
-        args_memb_preds:  [(memb_test_preds_map[t] : t, unused_var_2 <- m.args) : unused_var, m <- methods],
-        ret_type:         ne_union_superset([m.ret_type : unused_var, m <- methods]),
+        args_types:       (ne_union_superset([left(m.args(i)) : m <- methods]) : i < |args|),
+        args_memb_preds:  [(memb_test_preds_map[t] : t, unused_var_2 <- m.args) : m <- methods],
+        ret_type:         ne_union_superset([m.ret_type : m <- methods]),
         ret_val_repr:     aggr_sign.ret_value,
         body:             body
       );
@@ -380,7 +377,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 
       // Adding push_call_info/pop_call_info debug mode instructions
       if options.debug_mode:
-        body = (push_call_info(method.name, (obj_expr(v) : v <- args))) & body & (pop_call_info);
+        body = (push_call_info(method.id.symbol, (obj_expr(v) : v <- args))) & body & (pop_call_info);
       ;
 
       body = (body | ret_val(low_level_expr(ret_val_repr, ret_val_surr)));

@@ -35,7 +35,7 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
 
 implicit program : Program, typedefs : [TypeName -> NeType], database : Database {
   ([Method], [MethodId]) auto_gen_methods {
-    methods = [bare_id(m.name), arity(m) : m <- database.methods];
+    methods = [bare_id(m.id.symbol), arity(m) : m <- database.methods];
 
     memb_var_accessors = [
       state_var_accessor(v) : v, unused_var <- database.state_vars, not methods(bare_id(v), 0)
@@ -117,10 +117,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
     ]);
 
     memb_test_method_ids = [
-      method_id(m.name, |m.args|)
-      : m <- unary_rel_memb_tests |
-        m <- bin_rel_memb_tests   |
-        m <- tern_rel_memb_tests
+      m.id : m <- unary_rel_memb_tests | m <- bin_rel_memb_tests | m <- tern_rel_memb_tests
     ];
 
     return (methods, memb_test_method_ids);

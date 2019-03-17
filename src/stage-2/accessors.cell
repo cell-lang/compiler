@@ -78,15 +78,28 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
   }
 
 
-  SgnSet method_signatures(<AutoSymbol, DBSymbol> type, MethodSymbol name, Nat arity) {
-    return signatures[type][(name, arity)];
+  SgnSet method_signatures(DBSymbol type, MethodSymbol name, Nat arity) {
+    return signatures[type][method_id(name, arity)];
 
-    [<AutoSymbol, DBSymbol> -> [(MethodSymbol, Nat) -> SgnSet]] signatures = [
-        auto_or_db.name -> {
-          sgns = merge_values([[(m.name, |m.args|) -> signature(m)] : m <- auto_or_db.methods]);
+    [DBSymbol -> [MethodFamilyId -> SgnSet]] signatures = [
+        a.name -> {
+          sgns = merge_values([[family_id(m.id) -> signature(m)] : m <- a.methods]);
           return [n -> preprocess_signatures(ss) : n, ss <- sgns];
         }
-      : auto_or_db <- program.auto_defs | auto_or_db <- program.data_bases
+      : a <- program.data_bases
+    ];
+  }
+
+
+  SgnSet method_signatures(AutoSymbol type, MethodSymbol name, Nat arity) {
+    return signatures[type][(name, arity)];
+
+    [AutoSymbol -> [(MethodSymbol, Nat) -> SgnSet]] signatures = [
+        a.name -> {
+          sgns = merge_values([[(m.name, |m.args|) -> signature(m)] : m <- a.methods]);
+          return [n -> preprocess_signatures(ss) : n, ss <- sgns];
+        }
+      : a <- program.auto_defs
     ];
   }
 }
