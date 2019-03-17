@@ -236,27 +236,27 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
     );
 
 
-  (MethodId, LowLevelSign) low_level_sign(MethodSymbol method_id, Type* args_types) {
-    fail;
-
-    // for id, s, ts <- signatures_info_by_family_id(fn_id, !!):
-    //   return (id, s) if not (t @ i <~ args_types : not is_subset(t, ts(i)));
-    // ;
-    // return (fn_id, aggr_sign_by_fn_family_id(fn_id, !!));
-
-
-    // [FnFamilyId -> LowLevelSign] aggr_sign_by_fn_family_id =
-    //   [id -> aggr_sign([s : unused_var_1, s, unused_var_2 <~ info]) : id, info <- signatures_info_by_family_id];
+  (MethodId, LowLevelSign) low_level_sign(DBSymbol rel_auto_id, MethodSymbol symbol, Type* args_types) {
+    family_id = method_id(symbol, |args_types|);
+    methods = signatures_map(rel_auto_id, !!)(family_id);
+    for id, s, ts <- isort(methods):
+      return (id, s) if not (t @ i <~ args_types : not is_subset(t, ts(i)));
+    ;
+    return (family_id, aggr_signatures_map(rel_auto_id, !!)(family_id));
 
 
-    // [FnFamilyId -> (FnId, LowLevelSign, NeType*)+] signatures_info_by_family_id {
-    //   family_ids = [id : id, unused_var <- signature_info];
-    //   return [id -> nonempty(isort([info : info <- signature_info(id, ?)])) : id <- family_ids];
-    // }
+    [DBSymbol -> [MethodFamilyId -> LowLevelSign]] aggr_signatures_map = [
+      auto_id -> [id -> aggr_sign([m(1) : m <- ms]) : id, ms <- auto_map]
+      : auto_id, auto_map <- signatures_map
+    ];
 
 
-    // [FnFamilyId, (FnId, LowLevelSign, NeType*)] signature_info =
-    //   [family_id(fn.id), (fn.id, low_level_sign(fn), (t : unused_var, t <- fn.args)) : fn <- program.fndefs];
+    [DBSymbol -> [MethodFamilyId -> [+(MethodId, LowLevelSign, NeType*)]]] signatures_map = [
+      a.name -> [
+        fid -> [(m.id, low_level_sign(m), (t : t, unused_var <- m.args)) : m <- ms]
+        : fid, ms <- group_by(a.methods, family_id($.id))
+      ] : a <- program.data_bases
+    ];
   }
 }
 
