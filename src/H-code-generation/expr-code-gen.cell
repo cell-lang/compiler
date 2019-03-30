@@ -148,10 +148,12 @@ implicit program           : Program,
       count_expr = add32(res_var, count_expr) if i > 0;
       table_code = (set_ivar32(res_var, count_expr));
       for e @ j <- reverse(args_aliases):
-        store_id = substitute(table_col_store_id(t, rat(unfiltered_idxs, j)));
+        store_id = table_col_store_id(t, rat(unfiltered_idxs, j));
+        store_type = value_store_type(rel_auto_type(rel_var), unqualified(store_id));
+        store_id = substitute(store_id);
         surr_var = rat(surr_vars, j);
         table_code = (
-          set_ivar32(surr_var, value_to_surr(store_id, e)),
+          set_ivar32(surr_var, value_to_surr(store_id, value_store_encoded_expr(store_type, e))),
           branch(neg(are_eq(int_obj(surr_var), int_obj(-1))), table_code, (set_ivar32(res_var, 0) if i == 0))
         );
       ;
@@ -197,10 +199,12 @@ implicit program           : Program,
       ;
 
       for e @ j <- reverse(args_aliases):
-        store_id = substitute(table_col_store_id(tv, rat(unfiltered_idxs, j)));
+        store_id = table_col_store_id(tv, rat(unfiltered_idxs, j));
+        store_type = value_store_type(rel_auto_type(rel_var), unqualified(store_id));
+        store_id = substitute(store_id);
         surr_var = rat(surr_vars, j);
         table_code = (
-          set_ivar32(surr_var, value_to_surr(store_id, e)),
+          set_ivar32(surr_var, value_to_surr(store_id, value_store_encoded_expr(store_type, e))),
           do_if_not(are_eq(int_obj(surr_var), int_obj(-1)), table_code)
         );
       ;
@@ -260,21 +264,24 @@ implicit program           : Program,
 
       // Looking up all arguments
       args_lookup_code = join(({
-        store_id = substitute(table_col_store_id(tv, args_idxs(i)));
+        store_id = table_col_store_id(tv, args_idxs(i));
+        store_type = value_store_type(rel_auto_type(rel_var), unqualified(store_id));
+        store_id = substitute(store_id);
         surr_var = surr_vars(i);
         return (
-          set_ivar32(surr_var, value_to_surr(store_id, e)),
+          set_ivar32(surr_var, value_to_surr(store_id, value_store_encoded_expr(store_type, e))),
           check(neg(is_eq(surr_var, -1)))
         );
       } : e @ i <- args_aliases));
 
-      res_store_id = substitute(table_col_store_id(tv, target_idx));
-
+      res_store_id = table_col_store_id(tv, target_idx);
+      res_store_type = value_store_type(rel_auto_type(rel_var), unqualified(res_store_id));
+      res_store_id = substitute(res_store_id);
       lookup_code = (
         set_ivar32(res_surr_var, table_lookup(substitute(tv), maybe_seq(surr_vars_map, arity), symmetric(rel_var))),
         branch(
           neg(are_eq(int_obj(res_surr_var), object(-1))),
-          (surr_to_value(res_var, res_store_id, res_surr_var)),
+          (surr_to_decoded_value(res_var, res_store_id, res_store_type, res_surr_var)),
           // If the lookup on this table fails we keep going, unless this is the last table left
           code
         )

@@ -40,7 +40,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
     ;
     nested_dbs_init_code = rand_sort([init_db(v, (), t) : v, t <- nested_dbs]);
 
-    value_stores_init_code = (init_value_store(vs) : vs <- rand_sort(value_stores));
+    value_stores_init_code = (init_value_store(vs) : vs <- rand_sort(keys(value_stores)));
     tables_init_code = rand_sort([init_table(v, t) : v, t <- tables_info]);
 
     return vars_pre_init_code & vars_init_code & nested_dbs_init_code & value_stores_init_code & tables_init_code;
@@ -54,7 +54,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
     vars_cleanup_code = rand_sort([reset_memb_var(v, :blank) : v, unused_var <- state_vars]);
     nested_dbs_cleanup_code = rand_sort([cleanup_db(v, t) : v, t <- nested_dbs]);
 
-    value_stores_cleanup_code = (cleanup_value_store(vs) : vs <- rand_sort(value_stores));
+    value_stores_cleanup_code = (cleanup_value_store(vs) : vs <- rand_sort(keys(value_stores)));
     tables_cleanup_code = rand_sort([cleanup_table(v, t) : v, t <- tables_info]);
 
     return vars_cleanup_code & nested_dbs_cleanup_code & value_stores_cleanup_code & tables_cleanup_code;
@@ -137,9 +137,11 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
       if |tables| == 1:
         table_var = only(tables);
         stores_ids = (table_col_store_id(rel_auto_id, table_var, i) : i < arity);
+        stores_types = (value_store_type(rel_auto_id, id) : id <- stores_ids);
+        store_args = (value_store_encoded_expr(stores_types(i), args_vars(i)) : i < arity);
         core_loop_code = (
         ) & (
-          immediate_insert_or_add_ref(surr_vars(i), stores_ids(i), args_vars(i)) : i < arity
+          immediate_insert_or_add_ref(surr_vars(i), stores_ids(i), store_args(i)) : i < arity
         ) & (
           immediate_insert_tuple(table_var, nonempty(take(surr_vars, arity)))
         );
@@ -152,8 +154,10 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 
         cases = [{
           stores_ids = (table_col_store_id(rel_auto_id, tv, i) : i < arity);
+          stores_types = (value_store_type(rel_auto_id, id) : id <- stores_ids);
+          store_args = (value_store_encoded_expr(stores_types(i), args_vars(i)) : i < arity);
           case_code = (
-            (immediate_insert_or_add_ref(surr_vars(i), stores_ids(i), args_vars(i)) : i < arity) |
+            (immediate_insert_or_add_ref(surr_vars(i), stores_ids(i), store_args(i)) : i < arity) |
             immediate_insert_tuple(tv, nonempty(take(surr_vars, arity)))
           );
           types = table_signature(rel_auto_id, tv);
@@ -577,7 +581,16 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 
 
 implicit program : Program, typedefs : [TypeName -> NeType], database : Database { ## program IS NOT REALLY NEEDED, BUT THE TYPECHECKER...
-  [ValueStoreId] value_stores = values(table_col_value_store_map);
+  [ValueStoreId -> ValueStoreType] value_stores = [
+    vs -> {
+      cols = nonempty([c : c <- table_col_value_store_map(?, vs)]);
+      // types = [database.rel_vars(_untag_(left(c))).signature(right(c)) : c <- cols];
+      ## WORKAROUND FOR COMPILER BUG IN VERSION 0.1 (IS IT GONE IN 0.3?)
+      ## THE COMMENTED OUT VERSION ABOVE DOES NOT WORK
+      types = [database.rel_vars(rv).signature(idx) : c <- cols, rv = untag(left(c)), idx = right(c)];
+      return value_store_type(ne_union_superset(types));
+    } : vs <- values(table_col_value_store_map)
+  ];
 
 
   [(TableVar, Nat) -> ValueStoreId] table_col_value_store_map {
@@ -669,6 +682,34 @@ implicit typedefs : [TypeName -> NeType] {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+implicit typedefs : [TypeName -> NeType] {
+  ValueStoreType value_store_type(NeType type) {
+    return :integer if is_subset(type, integer);
+
+    tag_int_type = mono_tagged_integer(type);
+    return value(tag_int_type) if tag_int_type != nothing;
+
+    return :object;
+
+
+    Maybe[<mono_tagged_integer(Symbol)>] mono_tagged_integer(NeType type) =
+      tag_obj_type()  = if type.tag_type :: SymbType and is_subset(type.obj_type, integer)
+                          then just(:mono_tagged_integer(untag(untag(type.tag_type))))
+                          else nothing,
+      union_type(ts?) = { maybe_types = [mono_tagged_integer(t) : t <- ts];
+                          if maybe_types :: [+Just[<mono_tagged_integer(Symbol)>]]:
+                            types = [value(t) : t <- maybe_types];
+                            return just(only(types)) if |types| == 1;
+                          ;
+                          return nothing;
+                        },
+      type_ref(ts?)   = mono_tagged_integer(nonempty_type(expand_type_ref(ts, typedefs))),
+      _               = nothing;
+  }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 
 Maybe[UpdateSymbol] name(<Update, Handler>) =

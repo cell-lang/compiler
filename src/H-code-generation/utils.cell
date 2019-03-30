@@ -85,6 +85,27 @@ Nat+ optimal_dispatch_args([+NeType+] signatures, [TypeName -> Type] typedefs) {
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
+<AtomicExpr, IntExpr> value_store_encoded_expr(ValueStoreType, AtomicExpr expr) =
+  object                  = expr,
+  integer                 = get_int_val(expr),
+  mono_tagged_integer()   = get_int_val(get_inner_obj(expr));
+
+
+Instr surr_to_decoded_value(WriteObjVar var, AnyValueStoreId store_id, ValueStoreType store_type, Int32Var surr) =
+  match (store_type)
+    object                  = surr_to_value(var, store_id, surr),
+    integer                 = set_var(var, int_obj(surr_to_int_value(store_id, surr))),
+    mono_tagged_integer(s?) = set_var(var, mk_tagged_obj(object(s), int_obj(surr_to_int_value(store_id, surr))));
+
+
+Instr surr_to_decoded_value(IntVar var, AnyValueStoreId store_id, ValueStoreType store_type, Int32Var surr) =
+  match (store_type)
+    integer = set_ivar(var, surr_to_int_value(store_id, surr)),
+    _       = undefined;
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
 type GenVarType = obj, int, int32, float, bool, array, tag_rec,
                   set_it, seq_it, bin_rel_it, tern_rel_it, table_it, stream, vector;
 

@@ -173,6 +173,7 @@ type IntNatOp       = get_int_val(ObjExpr),
                       float_bits(FloatExpr),
                       mantissa(FloatExpr),
                       dec_exp(FloatExpr),
+                      surr_to_int_value(store: AnyValueStoreId, surrogate: Int32Var),
                       rand_nat(IntExpr),  // Non-deterministic
                       unique_nat,         // Non-deterministic
                       ticks;              // Impure
@@ -183,7 +184,7 @@ type Int32NatOp     = bool_to_bit(BoolExpr),
                       table_lookup(table: AnyTableVar, args: Maybe[Int32Var]+, symmetric: Bool),
                       cast_int32(IntExpr),
                       add32(Int32Expr, Int32Expr),
-                      value_to_surr(store: AnyValueStoreId, value: AtomicExpr),
+                      value_to_surr(store: AnyValueStoreId, value: <AtomicExpr, IntExpr>),
                       get_unknown_arg(iter: TableItVar, arg: <0..2>);
 
 type FloatNatOp     = float_value(ObjExpr),
@@ -381,10 +382,10 @@ type BasicInstr     = init_stream(StreamVar),
                       queue_deletes(table_var: TableVar, args: Maybe[Int32Var]+, symmetric: Bool),
                       ## REMOVE, IT'S NOT USED ANYMORE
                       queue_insert_value(res_var: Int32Var, store: ValueStoreId, value: AtomicExpr), // Ownership transfer: <value>
-                      lookup_or_queue_insert_value(res_var: Int32Var, store: ValueStoreId, value: AtomicExpr), // Ownership transfer: <value>
+                      lookup_or_queue_insert_value(res_var: Int32Var, store: ValueStoreId, value: <AtomicExpr, IntExpr>), // Ownership transfer: <value>
                       queue_insert_tuple(table_var: TableVar, tuple: Int32Var+),
 
-                      immediate_insert_or_add_ref(res_var: Int32Var, store: ValueStoreId, value: AtomicExpr),
+                      immediate_insert_or_add_ref(res_var: Int32Var, store: ValueStoreId, value: <AtomicExpr, IntExpr>),
                       immediate_insert_tuple(table_var: TableVar, tuple: Int32Var+);
 
 type JumpInstr      = break_loop,
@@ -468,6 +469,8 @@ type NestedValueStoreId = nested_value_store_id(db_var: AnyDBVar, store_id: Valu
 type CaptValueStoreId   = capt_value_store_id(ValueStoreId);
 type AnyValueStoreId    = ValueStoreId, NestedValueStoreId, CaptValueStoreId;
 
+type ValueStoreType = object, integer, mono_tagged_integer(Symbol);
+
 type Table  = table(
                 value_stores: ValueStoreId+,
                 keys:         [[+Nat]],
@@ -532,7 +535,7 @@ type StaticBlock = static_block(
                     name:                     DBSymbol,
                     links:                    DBSymbol*,
                     state_vars:               [MembVar -> NeType],
-                    value_stores:             [ValueStoreId],
+                    value_stores:             [ValueStoreId -> ValueStoreType],
                     tables:                   [TableVar -> Table],
                     foreign_keys:             [BlockForeignKey],
                     nested_blocks:            [NestedDBVar -> DBSymbol],

@@ -158,9 +158,10 @@ implicit program           : Program,
         if a != nothing:
           i = nat(|args_aliases| - ri - 1);
           store_id = table_col_store_id(table_var, i);
+          store_type = value_store_type(this_db_symbol, store_id);
           arg_surr = value_unsafe(args_surrs(i));
           code = (
-            set_ivar32(arg_surr, value_to_surr(store_id, value(a))),
+            set_ivar32(arg_surr, value_to_surr(store_id, value_store_encoded_expr(store_type, value(a)))),
             do_if_not(is_eq(arg_surr, -1), code)
           );
         ;
@@ -193,8 +194,9 @@ implicit program           : Program,
 
       pre_insert_code = ({
         store_id = table_col_store_id(table_var, i);
+        store_type = value_store_type(this_db_symbol, store_id);
         surr_var = surr_vars(i);
-        return lookup_or_queue_insert_value(surr_var, store_id, e);
+        return lookup_or_queue_insert_value(surr_var, store_id, value_store_encoded_expr(store_type, e));
       } : e @ i <- args_aliases);
 
       insertion_code = (queue_insert_tuple(table_var, surr_vars));
@@ -209,10 +211,11 @@ implicit program           : Program,
 
     cases = [{
       types = table_signature(tv);
-      code = (
-        lookup_or_queue_insert_value(surr_vars(i), table_col_store_id(tv, i), e)
-        : e @ i <- args_aliases
-      );
+      code = ({
+        store_id = table_col_store_id(tv, i);
+        store_type = value_store_type(this_db_symbol, store_id);
+        return lookup_or_queue_insert_value(surr_vars(i), store_id, value_store_encoded_expr(store_type, e));
+      } : e @ i <- args_aliases);
       code = (code | queue_insert_tuple(tv, surr_vars), exit_block);
       return (types, code);
     } : tv <- candidate_tables];
@@ -250,8 +253,9 @@ implicit program           : Program,
 
       pre_insert_code = ({
         store_id = table_col_store_id(table_var, i);
+        store_type = value_store_type(this_db_symbol, store_id);
         surr_var = surr_vars(i);
-        return lookup_or_queue_insert_value(surr_var, store_id, e);
+        return lookup_or_queue_insert_value(surr_var, store_id, value_store_encoded_expr(store_type, e));
       } : e @ i <- args_aliases);
 
       insertion_code = (
@@ -269,10 +273,11 @@ implicit program           : Program,
 
     cases = [{
       types = table_signature(tv);
-      code = (
-        lookup_or_queue_insert_value(surr_vars(i), table_col_store_id(tv, i), e)
-        : e @ i <- args_aliases
-      );
+      code = ({
+        store_id = table_col_store_id(tv, i);
+        store_type = value_store_type(this_db_symbol, store_id);
+        return lookup_or_queue_insert_value(surr_vars(i), store_id, value_store_encoded_expr(store_type, e));
+      } : e @ i <- args_aliases);
       code = code & (queue_deletes(tv, as, symmetric) : as <- deletes_args);
       code = (code | queue_insert_tuple(tv, surr_vars), exit_block);
       return (types, code);
@@ -882,10 +887,12 @@ implicit program           : Program,
 
       vars_setup_code = join(({
         shadow_surr_var = shadow_surr_vars(i);
-        value_store_id = substitute(table_col_store_id(tv, blank_idxs(i)));
+        store_id = table_col_store_id(tv, blank_idxs(i));
+        store_type = value_store_type(rel_auto_type(iter.rel_var), unqualified(store_id));
+        store_id = substitute(store_id);
         return (
           set_ivar32(shadow_surr_var, get_unknown_arg(it_var, i)),
-          set_var(value(v), surr_to_value(value_store_id, shadow_surr_var))
+          surr_to_decoded_value(value(v), store_id, store_type, shadow_surr_var)
         );
       } : v @ i <- iter.vars, v != nothing));
 
@@ -917,9 +924,11 @@ implicit program           : Program,
 
       for e @ i <- reverse(args_aliases):
         store_id = table_col_store_id(tv, rat(unfiltered_idxs, i));
+        store_type = value_store_type(rel_auto_type(iter.rel_var), unqualified(store_id));
+        store_id = substitute(store_id);
         surr_var = rat(surr_vars, i);
         table_code = (
-          set_ivar32(surr_var, value_to_surr(store_id, e)),
+          set_ivar32(surr_var, value_to_surr(store_id, value_store_encoded_expr(store_type, e))),
           do_if_not(is_eq(surr_var, -1), table_code)
         );
       ;
