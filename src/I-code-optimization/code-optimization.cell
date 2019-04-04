@@ -74,76 +74,54 @@ Instr+ optimize_code(Instr+ instrs) {
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-type PropInfo = prop_info(
-                  surrs:    [Int32Var, AnyValueStoreId, StdVar], // #0 is the surrogate of #2 in #1
-                  ex_surrs: [Int32Var,    ValueStoreId, StdVar], // #0 is the extended surrogate of #2 in #1
-                  non_null: [Int32Var]                           // #0 != -1
-                );
+type DependeeVar  = StdVar, LocVar, Int32Var; // LocIntVar, LocFloatVar
+type DependantVar = StdVar, LocVar;
+
+
+type PropIntExpr = surr_to_int_value(store: AnyValueStoreId, surrogate: Int32Var);
+
+type PropAtomicExpr = int_obj(PropIntExpr);
+
+type PropExpr = mk_tagged_obj(tag: SymbObj, obj: PropAtomicExpr);
+
+
+type PropInfo = prop_info(values: [DependantVar -> PropExpr]);
 
 ////////////////////////////////////////////////////////////////////////////////
 
-PropInfo no_prop_info = prop_info(surrs: [], ex_surrs: [], non_null: []);
+PropInfo no_prop_info = prop_info(values: []);
 
 ////////////////////////////////////////////////////////////////////////////////
 
-PropInfo merge(PropInfo info1, PropInfo info2) =
-  prop_info(
-    surrs:    [iv, vs, v : iv, vs, v <- info1.surrs, info2.surrs(iv, vs, v)],
-    ex_surrs: [iv, vs, v : iv, vs, v <- info1.ex_surrs, info2.ex_surrs(iv, vs, v)],
-    non_null: [v : v <- info1.non_null, info2.non_null(v)]
-  );
-
-
-PropInfo update_surr(PropInfo info, Int32Var var, AnyValueStoreId store, StdVar value) {
-  cleared_info = clear(info, var);
-  surrs = [iv, vs, v : iv, vs, v <- cleared_info.surrs | iv, vs, v <- [var, store, value;]];
-  return prop_info(surrs: surrs, ex_surrs: cleared_info.ex_surrs, non_null: cleared_info.non_null);
+PropInfo merge(PropInfo info1, PropInfo info2) {
+  values = [v -> e : v, e <- info1.values, info2.values(v, e)];
+  return prop_info(values: values);
 }
 
-
-PropInfo update_ex_surr(PropInfo info, Int32Var var, ValueStoreId store, StdVar value) {
-  cleared_info = clear(info, var);
-  ex_surrs = [iv, vs, v : iv, vs, v <- cleared_info.ex_surrs | iv, vs, v <- [var, store, value;]];
-  non_null = cleared_info.non_null & [var];
-  return prop_info(surrs: cleared_info.surrs, ex_surrs: ex_surrs, non_null: non_null);
+PropInfo add_dependency(PropInfo info, DependantVar var, PropExpr expr) {
+  cleared_info = clear_dependants(info, var);
+  values = [v -> e : v, e <- cleared_info.values | v, e <- [var -> expr]];
+  return prop_info(values: values);
 }
 
-
-PropInfo clear(PropInfo info, Int32Var var) =
-  prop_info(
-    surrs:    [iv, vs, v : iv, vs, v <- info.surrs, iv != var],
-    ex_surrs: [iv, vs, v : iv, vs, v <- info.ex_surrs, iv != var],
-    non_null: [v : v <- info.non_null, v != var]
-  );
-
-
-PropInfo clear(PropInfo info, StdVar var) =
-  prop_info(
-    surrs:    [iv, vs, v : iv, vs, v <- info.surrs, v != var],
-    ex_surrs: [iv, vs, v : iv, vs, v <- info.ex_surrs, v != var],
-    non_null: info.non_null
-  );
+PropInfo clear_dependants(PropInfo info, DependeeVar var) =
+  prop_info(values: [v -> e : v, e <- info.values, v != var, dependees(e)(var)]);
 
 ////////////////////////////////////////////////////////////////////////////////
 
-Maybe[Int32Var] surr_of(StdVar var, AnyValueStoreId store, PropInfo info) {
-  vars = [v : v <- info.surrs(?, store, var)];
-  return if vars != [] then just(an_elem(vars)) else nothing;
-}
+<AtomicExpr, RefObjExpr> lookup(PropInfo info, DependantVar var, AtomicExpr default) =
+  if info.values(var, *) then info.values(var) else default;
 
+////////////////////////////////////////////////////////////////////////////////
 
-Maybe[Int32Var] ex_surr_of(StdVar var, ValueStoreId store, PropInfo info) {
-  vars = [v : v <- info.ex_surrs(?, store, var)];
-  return if vars != [] then just(an_elem(vars)) else nothing;
-}
+[DependeeVar] dependees(PropIntExpr expr) =
+  surr_to_int_value()   = [expr.surrogate];
 
+[DependeeVar] dependees(PropAtomicExpr expr) =
+  int_obj(e?)   = dependees(e);
 
-Bool is_surr_of(Int32Var var, AnyValueStoreId store, StdVar value, PropInfo info) =
-  info.surrs(var, store, value);
-
-
-Bool is_ex_surr_of(Int32Var var, ValueStoreId store, StdVar value, PropInfo info) =
-  info.ex_surrs(var, store, value);
+[DependeeVar] dependees(PropExpr expr) =
+  mk_tagged_obj() = dependees(expr.obj);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -173,18 +151,22 @@ PropInfo outgoing_prop_info(NodeInfo node, PropInfo info) {
 
 
   PropInfo instr_update_info(<BasicInstr, JumpInstr> instr, PropInfo info) =
-    set_ivar32()          = set_ivar32_update_info(instr.var, instr.value, info),
-    set_rc_var()          = set_rc_var_update_info(instr.var, instr.value, info),
+    set_rc_var()                    = set_rc_var_update_info(instr.var, instr.value, info),
 
-    set_var()             = clear_any(info, instr.var),
-    call_proc()           = if instr.var? then clear_any(info, instr.var) else info,
-    call_cls()            = clear_any(info, instr.var),
-    invoke_auto_method()  = clear_any(info, instr.res_var),
-    invoke_db_method()    = clear_any(info, instr.res_var),
+    set_var()                       |
+    set_bvar()                      |
+    set_ivar()                      |
+    set_ivar32()                    |
+    set_fvar()                      = clear_any(info, instr.var),
 
-    lookup_or_queue_insert_value()  = if instr.value :: StdVar
-                                        then update_ex_surr(info, instr.res_var, instr.store, instr.value)
-                                        else clear(info, instr.res_var),
+    call_proc()                     = if instr.var? then clear_any(info, instr.var) else info,
+    call_cls()                      = clear_any(info, instr.var),
+
+    invoke_auto_method()            |
+    invoke_db_method()              |
+    lookup_or_queue_insert_value()  = clear_any(info, instr.res_var),
+
+    _                               = info;
 
     ## REVIEW AGAIN THE LIST OF INSTRUCTIONS THAT SET THE VALUE OF LOCAL VARIABLES
 
@@ -193,23 +175,22 @@ PropInfo outgoing_prop_info(NodeInfo node, PropInfo info) {
     // write_rec_field()     =
     // finish_init()         =
 
-    _                     = info;
 
 
-  PropInfo set_ivar32_update_info(Int32Var var, Int32Expr value, PropInfo info) =
-    match (value)
-      value_to_surr() = if value.value :: StdVar
-                          then update_surr(info, var, value.store, value.value)
-                          else clear(info, var),
-      _                 = info;
+  PropInfo set_rc_var_update_info(<WriteObjVar, LocOptTagRecVar> var, RefObjExpr value, PropInfo pre_instr_info) {
+    info = pre_instr_info;
+    if var :: DependeeVar:
+      info = clear_any(info, var);
+      if var :: DependantVar and value :: PropExpr:
+        info = add_dependency(info, var, value);
+      ;
+    ;
+    return info;
+  }
 
 
-  PropInfo set_rc_var_update_info(<WriteObjVar, LocOptTagRecVar> var, RefObjExpr value, PropInfo info) =
-    var(),  surr_to_value()   = update_surr(info, value.surrogate, value.store, var),
-    _,      _                 = info;
-
-
-  PropInfo clear_any(PropInfo info, AnyVar var) = if var :: <StdVar, Int32Var> then clear(info, var) else info;
+  PropInfo clear_any(PropInfo info, AnyVar var) =
+    if var :: DependeeVar then clear_dependants(info, var) else info;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -223,34 +204,89 @@ NodeInfo rewrite_node(NodeInfo node, PropInfo info) =
 <BasicInstr, JumpInstr> rewrite_instr(<BasicInstr, JumpInstr> instr, PropInfo info) {
   return match (instr)
     set_ivar32()                    = rewrite_set_ivar32(instr, instr.var, instr.value, info),
-    lookup_or_queue_insert_value()  = rewrite_lookup_or_queue_insert_value(instr, instr.res_var, instr.store, instr.value, info),
+  //   lookup_or_queue_insert_value()  = rewrite_lookup_or_queue_insert_value(instr, instr.res_var, instr.store, instr.value, info),
     _                               = instr;
 
 
-  BasicInstr rewrite_lookup_or_queue_insert_value(BasicInstr instr, Int32Var res_var, ValueStoreId store, <AtomicExpr, IntExpr> value, PropInfo info) =
-    if value :: StdVar and is_ex_surr_of(res_var, store, value, info)
-      then :no_op
-      else instr;
+  // BasicInstr rewrite_lookup_or_queue_insert_value(BasicInstr instr, Int32Var res_var, ValueStoreId store, <AtomicExpr, IntExpr> value, PropInfo info) =
+  //   if value :: StdVar and is_ex_surr_of(res_var, store, value, info)
+  //     then :no_op
+  //     else instr;
 
-
-  BasicInstr rewrite_set_ivar32(BasicInstr instr, Int32Var var, Int32Expr value, PropInfo info) =
-    match (value)
-      value_to_surr()   = if value.value :: StdVar then
-                            if is_surr_of(var, value.store, value.value, info)
-                              then :no_op
-                              else set_ivar32(var, rewrite_value_to_surr_expr(value.store, value.value, info))
-                          else
-                            instr,
-      _                 = instr;
-
-
-  Int32Expr rewrite_value_to_surr_expr(AnyValueStoreId store, AtomicExpr val, PropInfo info) {
-    if val :: StdVar:
-      maybe_surr = surr_of(val, store, info);
-      return value(maybe_surr) if maybe_surr != nothing;
-    ;
-    return value_to_surr(store, val);
+  BasicInstr rewrite_set_ivar32(BasicInstr instr, Int32Var var, Int32Expr value, PropInfo info) {
+    rw_value = rewrite_int32_expr(value, info);
+    return if rw_value :: Int32Var then set_ivar32(var, rw_value) else instr;
   }
+
+  // BasicInstr rewrite_set_ivar32(BasicInstr instr, Int32Var var, Int32Expr value, PropInfo info) =
+  //   match (value)
+  //     value_to_surr()   = if value.value :: StdVar then
+  //                           if is_surr_of(var, value.store, value.value, info)
+  //                             then :no_op
+  //                             else set_ivar32(var, rewrite_value_to_surr_expr(value.store, value.value, info))
+  //                         else
+  //                           instr,
+  //     _                 = instr;
+
+
+  // Int32Expr rewrite_value_to_surr_expr(AnyValueStoreId store, AtomicExpr val, PropInfo info) {
+  //   if val :: StdVar:
+  //     maybe_surr = surr_of(val, store, info);
+  //     return value(maybe_surr) if maybe_surr != nothing;
+  //   ;
+  //   return value_to_surr(store, val);
+  // }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+Int32Expr rewrite_int32_expr(Int32Expr expr, PropInfo info) {
+  return match (expr)
+    value_to_surr()   = rewrite_value_to_surr(expr.store, expr.value, info, expr),
+    _                 = expr;
+
+
+  // value_to_surr(store: AnyValueStoreId, value: IntExpr)
+  Int32Expr rewrite_value_to_surr(AnyValueStoreId store, IntExpr value, PropInfo info, Int32Expr orig_expr) =
+    match (rewrite_int_expr(value, info))
+      surr_to_int_value() e?  = if e.store == store then e.surrogate else orig_expr,
+      _                       = orig_expr;
+
+  // value_to_surr(store: AnyValueStoreId, value: AtomicExpr)
+  Int32Expr rewrite_value_to_surr(AnyValueStoreId store, AtomicExpr value, PropInfo info, Int32Expr orig_expr) =
+    match (rewrite_atomic_expr(value, info))
+      surr_to_value() e?  = if e.store == store then e.surrogate else orig_expr,
+      _                   = orig_expr;
+}
+
+
+IntExpr rewrite_int_expr(IntExpr expr, PropInfo info) {
+  return match (expr)
+    get_int_val(e?)   = rewrite_get_int_val(e, info, expr),
+    _                 = expr;
+
+
+  // get_int_val(ObjExpr)
+  IntExpr rewrite_get_int_val(AtomicExpr expr, PropInfo info, IntExpr orig_expr) =
+    match (rewrite_atomic_expr(expr, info))
+      int_obj(e?)   = e,
+      _             = orig_expr;
+}
+
+
+<AtomicExpr, RefObjExpr> rewrite_atomic_expr(AtomicExpr expr, PropInfo info) {
+  return match (expr)
+    var() e? | lvar() e?  = lookup(info, e, e),
+    get_inner_obj(e?)     = rewrite_get_inner_obj(e, info, expr),
+    _                     = expr;
+
+
+  // get_inner_obj(ObjExpr)
+  AtomicExpr rewrite_get_inner_obj(AtomicExpr expr, PropInfo info, AtomicExpr orig_expr) =
+    match (rewrite_atomic_expr(expr, info))
+      mk_tagged_obj() e?  = e.obj,
+      _                   = orig_expr;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -301,3 +337,144 @@ Instr* reconstruct_code(CodeTree code_tree, NodeInfo+ nodes) {
   Instr* reconstruct(CodeTree* code_trees, NodeInfo+ nodes) =
     join((reconstruct_code(t, nodes) : t <- code_trees));
 }
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+// type PropInfo = prop_info(
+//                   surrs:    [Int32Var, AnyValueStoreId, StdVar], // #0 is the surrogate of #2 in #1
+//                   ex_surrs: [Int32Var,    ValueStoreId, StdVar], // #0 is the extended surrogate of #2 in #1
+//                   non_null: [Int32Var]                           // #0 != -1
+//                 );
+
+// ////////////////////////////////////////////////////////////////////////////////
+
+// PropInfo no_prop_info = prop_info(surrs: [], ex_surrs: [], non_null: []);
+
+// ////////////////////////////////////////////////////////////////////////////////
+
+// PropInfo merge(PropInfo info1, PropInfo info2) =
+//   prop_info(
+//     surrs:    [iv, vs, v : iv, vs, v <- info1.surrs, info2.surrs(iv, vs, v)],
+//     ex_surrs: [iv, vs, v : iv, vs, v <- info1.ex_surrs, info2.ex_surrs(iv, vs, v)],
+//     non_null: [v : v <- info1.non_null, info2.non_null(v)]
+//   );
+
+
+// PropInfo update_surr(PropInfo info, Int32Var var, AnyValueStoreId store, StdVar value) {
+//   cleared_info = clear(info, var);
+//   surrs = [iv, vs, v : iv, vs, v <- cleared_info.surrs | iv, vs, v <- [var, store, value;]];
+//   return prop_info(surrs: surrs, ex_surrs: cleared_info.ex_surrs, non_null: cleared_info.non_null);
+// }
+
+
+// PropInfo update_ex_surr(PropInfo info, Int32Var var, ValueStoreId store, StdVar value) {
+//   cleared_info = clear(info, var);
+//   ex_surrs = [iv, vs, v : iv, vs, v <- cleared_info.ex_surrs | iv, vs, v <- [var, store, value;]];
+//   non_null = cleared_info.non_null & [var];
+//   return prop_info(surrs: cleared_info.surrs, ex_surrs: ex_surrs, non_null: non_null);
+// }
+
+
+// PropInfo clear(PropInfo info, Int32Var var) =
+//   prop_info(
+//     surrs:    [iv, vs, v : iv, vs, v <- info.surrs, iv != var],
+//     ex_surrs: [iv, vs, v : iv, vs, v <- info.ex_surrs, iv != var],
+//     non_null: [v : v <- info.non_null, v != var]
+//   );
+
+
+// PropInfo clear(PropInfo info, StdVar var) =
+//   prop_info(
+//     surrs:    [iv, vs, v : iv, vs, v <- info.surrs, v != var],
+//     ex_surrs: [iv, vs, v : iv, vs, v <- info.ex_surrs, v != var],
+//     non_null: info.non_null
+//   );
+
+// ////////////////////////////////////////////////////////////////////////////////
+
+// Maybe[Int32Var] surr_of(StdVar var, AnyValueStoreId store, PropInfo info) {
+//   vars = [v : v <- info.surrs(?, store, var)];
+//   return if vars != [] then just(an_elem(vars)) else nothing;
+// }
+
+
+// Maybe[Int32Var] ex_surr_of(StdVar var, ValueStoreId store, PropInfo info) {
+//   vars = [v : v <- info.ex_surrs(?, store, var)];
+//   return if vars != [] then just(an_elem(vars)) else nothing;
+// }
+
+
+// Bool is_surr_of(Int32Var var, AnyValueStoreId store, StdVar value, PropInfo info) =
+//   info.surrs(var, store, value);
+
+
+// Bool is_ex_surr_of(Int32Var var, ValueStoreId store, StdVar value, PropInfo info) =
+//   info.ex_surrs(var, store, value);
+
+// ////////////////////////////////////////////////////////////////////////////////
+
+// PropInfo* propagate(NodeInfo* nodes, PropInfo* init_info, [Nat]* rev_flow_map) {
+//   assert |nodes| == |rev_flow_map|;
+//   info = init_info;
+//   loop
+//     in_info  = (merge_prop_info(ns, info) : ns <- rev_flow_map);
+//     out_info = (outgoing_prop_info(n, in_info(i)) : n @ i <- nodes);
+//     return in_info if out_info == info;
+//     info = out_info;
+//   ;
+// }
+
+
+// PropInfo merge_prop_info([Nat] in_nodes, PropInfo* infos) {
+//   return no_prop_info if in_nodes == [];
+//   in_infos = (infos(i) : i <- isort(in_nodes));
+//   return foldl(in_infos, merge);
+// }
+
+
+// PropInfo outgoing_prop_info(NodeInfo node, PropInfo info) {
+//   return match (node)
+//     std_node(instr?)  = instr_update_info(instr, info),
+//     _                 = info;
+
+
+//   PropInfo instr_update_info(<BasicInstr, JumpInstr> instr, PropInfo info) =
+//     set_ivar32()          = set_ivar32_update_info(instr.var, instr.value, info),
+//     set_rc_var()          = set_rc_var_update_info(instr.var, instr.value, info),
+
+//     set_var()             = clear_any(info, instr.var),
+//     call_proc()           = if instr.var? then clear_any(info, instr.var) else info,
+//     call_cls()            = clear_any(info, instr.var),
+//     invoke_auto_method()  = clear_any(info, instr.res_var),
+//     invoke_db_method()    = clear_any(info, instr.res_var),
+
+//     lookup_or_queue_insert_value()  = if instr.value :: StdVar
+//                                         then update_ex_surr(info, instr.res_var, instr.store, instr.value)
+//                                         else clear(info, instr.res_var),
+
+//     ## REVIEW AGAIN THE LIST OF INSTRUCTIONS THAT SET THE VALUE OF LOCAL VARIABLES
+
+//     ## THESE SHOULD NOT AFFECT ANYTHING, BUT...
+//     // set_at()              =
+//     // write_rec_field()     =
+//     // finish_init()         =
+
+//     _                     = info;
+
+
+//   PropInfo set_ivar32_update_info(Int32Var var, Int32Expr value, PropInfo info) =
+//     match (value)
+//       value_to_surr() = if value.value :: StdVar
+//                           then update_surr(info, var, value.store, value.value)
+//                           else clear(info, var),
+//       _                 = info;
+
+
+//   PropInfo set_rc_var_update_info(<WriteObjVar, LocOptTagRecVar> var, RefObjExpr value, PropInfo info) =
+//     var(),  surr_to_value()   = update_surr(info, value.surrogate, value.store, var),
+//     _,      _                 = info;
+
+
+//   PropInfo clear_any(PropInfo info, AnyVar var) = if var :: <StdVar, Int32Var> then clear(info, var) else info;
+// }
