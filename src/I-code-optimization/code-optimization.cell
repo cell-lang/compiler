@@ -74,54 +74,95 @@ Instr+ optimize_code(Instr+ instrs) {
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-type DependeeVar  = StdVar, LocVar, Int32Var; // LocIntVar, LocFloatVar
+type DependeeVar  = StdVar, LocVar, Int32Var, LocIntVar, IntFnArg;
 type DependantVar = StdVar, LocVar;
 
+type PropIntExpr      = LocIntVar, IntFnArg,
+                        surr_to_int_value(store: AnyValueStoreId, surrogate: Int32Var),
+                        get_int_val(PropAtomicExpr);
 
-type PropIntExpr = surr_to_int_value(store: AnyValueStoreId, surrogate: Int32Var);
+type PropAtomicExpr   = StdVar, LocVar, int_obj(PropIntExpr), get_inner_obj(PropAtomicExpr);
+type PropExpr         = PropAtomicExpr, mk_tagged_obj(tag: SymbObj, obj: PropAtomicExpr);
 
-type PropAtomicExpr = int_obj(PropIntExpr);
+type PropInt32Expr      = value_to_surr(store: AnyValueStoreId, value: <PropAtomicExpr, PropIntExpr>);
+type PropInt32QuasiExpr = value_to_ex_surr(store: ValueStoreId, value: <PropExpr, PropIntExpr>);
+type AnyPropInt32Expr   = PropInt32Expr, PropInt32QuasiExpr;
 
-type PropExpr = mk_tagged_obj(tag: SymbObj, obj: PropAtomicExpr);
-
-
-type PropInfo = prop_info(values: [DependantVar -> PropExpr]);
+type PropInfo = prop_info(
+                  values: [DependantVar -> PropExpr],
+                  ints32: [Int32Var -> AnyPropInt32Expr]
+                );
 
 ////////////////////////////////////////////////////////////////////////////////
 
-PropInfo no_prop_info = prop_info(values: []);
+PropInfo no_prop_info = prop_info(values: [], ints32: []);
 
 ////////////////////////////////////////////////////////////////////////////////
 
 PropInfo merge(PropInfo info1, PropInfo info2) {
   values = [v -> e : v, e <- info1.values, info2.values(v, e)];
-  return prop_info(values: values);
+  ints32 = [v -> e : v, e <- info1.ints32, info2.ints32(v, e)];
+  return prop_info(values: values, ints32: ints32);
 }
 
 PropInfo add_dependency(PropInfo info, DependantVar var, PropExpr expr) {
   cleared_info = clear_dependants(info, var);
   values = [v -> e : v, e <- cleared_info.values | v, e <- [var -> expr]];
-  return prop_info(values: values);
+  return prop_info(values: values, ints32: cleared_info.ints32);
+}
+
+PropInfo add_dependency(PropInfo info, Int32Var var, AnyPropInt32Expr expr) {
+  cleared_info = clear_dependants(info, var);
+  ints32 = [v -> e : v, e <- cleared_info.ints32 | v, e <- [var -> expr]];
+  return prop_info(values: cleared_info.values, ints32: ints32);
 }
 
 PropInfo clear_dependants(PropInfo info, DependeeVar var) =
-  prop_info(values: [v -> e : v, e <- info.values, v != var, dependees(e)(var)]);
+  prop_info(
+    values: [v -> e : v, e <- info.values, v != var, not dependees(e)(var)],
+    ints32: [v -> e : v, e <- info.ints32, v != var, not dependees(e)(var)]
+  );
 
 ////////////////////////////////////////////////////////////////////////////////
 
-<AtomicExpr, RefObjExpr> lookup(PropInfo info, DependantVar var, AtomicExpr default) =
-  if info.values(var, *) then info.values(var) else default;
+PropExpr lookup(PropInfo info, DependantVar var, PropAtomicExpr default) {
+  if info.values(var, *):
+    value = info.values(var);
+    if value :: PropExpr:
+      return value;
+    ;
+  ;
+  return default;
+}
+
+Bool is_ex_surr_of(Int32Var var, ValueStoreId store, <PropExpr, PropIntExpr> value, PropInfo info) {
+  if info.ints32(var, *):
+    pseudo_expr = info.ints32(var);
+    return pseudo_expr.store == store and pseudo_expr.value == value;
+  else
+    return false;
+  ;
+}
+
+Bool is_curr_value(PropInfo info, Int32Var var, PropInt32Expr value) =
+  info.ints32(var, value);
 
 ////////////////////////////////////////////////////////////////////////////////
 
 [DependeeVar] dependees(PropIntExpr expr) =
-  surr_to_int_value()   = [expr.surrogate];
-
-[DependeeVar] dependees(PropAtomicExpr expr) =
-  int_obj(e?)   = dependees(e);
+  ivar() | int_arg()    = [expr],
+  surr_to_int_value()   = [expr.surrogate],
+  get_int_val(e?)       = dependees(e);
 
 [DependeeVar] dependees(PropExpr expr) =
-  mk_tagged_obj() = dependees(expr.obj);
+  var() | lvar()    = [expr],
+  int_obj(e?)       = dependees(e),
+  get_inner_obj(e?) = dependees(e),
+  mk_tagged_obj()   = dependees(expr.obj);
+
+[DependeeVar] dependees(AnyPropInt32Expr expr) =
+  value_to_surr()     = dependees(expr.value),
+  value_to_ex_surr()  = dependees(expr.value);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -152,11 +193,11 @@ PropInfo outgoing_prop_info(NodeInfo node, PropInfo info) {
 
   PropInfo instr_update_info(<BasicInstr, JumpInstr> instr, PropInfo info) =
     set_rc_var()                    = set_rc_var_update_info(instr.var, instr.value, info),
+    set_ivar32()                    = set_ivar32_update_info(instr.var, instr.value, info),
 
     set_var()                       |
     set_bvar()                      |
     set_ivar()                      |
-    set_ivar32()                    |
     set_fvar()                      = clear_any(info, instr.var),
 
     call_proc()                     = if instr.var? then clear_any(info, instr.var) else info,
@@ -189,6 +230,12 @@ PropInfo outgoing_prop_info(NodeInfo node, PropInfo info) {
   }
 
 
+  PropInfo set_ivar32_update_info(Int32Var var, Int32Expr value, PropInfo info) =
+    if value :: PropInt32Expr
+      then add_dependency(info, var, value)
+      else clear_dependants(info, var);
+
+
   PropInfo clear_any(PropInfo info, AnyVar var) =
     if var :: DependeeVar then clear_dependants(info, var) else info;
 }
@@ -204,19 +251,23 @@ NodeInfo rewrite_node(NodeInfo node, PropInfo info) =
 <BasicInstr, JumpInstr> rewrite_instr(<BasicInstr, JumpInstr> instr, PropInfo info) {
   return match (instr)
     set_ivar32()                    = rewrite_set_ivar32(instr, instr.var, instr.value, info),
-  //   lookup_or_queue_insert_value()  = rewrite_lookup_or_queue_insert_value(instr, instr.res_var, instr.store, instr.value, info),
+    lookup_or_queue_insert_value()  = rewrite_lookup_or_queue_insert_value(instr, instr.res_var, instr.store, instr.value, info),
     _                               = instr;
 
+
+  BasicInstr rewrite_lookup_or_queue_insert_value(BasicInstr instr, Int32Var res_var, ValueStoreId store, <AtomicExpr, IntExpr> value, PropInfo info) =
+    if value :: <PropExpr, PropIntExpr> and is_ex_surr_of(res_var, store, value, info) then :no_op else instr;
+
+  BasicInstr rewrite_set_ivar32(BasicInstr instr, Int32Var var, Int32Expr value, PropInfo info) {
+    return :no_op if value :: PropInt32Expr and is_curr_value(info, var, value);
+    rw_value = rewrite_int32_expr(value, info);
+    return if rw_value :: Int32Var then set_ivar32(var, rw_value) else instr;
+  }
 
   // BasicInstr rewrite_lookup_or_queue_insert_value(BasicInstr instr, Int32Var res_var, ValueStoreId store, <AtomicExpr, IntExpr> value, PropInfo info) =
   //   if value :: StdVar and is_ex_surr_of(res_var, store, value, info)
   //     then :no_op
   //     else instr;
-
-  BasicInstr rewrite_set_ivar32(BasicInstr instr, Int32Var var, Int32Expr value, PropInfo info) {
-    rw_value = rewrite_int32_expr(value, info);
-    return if rw_value :: Int32Var then set_ivar32(var, rw_value) else instr;
-  }
 
   // BasicInstr rewrite_set_ivar32(BasicInstr instr, Int32Var var, Int32Expr value, PropInfo info) =
   //   match (value)
