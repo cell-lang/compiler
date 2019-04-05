@@ -111,9 +111,16 @@ PropInfo add_dependency(PropInfo info, DependantVar var, PropExpr expr) {
   return prop_info(values: values, ints32: cleared_info.ints32);
 }
 
-PropInfo add_dependency(PropInfo info, Int32Var var, AnyPropInt32Expr expr) {
+PropInfo add_dependency(PropInfo info, Int32Var var, PropInt32Expr expr) {
   cleared_info = clear_dependants(info, var);
   ints32 = [v -> e : v, e <- cleared_info.ints32 | v, e <- [var -> expr]];
+  return prop_info(values: cleared_info.values, ints32: ints32);
+}
+
+PropInfo add_dependency(PropInfo info, Int32Var var, ValueStoreId store, <PropExpr, PropIntExpr> value) {
+  cleared_info = clear_dependants(info, var);
+  quasi_expr = value_to_ex_surr(store: store, value: value);
+  ints32 = [v -> e : v, e <- cleared_info.ints32 | v, e <- [var -> quasi_expr]];
   return prop_info(values: cleared_info.values, ints32: ints32);
 }
 
@@ -204,8 +211,10 @@ PropInfo outgoing_prop_info(NodeInfo node, PropInfo info) {
     call_cls()                      = clear_any(info, instr.var),
 
     invoke_auto_method()            |
-    invoke_db_method()              |
-    lookup_or_queue_insert_value()  = clear_any(info, instr.res_var),
+    invoke_db_method()              = clear_any(info, instr.res_var),
+
+    lookup_or_queue_insert_value()  = lookup_or_queue_insert_value_update_info(instr.res_var, instr.store, instr.value, info),
+    // lookup_or_queue_insert_value()  = clear_any(info, instr.res_var),
 
     _                               = info;
 
@@ -216,6 +225,11 @@ PropInfo outgoing_prop_info(NodeInfo node, PropInfo info) {
     // write_rec_field()     =
     // finish_init()         =
 
+
+  PropInfo lookup_or_queue_insert_value_update_info(Int32Var res_var, ValueStoreId store, <AtomicExpr, IntExpr> value, PropInfo info) =
+    if value :: PropExpr or value :: PropIntExpr
+      then add_dependency(info, res_var, store, value)
+      else clear_dependants(info, res_var);
 
 
   PropInfo set_rc_var_update_info(<WriteObjVar, LocOptTagRecVar> var, RefObjExpr value, PropInfo pre_instr_info) {
