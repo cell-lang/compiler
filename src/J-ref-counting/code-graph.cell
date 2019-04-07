@@ -2,7 +2,14 @@ type NodeInfo       = std_node(<BasicInstr, JumpInstr>),
                       branch_node(BoolExpr),
                       nat_switch_node(IntExpr),
                       symb_switch_node(value: ObjExpr, cases: [+SymbObj]+),
-                      set_cls_par_node(var: ImplArg, cls: AnyLambdaExpr);
+                      set_cls_par_node(var: ImplArg, cls: AnyLambdaExpr),
+                      foreach_node(
+                        seq:        <LocVar, StdVar>,
+                        ## THESE VARIABLES SHOULD NOT BE LIVE ONE WE GET HERE
+                        count_var:  Int32Var,
+                        idx_var:    Int32Var,
+                        it_var:     AnyLocVar
+                      );
 
 type CodeTree       = std_node(Nat),
                       branch_node(idx: Nat, if_body: CodeTree+, else_body: CodeTree*),
@@ -11,6 +18,8 @@ type CodeTree       = std_node(Nat),
                       loop_node(CodeTree+),
                       block_node(CodeTree+),
                       try_block_node(var: LocVar, body: CodeTree+),
+                      ## SHOULD VARIABLES OF TYPE ArrayVar BE MOVED TO THE NodeInfo?
+                      foreach_node(idx: Nat, src_array: ArrayVar, tmp_buffer: ArrayVar?, body: CodeTree+),
                       root_node(CodeTree+);
 
 type RCNodeInfo     = std_node(Instr*),
@@ -27,7 +36,6 @@ NodeInfo branch_node(BoolExpr e)                      = :branch_node(e);
 NodeInfo nat_switch_node(IntExpr e)                   = :nat_switch_node(e);
 NodeInfo symb_switch_node(ObjExpr e, [+SymbObj]+ cs)  = symb_switch_node(value: e, cases: cs);
 NodeInfo set_cls_par_node(ImplArg var, AnyLambdaExpr cls)  = set_cls_par_node(var: var, cls: cls);
-
 
 CodeTree std_node(Nat i)                                      = :std_node(i);
 CodeTree branch_node(Nat i, CodeTree+ ib, CodeTree* eb)       = branch_node(idx: i, if_body: ib, else_body: eb);
@@ -63,7 +71,26 @@ RCNodeInfo set_cls_par_node(ImplArg v, AnyLambdaExpr c, Instr* is)  = set_cls_pa
   symb_switch()           = build_symb_switch_code_graph(instr.value, instr.cases, instr.else, offset),
   repeat(is?)             = build_loop_code_graph(is, offset),
   execute_block(is?)      = build_block_code_graph(is, offset),
-  try_block()             = build_try_block_code_graph(instr.var, instr.body, offset);
+  try_block()             = build_try_block_code_graph(instr.var, instr.body, offset),
+  foreach()               = build_foreach_code_graph(instr, offset);
+
+
+(NodeInfo+, CodeTree) build_foreach_code_graph(ForeachInstr instr, Nat offset) {
+  body_nodes, body_code_trees = build_code_graph(instr.body, nat(offset+1));
+  code_tree = foreach_node(
+    idx:        offset,
+    src_array:  instr.src_array,
+    tmp_buffer: instr.tmp_buffer if instr.tmp_buffer?,
+    body:       nonempty(body_code_trees)
+  );
+  node_info = foreach_node(
+    seq:        instr.seq,
+    count_var:  instr.count_var,
+    idx_var:    instr.idx_var,
+    it_var:     instr.it_var
+  );
+  return ((node_info) & body_nodes, code_tree);
+}
 
 
 (NodeInfo+, CodeTree) build_branch_code_graph(BoolExpr cond, Instr+ if_branch, Instr* else_branch, Nat offset) {

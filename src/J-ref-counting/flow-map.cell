@@ -8,7 +8,8 @@ type NodeId     = Nat, end_node; ## DO I NEED end_node?
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-NodeId first_node(CodeTree* code_trees, NodeId next_node) = if code_trees != () then first_node(head(code_trees)) else next_node;
+NodeId first_node(CodeTree* code_trees, NodeId next_node) =
+  if code_trees != () then first_node(head(code_trees)) else next_node;
 
 
 NodeId first_node(CodeTree tree) =
@@ -19,6 +20,7 @@ NodeId first_node(CodeTree tree) =
   loop_node(ts?)      = first_node(head(ts)),
   block_node(ts?)     = first_node(head(ts)),
   try_block_node()    = first_node(head(tree.body)),
+  foreach_node()      = tree.idx,
   root_node()         = undefined;
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -44,12 +46,10 @@ implicit leaf_nodes : NodeInfo+, next_node : NodeId, loop_break_target : Maybe[N
     branch_node()       = build_branch_flow_map(code_tree.idx, code_tree.if_body, code_tree.else_body),
     nat_switch_node()   = build_nat_switch_flow_map(code_tree.idx, code_tree.cases),
     symb_switch_node()  = build_symb_switch_flow_map(code_tree.idx, code_tree.cases, code_tree.else),
-    loop_node(ts?)      = { new_next_node = first_node(head(ts));
-                            new_loop_break_target = just(next_node);
-                            return build_flow_map(ts, next_node=new_next_node, loop_break_target=new_loop_break_target);
-                          },
+    loop_node(ts?)      = build_loop_flow_map(ts),
     block_node(ts?)     = build_flow_map(ts, block_exit_target=just(next_node)),
     try_block_node()    = build_flow_map(code_tree.body),
+    foreach_node()      = build_foreach_flow_map(code_tree.idx, code_tree.body),
     root_node(ts?)      = undefined;
 
 
@@ -64,6 +64,23 @@ implicit leaf_nodes : NodeInfo+, next_node : NodeId, loop_break_target : Maybe[N
       terminate() = ();
 
     NodeId* node_exit(BasicInstr) = (next_node);
+  }
+
+
+  NodeId** build_foreach_flow_map(Nat idx, CodeTree+ body) {
+    first_body_node = first_node(head(body));
+    head_exits = (first_body_node, next_node);
+    let next_node=first_body_node, loop_break_target=just(next_node):
+      body_flow_map = build_flow_map(body);
+    ;
+    return (head_exits) & body_flow_map;
+  }
+
+
+  NodeId** build_loop_flow_map(CodeTree+ body) {
+    new_next_node = first_node(head(body));
+    new_loop_break_target = just(next_node);
+    return build_flow_map(body, next_node=new_next_node, loop_break_target=new_loop_break_target);
   }
 
 

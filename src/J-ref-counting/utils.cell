@@ -83,7 +83,7 @@ Nothing maybe_var(AtomicBoolExpr) = undefined;
 ////////////////////////////////////////////////////////////////////////////////
 
 [TrkVar] trk_vars(AnyVar v)    = [v if v :: TrkVar];
-[TrkVar] trk_vars([AnyVar] vs)  = [v : v <- vs, v :: TrkVar];
+[TrkVar] trk_vars([AnyVar] vs) = [v : v <- vs, v :: TrkVar];
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -92,7 +92,10 @@ Nothing maybe_var(AtomicBoolExpr) = undefined;
   branch_node()       = [],
   nat_switch_node()   = [],
   symb_switch_node()  = [],
-  set_cls_par_node()  = [];
+  set_cls_par_node()  = [],
+  ## BUG BUG BUG: THIS ACTUALLY SETS A NUMBER OF VARIABLES,
+  ## BUT ONLY IN ONE OF THE TWO POSSIBLE DIRECTIONS
+  foreach_node()      = [];
 
 
 [TrkVar] vars_set(BasicInstr instr) =
@@ -158,7 +161,8 @@ Nothing maybe_var(AtomicBoolExpr) = undefined;
   branch_node(e?)     = tracked_vars_used(e),
   nat_switch_node()   = [],
   symb_switch_node()  = tracked_vars_used(info.value),
-  set_cls_par_node()  = tracked_vars_used(info.cls);
+  set_cls_par_node()  = tracked_vars_used(info.cls),
+  foreach_node()      = [info.seq];
 
 
 [TrkVar] vars_used(BasicInstr instr) =

@@ -216,7 +216,8 @@ type CodeOutcome = fails, returns, breaks_loop, exits_block, falls_through;
   try_block()         = retrieve_from_nested_low_level_instrs(instr.body, retrieve),
   switch_on_nat()     = retrieve_from_nested_low_level_instrs(join(instr.cases), retrieve),
   symb_switch()       = union([retrieve_from_nested_low_level_instrs(right(c), retrieve) : c <- instr.cases]) &
-                        retrieve_from_nested_low_level_instrs(instr.else, retrieve);
+                        retrieve_from_nested_low_level_instrs(instr.else, retrieve),
+  foreach()           = retrieve_from_nested_low_level_instrs(instr.body, retrieve);
 
 
 [T] retrieve_from_nested_low_level_instrs(Instr* instrs, (Instr -> [T]) retrieve) = seq_union((retrieve(i) : i <- instrs));

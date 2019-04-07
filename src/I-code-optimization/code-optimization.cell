@@ -277,30 +277,6 @@ NodeInfo rewrite_node(NodeInfo node, PropInfo info) =
     rw_value = rewrite_int32_expr(value, info);
     return if rw_value :: Int32Var then set_ivar32(var, rw_value) else instr;
   }
-
-  // BasicInstr rewrite_lookup_or_queue_insert_value(BasicInstr instr, Int32Var res_var, ValueStoreId store, <AtomicExpr, IntExpr> value, PropInfo info) =
-  //   if value :: StdVar and is_ex_surr_of(res_var, store, value, info)
-  //     then :no_op
-  //     else instr;
-
-  // BasicInstr rewrite_set_ivar32(BasicInstr instr, Int32Var var, Int32Expr value, PropInfo info) =
-  //   match (value)
-  //     value_to_surr()   = if value.value :: StdVar then
-  //                           if is_surr_of(var, value.store, value.value, info)
-  //                             then :no_op
-  //                             else set_ivar32(var, rewrite_value_to_surr_expr(value.store, value.value, info))
-  //                         else
-  //                           instr,
-  //     _                 = instr;
-
-
-  // Int32Expr rewrite_value_to_surr_expr(AnyValueStoreId store, AtomicExpr val, PropInfo info) {
-  //   if val :: StdVar:
-  //     maybe_surr = surr_of(val, store, info);
-  //     return value(maybe_surr) if maybe_surr != nothing;
-  //   ;
-  //   return value_to_surr(store, val);
-  // }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -373,7 +349,30 @@ Instr* reconstruct_code(CodeTree code_tree, NodeInfo+ nodes) {
     loop_node(ts?)      = (repeat(nonempty(reconstruct(ts, nodes)))),
     block_node(ts?)     = (execute_block(nonempty(reconstruct(ts, nodes)))),
     try_block_node()    = (try_block(code_tree.var, nonempty(reconstruct(code_tree.body, nodes)))),
+    foreach_node()      = reconstruct_foreach(
+                            code_tree.idx,
+                            code_tree.src_array,
+                            if code_tree.tmp_buffer? then just(code_tree.tmp_buffer) else nothing,
+                            code_tree.body,
+                            nodes
+                          ),
     root_node(ts?)      = reconstruct(ts, nodes);
+
+
+  Instr* reconstruct_foreach(Nat idx, ArrayVar src_array, Maybe[ArrayVar] tmp_buffer, CodeTree+ body, NodeInfo+ nodes) {
+    node = match (nodes(idx)) foreach_node() n? = n;
+    return (
+      foreach(
+        seq:        node.seq,
+        src_array:  src_array,
+        tmp_buffer: value(tmp_buffer) if tmp_buffer != nothing,
+        count_var:  node.count_var,
+        idx_var:    node.idx_var,
+        it_var:     node.it_var,
+        body:       reconstruct(body, nodes)
+      )
+    );
+  }
 
 
   Instr* reconstruct_branch(Nat idx, CodeTree+ if_code_trees, CodeTree* else_code_trees, NodeInfo+ nodes) {
