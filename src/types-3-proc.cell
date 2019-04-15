@@ -173,6 +173,7 @@ type IntNatOp       = get_int_val(ObjExpr),
                       float_bits(FloatExpr),
                       mantissa(FloatExpr),
                       dec_exp(FloatExpr),
+                      upcast_int32(<Int32Var, Int32NatOp>),
                       surr_to_int_value(store: AnyValueStoreId, surrogate: Int32Var),
                       rand_nat(IntExpr),  // Non-deterministic
                       unique_nat,         // Non-deterministic
@@ -224,7 +225,7 @@ type BoolExpr       = AtomicBoolExpr,
                       and_then(BoolExpr+),
                       or_else(BoolExpr+);
 
-type IntExpr        = Int, IntConst, IntVar, IntNatOp, Int32Expr;
+type IntExpr        = Int, IntConst, IntVar, IntNatOp;
 
 type Int32Expr      = Int32, Int32Var, Int32NatOp;
 
@@ -236,14 +237,14 @@ type ObjExpr        = InlineObj, StdObjVar, ObjNatOp, OptTagRecExpr;
 
 type AtomicExpr     = ObjExpr;
 
-type AnyTypeExpr    = BoolExpr, IntExpr, FloatExpr, ObjExpr;
+type AnyTypeExpr    = BoolExpr, IntExpr, Int32Expr, FloatExpr, ObjExpr;
 
 type RefObjExpr     = mk_set_from_stream(stream: StreamVar),
                       mk_set(elems: VecVar, size: IntExpr),
                       mk_set_from_array(array: ArrayVar, size: Maybe[IntExpr]),
                       mk_seq_from_stream(stream: StreamVar),
                       mk_seq(elems: VecVar, size: IntExpr),
-                      mk_seq_from_array(array: ArrayVar, size: Maybe[IntExpr]),
+                      mk_seq_from_array(array: ArrayVar, size: Maybe[Int32Expr]),
                       build_const_int_seq(seq_id: Nat),
                       mk_map_from_streams(key_stream: StreamVar, value_stream: StreamVar),
                       mk_map(keys: VecVar, values: VecVar, size: IntExpr),

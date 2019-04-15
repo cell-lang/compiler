@@ -937,7 +937,7 @@ implicit program           : Program,
 
     // Code that evaluates the bounds and initializes the loop variable
     code, bound_surr, var_gen = opt_eval_info(expr.bound_expr, var_gen);
-    if not bound_surr :: <Var, int_obj(<IntVar, Int32Var>)>:
+    if not bound_surr :: <Var, int_obj(<IntVar, upcast_int32(Int32Var)>)>:
       bound_var, var_gen = next_int_var(var_gen);
       code = store_result(code, bound_surr, bound_var);
       bound_surr = bound_var;
@@ -987,7 +987,9 @@ implicit program           : Program,
     ;
 
     // Final body code
-    break_cond = if expr.inclusive then is_gt(idx_var, bound_surr) else is_ge(idx_var, bound_surr);
+    break_cond = if expr.inclusive
+      then is_gt(upcast_int32(idx_var), bound_surr)
+      else is_ge(upcast_int32(idx_var), bound_surr);
     body_code = ((break_if(break_cond)) & body_code | increment(idx_var));
 
     // Final code
