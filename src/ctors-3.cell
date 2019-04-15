@@ -69,6 +69,7 @@ OptTagRecFnArg  opt_tag_rec_fn_arg(Nat id, Symbol s, Nat i) = opt_tag_rec_fn_arg
 LocOptTagRecVar opt_tag_rec_fn_arg(Symbol id, Symbol s, Nat i) = opt_tag_rec_var(id: id, tag: s, index: i);
 
 ArrayVar avar(Nat id, LowLevelEltRepr r) = avar(id: id, repr: r);
+ArrayVar shadow_array_var(Symbol id, LowLevelEltRepr r) = shadow_array_var(id: id, repr: r);
 
 MembObjVar watched_signal_value_var(Atom id)                  = :watched_signal_value_var(id);
 
@@ -324,10 +325,10 @@ Instr surr_to_value(WriteObjVar v, AnyValueStoreId s, Int32Var sv) = set_var(v, 
 
 Instr read_pending_var(WriteObjVar tv, <PendingStateVar, PendingInputVar> sv) = set_var(tv, :read_pending_var(sv));
 
-Instr alloc_array(ArrayVar v, Int32Expr n) = alloc_array(var: v, size: n);
+Instr array_alloc(ArrayVar v, Int32Expr n) = array_alloc(var: v, size: n);
 
-Instr write_array(ArrayVar v, Int32Expr i, ObjExpr e) =
-  write_array(var: v, idx: i, value: low_level_expr(v.repr, e));
+Instr array_write(ArrayVar v, Int32Expr i, ObjExpr e) =
+  array_write(var: v, idx: i, value: low_level_expr(v.repr, e));
 
 Instr write_rec_field(LocOptTagRecVar v, Symbol s, AnyTypeExpr e, Bool b) = write_rec_field(var: v, label: s, value: e, optional: b);
 Instr finish_init(LocOptTagRecVar v) = finish_init(var: v);

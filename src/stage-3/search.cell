@@ -1,0 +1,271 @@
+[T] search_nested(<Bool, BoolVar>, (AnyTypeExpr -> [T]) search) = [];
+
+
+[T] search_nested(BoolNatOp expr, (AnyTypeExpr -> [T]) search) =
+  is_symb(e?)             |
+  is_int(e?)              |
+  is_float(e?)            |
+  is_ne_set(e?)           |
+  is_ne_seq(e?)           |
+  is_ne_map(e?)           |
+  is_ne_bin_rel(e?)       |
+  is_ne_tern_rel(e?)      |
+  is_tagged_obj(e?)       = search(e),
+  are_eq(e1?, e2?)        = search(e1) & search(e2),
+  is_lt()                 |
+  is_le()                 = search(expr.expr1) & search(expr.expr2),
+  is_flt(e1?, e2?)        |
+  is_fle(e1?, e2?)        = search(e1) & search(e2),
+  is_out_of_range()       = [],
+  is_blank(v?)            |
+  is_null(v?)             = search(v),
+  has_elem()              = search(expr.set) & search(expr.elt),
+  has_field()             = search(expr.record),
+  contains()              = search(expr.coll) & union([search(e) : e <~ expr.entry]),
+  table_contains()        = union([search(value(a)) : a <~ expr.tuple, a != nothing]);
+
+
+[T] search_nested(BoolFnCall expr, (AnyTypeExpr -> [T]) search) =
+  is_member()     = search(expr.obj),
+  state_is_def()  = [];
+
+
+[T] search_nested(CompositeBoolExpr, (AnyTypeExpr -> [T]) search) =
+  neg(e?)         = search(e),
+  and(es?)        = union([search(e) : e <~ es]),
+  or(es?)         = union([search(e) : e <~ es]),
+  and_then(es?)   = union([search(e) : e <~ es]),
+  or_else(es?)    = union([search(e) : e <~ es]);
+
+////////////////////////////////////////////////////////////////////////////////
+
+[T] search_nested(<Int, IntConst, IntVar>, (AnyTypeExpr -> [T]) search) = [];
+
+
+[T] search_nested(IntNatOp expr, (AnyTypeExpr -> [T]) search) =
+  get_int_val(e?)         = search(e),
+  minus(e?)               = search(e),
+  add()                   |
+  sub()                   |
+  mult()                  |
+  div()                   |
+  mod()                   = search(expr.val1) & search(expr.val2),
+  bitwise_and(e1?, e2?)   |
+  bitwise_or(e1?, e2?)    |
+  bitwise_xor(e1?, e2?)   = search(e1) & search(e2),
+  float_bits(e?)          |
+  mantissa(e?)            |
+  dec_exp(e?)             |
+  upcast_int32(e?)        = search(e),
+  surr_to_int_value()     = search(expr.surrogate),
+  rand_nat(e?)            = search(e),
+  unique_nat              = [],
+  ticks                   = [];
+
+////////////////////////////////////////////////////////////////////////////////
+
+[T] search_nested(Int32Var expr, (AnyTypeExpr -> [T]) search) = [];
+
+
+[T] search_nested(Int32NatOp expr, (AnyTypeExpr -> [T]) search) =
+  bool_to_bit(e?)   |
+  get_size(e?)      = search(e),
+  get_count()       |
+  table_lookup()    = union([search(value(a)) : a <~ expr.args, a != nothing]),
+  cast_int32(e?)    = search(e),
+  add32(e1?, e2?)   = search(e1) & search(e2),
+  value_to_surr()   = search(expr.value),
+  get_unknown_arg() = [];
+
+////////////////////////////////////////////////////////////////////////////////
+
+[T] search_nested(<FloatLit, FloatVar> expr, (AnyTypeExpr -> [T]) search) = [];
+
+
+[T] search_nested(FloatNatOp expr, (AnyTypeExpr -> [T]) search) =
+  float_value(e?)         |
+  neg_float(e?)           = search(e),
+  add_floats(e1?, e2?)    |
+  sub_floats(e1?, e2?)    |
+  mult_floats(e1?, e2?)   |
+  div_floats(e1?, e2?)    |
+  exp_floats(e1?, e2?)    = search(e1) & search(e2),
+  square_root(e?)         |
+  int_to_float(e?)        = search(e);
+
+////////////////////////////////////////////////////////////////////////////////
+
+[T] search_nested(<InlineObj, StdObjVar> expr, (AnyTypeExpr -> [T]) search) = [];
+
+
+[T] search_nested(ObjNatOp expr, (AnyTypeExpr -> [T]) search) =
+  at()              = search(expr.seq) & search(expr.idx),
+  lookup()          = search(expr.rel) & search(expr.key),
+  lookup_field()    = search(expr.record),
+  get_tag(e?)       |
+  get_inner_obj(e?) |
+  bool_obj(e?)      |
+  int_obj(e?)       |
+  float_obj(e?)     = search(e),
+  get_curr_obj()    = [],
+  get_curr_arg()    = [],
+  get_curr_arg()    = [],
+  rand_elem(e?)     = search(e);
+
+
+[T] search_nested(OptTagRecExpr expr, (AnyTypeExpr -> [T]) search) =
+  opt_tag_rec_var()     = [],
+  opt_tag_rec_fn_arg()  = [],
+  cast_opt_tag_rec()    = search(expr.expr);
+
+////////////////////////////////////////////////////////////////////////////////
+
+[T] search_nested(RefObjExpr expr, (AnyTypeExpr -> [T]) search) =
+  mk_set_from_stream()        = [],
+  mk_set()                    = search(expr.size),
+  mk_set_from_array()         = if expr.size != nothing then search(value(expr.size)) else [],
+  mk_seq_from_stream()        = [],
+  mk_seq()                    = search(expr.size),
+  mk_seq_from_array()         = if expr.size != nothing then search(value(expr.size)) else [],
+  build_const_int_seq()       = [],
+  mk_map_from_streams()       = [],
+  mk_map()                    = search(expr.size),
+  mk_bin_rel_from_streams()   = [],
+  mk_bin_rel()                = search(expr.size),
+  mk_bin_rel_from_arrays()    = if expr.size != nothing then search(value(expr.size)) else [],
+  mk_tern_rel_from_streams()  = [],
+  mk_tern_rel()               = search(expr.size),
+  mk_tern_rel_from_arrays()   = if expr.size != nothing then search(value(expr.size)) else [],
+  mk_tagged_obj()             = search(expr.tag) & search(expr.obj),
+  mk_record()                 = union([search(e) : unused_var, e <- expr.fields]),
+  inst_opt_tag_rec()          = [],
+  get_seq_slice()             = search(expr.seq) & search(expr.idx_first) & search(expr.len),
+  append_to_seq()             = search(expr.seq) & search(expr.new_elem),
+  update_seq_at()             = search(expr.seq) & search(expr.idx) & search(expr.value),
+  join_seqs()                 = search(expr.left) & search(expr.right),
+  rev_seq()                   = search(expr.seq),
+  internal_sort()             = search(expr.set),
+  set_key_value()             = search(expr.map) & search(expr.key) & search(expr.value),
+  drop_key()                  = search(expr.map) & search(expr.key),
+  parse_value()               = search(expr.value),
+  print_value()               = search(expr.value),
+  copy_state()                = [],
+  copy_rel()                  = [],
+  copy_persistent_state()     = [],
+  read_pending_var(v?)        = search(v),
+  surr_to_value()             = search(expr.surrogate);
+
+////////////////////////////////////////////////////////////////////////////////
+
+[T] search_exprs(AnyClsVar, (AnyTypeExpr -> [T]) search) = [];
+
+
+[T] search_exprs(LambdaExpr expr, (AnyTypeExpr -> [T]) search) = union([search(e) : e <~ expr.capt_vars]);
+
+////////////////////////////////////////////////////////////////////////////////
+
+[T] search_exprs(BasicInstr instr, (AnyTypeExpr -> [T]) search) =
+  init_stream()             = [],
+  append()                  = search(instr.obj),
+  set_at()                  = search(instr.idx) & search(instr.value),
+  array_alloc()             = search(instr.size),
+  array_write()             = search(instr.idx) & search(instr.value),
+  array_append()            = search(instr.size_var) & search(instr.value),
+  write_rec_field()         = search(instr.var) & search(instr.value),
+  finish_init()             = search(instr.var),
+  get_set_iter()            |
+  get_set_iter()            = search(instr.src),
+  get_bin_rel_iter()        |
+  get_tern_rel_iter()       = search(instr.src) & union([search(value(a)) : a <~ instr.args, a != nothing]),
+  move_forward()            = [],
+  set_var()                 |
+  set_bvar()                |
+  set_ivar()                |
+  set_ivar32()              |
+  set_fvar()                = search(instr.value),
+  set_rc_var()              = search_nested(instr.value, search),
+  init_memb_var()           = [],
+  reset_memb_var()          = [],
+  clear_loc_var()           = [],
+  nullify_var()             = [],
+  add_ref()                 = undefined,
+  release()                 = undefined,
+  print_obj()               = search(instr.obj),
+  no_op                     = [],
+  call_proc()               = union([search(e) : e <~ instr.args]) & union([search_exprs(c, search) : c <~ instr.cls_args]),
+  call_cls()                = union([search(e) : e <~ instr.args]),
+  push_call_info()          = union([search(e) : e <~ instr.args]),
+  pop_call_info             = [],
+  log_runtime_failure()     = union([search(v) & search(e) : v, e <~ instr.vars]),
+  queue_update()            = [],
+  insert_timer()            = search(instr.idx) & search(instr.time),
+  clear_timer()             = search(instr.idx),
+  auto_pre_init()           = [],
+  auto_cleanup()            = [],
+  set_input()               = search(instr.value),
+  clear_input()             = [],
+  auto_init()               = [],
+  auto_update_node()        = if instr.time_var? then search(instr.time_var) else [],
+  auto_apply()              = [],
+  set_persistent_state()    = search(instr.state),
+  init_db()                 = [],
+  cleanup_db()              = [],
+  send_msg()                = search(instr.msg),
+  try_update()              = union([search(e) : e <~ instr.args]),
+  set_state()               = search(instr.state),
+  invoke_auto_method()      = union([search(e) : e <~ instr.args]),
+  invoke_db_method()        = union([search(e) : e <~ instr.args]),
+  init_value_store()        = [],
+  cleanup_value_store()     = [],
+  init_table()              = [],
+  cleanup_table()           = [],
+  get_table_iter()          |
+  queue_deletes()           = union([search(value(a)) : a <~ instr.args, a != nothing]),
+  lookup_or_queue_insert_value() = search(instr.value),
+  queue_insert_tuple()      = union([search(v) : v <~ instr.tuple]),
+  immediate_insert_or_add_ref() = search(instr.value),
+  immediate_insert_tuple()  = union([search(v) : v <~ instr.tuple]);
+
+
+[T] search_exprs(JumpInstr instr, (AnyTypeExpr -> [T]) search) =
+  break_loop    = [],
+  exit_block    = [],
+  ret_val(e?)   = search(e),
+  terminate()   = [];
+
+
+[T] search_exprs(CompInstr instr, (AnyTypeExpr -> [T]) search) =
+  branch()            = search(instr.cond) & search_exprs(instr.when_true, search) & search_exprs(instr.when_false, search),
+  switch_on_nat()     = search(instr.value) & union([search_exprs(c, search) : c <~ instr.cases]),
+  symb_switch()       = search(instr.value) & union([search_exprs(right(c), search) : c <- instr.cases]) & search_exprs(instr.else, search),
+  repeat(is?)         |
+  execute_block(is?)  = search_exprs(is, search),
+  try_block()         = search_exprs(instr.body, search),
+  foreach()           = search(instr.seq) & search(instr.count_var) & search_exprs(instr.body, search);
+
+////////////////////////////////////////////////////////////////////////////////
+
+[T] search_exprs(Instr* instrs, (AnyTypeExpr -> [T]) search) = union([search_exprs(is, search) : is <~ instrs]);
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+[T] search_nested(<BasicInstr, JumpInstr> instr, (Instr -> [T]) search_instr, (AnyTypeExpr -> [T]) search_expr) =
+  search_exprs(instr, search_expr);
+
+
+[T] search_nested(CompInstr instr, (Instr -> [T]) search_instr, (AnyTypeExpr -> [T]) search_expr) =
+  branch()            = search_expr(instr.cond) &
+                        union([search_instr(is) : is <~ instr.when_true]) &
+                        union([search_instr(is) : is <~ instr.when_false]),
+  switch_on_nat()     = search_expr(instr.value) &
+                        union([search_instr(is) : c <~ instr.cases, is <~ c]),
+  symb_switch()       = search_expr(instr.value) &
+                        union([search_instr(is) : c <- instr.cases, is <~ right(c)]) &
+                        union([search_instr(is) : is <~ instr.else]),
+  repeat(iss?)        |
+  execute_block(iss?) = union([search_instr(is) : is <~ iss]),
+  try_block()         = union([search_instr(is) : is <~ instr.body]),
+  foreach()           = search_expr(instr.seq) &
+                        search_expr(instr.count_var) &
+                        union([search_instr(is) : is <~ instr.body]);

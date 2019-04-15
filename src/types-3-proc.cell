@@ -98,7 +98,7 @@ type LocOptTagRecVar  = opt_tag_rec_var(id: <Symbol, Nat>, tag: Symbol, index: N
 type OptTagRecFnArg   = opt_tag_rec_fn_arg(id: Nat, tag: Symbol, index: Nat);
 type OptTagRecVar     = LocOptTagRecVar, OptTagRecFnArg;
 
-type ArrayVar       = avar(id: Nat, repr: LowLevelEltRepr);
+type ArrayVar       = avar(id: Nat, repr: LowLevelEltRepr), shadow_array_var(id: Symbol, repr: LowLevelEltRepr);
 
 type AnyWriteVar    = LocBoolVar, LocIntVar, FloatVar, LocOptTagRecVar, WriteObjVar;
 
@@ -216,14 +216,13 @@ type ObjNatOp       = at(seq: ObjExpr, idx: IntExpr),
 type BoolFnCall     = is_member(pred: MembTestPredId, obj: AtomicExpr),
                       state_is_def(auto_var: AnyAutoVar, type: AutoSymbol);
 
-type BoolExpr       = AtomicBoolExpr,
-                      BoolNatOp,
-                      BoolFnCall,
-                      neg(BoolExpr),
-                      and(BoolExpr+), ## SEQUENCES OR SETS?
-                      or(BoolExpr+),  ## DITTO
-                      and_then(BoolExpr+),
-                      or_else(BoolExpr+);
+type CompositeBoolExpr = neg(BoolExpr),
+                         and(BoolExpr+), ## SEQUENCES OR SETS?
+                         or(BoolExpr+),  ## DITTO
+                         and_then(BoolExpr+),
+                         or_else(BoolExpr+);
+
+type BoolExpr       = AtomicBoolExpr, BoolNatOp, BoolFnCall, CompositeBoolExpr;
 
 type IntExpr        = Int, IntConst, IntVar, IntNatOp;
 
@@ -285,8 +284,9 @@ type BasicInstr     = init_stream(StreamVar),
                       ## I COULD END UP WITH A CYCLE IN THE OBJECT GRAPH AND MAYBE OTHER PROBLEMS
                       set_at(var: WriteObjVar, idx: IntExpr, value: AtomicExpr),  // Ownership transfer: <value>
 
-                      alloc_array(var: ArrayVar, size: Int32Expr),
-                      write_array(var: ArrayVar, idx: Int32Expr, value: AnyTypeExpr),
+                      array_alloc(var: ArrayVar, size: Int32Expr),
+                      array_write(var: ArrayVar, idx: Int32Expr, value: AnyTypeExpr),
+                      array_append(array_var: ArrayVar, size_var: Int32Var, value: AnyTypeExpr),
 
                       write_rec_field(var: LocOptTagRecVar, label: Symbol, value: AnyTypeExpr, optional: Bool),
                       finish_init(var: LocOptTagRecVar),

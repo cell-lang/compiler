@@ -1,0 +1,123 @@
+CompiledPrg optimize_array_init(CompiledPrg prg) =
+  compiled_prg(
+    typedefs:       prg.typedefs,
+    opt_reprs:      prg.opt_reprs,
+    bool_procs:     prg.bool_procs,
+    procs:          [optimize_array_init(pd) : pd <- prg.procs],
+    react_blocks:   prg.react_blocks,
+    static_blocks:  [optimize_array_init(b)  : b <- prg.static_blocks],
+    int_seqs:       prg.int_seqs
+  );
+
+
+ObjProcDef optimize_array_init(ObjProcDef pd) =
+  obj_proc_def(
+    name:           pd.name,
+    args:           pd.args,
+    cls_args:       pd.cls_args,
+    impl_args:      pd.impl_args,
+    ret_val_repr:   pd.ret_val_repr,
+    type:           pd.type,
+    loc_auto_vars:  pd.loc_auto_vars,
+    loc_db_vars:    pd.loc_db_vars,
+    body:           nonempty(optimize_array_init(pd.body)),
+    cached:         pd.cached
+  );
+
+
+StaticBlock optimize_array_init(StaticBlock block) =
+  static_block(
+    name:                     block.name,
+    links:                    block.links,
+    state_vars:               block.state_vars,
+    nested_blocks:            block.nested_blocks,
+    value_stores:             block.value_stores,
+    tables:                   block.tables,
+    foreign_keys:             block.foreign_keys,
+    init_code:                block.init_code,
+    cleanup_code:             block.cleanup_code,
+    copy_state_code:          block.copy_state_code,
+    set_state_code:           block.set_state_code,
+    foreign_keys_check_code:  block.foreign_keys_check_code,
+    methods:                  [id -> optimize_array_init(m) : id, m <- block.methods],
+    accessors:                block.accessors,
+    updates:                  [id -> compiled_update(u.args_vars, optimize_array_init(u.body)) : id, u <- block.updates],
+    msg_memb_pred:            block.msg_memb_pred
+  );
+
+
+OptCompMethod optimize_array_init(OptCompMethod method) =
+  opt_comp_method(
+    args:             method.args,
+    args_types:       method.args_types,
+    args_memb_preds:  method.args_memb_preds,
+    ret_type:         method.ret_type,
+    ret_val_repr:     method.ret_val_repr,
+    body:             optimize_array_init(method.body)
+  );
+
+
+////////////////////////////////////////////////////////////////////////////////
+
+Instr* optimize_array_init(Instr* code) {
+  opt_code = ();
+  pending = [];
+  for instr @ i <- code:
+    vars = pending_vars_used(instr, pending);
+    for v <- isort(vars):
+      opt_code = (opt_code | inst_instr(v));
+      pending = remove(pending, v);
+    ;
+    rw_instr, pending_var = rewrite(instr, pending);
+    opt_code = (opt_code | rw_instr);
+    pending = insert(pending, value(pending_var)) if pending_var != nothing;
+  ;
+  return opt_code & (inst_instr(v) : v <- _isort_(pending));
+
+
+  Instr inst_instr(StdVar var) {
+    array_var = shadow_array_var(bare_id(var), :object);
+    return mk_seq(var, array_var);
+  }
+
+    // set_rc_var(
+    //   var:   var(ys),
+    //   value: mk_seq_from_array(
+    //     array: shadow_array_var(id: ys, repr: object),
+    //     size:  just(shadow_array_size_var(ys))
+    //   )
+    // ),
+
+
+  (Instr, Maybe[StdVar]) rewrite(Instr instr, [StdVar] pending) =
+    set_var()   = if instr.var :: StdVar and instr.value == empty_seq
+                    then (rewrite_set_var(instr.var), just(instr.var))
+                    else (instr, nothing),
+    _           = (instr, nothing);
+
+
+  Instr rewrite_set_var(StdVar var) =
+    array_alloc(shadow_array_var(bare_id(var), :object), 0);
+
+// -       set_var(var: var(ys), value: empty_seq),
+// +       alloc_array(var: shadow_array_var(id: ys, repr: object), size: 0);
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  [StdVar] pending_vars_used(Instr instr, [StdVar] pending) {
+    if instr :: <set_rc_var(var: StdVar, value: append_to_seq(seq: StdVar, new_elem: AtomicExpr))>:
+      if instr.var == instr.value.seq and pending(instr.var):
+        return pending_vars_used(instr.value.new_elem, pending);
+      ;
+    ;
+    return search_nested(instr, pending_vars_used($, pending), pending_vars_used($, pending));
+  }
+
+
+  [StdVar] pending_vars_used(AnyTypeExpr expr, [StdVar] pending) =
+    var()         = [expr if pending(expr)],
+    at()          = {if not pending(expr.seq) then pending_vars_used(expr.seq, pending) else []} &
+                    pending_vars_used(expr.idx, pending),
+    get_size(e?)  = if not pending(e) then pending_vars_used(e, pending) else [],
+    _             = search_nested(expr, pending_vars_used($, pending));
+}
