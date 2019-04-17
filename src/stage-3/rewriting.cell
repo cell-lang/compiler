@@ -26,6 +26,8 @@ Int32Var cast_int32_var(<BoolExpr, IntExpr, Int32, Int32NatOp, FloatExpr, ObjExp
 <IntExpr, ObjExpr> cast_int_or_obj_expr(<IntExpr, ObjExpr> e) = e;
 <IntExpr, ObjExpr> cast_int_or_obj_expr(<BoolExpr, Int32Var, Int32NatOp, FloatExpr>) = undefined;
 
+<StdVar, LocVar> cast_loc_or_std_var(AnyTypeExpr expr) = if expr :: <StdVar, LocVar> then expr else undefined;
+
 AnyNullableVar cast_nullable_var(ObjExpr expr) = if expr :: AnyNullableVar then expr else undefined;
 
 <AnySignalVar, LocVar, PendingStateVar> cast_blankable_var(ObjExpr expr) =
@@ -298,3 +300,66 @@ JumpInstr rewrite_exprs(JumpInstr instr, (AnyTypeExpr -> AnyTypeExpr) rewrite, (
   exit_block    = instr,
   ret_val(e?)   = ret_val(rewrite(e)),
   terminate()   = instr;
+
+
+Instr rewrite_exprs(CompInstr instr, (AnyTypeExpr -> AnyTypeExpr) rewrite, (RefObjExpr -> RefObjExpr) rewrite_ref) =
+    branch()          = branch(
+                          cast_bool_expr(rewrite(instr.cond)),
+                          (rewrite_exprs(is, rewrite, rewrite_ref) : is <- instr.when_true),
+                          (rewrite_exprs(is, rewrite, rewrite_ref) : is <- instr.when_false)
+                        ),
+    switch_on_nat()   = switch_on_nat(
+                          cast_int_expr(rewrite(instr.value)),
+                          ((rewrite_exprs(is, rewrite, rewrite_ref) : is <- c) : c <- instr.cases)
+                        ),
+    symb_switch()     = symb_switch(
+                          cast_obj_expr(rewrite(instr.value)),
+                          [(left(c), (rewrite_exprs(is, rewrite, rewrite_ref) : is <- right(c))) : c <- instr.cases],
+                          (rewrite_exprs(is, rewrite, rewrite_ref) : is <- instr.else)
+                        ),
+    repeat(b?)        = repeat((rewrite_exprs(is, rewrite, rewrite_ref) : is <- b)),
+    execute_block(b?) = execute_block((rewrite_exprs(is, rewrite, rewrite_ref) : is <- b)),
+    try_block()       = try_block(instr.var, (rewrite_exprs(is, rewrite, rewrite_ref) : is <- instr.body)), // var is the variable that the try block is supposed to set, so it should not be rewritten
+    foreach()         = foreach(
+                          seq:        cast_loc_or_std_var(rewrite(instr.seq)),
+                          src_array:  instr.src_array,
+                          tmp_buffer: instr.tmp_buffer if instr.tmp_buffer?,
+                          count_var:  cast_int32_var(rewrite(instr.count_var)),
+                          idx_var:    instr.idx_var,
+                          it_var:     instr.it_var,
+                          body:       (rewrite_exprs(is, rewrite, rewrite_ref) : is <- instr.body)
+                        );
+
+////////////////////////////////////////////////////////////////////////////////
+
+Instr rewrite_nested(<BasicInstr, JumpInstr> instr, (Instr -> Instr) rw_instr, (AnyTypeExpr -> AnyTypeExpr) rw_expr) =
+  rewrite_exprs(instr, rw_expr, $);
+
+
+Instr rewrite_nested(CompInstr instr, (Instr -> Instr) rw_instr, (AnyTypeExpr -> AnyTypeExpr) rw_expr) =
+    branch()          = branch(
+                          cast_bool_expr(rw_expr(instr.cond)),
+                          (rw_instr(is) : is <- instr.when_true),
+                          (rw_instr(is) : is <- instr.when_false)
+                        ),
+    switch_on_nat()   = switch_on_nat(
+                          cast_int_expr(rw_expr(instr.value)),
+                          ((rw_instr(is) : is <- c) : c <- instr.cases)
+                        ),
+    symb_switch()     = symb_switch(
+                          cast_obj_expr(rw_expr(instr.value)),
+                          [(left(c), (rw_instr(is) : is <- right(c))) : c <- instr.cases],
+                          (rw_instr(is) : is <- instr.else)
+                        ),
+    repeat(b?)        = repeat((rw_instr(is) : is <- b)),
+    execute_block(b?) = execute_block((rw_instr(is) : is <- b)),
+    try_block()       = try_block(instr.var, (rw_instr(is) : is <- instr.body)), // var is the variable that the try block is supposed to set, so it should not be rewritten
+    foreach()         = foreach(
+                          seq:        cast_loc_or_std_var(rw_expr(instr.seq)),
+                          src_array:  instr.src_array,
+                          tmp_buffer: instr.tmp_buffer if instr.tmp_buffer?,
+                          count_var:  cast_int32_var(rw_expr(instr.count_var)),
+                          idx_var:    instr.idx_var,
+                          it_var:     instr.it_var,
+                          body:       (rw_instr(is) : is <- instr.body)
+                        );
