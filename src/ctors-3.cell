@@ -162,6 +162,7 @@ IntNatOp surr_to_int_value(AnyValueStoreId s, Int32Var v) = surr_to_int_value(st
 
 IntNatOp unique_nat           = :unique_nat;
 IntNatOp rand_nat(ObjExpr e)  = :rand_nat(get_int_val(e));
+IntNatOp rand_nat(IntExpr e)  = :rand_nat(e);
 IntNatOp ticks                = :ticks;
 
 Int32NatOp bool_to_bit(BoolExpr e)                = :bool_to_bit(e);
@@ -245,40 +246,10 @@ BoolExpr or_else(BoolExpr+ es)  = if |es| != 1 then :or_else(es)  else only(es);
 BoolExpr and([+BoolExpr] es)  = and(rand_sort(es));
 BoolExpr or([+BoolExpr] es)   = or(rand_sort(es));
 
-RefObjExpr mk_tagged_obj(AtomicExpr t, AtomicExpr o) = mk_tagged_obj(tag: t, obj: o);
-RefObjExpr surr_to_value(AnyValueStoreId s, Int32Var v) = surr_to_value(store: s, surrogate: v);
-
 OptTagRecExpr cast_opt_tag_rec(Symbol s, Nat i, ObjExpr e) = cast_opt_tag_rec(tag: s, index: i, expr: e);
 
-// Basic instructions
-
-Instr init_stream(StreamVar v)          = :init_stream(v);
-Instr append(StreamVar v, AtomicExpr e) = append(stream: v, obj: e);
-
-Instr mk_set(WriteObjVar v, StreamVar s)            = set_var(v, mk_set_from_stream(stream: s));
-Instr mk_set(WriteObjVar v, VecVar es, IntExpr s)   = set_var(v, mk_set(elems: es, size: s));
-Instr mk_set(WriteObjVar v, ArrayVar a)             = set_var(v, mk_set_from_array(array: a, size: nothing));
-Instr mk_set(WriteObjVar v, ArrayVar a, IntExpr s)  = set_var(v, mk_set_from_array(array: a, size: just(s)));
-
-Instr mk_seq(WriteObjVar v, StreamVar s)              = set_var(v, mk_seq_from_stream(stream: s));
-Instr mk_seq(WriteObjVar v, VecVar es, IntExpr s)     = set_var(v, mk_seq(elems: es, size: s));
-Instr mk_seq(WriteObjVar v, ArrayVar a)               = set_var(v, mk_seq_from_array(array: a, size: nothing));
-Instr mk_seq(WriteObjVar v, ArrayVar a, Int32Expr s)  = set_var(v, mk_seq_from_array(array: a, size: just(s)));
-
-Instr build_const_int_seq(WriteObjVar v, Nat id)    = set_var(v, build_const_int_seq(seq_id: id));
-
-Instr mk_map(WriteObjVar v, StreamVar ks, StreamVar vs)       = set_var(v, mk_map_from_streams(key_stream: ks, value_stream: vs));
-Instr mk_map(WriteObjVar v, VecVar ks, VecVar vs, IntExpr s)  = set_var(v, mk_map(keys: ks, values: vs, size: s));
-
-Instr mk_rel(WriteObjVar v, StreamVar s1, StreamVar s2)       = set_var(v, mk_bin_rel_from_streams(streams: (s1, s2)));
-Instr mk_rel(WriteObjVar v, VecVar c1, VecVar c2, IntExpr s)  = set_var(v, mk_bin_rel(cols: (c1, c2), size: s));
-Instr mk_rel(WriteObjVar v, ArrayVar c1, ArrayVar c2, Bool b) = set_var(v, mk_bin_rel_from_arrays(col1: c1, col2: c2, size: nothing, is_map: b));
-
-Instr mk_rel(WriteObjVar v, StreamVar s1, StreamVar s2, StreamVar s3)   = set_var(v, mk_tern_rel_from_streams(streams: (s1, s2, s3)));
-Instr mk_rel(WriteObjVar v, VecVar c1, VecVar c2, VecVar c3, IntExpr s) = set_var(v, mk_tern_rel(cols: (c1, c2, c3), size: s));
-Instr mk_rel(WriteObjVar v, ArrayVar c1, ArrayVar c2, ArrayVar c3)      = set_var(v, mk_tern_rel_from_arrays(col1: c1, col2: c2, col3: c3, size: nothing));
-
-Instr mk_tagged_obj(WriteObjVar v, AtomicExpr t, AtomicExpr o) = set_var(v, mk_tagged_obj(t, o));
+BasicInstr init_stream(StreamVar v)          = :init_stream(v);
+BasicInstr append(StreamVar v, AtomicExpr e) = append(stream: v, obj: e);
 
 FloatExpr float_value(ObjExpr expr) =
   float_obj(e?) = e,
@@ -293,70 +264,149 @@ FloatNatOp exp_floats(FloatExpr lv, FloatExpr rv)   = :exp_floats(lv, rv);
 FloatNatOp square_root(FloatExpr value)             = :square_root(value);
 FloatNatOp int_to_float(IntExpr value)              = :int_to_float(value);
 
-Instr mk_record(WriteObjVar v, [+SymbObj -> AtomicExpr] fs) = set_var(v, mk_record(fields: fs));
 
-Instr inst_opt_tag_rec(LocOptTagRecVar v, Symbol s, Nat i) = set_var(v, inst_opt_tag_rec(tag: s, repr_idx: i));
+RefObjExpr mk_set(StreamVar s)                  = mk_set_from_stream(stream: s);
+RefObjExpr mk_set(VecVar es, IntExpr s)         = mk_set(elems: es, size: s);
+RefObjExpr mk_set(ArrayVar a)                   = mk_set_from_array(array: a, size: nothing);
+RefObjExpr mk_set(ArrayVar a, Maybe[IntExpr] s) = mk_set_from_array(array: a, size: s);
 
-Instr get_seq_slice(WriteObjVar v, AtomicExpr s, IntExpr f, IntExpr l)  = set_var(v, get_seq_slice(seq: s, idx_first: f, len: l));
-Instr append_to_seq(WriteObjVar v, AtomicExpr s, AtomicExpr e)          = set_var(v, append_to_seq(seq: s, new_elem: e));
-Instr update_seq_at(WriteObjVar rv, AtomicExpr s, IntExpr i, AtomicExpr v) = set_var(rv, update_seq_at(seq: s, idx: i, value: v));
+RefObjExpr mk_seq(StreamVar s)                    = mk_seq_from_stream(stream: s);
+RefObjExpr mk_seq(VecVar es, IntExpr s)           = mk_seq(elems: es, size: s);
+RefObjExpr mk_seq(ArrayVar a)                     = mk_seq_from_array(array: a, size: nothing);
+RefObjExpr mk_seq(ArrayVar a, Maybe[Int32Expr] s) = mk_seq_from_array(array: a, size: s);
 
-Instr join_seqs(WriteObjVar v, AtomicExpr l, AtomicExpr r)              = set_var(v, join_seqs(left: l, right: r));
-Instr rev_seq(WriteObjVar v, AtomicExpr s)                              = set_var(v, rev_seq(seq: s));
-Instr set_at(WriteObjVar v, IntExpr i, AtomicExpr x)                    = set_at(var: v, idx: i, value: x);
+RefObjExpr build_const_int_seq(Nat id)    = build_const_int_seq(seq_id: id);
 
-Instr lookup_field(WriteObjVar v, ObjExpr e, SymbObj f)                        = set_var(v, lookup_field(e, f));
-Instr lookup_field(WriteObjVar v, ObjExpr e, SymbObj f, Maybe[LowLevelRepr] r) = set_var(v, lookup_field(e, f, r));
+RefObjExpr mk_map(StreamVar ks, StreamVar vs)       = mk_map_from_streams(key_stream: ks, value_stream: vs);
+RefObjExpr mk_map(VecVar ks, VecVar vs, IntExpr s)  = mk_map(keys: ks, values: vs, size: s);
 
-Instr internal_sort(WriteObjVar v, AtomicExpr s) = set_var(v, internal_sort(set: s));
+RefObjExpr mk_rel(StreamVar s1, StreamVar s2) = mk_bin_rel_from_streams(streams: (s1, s2));
+RefObjExpr mk_bin_rel((VecVar, VecVar) cs, IntExpr s) = mk_bin_rel(cols: cs, size: s);
+RefObjExpr mk_rel(ArrayVar c1, ArrayVar c2, Maybe[IntExpr] s, Bool b) = mk_bin_rel_from_arrays(col1: c1, col2: c2, size: s, is_map: b);
 
-Instr set_key_value(WriteObjVar v, AtomicExpr m, AtomicExpr k, AtomicExpr e) = set_var(v, set_key_value(map: m, key: k, value: e));
-Instr drop_key(WriteObjVar v, AtomicExpr m, AtomicExpr k) = set_var(v, drop_key(map: m, key: k));
+RefObjExpr mk_rel(StreamVar s1, StreamVar s2, StreamVar s3) = mk_tern_rel_from_streams(streams: (s1, s2, s3));
+RefObjExpr mk_tern_rel((VecVar, VecVar, VecVar) cs, IntExpr s) = mk_tern_rel(cols: cs, size: s);
+RefObjExpr mk_rel(ArrayVar c1, ArrayVar c2, ArrayVar c3, Maybe[IntExpr] s) = mk_tern_rel_from_arrays(col1: c1, col2: c2, col3: c3, size: s);
 
-Instr parse_value(WriteObjVar v, AtomicExpr s)  = set_var(v, parse_value(value: s));
-Instr print_value(WriteObjVar v, AtomicExpr s)  = set_var(v, print_value(value: s));
+RefObjExpr mk_tagged_obj(AtomicExpr t, AtomicExpr o) = mk_tagged_obj(tag: t, obj: o);
 
-Instr copy_state(WriteObjVar rv, AnyDBVar dv, DBSymbol t) = set_var(rv, copy_state(var: dv, type: t));
-Instr copy_rel(WriteObjVar ov, [+TableVar -> Table] ts, [+Nat -> Nat] p) = set_var(ov, copy_rel(tables: ts, applied_perm: p));
+RefObjExpr mk_record([+SymbObj -> AtomicExpr] fs) = mk_record(fields: fs);
 
-Instr copy_persistent_state(WriteObjVar rv, AnyAutoVar av, AutoSymbol t) = set_var(rv, copy_persistent_state(var: av, type: t));
+RefObjExpr get_seq_slice(AtomicExpr s, IntExpr f, IntExpr l)  = get_seq_slice(seq: s, idx_first: f, len: l);
+RefObjExpr append_to_seq(AtomicExpr s, AtomicExpr e)          = append_to_seq(seq: s, new_elem: e);
+RefObjExpr update_seq_at(AtomicExpr s, IntExpr i, AtomicExpr v) = update_seq_at(seq: s, idx: i, value: v);
 
-Instr surr_to_value(WriteObjVar v, AnyValueStoreId s, Int32Var sv) = set_var(v, surr_to_value(s, sv));
+RefObjExpr join_seqs(AtomicExpr l, AtomicExpr r)              = join_seqs(left: l, right: r);
+RefObjExpr rev_seq(AtomicExpr s)                              = rev_seq(seq: s);
 
-Instr read_pending_var(WriteObjVar tv, <PendingStateVar, PendingInputVar> sv) = set_var(tv, :read_pending_var(sv));
+RefObjExpr internal_sort(AtomicExpr s) = internal_sort(set: s);
 
-Instr array_alloc(ArrayVar v, Int32Expr n) = array_alloc(var: v, size: n);
+RefObjExpr set_key_value(AtomicExpr m, AtomicExpr k, AtomicExpr e) = set_key_value(map: m, key: k, value: e);
+RefObjExpr drop_key(AtomicExpr m, AtomicExpr k) = drop_key(map: m, key: k);
 
-Instr array_write(ArrayVar v, Int32Expr i, ObjExpr e) =
-  array_write(var: v, idx: i, value: low_level_expr(v.repr, e));
+RefObjExpr parse_value(AtomicExpr s)  = parse_value(value: s);
+RefObjExpr print_value(AtomicExpr s)  = print_value(value: s);
 
-Instr write_rec_field(LocOptTagRecVar v, Symbol s, AnyTypeExpr e, Bool b) = write_rec_field(var: v, label: s, value: e, optional: b);
-Instr finish_init(LocOptTagRecVar v) = finish_init(var: v);
+RefObjExpr copy_state(AnyDBVar dv, DBSymbol t) = copy_state(var: dv, type: t);
+RefObjExpr copy_rel([+TableVar -> Table] ts, [+Nat -> Nat] p) = copy_rel(tables: ts, applied_perm: p);
 
-Instr get_iter(SeqItVar v, AtomicExpr s) = get_seq_iter(var: v, src: s);
-Instr get_iter(SetItVar v, AtomicExpr s) = get_set_iter(var: v, src: s);
+RefObjExpr copy_persistent_state(AnyAutoVar av, AutoSymbol t) = copy_persistent_state(var: av, type: t);
 
-Instr get_iter(BinRelItVar v, AtomicExpr r, (Maybe[AtomicExpr], Maybe[AtomicExpr]) as) =
+RefObjExpr surr_to_value(AnyValueStoreId s, Int32Var v) = surr_to_value(store: s, surrogate: v);
+
+RefObjExpr read_pending_var(<PendingStateVar, PendingInputVar> sv) = :read_pending_var(sv);
+
+
+// Basic instructions
+
+BasicInstr mk_set(WriteObjVar v, StreamVar s)            = set_var(v, mk_set_from_stream(stream: s));
+BasicInstr mk_set(WriteObjVar v, VecVar es, IntExpr s)   = set_var(v, mk_set(elems: es, size: s));
+BasicInstr mk_set(WriteObjVar v, ArrayVar a)             = set_var(v, mk_set_from_array(array: a, size: nothing));
+BasicInstr mk_set(WriteObjVar v, ArrayVar a, IntExpr s)  = set_var(v, mk_set_from_array(array: a, size: just(s)));
+
+BasicInstr mk_seq(WriteObjVar v, StreamVar s)              = set_var(v, mk_seq_from_stream(stream: s));
+BasicInstr mk_seq(WriteObjVar v, VecVar es, IntExpr s)     = set_var(v, mk_seq(elems: es, size: s));
+BasicInstr mk_seq(WriteObjVar v, ArrayVar a)               = set_var(v, mk_seq_from_array(array: a, size: nothing));
+BasicInstr mk_seq(WriteObjVar v, ArrayVar a, Int32Expr s)  = set_var(v, mk_seq_from_array(array: a, size: just(s)));
+
+BasicInstr build_const_int_seq(WriteObjVar v, Nat id)    = set_var(v, build_const_int_seq(seq_id: id));
+
+BasicInstr mk_map(WriteObjVar v, StreamVar ks, StreamVar vs)       = set_var(v, mk_map_from_streams(key_stream: ks, value_stream: vs));
+BasicInstr mk_map(WriteObjVar v, VecVar ks, VecVar vs, IntExpr s)  = set_var(v, mk_map(keys: ks, values: vs, size: s));
+
+BasicInstr mk_rel(WriteObjVar v, StreamVar s1, StreamVar s2)       = set_var(v, mk_bin_rel_from_streams(streams: (s1, s2)));
+BasicInstr mk_rel(WriteObjVar v, VecVar c1, VecVar c2, IntExpr s)  = set_var(v, mk_bin_rel(cols: (c1, c2), size: s));
+BasicInstr mk_rel(WriteObjVar v, ArrayVar c1, ArrayVar c2, Bool b) = set_var(v, mk_bin_rel_from_arrays(col1: c1, col2: c2, size: nothing, is_map: b));
+
+BasicInstr mk_rel(WriteObjVar v, StreamVar s1, StreamVar s2, StreamVar s3)   = set_var(v, mk_tern_rel_from_streams(streams: (s1, s2, s3)));
+BasicInstr mk_rel(WriteObjVar v, VecVar c1, VecVar c2, VecVar c3, IntExpr s) = set_var(v, mk_tern_rel(cols: (c1, c2, c3), size: s));
+BasicInstr mk_rel(WriteObjVar v, ArrayVar c1, ArrayVar c2, ArrayVar c3)      = set_var(v, mk_tern_rel_from_arrays(col1: c1, col2: c2, col3: c3, size: nothing));
+
+BasicInstr mk_tagged_obj(WriteObjVar v, AtomicExpr t, AtomicExpr o) = set_var(v, mk_tagged_obj(t, o));
+
+BasicInstr mk_record(WriteObjVar v, [+SymbObj -> AtomicExpr] fs) = set_var(v, mk_record(fields: fs));
+
+BasicInstr inst_opt_tag_rec(LocOptTagRecVar v, Symbol s, Nat i) = set_var(v, inst_opt_tag_rec(tag: s, repr_idx: i));
+
+BasicInstr get_seq_slice(WriteObjVar v, AtomicExpr s, IntExpr f, IntExpr l)  = set_var(v, get_seq_slice(seq: s, idx_first: f, len: l));
+BasicInstr append_to_seq(WriteObjVar v, AtomicExpr s, AtomicExpr e)          = set_var(v, append_to_seq(seq: s, new_elem: e));
+BasicInstr update_seq_at(WriteObjVar rv, AtomicExpr s, IntExpr i, AtomicExpr v) = set_var(rv, update_seq_at(seq: s, idx: i, value: v));
+
+BasicInstr join_seqs(WriteObjVar v, AtomicExpr l, AtomicExpr r)              = set_var(v, join_seqs(left: l, right: r));
+BasicInstr rev_seq(WriteObjVar v, AtomicExpr s)                              = set_var(v, rev_seq(seq: s));
+BasicInstr set_at(WriteObjVar v, IntExpr i, AtomicExpr x)                    = set_at(var: v, idx: i, value: x);
+
+BasicInstr lookup_field(WriteObjVar v, ObjExpr e, SymbObj f)                        = set_var(v, lookup_field(e, f));
+BasicInstr lookup_field(WriteObjVar v, ObjExpr e, SymbObj f, Maybe[LowLevelRepr] r) = set_var(v, lookup_field(e, f, r));
+
+BasicInstr internal_sort(WriteObjVar v, AtomicExpr s) = set_var(v, internal_sort(set: s));
+
+BasicInstr set_key_value(WriteObjVar v, AtomicExpr m, AtomicExpr k, AtomicExpr e) = set_var(v, set_key_value(map: m, key: k, value: e));
+BasicInstr drop_key(WriteObjVar v, AtomicExpr m, AtomicExpr k) = set_var(v, drop_key(map: m, key: k));
+
+BasicInstr parse_value(WriteObjVar v, AtomicExpr s)  = set_var(v, parse_value(value: s));
+BasicInstr print_value(WriteObjVar v, AtomicExpr s)  = set_var(v, print_value(value: s));
+
+BasicInstr copy_state(WriteObjVar rv, AnyDBVar dv, DBSymbol t) = set_var(rv, copy_state(var: dv, type: t));
+BasicInstr copy_rel(WriteObjVar ov, [+TableVar -> Table] ts, [+Nat -> Nat] p) = set_var(ov, copy_rel(tables: ts, applied_perm: p));
+
+BasicInstr copy_persistent_state(WriteObjVar rv, AnyAutoVar av, AutoSymbol t) = set_var(rv, copy_persistent_state(var: av, type: t));
+
+BasicInstr surr_to_value(WriteObjVar v, AnyValueStoreId s, Int32Var sv) = set_var(v, surr_to_value(s, sv));
+
+BasicInstr read_pending_var(WriteObjVar tv, <PendingStateVar, PendingInputVar> sv) = set_var(tv, :read_pending_var(sv));
+
+BasicInstr array_alloc(ArrayVar v, Int32Expr n) = array_alloc(var: v, size: n);
+BasicInstr array_write(ArrayVar v, Int32Expr i, ObjExpr e) = array_write(var: v, idx: i, value: low_level_expr(v.repr, e));
+BasicInstr array_append(ArrayVar v, Int32Var s, AnyTypeExpr e) = array_append(array_var: v, size_var: s, value: e);
+
+BasicInstr write_rec_field(LocOptTagRecVar v, Symbol s, AnyTypeExpr e, Bool b) = write_rec_field(var: v, label: s, value: e, optional: b);
+BasicInstr finish_init(LocOptTagRecVar v) = finish_init(var: v);
+
+BasicInstr get_iter(SeqItVar v, AtomicExpr s) = get_seq_iter(var: v, src: s);
+BasicInstr get_iter(SetItVar v, AtomicExpr s) = get_set_iter(var: v, src: s);
+
+BasicInstr get_iter(BinRelItVar v, AtomicExpr r, (Maybe[AtomicExpr], Maybe[AtomicExpr]) as) =
   get_bin_rel_iter(var: v, src: r, args: as);
 
-Instr get_iter(TernRelItVar v, AtomicExpr r, (Maybe[AtomicExpr], Maybe[AtomicExpr], Maybe[AtomicExpr]) as) =
+BasicInstr get_iter(TernRelItVar v, AtomicExpr r, (Maybe[AtomicExpr], Maybe[AtomicExpr], Maybe[AtomicExpr]) as) =
   get_tern_rel_iter(var: v, src: r, args: as);
 
-Instr get_any_rel_iter(SetItVar v, AtomicExpr r, Maybe[AtomicExpr]* as) =
+BasicInstr get_any_rel_iter(SetItVar v, AtomicExpr r, Maybe[AtomicExpr]* as) =
   if as == (nothing) then get_iter(v, r) else undefined;
 
-Instr get_any_rel_iter(BinRelItVar v, AtomicExpr r, Maybe[AtomicExpr]* as) =
+BasicInstr get_any_rel_iter(BinRelItVar v, AtomicExpr r, Maybe[AtomicExpr]* as) =
   get_iter(v, r, if |as| == 2 then as else undefined);
 
-Instr get_any_rel_iter(TernRelItVar v, AtomicExpr r, Maybe[AtomicExpr]* as) =
+BasicInstr get_any_rel_iter(TernRelItVar v, AtomicExpr r, Maybe[AtomicExpr]* as) =
   get_iter(v, r, if |as| == 3 then as else undefined);
 
-Instr move_forward(ItVar v) = :move_forward(v);
+BasicInstr move_forward(ItVar v) = :move_forward(v);
 
-Instr set_var(<WriteObjVar, ImplArg> v, ObjExpr e)  = set_var(var: v, value: e);
-Instr set_var(LocOptTagRecVar v, OptTagRecExpr e)   = set_var(var: v, value: e);
+BasicInstr set_var(<WriteObjVar, ImplArg> v, ObjExpr e)  = set_var(var: v, value: e);
+BasicInstr set_var(LocOptTagRecVar v, OptTagRecExpr e)   = set_var(var: v, value: e);
 
-Instr set_var(LocOptTagRecVar v, <InlineObj, StdObjVar, ObjNatOp> e) =
+BasicInstr set_var(LocOptTagRecVar v, <InlineObj, StdObjVar, ObjNatOp> e) =
   set_var(var: v, value: cast_opt_tag_rec(v.tag, v.index, e));
 
 BasicInstr set_bvar(BoolVar v, BoolExpr e)              = set_bvar(var: v, value: e);
@@ -367,26 +417,26 @@ BasicInstr set_fvar(FloatVar v, FloatExpr e)            = set_fvar(var: v, value
 
 BasicInstr set_var(<WriteObjVar, LocOptTagRecVar> v, RefObjExpr e)  = set_rc_var(var: v, value: e);
 
-Instr init_memb_var(<MembVar, SignalVar, PrevVarValue, MembObjVar, PendingInputVar, PendingStateVar> v, <blank, undefined> s) = init_memb_var(var: v, new_state: s);
-Instr reset_memb_var(<SignalVar, PrevVarValue, MembVar, PendingInputVar> v, <blank, undefined> s) = reset_memb_var(var: v, new_state: s);
+BasicInstr init_memb_var(<MembVar, SignalVar, PrevVarValue, MembObjVar, PendingInputVar, PendingStateVar> v, <blank, undefined> s) = init_memb_var(var: v, new_state: s);
+BasicInstr reset_memb_var(<SignalVar, PrevVarValue, MembVar, PendingInputVar> v, <blank, undefined> s) = reset_memb_var(var: v, new_state: s);
 
-Instr clear_loc_var(LocVar v) = :clear_loc_var(v);
-Instr nullify_var(<StdVar, LocVar, LocOptTagRecVar> v) = :nullify_var(v);
+BasicInstr clear_loc_var(LocVar v) = :clear_loc_var(v);
+BasicInstr nullify_var(<StdVar, LocVar, LocOptTagRecVar> v) = :nullify_var(v);
 
-Instr make_var_undef(SignalVar v) = reset_memb_var(v, :undefined);
-Instr make_var_undef(LocVar v)      = clear_loc_var(v);
+BasicInstr make_var_undef(SignalVar v) = reset_memb_var(v, :undefined);
+BasicInstr make_var_undef(LocVar v)    = clear_loc_var(v);
 
-Instr terminate(Bool b) = terminate(hard_fail: b);
-Instr terminate = terminate(false);
+JumpInstr terminate(Bool b) = terminate(hard_fail: b);
+JumpInstr terminate = terminate(false);
 
-Instr add_ref(ObjVar v)                     = :add_ref(v);
-Instr release(<ObjVar, PendingInputVar> v)  = :release(v);
+BasicInstr add_ref(ObjVar v)                     = :add_ref(v);
+BasicInstr release(<ObjVar, PendingInputVar> v)  = :release(v);
 
-Instr print_obj(AtomicExpr x) = print_obj(obj: x);
+BasicInstr print_obj(AtomicExpr x) = print_obj(obj: x);
 
-Instr ret_val(AnyTypeExpr e) = :ret_val(e);
+JumpInstr ret_val(AnyTypeExpr e) = :ret_val(e);
 
-Instr no_op = :no_op;
+BasicInstr no_op = :no_op;
 
 Instr branch(BoolExpr cond, Instr* body, Instr* neg_body) {
   if body != ():
@@ -442,79 +492,79 @@ Instr* opt_symb_switch(ObjExpr expr, [([+SymbObj], Instr+)] cases, Instr* else_c
   return (symb_switch(expr, cases, else_code));
 }
 
-Instr call_proc(AnyWriteVar v, ObjFnName n, AnyTypeExpr* as, AnyLambdaExpr* cas) = call_proc(var: v, name: n, args: as, cls_args: cas);
-Instr call_proc(ObjFnName n, AnyTypeExpr* as, AnyLambdaExpr* cas) = call_proc(name: n, args: as, cls_args: cas);
+BasicInstr call_proc(AnyWriteVar v, ObjFnName n, AnyTypeExpr* as, AnyLambdaExpr* cas) = call_proc(var: v, name: n, args: as, cls_args: cas);
+BasicInstr call_proc(ObjFnName n, AnyTypeExpr* as, AnyLambdaExpr* cas) = call_proc(name: n, args: as, cls_args: cas);
 
-Instr call_cls(WriteObjVar v, AnyClsVar cv, AtomicExpr+ as) = call_cls(var: v, cls_var: cv, args: as);
+BasicInstr call_cls(WriteObjVar v, AnyClsVar cv, AtomicExpr+ as) = call_cls(var: v, cls_var: cv, args: as);
 
-Instr queue_update(AutoSymbol s, BlockNodeId id)        = queue_update(type: s, id: id, args: ());
-Instr queue_update(AutoSymbol s, BlockNodeId id, Nat a) = queue_update(type: s, id: id, args: (a));
+BasicInstr queue_update(AutoSymbol s, BlockNodeId id)        = queue_update(type: s, id: id, args: ());
+BasicInstr queue_update(AutoSymbol s, BlockNodeId id, Nat a) = queue_update(type: s, id: id, args: (a));
 
-Instr insert_timer(AutoSymbol a, Nat i, IntExpr t)  = insert_timer(type: a, idx: i, time: t);
-Instr clear_timer(AutoSymbol a, IntExpr i)          = clear_timer(type: a, idx: i);
+BasicInstr insert_timer(AutoSymbol a, Nat i, IntExpr t)  = insert_timer(type: a, idx: i, time: t);
+BasicInstr clear_timer(AutoSymbol a, IntExpr i)          = clear_timer(type: a, idx: i);
 
-Instr auto_pre_init(AnyAutoVar v, AutoSymbol t) = auto_pre_init(var: v, type: t);
-Instr auto_cleanup(AnyAutoVar v, AutoSymbol t)  = auto_cleanup(var: v, type: t);
+BasicInstr auto_pre_init(AnyAutoVar v, AutoSymbol t) = auto_pre_init(var: v, type: t);
+BasicInstr auto_cleanup(AnyAutoVar v, AutoSymbol t)  = auto_cleanup(var: v, type: t);
 
-Instr set_input(AnyAutoVar v, AutoSymbol t, Atom i, AtomicExpr e) = set_input(var: v, type: t, input: i, value: e);
+BasicInstr set_input(AnyAutoVar v, AutoSymbol t, Atom i, AtomicExpr e) = set_input(var: v, type: t, input: i, value: e);
 
-Instr clear_input(AnyAutoVar v, AutoSymbol t, Atom i) = clear_input(var: v, type: t, input: i);
-Instr clear_input(AutoSymbol t, Atom i)               = clear_input(type: t, input: i);
+BasicInstr clear_input(AnyAutoVar v, AutoSymbol t, Atom i) = clear_input(var: v, type: t, input: i);
+BasicInstr clear_input(AutoSymbol t, Atom i)               = clear_input(type: t, input: i);
 
-Instr auto_init(AnyAutoVar v, AutoSymbol t)                   = auto_init(var: v, type: t);
-Instr auto_init(AutoSymbol t)                                 = auto_init(type: t);
+BasicInstr auto_init(AnyAutoVar v, AutoSymbol t)                   = auto_init(var: v, type: t);
+BasicInstr auto_init(AutoSymbol t)                                 = auto_init(type: t);
 
-Instr auto_update_node(AutoSymbol t, BlockNodeId n)           = auto_update_node(type: t, node: n);
-Instr auto_update_node(AutoSymbol t, BlockNodeId n, IntVar v) = auto_update_node(type: t, node: n, time_var: v);
+BasicInstr auto_update_node(AutoSymbol t, BlockNodeId n)           = auto_update_node(type: t, node: n);
+BasicInstr auto_update_node(AutoSymbol t, BlockNodeId n, IntVar v) = auto_update_node(type: t, node: n, time_var: v);
 
-Instr auto_apply(AnyAutoVar v, AutoSymbol t)  = auto_apply(var: v, type: t);
-Instr auto_apply(AutoSymbol t)                = auto_apply(type: t);
+BasicInstr auto_apply(AnyAutoVar v, AutoSymbol t)  = auto_apply(var: v, type: t);
+BasicInstr auto_apply(AutoSymbol t)                = auto_apply(type: t);
 
-Instr set_persistent_state(AnyAutoVar v, AtomicExpr e, AutoSymbol t) = set_persistent_state(auto_var: v, state: e, type: t);
+BasicInstr set_persistent_state(AnyAutoVar v, AtomicExpr e, AutoSymbol t) = set_persistent_state(auto_var: v, state: e, type: t);
 
-Instr init_db(AnyDBVar v, LocDBVar* ls, DBSymbol t)  = init_db(db_var: v, links: ls, type: t);
-Instr cleanup_db(AnyDBVar v, DBSymbol t)  = cleanup_db(db_var: v, type: t);
-Instr send_msg(AnyDBVar v, DBSymbol t, AtomicExpr m, Bool r) = send_msg(db_var: v, type: t, msg: m, is_root: r);
-Instr send_msg(AnyDBVar v, DBSymbol t, AtomicExpr m, Bool r, BoolVar rv) = send_msg(db_var: v, type: t, msg: m, is_root: r, res_var: rv);
-Instr try_update(DBSymbol t, UpdateId id, AtomicExpr* as) = try_update(type: t, update_id: id, args: as);
+BasicInstr init_db(AnyDBVar v, LocDBVar* ls, DBSymbol t)  = init_db(db_var: v, links: ls, type: t);
+BasicInstr cleanup_db(AnyDBVar v, DBSymbol t)  = cleanup_db(db_var: v, type: t);
+BasicInstr send_msg(AnyDBVar v, DBSymbol t, AtomicExpr m, Bool r) = send_msg(db_var: v, type: t, msg: m, is_root: r);
+BasicInstr send_msg(AnyDBVar v, DBSymbol t, AtomicExpr m, Bool r, BoolVar rv) = send_msg(db_var: v, type: t, msg: m, is_root: r, res_var: rv);
+BasicInstr try_update(DBSymbol t, UpdateId id, AtomicExpr* as) = try_update(type: t, update_id: id, args: as);
 
-Instr set_state(BoolVar rv, AnyDBVar v, AtomicExpr e, DBSymbol t) = set_state(res_var: rv, db_var: v, state: e, type: t);
+BasicInstr set_state(BoolVar rv, AnyDBVar v, AtomicExpr e, DBSymbol t) = set_state(res_var: rv, db_var: v, state: e, type: t);
 
-Instr invoke_auto_method(WriteObjVar rv, AutoSymbol t, MethodId id, AtomicExpr* as) =
+BasicInstr invoke_auto_method(WriteObjVar rv, AutoSymbol t, MethodId id, AtomicExpr* as) =
   invoke_auto_method(res_var: rv, type: t, method_id: id, args: as);
 
-Instr invoke_auto_method(WriteObjVar rv, AnyAutoVar av, AutoSymbol t, MethodId id, AtomicExpr* as) =
+BasicInstr invoke_auto_method(WriteObjVar rv, AnyAutoVar av, AutoSymbol t, MethodId id, AtomicExpr* as) =
   invoke_auto_method(res_var: rv, auto_var: av, type: t, method_id: id, args: as);
 
-Instr invoke_db_method(AnyWriteVar rv, DBSymbol t, MethodId id, AnyTypeExpr* as) =
+BasicInstr invoke_db_method(AnyWriteVar rv, DBSymbol t, MethodId id, AnyTypeExpr* as) =
   invoke_db_method(res_var: rv, type: t, method_id: id, args: as);
 
-Instr invoke_db_method(AnyWriteVar rv, AnyDBVar dv, DBSymbol t, MethodId id, AnyTypeExpr* as) =
+BasicInstr invoke_db_method(AnyWriteVar rv, AnyDBVar dv, DBSymbol t, MethodId id, AnyTypeExpr* as) =
   invoke_db_method(res_var: rv, db_var: dv, type: t, method_id: id, args: as);
 
-Instr init_value_store(ValueStoreId s)    = init_value_store(store: s);
-Instr cleanup_value_store(ValueStoreId s) = cleanup_value_store(store: s);
-Instr init_table(TableVar v, Table t)     = init_table(table_var: v, table: t);
-Instr cleanup_table(TableVar v, Table t)  = cleanup_table(table_var: v, table: t);
+BasicInstr init_value_store(ValueStoreId s)    = init_value_store(store: s);
+BasicInstr cleanup_value_store(ValueStoreId s) = cleanup_value_store(store: s);
+BasicInstr init_table(TableVar v, Table t)     = init_table(table_var: v, table: t);
+BasicInstr cleanup_table(TableVar v, Table t)  = cleanup_table(table_var: v, table: t);
 
-Instr get_table_iter(TableItVar v, AnyTableVar t, Maybe[Int32Var]+ as) {
+BasicInstr get_table_iter(TableItVar v, AnyTableVar t, Maybe[Int32Var]+ as) {
   assert (a <~ as : a == nothing);
   assert v.arity == |as|;
   return get_table_iter(it_var: v, table: t, args: as);
 }
 
-Instr queue_deletes(TableVar tv, Maybe[Int32Var]+ as, Bool s) = queue_deletes(table_var: tv, args: as, symmetric: s);
+BasicInstr queue_deletes(TableVar tv, Maybe[Int32Var]+ as, Bool s) = queue_deletes(table_var: tv, args: as, symmetric: s);
 
-Instr lookup_or_queue_insert_value(Int32Var v, ValueStoreId s, <AtomicExpr, IntExpr> e) = lookup_or_queue_insert_value(res_var: v, store: s, value: e);
-Instr queue_insert_tuple(TableVar v, Int32Var+ t) = queue_insert_tuple(table_var: v, tuple: t);
+BasicInstr lookup_or_queue_insert_value(Int32Var v, ValueStoreId s, <AtomicExpr, IntExpr> e) = lookup_or_queue_insert_value(res_var: v, store: s, value: e);
+BasicInstr queue_insert_tuple(TableVar v, Int32Var+ t) = queue_insert_tuple(table_var: v, tuple: t);
 
-Instr immediate_insert_or_add_ref(Int32Var sv, ValueStoreId s, <AtomicExpr, IntExpr> v) = immediate_insert_or_add_ref(res_var: sv, store: s, value: v);
-Instr immediate_insert_tuple(TableVar v, Int32Var+ as) = immediate_insert_tuple(table_var: v, tuple: as);
+BasicInstr immediate_insert_or_add_ref(Int32Var sv, ValueStoreId s, <AtomicExpr, IntExpr> v) = immediate_insert_or_add_ref(res_var: sv, store: s, value: v);
+BasicInstr immediate_insert_tuple(TableVar v, Int32Var+ as) = immediate_insert_tuple(table_var: v, tuple: as);
 
-Instr push_call_info(<FnId, ProcSymbol, MethodSymbol> f, ObjExpr* as) = push_call_info(fn_name: f, args: as);
-Instr pop_call_info = :pop_call_info;
+BasicInstr push_call_info(<FnId, ProcSymbol, MethodSymbol> f, ObjExpr* as) = push_call_info(fn_name: f, args: as);
+BasicInstr pop_call_info = :pop_call_info;
 
-Instr log_runtime_failure(Bool b, String f, NzNat l, Maybe[String] t, (<StdVar, ImplArg>, ObjExpr)* vs) =
+BasicInstr log_runtime_failure(Bool b, String f, NzNat l, Maybe[String] t, (<StdVar, ImplArg>, ObjExpr)* vs) =
   log_runtime_failure(is_assert: b, file: f, line: l, text: t, vars: vs);
 
 ////////////////////////////////////////////////////////////////////////////////
