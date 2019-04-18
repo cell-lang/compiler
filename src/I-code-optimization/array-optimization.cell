@@ -63,44 +63,63 @@ Instr* optimize_array_init(Instr* code) {
   opt_code = ();
   pending = [];
   for instr @ i <- code:
+    // If the instruction (which can be a composite one) requires the instantiation
+    // of the sequence object, we do that before anything else
+    ## BUG BUG BUG: INSTANTIATION COULD BE FORCED BY ANY SORT OF JUMP
     vars = pending_vars_used(instr, pending);
     for v <- isort(vars):
       opt_code = (opt_code | inst_instr(v));
       pending = remove(pending, v);
     ;
-    rw_instr, pending_var = rewrite(instr, pending);
-    opt_code = (opt_code | rw_instr);
-    pending = insert(pending, value(pending_var)) if pending_var != nothing;
+    // If the instruction is a sequence instantiatiation that can be
+    // optimized we rewrite it and update the list of pending variables
+    instrs, pending = rewrite_if_seq_inst_instr(instr, pending);
+    if instrs != ():
+      opt_code = opt_code & instrs;
+    else
+      // Otherwise we just rewrite the instructions and
+      // expressions that can be optimized
+      rw_instr = rewrite_seq_ops(instr, pending);
+      opt_code = (opt_code | rw_instr);
+    ;
   ;
+  // Before leaving this block of code, we instantiate all pending variables
+  ## THIS SHOULD BE DONE ONLY IF IT'S STRICTLY NECESSARY
+  ## OR ARE UNNECESSARY INSTANTIATIONS REMOVED BY OTHER OPTIMIZATION STAGES?
   return opt_code & (inst_instr(v) : v <- _isort_(pending));
 
+  //////////////////////////////////////////////////////////////////////////////
 
   Instr inst_instr(StdVar var) {
-    array_var = shadow_array_var(bare_id(var), :object);
-    return mk_seq(var, array_var);
+    var_id = bare_id(var);
+    array_var = shadow_array_var(var_id, :object);
+    array_size_var = shadow_array_size_var(var_id);
+    return mk_seq(var, array_var, array_size_var);
   }
 
-    // set_rc_var(
-    //   var:   var(ys),
-    //   value: mk_seq_from_array(
-    //     array: shadow_array_var(id: ys, repr: object),
-    //     size:  just(shadow_array_size_var(ys))
-    //   )
-    // ),
+  //////////////////////////////////////////////////////////////////////////////
 
+  (Instr*, [StdVar]) rewrite_if_seq_inst_instr(Instr instr, [StdVar] pending) {
+    if instr :: <set_var(var: StdVar, value: empty_seq)>:
+      var_id = bare_id(instr.var);
+      instrs = (
+        set_ivar32(shadow_array_size_var(var_id), 0),
+        array_alloc(shadow_array_var(var_id, :object), 0)
+      );
+      return (instrs, insert(pending, instr.var));
+    ;
 
-  (Instr, Maybe[StdVar]) rewrite(Instr instr, [StdVar] pending) =
-    set_var()   = if instr.var :: StdVar and instr.value == empty_seq
-                    then (rewrite_set_var(instr.var), just(instr.var))
-                    else (instr, nothing),
-    _           = (instr, nothing);
+    if instr :: <set_rc_var(var: StdVar, value: mk_seq_from_array(array: avar(id: Nat, repr: LowLevelEltRepr), size: Int32Expr))>:
+      var_id = bare_id(instr.var);
+      instrs = (
+        set_ivar32(shadow_array_size_var(var_id), instr.value.size),
+        array_set_var(shadow_array_var(var_id, instr.value.array.repr), instr.value.array)
+      );
+      return (instrs, insert(pending, instr.var));
+    ;
 
-
-  Instr rewrite_set_var(StdVar var) =
-    array_alloc(shadow_array_var(bare_id(var), :object), 0);
-
-// -       set_var(var: var(ys), value: empty_seq),
-// +       alloc_array(var: shadow_array_var(id: ys, repr: object), size: 0);
+    return ((), pending);
+  }
 
   //////////////////////////////////////////////////////////////////////////////
 
@@ -120,4 +139,31 @@ Instr* optimize_array_init(Instr* code) {
                     pending_vars_used(expr.idx, pending),
     get_size(e?)  = if not pending(e) then pending_vars_used(e, pending) else [],
     _             = search_nested(expr, pending_vars_used($, pending));
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  Instr rewrite_seq_ops(Instr instr, [StdVar] pending) {
+    if instr :: <set_rc_var(var: StdVar, value: append_to_seq(seq: StdVar, new_elem: AtomicExpr))>:
+      if instr.var == instr.value.seq and pending(instr.var):
+        // set_rc_var(var: var(ys), value: append_to_seq(seq: var(ys), new_elem: var(x)))
+        // array_append(
+        //   array_var: shadow_array_var(id: ys, repr: object),
+        //   size_var:  shadow_array_size_var(ys),
+        //   value:     var(x)
+        // )
+        var_id = bare_id(instr.var);
+        return array_append(
+          shadow_array_var(var_id, :object),
+          shadow_array_size_var(var_id),
+          instr.value.new_elem
+        );
+      ;
+    ;
+    return rewrite_nested(instr, rewrite_seq_ops($, pending), rewrite_seq_ops($, pending));
+  }
+
+
+  AnyTypeExpr rewrite_seq_ops(AnyTypeExpr expr, [StdVar] pending) = expr;
+    // at(seq: ObjExpr, idx: IntExpr),
+    // get_size(ObjExpr),
 }

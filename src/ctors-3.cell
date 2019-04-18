@@ -42,8 +42,9 @@ LocIntVar ivar(<Symbol, Nat> id)  = :ivar(id);
 IntFnArg  int_arg(Nat id)         = :int_arg(id);
 LocIntVar int_arg(Symbol id)      = :ivar(id);
 
-Int32Var ivar32(Nat n)              = :ivar32(n);
-Int32Var shadow_surr_var(StdVar v)  = :shadow_surr_var(v);
+Int32Var ivar32(Nat n)                    = :ivar32(n);
+Int32Var shadow_surr_var(StdVar v)        = :shadow_surr_var(v);
+Int32Var shadow_array_size_var(Symbol s)  = :shadow_array_size_var(s);
 
 MembIntVar update_source_var(Atom n)                            = :update_source_var(n);
 MembIntVar null_locks_count_var(Atom id)                        = :null_locks_count_var(id);
@@ -270,10 +271,9 @@ RefObjExpr mk_set(VecVar es, IntExpr s)         = mk_set(elems: es, size: s);
 RefObjExpr mk_set(ArrayVar a)                   = mk_set_from_array(array: a, size: nothing);
 RefObjExpr mk_set(ArrayVar a, Maybe[IntExpr] s) = mk_set_from_array(array: a, size: s);
 
-RefObjExpr mk_seq(StreamVar s)                    = mk_seq_from_stream(stream: s);
-RefObjExpr mk_seq(VecVar es, IntExpr s)           = mk_seq(elems: es, size: s);
-RefObjExpr mk_seq(ArrayVar a)                     = mk_seq_from_array(array: a, size: nothing);
-RefObjExpr mk_seq(ArrayVar a, Maybe[Int32Expr] s) = mk_seq_from_array(array: a, size: s);
+RefObjExpr mk_seq(StreamVar s)              = mk_seq_from_stream(stream: s);
+RefObjExpr mk_seq(VecVar es, IntExpr s)     = mk_seq(elems: es, size: s);
+RefObjExpr mk_seq(ArrayVar a, Int32Expr s)  = mk_seq_from_array(array: a, size: s);
 
 RefObjExpr build_const_int_seq(Nat id)    = build_const_int_seq(seq_id: id);
 
@@ -326,8 +326,7 @@ BasicInstr mk_set(WriteObjVar v, ArrayVar a, IntExpr s)  = set_var(v, mk_set_fro
 
 BasicInstr mk_seq(WriteObjVar v, StreamVar s)              = set_var(v, mk_seq_from_stream(stream: s));
 BasicInstr mk_seq(WriteObjVar v, VecVar es, IntExpr s)     = set_var(v, mk_seq(elems: es, size: s));
-BasicInstr mk_seq(WriteObjVar v, ArrayVar a)               = set_var(v, mk_seq_from_array(array: a, size: nothing));
-BasicInstr mk_seq(WriteObjVar v, ArrayVar a, Int32Expr s)  = set_var(v, mk_seq_from_array(array: a, size: just(s)));
+BasicInstr mk_seq(WriteObjVar v, ArrayVar a, Int32Expr s)  = set_var(v, mk_seq_from_array(array: a, size: s));
 
 BasicInstr build_const_int_seq(WriteObjVar v, Nat id)    = set_var(v, build_const_int_seq(seq_id: id));
 
@@ -379,6 +378,7 @@ BasicInstr read_pending_var(WriteObjVar tv, <PendingStateVar, PendingInputVar> s
 BasicInstr array_alloc(ArrayVar v, Int32Expr n) = array_alloc(var: v, size: n);
 BasicInstr array_write(ArrayVar v, Int32Expr i, ObjExpr e) = array_write(var: v, idx: i, value: low_level_expr(v.repr, e));
 BasicInstr array_append(ArrayVar v, Int32Var s, AnyTypeExpr e) = array_append(array_var: v, size_var: s, value: e);
+BasicInstr array_set_var(ArrayVar t, ArrayVar s) = array_set_var(target: t, source: s);
 
 BasicInstr write_rec_field(LocOptTagRecVar v, Symbol s, AnyTypeExpr e, Bool b) = write_rec_field(var: v, label: s, value: e, optional: b);
 BasicInstr finish_init(LocOptTagRecVar v) = finish_init(var: v);

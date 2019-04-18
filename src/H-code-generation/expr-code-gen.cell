@@ -910,7 +910,7 @@ implicit program           : Program,
       body_code = (body_code & elt_eval_code | array_write(array_var, hidden_idx_var, elt_surr));
 
       // Sequence creation
-      mk_seq_instr = mk_seq(res_var, array_var);
+      mk_seq_instr = mk_seq(res_var, array_var, array_size_var);
     ;
 
     // Mapping source to destination arrays
@@ -982,7 +982,7 @@ implicit program           : Program,
         // Body code and sequence creation instruction
         write_instr = array_write(array_var, idx_var, elt_surr);
         body_code = (eval_code | write_instr);
-        mk_seq_instr = mk_seq(res_var, array_var);
+        mk_seq_instr = mk_seq(res_var, array_var, cast_int32(size_expr));
       ;
     ;
 
@@ -1154,15 +1154,16 @@ implicit program           : Program,
         elt_eval_code, elt_surr, unused_var = opt_eval_info(e, var_gen);
         code = code & (elt_eval_code | array_write(elts_var, i, elt_surr));
       ;
-      return ((code | mk_seq(seq_var, elts_var)), seq_var, ret_var_gen);
+      return ((code | mk_seq(seq_var, elts_var, int32(|elts|))), seq_var, ret_var_gen);
     ;
 
     // Evaluating conditions and final array size
     min_size = int32(|elts| - |conds|);
-    conds_code, cond_vars, size_idx_var, var_gen = conds_eval_info(conds, min_size, var_gen);
+    conds_code, cond_vars, size_var, var_gen = conds_eval_info(conds, min_size, var_gen);
+    idx_var, var_gen = next_int32_var(var_gen);
 
     // Allocation of destination array
-    code = (array_alloc(elts_var, size_idx_var));
+    code = (array_alloc(elts_var, size_var));
 
     // Computation of all array elements
     cond_expr_idx = 0;
@@ -1178,14 +1179,14 @@ implicit program           : Program,
           cond = cond_vars(cond_expr_idx);
           elt_code = (elt_code | array_write(elts_var, i, elt_surr));
           if not is_last:
-            elt_code = (elt_code | set_ivar32(size_idx_var, int32(i+1)));
-            elt_instr = branch(cond, elt_code, (set_ivar32(size_idx_var, i)));
+            elt_code = (elt_code | set_ivar32(idx_var, int32(i+1)));
+            elt_instr = branch(cond, elt_code, (set_ivar32(idx_var, i)));
           else
             elt_instr = do_if(cond, elt_code);
           ;
         else
-          elt_code = (elt_code | array_write(elts_var, size_idx_var, elt_surr));
-          elt_code = (elt_code | increment(size_idx_var)) if not is_last;
+          elt_code = (elt_code | array_write(elts_var, idx_var, elt_surr));
+          elt_code = (elt_code | increment(idx_var)) if not is_last;
           elt_instr = do_if(cond_vars(cond_expr_idx), elt_code);
         ;
         code = (code | elt_instr);
@@ -1197,16 +1198,16 @@ implicit program           : Program,
         // destination array index. After that we need to use the cursor variable
         write_code = if cond_expr_idx == 0
           then (array_write(elts_var, i, elt_surr))
-          else (array_write(elts_var, size_idx_var, elt_surr), increment(size_idx_var) if not is_last);
+          else (array_write(elts_var, idx_var, elt_surr), increment(idx_var) if not is_last);
         code = code & elt_eval_code & write_code;
       ;
     ;
 
     // Creation of the wrapping sequence object
-    code = (code | mk_seq(seq_var, elts_var));
+    code = (code | mk_seq(seq_var, elts_var, size_var));
 
     // Checking for the empty sequence/set case, if all expression are conditional
-    code = (branch(is_eq(size_idx_var, 0), (set_var(seq_var, empty_seq)), code)) if min_size == 0;
+    code = (branch(is_eq(size_var, 0), (set_var(seq_var, empty_seq)), code)) if min_size == 0;
 
     return (conds_code & code, seq_var, ret_var_gen);
   }
@@ -1619,7 +1620,7 @@ implicit program           : Program,
       cond_vars = (cond_vars | surr_var);
     ;
 
-    // Integer variable for both size and cursor
+    // Integer variable that stores the resulting size
     size_var, var_gen = next_int32_var(var_gen);
 
     // Computation of final array size
