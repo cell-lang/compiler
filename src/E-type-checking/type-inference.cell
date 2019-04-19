@@ -93,8 +93,9 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     overlapping_sgns = [
       s : s <- relvar_signatures(expr.rel_var), signature_overlaps_partial_signature(s, args_types)
     ];
+    return empty_type if overlapping_sgns == [];
     target_idx = index_only(expr.args, nothing);
-    return union_superset(nonempty([s(target_idx) : s <- overlapping_sgns]));
+    return ne_union_superset([s(target_idx) : s <- overlapping_sgns]);
   }
 
 

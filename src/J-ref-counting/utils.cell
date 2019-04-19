@@ -101,9 +101,12 @@ Nothing maybe_var(AtomicBoolExpr) = undefined;
 [TrkVar] vars_set(BasicInstr instr) =
   init_stream()           = [],
   append()                = [],
+  set_at()                = [],
   array_alloc()           = [],
   array_write()           = [],
-  set_at()                = [],
+  array_append()          = [],
+  write_rec_field()       = [],
+  finish_init()           = [],
   get_set_iter()          = trk_vars(instr.var),
   get_seq_iter()          = trk_vars(instr.var),
   get_bin_rel_iter()      = trk_vars(instr.var),
@@ -166,64 +169,8 @@ Nothing maybe_var(AtomicBoolExpr) = undefined;
   foreach_node()      = [info.seq];
 
 
-[TrkVar] vars_used(BasicInstr instr) =
-  init_stream()         = [],
-  append()              = tracked_vars_used(instr.obj),
-  array_alloc()         = tracked_vars_used(instr.size),
-  array_write()         = tracked_vars_used(instr.idx) & tracked_vars_used(instr.value),
-  set_at()              = tracked_vars_used(instr.value) & trk_vars(instr.var), ## NOT SURE ABOUT THIS ONE.
-  get_set_iter()        = tracked_vars_used(instr.src),
-  get_seq_iter()        = tracked_vars_used(instr.src),
-  get_bin_rel_iter()    |
-  get_tern_rel_iter()   = tracked_vars_used(instr.src) & seq_union((tracked_vars_used(a) : a <- values(instr.args))),
-  move_forward()        = [],
-  set_var()             = tracked_vars_used(instr.value),
-  set_bvar()            = tracked_vars_used(instr.value),
-  set_ivar()            = tracked_vars_used(instr.value),
-  set_ivar32()          = tracked_vars_used(instr.value),
-  set_fvar()            = tracked_vars_used(instr.value),
-  set_rc_var()          = tracked_vars_used(instr.value),
-  init_memb_var()       = [],
-  reset_memb_var()      = [],
-  clear_loc_var()       = [],
-  add_ref()             = undefined,
-  release()             = undefined,
-  print_obj(e?)         = tracked_vars_used(instr.obj),
-  no_op                 = [],
-  call_proc()           = seq_union((tracked_vars_used(p) : p <- instr.args)),
-  call_cls()            = seq_union((tracked_vars_used(p) : p <- instr.args)),
-  queue_update()        = [],
-  insert_timer()        = tracked_vars_used(instr.idx) & tracked_vars_used(instr.time),
-  clear_timer()         = [],
-  auto_pre_init()       = [],
-  auto_cleanup()        = [],
-  set_input()           = tracked_vars_used(instr.value),
-  clear_input()         = [],
-  auto_update_node()    = [],
-  auto_apply()          = [],
-  set_persistent_state()= tracked_vars_used(instr.state),
-  init_db()             = [],
-  cleanup_db()          = [],
-  send_msg()            = tracked_vars_used(instr.msg),
-  try_update()          = seq_union((tracked_vars_used(a) : a <- instr.args)),
-  set_state()           = tracked_vars_used(instr.state),
-  invoke_auto_method()  |
-  invoke_db_method()    = seq_union((tracked_vars_used(a) : a <- instr.args)),
-  init_value_store()    = [],
-  cleanup_value_store() = [],
-  init_table()          = [],
-  cleanup_table()       = [],
-  get_table_iter()      = [],
-  queue_deletes()       = [],
-  lookup_or_queue_insert_value()  = tracked_vars_used(instr.value),
-  queue_insert_tuple()  = [],
-  push_call_info()      = [],
-  pop_call_info         = [],
-  log_runtime_failure() = union([[v if v :: TrkVar] & tracked_vars_used(e) : v, e <~ instr.vars]);
+[TrkVar] vars_used(<BasicInstr, JumpInstr> instr) {
+  return search_exprs(instr, vars_used);
 
-
-[TrkVar] vars_used(JumpInstr instr) =
-  break_loop    = [],
-  exit_block    = [],
-  ret_val(e?)   = tracked_vars_used(e),
-  terminate()   = [];
+  [TrkVar] vars_used(AnyTypeExpr expr) = if expr :: TrkVar then [expr] else search_nested(expr, vars_used);
+}
