@@ -39,6 +39,31 @@ Type replace_type_vars_with_type_any(Type type) = replace_type_vars_computed(typ
 <IntType, empty_type> maybe_int_range(Int min, Int max) = if max >= min then int_range(min, max) else empty_type;
 
 ////////////////////////////////////////////////////////////////////////////////
+
+type AnyIntType = IntType, union_type([+IntType]);
+
+AnyIntType expand_int_type(NeType type, [TypeName -> NeType] typedefs) {
+  return match (type)
+    integer         |
+    low_ints()      |
+    high_ints()     |
+    int_range()     = type,
+    type_ref(ts?)   = expand_int_type(nonempty_type(expand_type_ref(ts, typedefs)), typedefs),
+    union_type(ts?) = union_type(nonempty(union([types(expand_int_type(t, typedefs)) : t <- ts])));
+
+
+  [+IntType] types(AnyIntType type) =
+    integer         |
+    low_ints()      |
+    high_ints()     |
+    int_range()     = [type],
+    union_type(ts?) = ts;
+
+
+  AnyIntType union_type([+IntType] types) = if |types| > 1 then :union_type(types) else only(types);
+}
+
+////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
 [TypeVar] retrieve_type_vars(Type type, [TypeName -> NeType] typedefs) =
