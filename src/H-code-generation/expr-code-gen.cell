@@ -627,7 +627,7 @@ implicit program           : Program,
     ;
 
     if not (a <~ args_surrs : a == nothing): ## THIS SHOULD NARROW DOWN THE TYPE OF args_surrs
-      search_instr = set_bvar(res_var, contains(rel_surr, nonempty((value_unsafe(a) : a <- args_surrs))));
+      search_instr = set_bvar(res_var, rel_obj_contains(rel_surr, nonempty((just(value_unsafe(a)) : a <- args_surrs))));
       code = (code | search_instr);
 
     else
@@ -1083,7 +1083,7 @@ implicit program           : Program,
       expr_surr = at(target_surr, get_int_val(arg_surr));
 
     elif is_subset(target_type, type_set):
-      expr_surr = bool_obj(has_elem(target_surr, arg_surr));
+      expr_surr = bool_obj(rel_obj_contains(target_surr, (just(arg_surr))));
 
     elif is_subset(target_type, type_bin_rel):
       type = types(expr_id);
