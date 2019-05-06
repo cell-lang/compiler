@@ -76,7 +76,9 @@ Instr+ merge_instrs(Instr+ instrs) {
   flow_map = build_flow_map(code_tree, leaf_nodes);
   no_end_node_flow_map = ((n : n <- ns, n != end_node) : ns <- flow_map);
   rev_flow_map = reverse_flow_map(no_end_node_flow_map);
-  live_vars_before_map, live_vars_after_map = build_live_vars_maps(leaf_nodes, no_end_node_flow_map);
+  vars_used_map = (std_loc_vars_used(n) : n <- leaf_nodes);
+  vars_set_map = (std_loc_vars_set(n) : n <- leaf_nodes);
+  live_vars_before_map, live_vars_after_map = build_live_vars_maps(leaf_nodes, no_end_node_flow_map, vars_used_map, vars_set_map);
 
   merged_instrs = [
     i -> value(mi)
@@ -97,8 +99,9 @@ Instr+ merge_instrs(Instr+ instrs) {
   return nonempty(reconstruct_code(code_tree, rewritten_nodes));
 
 
-  Maybe[BasicInstr] merged_instr(NodeInfo info1, NodeInfo info2, [TrkVar] live_vars) =
-    std_node(set_rc_var() i1?), std_node(set_var() i2?) = if i1.var == i2.value and i2.var :: StdVar and not live_vars(i1.var)
+  Maybe[BasicInstr] merged_instr(NodeInfo info1, NodeInfo info2, [<StdVar, LocVar>] live_vars) =
+    std_node(set_rc_var() i1?), std_node(set_var() i2?) = if i1.var == i2.value and i2.var :: StdVar and
+                                                             i1.var :: <StdVar, LocVar> and not live_vars(i1.var)
                                                             then just(set_var(i2.var, i1.value))
                                                             else nothing,
     _,                          _                       = nothing;

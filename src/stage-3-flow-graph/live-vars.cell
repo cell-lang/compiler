@@ -1,6 +1,4 @@
-([TrkVar]*, [TrkVar]*) build_live_vars_maps(NodeInfo* leaf_nodes, Nat** flow_map) {
-  vars_used_map = (vars_used(n) : n <- leaf_nodes);
-  vars_set_map = (vars_set(n) : n <- leaf_nodes);
+([V]*, [V]*) build_live_vars_maps(NodeInfo* leaf_nodes, Nat** flow_map, [V]* vars_used_map, [V]* vars_set_map) {
   forward_flow_map = ((n : n <- ns, n > i) : ns @ i <- flow_map);
   backward_flow_map = (maybe_only((n : n <- ns, n <= i)) : ns @ i <- flow_map);
 
@@ -18,7 +16,7 @@
 }
 
 
-[TrkVar]* build_initial_map(Nat** forward_flow_map, [TrkVar]* vars_used_map, [TrkVar]* vars_set_map) {
+[V]* build_initial_map(Nat** forward_flow_map, [V]* vars_used_map, [V]* vars_set_map) {
   len = |forward_flow_map|;
   rev_new_map = ();
   for ri < len:
@@ -32,7 +30,7 @@
 }
 
 
-([TrkVar]*, Maybe[Nat]) propagate_backward([TrkVar]* curr_map, Maybe[Nat]* backward_flow_map, [TrkVar]* vars_set_map) {
+([V]*, Maybe[Nat]) propagate_backward([V]* curr_map, Maybe[Nat]* backward_flow_map, [V]* vars_set_map) {
   new_map = (curr_map(s) & if t != nothing then curr_map(value(t)) - vars_set_map(s) else [] : t @ s <- backward_flow_map);
   len = |curr_map|;
   for ri < len:
@@ -43,7 +41,7 @@
 }
 
 
-[TrkVar]* propagate_forward([TrkVar]* curr_map, Nat start_idx, Nat** forward_flow_map, [TrkVar]* vars_set_map) {
+[V]* propagate_forward([V]* curr_map, Nat start_idx, Nat** forward_flow_map, [V]* vars_set_map) {
   len = |curr_map|;
   rev_new_map = ();
   for ri < len:
@@ -62,9 +60,7 @@
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-([TrkVar]*, [TrkVar]*) ref_build_live_vars_maps(NodeInfo* leaf_nodes, Nat** flow_map) {
-  vars_used_map = (vars_used(n) : n <- leaf_nodes);
-  vars_set_map = (vars_set(n) : n <- leaf_nodes);
+([V]*, [V]*) ref_build_live_vars_maps(NodeInfo* leaf_nodes, Nat** flow_map, [V]* vars_used_map, [V]* vars_set_map) {
   curr_map = vars_used_map;
   loop
     new_map = (update_node(flow_map(i), curr_map, vars_used_map(i), vars_set_map(i)) : vs @ i <- curr_map);
@@ -79,9 +75,9 @@
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-[TrkVar] update_node(Nat* next_nodes, [TrkVar]* live_vars_map, [TrkVar] vars_used, [TrkVar] vars_set) =
+[V] update_node(Nat* next_nodes, [V]* live_vars_map, [V] vars_used, [V] vars_set) =
   vars_used & (live_vars_downstream(next_nodes, live_vars_map) - vars_set);
 
 
-[TrkVar] live_vars_downstream(Nat* next_nodes, [TrkVar]* live_vars_map) =
+[V] live_vars_downstream(Nat* next_nodes, [V]* live_vars_map) =
   seq_union((live_vars_map(id) : id <- next_nodes));

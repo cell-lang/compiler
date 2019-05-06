@@ -63,7 +63,9 @@ Instr+ optimize_code(Instr+ instrs) {
 
   prop_info = propagate(leaf_nodes, (no_prop_info : unused_var <- leaf_nodes), rev_flow_map);
   rewritten_nodes = (rewrite_node(n, prop_info(i)) : n @ i <- leaf_nodes);
-  live_vars_before_map, live_vars_after_map = build_live_vars_maps(rewritten_nodes, no_end_node_flow_map);
+  vars_used_map = (std_loc_vars_used(n) : n <- rewritten_nodes);
+  vars_set_map = (std_loc_vars_set(n) : n <- rewritten_nodes);
+  live_vars_before_map, live_vars_after_map = build_live_vars_maps(rewritten_nodes, no_end_node_flow_map, vars_used_map, vars_set_map);
   assert |rewritten_nodes| == |live_vars_after_map|;
   rewritten_nodes_2 = (erase_useless_instrs(n, live_vars_after_map(i)) : n @ i <- rewritten_nodes);
   opt_instrs = reconstruct_code(code_tree, rewritten_nodes_2);
@@ -332,8 +334,10 @@ IntExpr rewrite_int_expr(IntExpr expr, PropInfo info) {
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-NodeInfo erase_useless_instrs(NodeInfo node, [TrkVar] live_vars_after) =
-  std_node(set_rc_var() i?) = if not live_vars_after(i.var) then std_node(:no_op) else node,
+NodeInfo erase_useless_instrs(NodeInfo node, [<StdVar, LocVar>] live_vars_after) =
+  std_node(set_rc_var() i?) = if i.var :: <StdVar, LocVar> and not live_vars_after(i.var)
+                                then std_node(:no_op)
+                                else node,
   _                         = node;
 
 ////////////////////////////////////////////////////////////////////////////////
