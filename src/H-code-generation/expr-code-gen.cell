@@ -166,17 +166,17 @@ implicit program           : Program,
 
   // relvar_memb_test(rel_var: AnyRelVar, args: Maybe[Expr]+);
   (Instr*, ObjExpr, VarGen) relvar_memb_test_opt_eval_info(AnyRelVar rel_var, Maybe[Expr]+ args, VarGen init_var_gen) {
-    filtered_idxs = nonempty(idxs_into_filtered_seq((a != nothing : a <- args)));
-    unfiltered_idxs = (i : a @ i <- args, a != nothing);
+    bound_args = (value(a) : a <- args, a != nothing);
+    bound_args_idxs = (i : a @ i <- args, a != nothing);
+    arg_idx_bound_arg_idx = [i -> j : i @ j <~ bound_args_idxs];
 
-    set_args = (value(a) : a <- args, a != nothing);
-    eval_code, args_aliases, var_gen = opt_eval_info(set_args, init_var_gen);
+    eval_code, args_aliases, var_gen = opt_eval_info(bound_args, init_var_gen);
 
     res_var, ret_var_gen = next_bool_var(init_var_gen);
-    surr_vars, var_gen = next_int32_vars(ret_var_gen, |set_args|);
+    surr_vars, var_gen = next_int32_vars(ret_var_gen, |bound_args|);
     it_var, var_gen = next_table_it_var(var_gen, |args|, symmetric(rel_var));
 
-    surr_args = (apply(mi, surr_vars($)) : mi <- filtered_idxs);
+    surr_args = (apply(a, surr_vars(arg_idx_bound_arg_idx(i))) : a @ i <- args);
 
     symmetric = symmetric(rel_var);
 
@@ -188,18 +188,10 @@ implicit program           : Program,
     code = (eval_code | set_bvar(res_var, false));
     for tv @ i <- isort(candidate_tables):
       subst_table_var = substitute(tv);
-      if (a <~ args : a == nothing):
-        table_code = (
-          get_table_iter(it_var, subst_table_var, surr_args),
-          set_bvar(res_var, neg(is_out_of_range(it_var)))
-        );
-      else
-        surr_args = (just(v) : v <- nonempty(surr_vars));
-        table_code = (set_bvar(res_var, table_contains(subst_table_var, surr_args, symmetric)));
-      ;
+      table_code = (set_bvar(res_var, table_contains(subst_table_var, surr_args, symmetric)));
 
       for e @ j <- reverse(args_aliases):
-        store_id = table_col_store_id(tv, rat(unfiltered_idxs, j));
+        store_id = table_col_store_id(tv, rat(bound_args_idxs, j));
         store_type = value_store_type(rel_auto_type(rel_var), unqualified(store_id));
         store_id = substitute(store_id);
         surr_var = rat(surr_vars, j);
@@ -626,24 +618,7 @@ implicit program           : Program,
       ;
     ;
 
-    if not (a <~ args_surrs : a == nothing): ## THIS SHOULD NARROW DOWN THE TYPE OF args_surrs
-      search_instr = set_bvar(res_var, rel_obj_contains(rel_surr, nonempty((just(value_unsafe(a)) : a <- args_surrs))));
-      code = (code | search_instr);
-
-    else
-      if |args_surrs| == 2:
-        it_var, var_gen = next_bin_rel_it_var(var_gen);
-        get_iter_instr = get_iter(it_var, rel_surr, args_surrs);
-
-      else
-        fail if |args_surrs| != 3;
-        it_var, var_gen = next_tern_rel_it_var(var_gen);
-        get_iter_instr = get_iter(it_var, rel_surr, args_surrs);
-      ;
-
-      code = (code | get_iter_instr, set_bvar(res_var, neg(is_out_of_range(it_var))));
-    ;
-
+    code = (code | set_bvar(res_var, rel_obj_contains(rel_surr, nonempty(args_surrs))));
     return (code, obj_expr(res_var), ret_var_gen);
   }
 
