@@ -238,11 +238,8 @@ implicit program           : Program,
     return ((), :invalid_var, init_var_gen) if not args_types :: [Nat -> NeType];
     candidate_tables = overlapping_tables(rel_var, maybe_seq(args_types, arity));
 
-    // If all the lookups fail, then we throw an exception
-    code = (terminate);
-
     // Iterating through all the candidate tables
-    for tv <- isort(candidate_tables):
+    lookup_code = join(({
       surr_vars = def_surr_vars;
       surr_vars_map = def_surr_vars_map;
       if maybe_args :: (Just[ExprRef], Nothing):
@@ -254,35 +251,36 @@ implicit program           : Program,
         ;
       ;
 
-      // Looking up all arguments
-      args_lookup_code = join(({
+      res_store_id = table_col_store_id(tv, target_idx);
+      res_store_type = value_store_type(rel_auto_type(rel_var), unqualified(res_store_id));
+      res_store_id = substitute(res_store_id);
+      code = (
+        set_ivar32(res_surr_var, table_lookup(substitute(tv), maybe_seq(surr_vars_map, arity), symmetric(rel_var))),
+        do_if_not(is_eq(res_surr_var, -1), (
+          surr_to_decoded_value(res_var, res_store_id, res_store_type, res_surr_var),
+          exit_block
+        ))
+      );
+
+      for ri < |args_aliases|:
+        i = |args_aliases| - ri - 1;
+        arg_alias = args_aliases(i);
+
         store_id = table_col_store_id(tv, args_idxs(i));
         store_type = value_store_type(rel_auto_type(rel_var), unqualified(store_id));
         store_id = substitute(store_id);
         surr_var = surr_vars(i);
-        return (
-          set_ivar32(surr_var, value_to_surr(store_id, value_store_encoded_expr(store_type, e))),
-          check(neg(is_eq(surr_var, -1)))
+
+        code = (
+          set_ivar32(surr_var, value_to_surr(store_id, value_store_encoded_expr(store_type, arg_alias))),
+          do_if_not(is_eq(surr_var, -1), code)
         );
-      } : e @ i <- args_aliases));
+      ;
 
-      res_store_id = table_col_store_id(tv, target_idx);
-      res_store_type = value_store_type(rel_auto_type(rel_var), unqualified(res_store_id));
-      res_store_id = substitute(res_store_id);
-      lookup_code = (
-        set_ivar32(res_surr_var, table_lookup(substitute(tv), maybe_seq(surr_vars_map, arity), symmetric(rel_var))),
-        branch(
-          neg(is_eq(res_surr_var, -1)),
-          (surr_to_decoded_value(res_var, res_store_id, res_store_type, res_surr_var)),
-          // If the lookup on this table fails we keep going, unless this is the last table left
-          code
-        )
-      );
+      return code;
+    } : tv <- isort(candidate_tables)));
 
-      code = args_lookup_code & lookup_code;
-    ;
-
-    return (args_eval_code & code, res_var, ret_var_gen);
+    return ((args_eval_code | execute_block((lookup_code | terminate))), res_var, ret_var_gen);
   }
 
 
