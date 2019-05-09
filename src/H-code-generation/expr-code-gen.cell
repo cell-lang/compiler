@@ -266,14 +266,22 @@ implicit program           : Program,
         i = |args_aliases| - ri - 1;
         arg_alias = args_aliases(i);
 
+assert |args_aliases| == |args_idxs|;
+assert |args_aliases| == |ord_args|;
+assert [j -> ord_args(k) : j @ k <~ args_idxs] == args;
+
+        arg_type = subexpr_type(ord_args(i));
+
         store_id = table_col_store_id(tv, args_idxs(i));
         store_type = value_store_type(rel_auto_type(rel_var), unqualified(store_id));
         store_id = substitute(store_id);
         surr_var = surr_vars(i);
 
-        code = (
-          set_ivar32(surr_var, value_to_surr(store_id, value_store_encoded_expr(store_type, arg_alias))),
-          do_if_not(is_eq(surr_var, -1), code)
+        code = opt_do_if(
+          value_store_guard(store_type, arg_alias, arg_type),
+          ( set_ivar32(surr_var, value_to_surr(store_id, value_store_encoded_expr(store_type, arg_alias))),
+            do_if_not(is_eq(surr_var, -1), code)
+          )
         );
       ;
 

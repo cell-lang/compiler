@@ -77,12 +77,11 @@ implicit program           : Program,
   // relvar_yield_action(vars: StdVar+, relvar: AnyRelVar, args: Maybe[Expr]+, next: YieldAction)
   Instr* relvar_yield_action_opt_code(RelVarYieldAction action, VarGen init_var_gen) {
     args = action.args;
-
-    ## BAD: I DON'T LIKE THIS, REFACTOR IT USING [Nat -> Expr] INSTEAD OF Maybe[Expr]
-    filtered_idxs = idxs_into_filtered_seq((a != nothing : a <- args));
-    unfiltered_idxs = (i : a @ i <- args, a != nothing);
-    blank_idxs = (i : a @ i <- args, a == nothing);
     set_args = values(args);
+
+    bound_args_idxs = (i : a @ i <- args, a != nothing);
+    free_args_idxs = (i : a @ i <- args, a == nothing);
+    arg_idx_bound_arg_idx = [i -> j : i @ j <~ bound_args_idxs];
 
     args_eval_code, args_aliases, var_gen = opt_eval_info(set_args, init_var_gen);
 
@@ -90,7 +89,15 @@ implicit program           : Program,
     shadow_surr_vars, var_gen = next_int32_vars(var_gen, |action.vars|);
     it_var, var_gen = next_table_it_var(var_gen, |args|, symmetric(action.relvar));
 
-    surr_args = (apply(mi, surr_vars($)) : mi <- filtered_idxs);
+    surr_args = (apply(a, surr_vars(arg_idx_bound_arg_idx(i))) : a @ i <- args);
+
+old_filtered_idxs = idxs_into_filtered_seq((a != nothing : a <- args));
+old_unfiltered_idxs = (i : a @ i <- args, a != nothing);
+old_blank_idxs = (i : a @ i <- args, a == nothing);
+old_surr_args = (apply(mi, surr_vars($)) : mi <- old_filtered_idxs);
+assert bound_args_idxs == old_unfiltered_idxs;
+assert free_args_idxs == old_blank_idxs;
+assert surr_args == old_surr_args;
 
     action_code = yield_action_opt_code(action.next, var_gen);
 
@@ -115,7 +122,7 @@ implicit program           : Program,
 
       vars_setup_code = join(({
         shadow_surr_var = shadow_surr_vars(i);
-        store_id = table_col_store_id(tv, blank_idxs(i));
+        store_id = table_col_store_id(tv, free_args_idxs(i));
         store_type = value_store_type(rel_auto_type(action.relvar), unqualified(store_id));
         store_id = substitute(store_id);
         return (
@@ -131,13 +138,22 @@ implicit program           : Program,
       );
 
       for e @ i <- reverse(args_aliases):
-        store_id = table_col_store_id(tv, rat(unfiltered_idxs, i));
+assert |args_types| == |args|;
+assert |args_aliases| == |set_args|;
+assert |bound_args_idxs| == |set_args|;
+assert not (j <~ bound_args_idxs : args(j) == nothing or args_types(j) == nothing);
+
+        idx = rat(bound_args_idxs, i);
+        arg_type = value_unsafe(args_types(idx));
+        store_id = table_col_store_id(tv, idx);
         store_type = value_store_type(rel_auto_type(action.relvar), unqualified(store_id));
         store_id = substitute(store_id);
         surr_var = rat(surr_vars, i);
-        table_code = (
-          set_ivar32(surr_var, value_to_surr(store_id, value_store_encoded_expr(store_type, e))),
-          do_if_not(is_eq(surr_var, -1), table_code)
+        table_code = opt_do_if(
+          value_store_guard(store_type, e, arg_type),
+          ( set_ivar32(surr_var, value_to_surr(store_id, value_store_encoded_expr(store_type, e))),
+            do_if_not(is_eq(surr_var, -1), table_code)
+          )
         );
       ;
 

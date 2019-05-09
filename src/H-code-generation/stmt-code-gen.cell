@@ -920,13 +920,22 @@ assert surr_args == old_surr_args;
         );
 
         for e @ i <- reverse(args_aliases):
-          store_id = table_col_store_id(tv, rat(bound_args_idxs, i));
+assert |args_types| == |table_args|;
+assert |args_aliases| == |set_args|;
+assert |bound_args_idxs| == |set_args|;
+assert not (j <~ bound_args_idxs : table_args(j) == nothing or args_types(j) == nothing);
+
+          idx = rat(bound_args_idxs, i);
+          arg_type = value_unsafe(args_types(idx));
+          store_id = table_col_store_id(tv, idx);
           store_type = value_store_type(rel_auto_type(iter.rel_var), unqualified(store_id));
           store_id = substitute(store_id);
           surr_var = rat(surr_vars, i);
-          table_code = (
-            set_ivar32(surr_var, value_to_surr(store_id, value_store_encoded_expr(store_type, e))),
-            do_if_not(is_eq(surr_var, -1), table_code)
+          table_code = opt_do_if(
+            value_store_guard(store_type, e, arg_type),
+            ( set_ivar32(surr_var, value_to_surr(store_id, value_store_encoded_expr(store_type, e))),
+              do_if_not(is_eq(surr_var, -1), table_code)
+            )
           );
         ;
 

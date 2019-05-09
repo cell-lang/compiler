@@ -85,6 +85,20 @@ Nat+ optimal_dispatch_args([+NeType+] signatures, [TypeName -> Type] typedefs) {
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
+implicit typedefs : [TypeName -> NeType] {
+  BoolExpr value_store_guard(ValueStoreType, AtomicExpr expr, Type type) =
+    object                  |
+    integer                 = true,
+    mono_tagged_integer(s?) = if not is_subset(type, tag_obj_type(symb_type(s), integer))
+                                then and_then(
+                                       is_tagged_obj(expr),
+                                       is_int(get_inner_obj(expr)),
+                                       are_eq(get_tag(expr), object(s))
+                                     )
+                                else true;
+}
+
+
 <AtomicExpr, IntExpr> value_store_encoded_expr(ValueStoreType, AtomicExpr expr) =
   object                  = expr,
   integer                 = get_int_val(expr),
