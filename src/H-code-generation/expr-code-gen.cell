@@ -203,13 +203,21 @@ assert surr_args == old_surr_args;
       table_code = (set_bvar(res_var, table_contains(subst_table_var, surr_args, symmetric)));
 
       for e @ j <- reverse(args_aliases):
-        store_id = table_col_store_id(tv, rat(bound_args_idxs, j));
+
+assert |args_aliases| == |bound_args_idxs|;
+assert |args_types| == |args|;
+
+        idx = rat(bound_args_idxs, j);
+        arg_type = value_unsafe(args_types(arg_idx_bound_arg_idx(idx)));
+        store_id = table_col_store_id(tv, idx);
         store_type = value_store_type(rel_auto_type(rel_var), unqualified(store_id));
         store_id = substitute(store_id);
         surr_var = rat(surr_vars, j);
-        table_code = (
-          set_ivar32(surr_var, value_to_surr(store_id, value_store_encoded_expr(store_type, e))),
-          do_if_not(are_eq(int_obj(surr_var), int_obj(-1)), table_code)
+        table_code = opt_do_if(
+          value_store_guard(store_type, e, arg_type),
+          ( set_ivar32(surr_var, value_to_surr(store_id, value_store_encoded_expr(store_type, e))),
+            do_if_not(are_eq(int_obj(surr_var), int_obj(-1)), table_code)
+          )
         );
       ;
 
