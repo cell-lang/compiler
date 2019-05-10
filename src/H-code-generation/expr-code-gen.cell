@@ -123,8 +123,9 @@ implicit program           : Program,
 
 
   (Instr*, ObjExpr, VarGen) rel_var_size_expr_opt_eval_info(AnyRelVar rel_var, Maybe[Expr]+ args, VarGen init_var_gen) {
-    filtered_idxs = nonempty(idxs_into_filtered_seq((a != nothing : a <- args)));
-    unfiltered_idxs = (i : a @ i <- args, a != nothing);
+    bound_args_idxs = (i : a @ i <- args, a != nothing);
+    free_args_idxs = (i : a @ i <- args, a == nothing);
+    arg_idx_bound_arg_idx = [i -> j : i @ j <~ bound_args_idxs];
 
     set_args = (value(a) : a <- args, a != nothing);
     eval_code, args_aliases, var_gen = opt_eval_info(set_args, init_var_gen);
@@ -133,7 +134,13 @@ implicit program           : Program,
     surr_vars, var_gen = next_int32_vars(ret_var_gen, |set_args|);
     it_var, var_gen = next_table_it_var(var_gen, |args|, symmetric(rel_var));
 
-    surr_args = (apply(mi, surr_vars($)) : mi <- filtered_idxs);
+    surr_args = (apply(a, surr_vars(arg_idx_bound_arg_idx(i))) : a @ i <- args);
+
+old_filtered_idxs = nonempty(idxs_into_filtered_seq((a != nothing : a <- args)));
+old_unfiltered_idxs = (i : a @ i <- args, a != nothing);
+old_surr_args = (apply(mi, surr_vars($)) : mi <- old_filtered_idxs);
+assert bound_args_idxs == old_unfiltered_idxs;
+assert surr_args == old_surr_args;
 
     // Selecting the candidate tables among those the logical relation is partitioned into
     args_types = (apply(a, subexpr_type) : a <- args);
@@ -142,19 +149,24 @@ implicit program           : Program,
 
     symmetric = symmetric(rel_var);
 
-    code = eval_code;
+    code = (eval_code | set_ivar32(res_var, 0));
     for t @ i <- isort(candidate_tables):
       count_expr = get_count(substitute(t), surr_args, symmetric);
       count_expr = add32(res_var, count_expr) if i > 0;
       table_code = (set_ivar32(res_var, count_expr));
       for e @ j <- reverse(args_aliases):
-        store_id = table_col_store_id(t, rat(unfiltered_idxs, j));
+        idx = rat(bound_args_idxs, j);
+        arg_type = value_unsafe(args_types(idx));
+        store_id = table_col_store_id(t, idx);
         store_type = value_store_type(rel_auto_type(rel_var), unqualified(store_id));
         store_id = substitute(store_id);
         surr_var = rat(surr_vars, j);
-        table_code = (
-          set_ivar32(surr_var, value_to_surr(store_id, value_store_encoded_expr(store_type, e))),
-          branch(neg(are_eq(int_obj(surr_var), int_obj(-1))), table_code, (set_ivar32(res_var, 0) if i == 0))
+        assert |candidate_tables| > 1 or value_store_guard(store_type, e, arg_type) == true;
+        table_code = opt_do_if(
+          value_store_guard(store_type, e, arg_type),
+          ( set_ivar32(surr_var, value_to_surr(store_id, value_store_encoded_expr(store_type, e))),
+            do_if_not(are_eq(int_obj(surr_var), int_obj(-1)), table_code)
+          )
         );
       ;
       code = code & table_code;
