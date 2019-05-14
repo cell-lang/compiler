@@ -186,6 +186,29 @@ implicit syn_prg : SynPrg {
   [ProcSymbol -> SynProcDef] proc_defs_by_id = [p.name -> p : p <- syn_proc_defs];
 
 
+  ProcArgInfo* proc_args_info(ProcSymbol proc_id) {
+    return signatures(proc_id, !!);
+
+
+    [ProcSymbol -> ProcArgInfo*] signatures = [
+      p.name -> (arg_info(a.type) : a <- p.args) : p <- syn_proc_defs
+    ];
+
+
+    ProcArgInfo arg_info(SynType type) {
+      if type :: <type_ref(type_symbol(<+>))>:
+        symb = match (type) type_ref(type_symbol(s?)) = s;
+        if in(symb, schema_names):
+          return :rel_auto_arg(symb);
+        elif in(symb, react_autos_names):
+          return :react_auto_arg(symb);
+        ;
+      ;
+      return :value_arg;
+    }
+  }
+
+
   [Atom -> [+AutoMethodDef]] methods_by_automaton =
     merge_values([[m.target -> m] : m <- auto_methods]);
 

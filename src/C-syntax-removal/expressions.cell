@@ -471,12 +471,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
     loop_stmt()               = desugar_loop_stmt(stmt, def_vars),
     for_stmt()                = desugar_for_stmt(stmt.loops, stmt.body, def_vars),
     return_stmt               = return_stmt,
-    proc_call_stmt()          = proc_call_stmt(
-                                  res_var:    stmt.res_var if stmt.res_var?,
-                                  proc_name:  stmt.proc_name,
-                                  args:       (desugar_expr(p, def_vars) : p <- stmt.args)
-                                ),
-
+    proc_call_stmt()          = desugar_proc_call_stmt(stmt, def_vars),
     send_msg_stmt()           = send_msg_stmt(nested_db_var(stmt.var), desugar_expr(stmt.msg, def_vars)),
     try_update_stmt()         = try_update_stmt(update_symbol(stmt.name), (desugar_expr(e, def_vars) : e <- stmt.args)),
     set_memb_var_stmt()       = set_memb_var_stmt(memb_var(stmt.var), desugar_expr(stmt.value, def_vars)),
@@ -499,6 +494,40 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
     static_auto_var = loc_db_var(auto_var_id);
     assert loc_auto_vars(react_auto_var, *) or loc_db_vars(static_auto_var, *);
     return if loc_auto_vars(react_auto_var, *) then react_auto_var else static_auto_var;
+  }
+
+
+  Statement desugar_proc_call_stmt(SynProcCallStmt stmt, [StdVar] def_vars) {
+    args_info = proc_args_info(stmt.proc_name);
+
+    args = ();
+    rel_auto_args = ();
+    react_auto_args = ();
+    for a @ i <- stmt.args:
+      arg_info = args_info(i);
+      if arg_info == :value_arg:
+        args = (args | desugar_expr(a, def_vars));
+      else
+        id = match (a) const_or_var(s?) = s;
+        var = match (arg_info)
+          rel_auto_arg()    = loc_db_var(id),
+          react_auto_arg()  = loc_auto_var(id);
+        if var :: LocDBVar:
+          rel_auto_args = (rel_auto_args | var);
+        else
+          fail if not var :: LocAutoVar;
+          react_auto_args = (react_auto_args | var);
+        ;
+      ;
+    ;
+
+    return proc_call_stmt(
+      res_var:          stmt.res_var if stmt.res_var?,
+      proc_name:        stmt.proc_name,
+      args:             (desugar_expr(p, def_vars) : p <- stmt.args),
+      rel_auto_args:    rel_auto_args,
+      react_auto_args:  react_auto_args
+    );
   }
 
 
