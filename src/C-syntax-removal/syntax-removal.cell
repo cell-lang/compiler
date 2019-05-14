@@ -59,7 +59,23 @@ implicit syn_prg : SynPrg {
 
 
   Procedure desugar_proc_def(SynProcDef pd) {
-    args = ((var: p.var, type: desugar_schema_aware_type(p.type, schema_names)) : p <- pd.args);
+    args = ();
+    rel_auto_args = ();
+    react_auto_args = ();
+    for a <- pd.args:
+      if a.type :: <type_ref(type_symbol(<+>))>:
+        symb = match (a.type) type_ref(type_symbol(s?)) = s;
+        if in(symb, schema_names):
+          rel_auto_args = (rel_auto_args | (var: loc_db_var(bare_id(a.var)), type: db_symbol(symb)));
+        elif in(symb, react_autos_names):
+          react_auto_args = (react_auto_args | (var: loc_auto_var(bare_id(a.var)), type: auto_symbol(symb)));
+        else
+          args = (args | (var: a.var, type: desugar_schema_aware_type(a.type, schema_names)));
+        ;
+      ;
+      args = (args | (var: a.var, type: desugar_schema_aware_type(a.type, schema_names)));
+    ;
+
     maybe_ret_type = if pd.res_type != nothing
       then just(desugar_schema_aware_type(value(pd.res_type), schema_names))
       else nothing;
@@ -73,8 +89,8 @@ implicit syn_prg : SynPrg {
     proc = procedure(
       id:               pd.name,
       args:             args,
-      rel_auto_args:    (),
-      react_auto_args:  (),
+      rel_auto_args:    rel_auto_args,
+      react_auto_args:  react_auto_args,
       res_type:         maybe_ret_type,
       auto_vars:        auto_vars,
       db_vars:          db_vars,
