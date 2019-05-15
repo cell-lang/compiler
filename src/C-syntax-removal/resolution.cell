@@ -370,10 +370,19 @@ implicit syn_prg : SynPrg {
   [] resolve_symbol(<null_artifact>, Atom symbol) = [];
 
 
-  [<LocAutoVar, LocDBVar>] resolve_symbol(SynProcDef artifact, Atom symbol) = [
-    if automaton_is_static(v.type) then loc_db_var(symbol) else loc_auto_var(symbol)
-    : v <~ artifact.auto_or_db_vars, v.var == symbol
-  ];
+  [<LocAutoVar, LocDBVar>] resolve_symbol(SynProcDef artifact, Atom symbol) {
+    loc_auto_vars = [
+      if automaton_is_static(v.type) then loc_db_var(symbol) else loc_auto_var(symbol)
+      : v <~ artifact.auto_or_db_vars, v.var == symbol
+    ];
+    auto_args = [
+      match (info)
+        rel_auto_arg()    = loc_db_var(symbol),
+        react_auto_arg()  = loc_auto_var(symbol)
+      : info <~ proc_args_info(artifact.name), info != :value_arg
+    ];
+    return loc_auto_vars & auto_args;
+  }
 
 
   [<SignalVar, NestedAutoVar, NestedDBVar, QualSignalVar>] resolve_symbol(ReactAutoDef artifact, Atom symbol) {
