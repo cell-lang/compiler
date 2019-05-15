@@ -80,8 +80,8 @@ implicit syn_prg : SynPrg {
       then just(desugar_schema_aware_type(value(pd.res_type), schema_names))
       else nothing;
     body = desugar_stmts(pd.body, [a.var : a <~ args], artifact = pd, impl_args = []);
-    auto_vars = merge(([loc_auto_var(v.var) -> auto_symbol(v.type)] : v <- pd.auto_or_db_vars, automaton_is_reactive(v.type)));
-    db_vars = merge((
+    react_auto_vars = merge(([loc_auto_var(v.var) -> auto_symbol(v.type)] : v <- pd.auto_or_db_vars, automaton_is_reactive(v.type)));
+    rel_auto_vars = merge((
       [loc_db_var(v.var) -> (type: db_symbol(v.type), links: (loc_db_var(a) : a <- v.args))]
       : v <- pd.auto_or_db_vars, automaton_is_static(v.type)
     ));
@@ -92,8 +92,8 @@ implicit syn_prg : SynPrg {
       rel_auto_args:        rel_auto_args,
       react_auto_args:      react_auto_args,
       res_type:             maybe_ret_type,
-      loc_rel_auto_vars:    db_vars,
-      loc_react_auto_vars:  auto_vars,
+      loc_rel_auto_vars:    rel_auto_vars,
+      loc_react_auto_vars:  react_auto_vars,
       body:                 body
     );
     return transfer(proc, pd);

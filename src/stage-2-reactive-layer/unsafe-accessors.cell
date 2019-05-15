@@ -6,7 +6,9 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context {
 
   AutoSymbol var_type(LocAutoVar var) =
     match (context)
-      procedure()    = context.loc_react_auto_vars[var];
+      procedure() = if context.loc_react_auto_vars(var, *)
+                      then context.loc_react_auto_vars(var)
+                      else only_unsafe((a.type : a <- context.react_auto_args, a.var == var));
 
 
   AutoSymbol this_auto_symbol =

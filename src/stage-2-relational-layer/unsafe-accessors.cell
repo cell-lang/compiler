@@ -12,7 +12,9 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context {
 
   DBSymbol var_type(LocDBVar var) =
     match (context)
-      procedure()    = context.loc_rel_auto_vars[var].type;
+      procedure() = if context.loc_rel_auto_vars(var, *)
+                      then context.loc_rel_auto_vars(var).type
+                      else only_unsafe((a.type : a <- context.rel_auto_args, a.var == var));
 
 
   DBSymbol var_type(QualDBVar var) = rel_auto_by_id(var_type(var.outer)).nested_dbs[var.inner];
