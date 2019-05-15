@@ -41,8 +41,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
   ObjProcDef gen_proc_code(Procedure procedure) {
     res_var, var_gen = next_obj_var(blank_var_gen);
 
-    body = rand_sort([auto_pre_init(v, t) : v, t <- procedure.auto_vars]) &
-           rand_sort([init_db(v, info.links, info.type) : v, info <- procedure.db_vars]);
+    body = rand_sort([auto_pre_init(v, t) : v, t <- procedure.loc_react_auto_vars]) &
+           rand_sort([init_db(v, info.links, info.type) : v, info <- procedure.loc_rel_auto_vars]);
 
     // Evaluating the expression
     if procedure.body != ():
@@ -60,8 +60,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
       body = (body | execute_block(code)) if code != ();
     ;
 
-    body = body & rand_sort([auto_cleanup(v, t) : v, t <- procedure.auto_vars]);
-    body = body & rand_sort([cleanup_db(v, info.type) : v, info <- procedure.db_vars]);
+    body = body & rand_sort([auto_cleanup(v, t) : v, t <- procedure.loc_react_auto_vars]);
+    body = body & rand_sort([cleanup_db(v, info.type) : v, info <- procedure.loc_rel_auto_vars]);
 
     debug_entry_instr = push_call_info(procedure.id, (a.var : a <- procedure.args));
 
@@ -77,8 +77,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
       impl_args:      [],
       ret_val_repr:   :object,
       // type:           fn_type((a.type : a <- procedure.args), (), proc_ret_type),
-      loc_auto_vars:  procedure.auto_vars,
-      loc_db_vars:    [v -> info.type : v, info <- procedure.db_vars],
+      loc_auto_vars:  procedure.loc_react_auto_vars,
+      loc_db_vars:    [v -> info.type : v, info <- procedure.loc_rel_auto_vars],
       body:           nonempty(body),
       cached:         false
     );
