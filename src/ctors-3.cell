@@ -497,8 +497,17 @@ Instr* opt_symb_switch(ObjExpr expr, [([+SymbObj], Instr+)] cases, Instr* else_c
   return (symb_switch(expr, cases, else_code));
 }
 
-BasicInstr call_proc(AnyWriteVar v, ObjFnName n, AnyTypeExpr* as, AnyLambdaExpr* cas) = call_proc(var: v, name: n, args: as, cls_args: cas);
-BasicInstr call_proc(ObjFnName n, AnyTypeExpr* as, AnyLambdaExpr* cas) = call_proc(name: n, args: as, cls_args: cas);
+BasicInstr call_proc(AnyWriteVar v, ObjFnName n, AnyTypeExpr* as, AnyLambdaExpr* cas) =
+  call_proc(var: v, name: n, args: as, cls_args: cas, rel_auto_args: (), react_auto_args: ());
+
+BasicInstr call_proc(ObjFnName n, AnyTypeExpr* as, AnyLambdaExpr* cas) =
+  call_proc(name: n, args: as, cls_args: cas, rel_auto_args: (), react_auto_args: ());
+
+BasicInstr call_proc(AnyWriteVar v, ObjFnName n, AnyTypeExpr* as, AnyLambdaExpr* cas, LocDBVar* ras, LocAutoVar* vas) =
+  call_proc(var: v, name: n, args: as, cls_args: cas, rel_auto_args: ras, react_auto_args: vas);
+
+BasicInstr call_proc(ObjFnName n, AnyTypeExpr* as, AnyLambdaExpr* cas, LocDBVar* ras, LocAutoVar* vas) =
+  call_proc(name: n, args: as, cls_args: cas, rel_auto_args: ras, react_auto_args: vas);
 
 BasicInstr call_cls(WriteObjVar v, AnyClsVar cv, AtomicExpr+ as) = call_cls(var: v, cls_var: cv, args: as);
 

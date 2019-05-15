@@ -245,10 +245,12 @@ BasicInstr rewrite_exprs(BasicInstr instr, (AnyTypeExpr -> AnyTypeExpr) rewrite,
   print_obj()               = print_obj(cast_obj_expr(rewrite(instr.obj))),
   no_op                     = instr,
   call_proc()               = call_proc(
-                                var:      instr.var if instr.var?,
-                                name:     instr.name,
-                                args:     (rewrite(e) : e <- instr.args),
-                                cls_args: (rewrite_exprs(c, rewrite) : c <- instr.cls_args)
+                                var:              instr.var if instr.var?,
+                                name:             instr.name,
+                                args:             (rewrite(e) : e <- instr.args),
+                                cls_args:         (rewrite_exprs(c, rewrite) : c <- instr.cls_args),
+                                rel_auto_args:    instr.rel_auto_args,
+                                react_auto_args:  instr.react_auto_args
                               ),
   call_cls()                = call_cls(instr.var, instr.cls_var, (cast_obj_expr(rewrite(e)) : e <- instr.args)),
   push_call_info()          = push_call_info(instr.fn_name, (cast_obj_expr(rewrite(e)) : e <- instr.args)),
