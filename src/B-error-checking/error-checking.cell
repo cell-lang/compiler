@@ -307,7 +307,7 @@ implicit syn_prg : SynPrg {
     arity = arity(proc_def);
     res_type = proc_def.res_type;
 
-    dup_pars = duplicates((match (p.var) var(n?) = n : p <- proc_def.args));
+    dup_pars = duplicates((a.var : a <- proc_def.args));
 
     errs = (
       builtin_proc_redef            if builtin_procs_map(name, *),
@@ -391,7 +391,7 @@ implicit syn_prg : SynPrg {
 
     body = proc_def.body;
     return () if body == ();
-    vars = [p.var : p <~ proc_def.args];
+    vars = [var(a.var) : a <~ proc_def.args];
     has_ret_val = proc_def.res_type != nothing;
     let artifact = proc_def, impl_args = [], actual_arg_arity = 0:
       errs = root_stmt_block_wf_errors(body, (), vars, has_ret_val, true);

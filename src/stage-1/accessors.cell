@@ -472,6 +472,9 @@ implicit syn_prg : SynPrg, artifact : Artifact {
     match (artifact)
       syn_proc_def()  = [ loc_auto_var(v.var) -> auto_symbol(v.type)
                           : v <~ artifact.auto_or_db_vars, automaton_is_reactive(v.type)
+                        ] & [
+                          loc_auto_var(artifact.args(i).var) -> auto_symbol(t)
+                          : a @ i <~ proc_args_info(artifact.name), react_auto_arg(t?) ?= a
                         ],
       _               = [];
 
@@ -480,6 +483,9 @@ implicit syn_prg : SynPrg, artifact : Artifact {
     match (artifact)
       syn_proc_def()  = [ loc_db_var(v.var) -> db_symbol(v.type)
                           : v <~ artifact.auto_or_db_vars, automaton_is_static(v.type)
+                        ] & [
+                          loc_db_var(artifact.args(i).var) -> db_symbol(t)
+                          : a @ i <~ proc_args_info(artifact.name), rel_auto_arg(t?) ?= a
                         ],
       _               = [];
 

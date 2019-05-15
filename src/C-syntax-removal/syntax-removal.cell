@@ -66,20 +66,20 @@ implicit syn_prg : SynPrg {
       if a.type :: <type_ref(type_symbol(<+>))>:
         symb = match (a.type) type_ref(type_symbol(s?)) = s;
         if in(symb, schema_names):
-          rel_auto_args = (rel_auto_args | (var: loc_db_var(bare_id(a.var)), type: db_symbol(symb)));
+          rel_auto_args = (rel_auto_args | (var: loc_db_var(a.var), type: db_symbol(symb)));
         elif in(symb, react_autos_names):
-          react_auto_args = (react_auto_args | (var: loc_auto_var(bare_id(a.var)), type: auto_symbol(symb)));
+          react_auto_args = (react_auto_args | (var: loc_auto_var(a.var), type: auto_symbol(symb)));
         else
-          args = (args | (var: a.var, type: desugar_schema_aware_type(a.type, schema_names)));
+          args = (args | (var: var(a.var), type: desugar_schema_aware_type(a.type, schema_names)));
         ;
       ;
-      args = (args | (var: a.var, type: desugar_schema_aware_type(a.type, schema_names)));
+      args = (args | (var: var(a.var), type: desugar_schema_aware_type(a.type, schema_names)));
     ;
 
     maybe_ret_type = if pd.res_type != nothing
       then just(desugar_schema_aware_type(value(pd.res_type), schema_names))
       else nothing;
-    body = desugar_stmts(pd.body, [p.var : p <~ pd.args], artifact = pd, impl_args = []);
+    body = desugar_stmts(pd.body, [a.var : a <~ args], artifact = pd, impl_args = []);
     auto_vars = merge(([loc_auto_var(v.var) -> auto_symbol(v.type)] : v <- pd.auto_or_db_vars, automaton_is_reactive(v.type)));
     db_vars = merge((
       [loc_db_var(v.var) -> (type: db_symbol(v.type), links: (loc_db_var(a) : a <- v.args))]
