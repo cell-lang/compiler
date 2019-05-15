@@ -145,8 +145,10 @@ type ExprSpecWFError    = already_def_var(Var),
                           not_a_rel_var(var: Atom, schema_def: SchemaDef),
                           unknown_rel_var(var: Atom, schema_def: SchemaDef),
                           non_relvar_aggr_fns_iter(cls: SynIterClause),
+                          actual_argument_not_an_auto_var(expr: SynExpr, proc: ProcSymbol, idx: Nat, type: <DBSymbol, AutoSymbol>),
 
                           undef_auto_var(var: Atom, is_data_var: Bool),
+
 
                           anchored_errors(errors: ExprWFError+, anchor: Any),
 
@@ -365,6 +367,8 @@ ExprSpecWFError invalid_rel_var_arity(Atom v, NzNat a, NzNat ra)  = invalid_rel_
 ExprSpecWFError not_a_rel_var(Atom v, SchemaDef d)                = not_a_rel_var(var: v, schema_def: d);
 ExprSpecWFError unknown_rel_var(Atom v, SchemaDef d)              = unknown_rel_var(var: v, schema_def: d);
 ExprSpecWFError non_relvar_aggr_fns_iter(SynIterClause c)         = non_relvar_aggr_fns_iter(cls: c);
+ExprSpecWFError actual_argument_not_an_auto_var(SynExpr e, ProcSymbol p, Nat i, <DBSymbol, AutoSymbol> t) =
+  actual_argument_not_an_auto_var(expr: e, proc: p, idx: i, type: t);
 
 ExprSpecWFError undef_auto_var(Atom v, Bool b)                    = undef_auto_var(var: v, is_data_var: b);
 
@@ -484,6 +488,7 @@ Any* anchor_objs(ExprSpecWFError err) =
   not_a_rel_var()                         = (),
   unknown_rel_var()                       = (),
   non_relvar_aggr_fns_iter()              = (err.cls),
+  actual_argument_not_an_auto_var()       = (),
 
   undef_auto_var()                        = (),
 
@@ -938,6 +943,7 @@ String* basic_err_msg(ExprSpecWFError err) =
   not_a_rel_var()             = ("Not a relational variable: " & _print_(err.var)),
   unknown_rel_var()           = ("Unknown relational variable: " & _print_(err.var)),
   non_relvar_aggr_fns_iter()  = non_relvar_aggr_fns_iter_err_msg(err.cls),
+  actual_argument_not_an_auto_var() = actual_argument_not_an_auto_var_err_msg(err.expr, err.proc, err.idx, err.type),
 
   undef_auto_var()            = ( if err.is_data_var
                                     then _print_(err.var) & " is not an automaton variable"
@@ -948,6 +954,11 @@ String* basic_err_msg(ExprSpecWFError err) =
 
   annotated_syn_expr_error()  = basic_err_msg(err.error),
   annotated_syn_stmt_error()  = basic_err_msg(err.error);
+
+
+String* actual_argument_not_an_auto_var_err_msg(SynExpr expr, ProcSymbol proc, Nat idx, <DBSymbol, AutoSymbol> type) = (
+  "Argument " & _print_(idx+1) & " of " & user_repr(proc) & "(..) must be an automaton variable of type " & user_repr(type)
+);
 
 
 String* non_relvar_aggr_fns_iter_err_msg(SynIterClause cls) {

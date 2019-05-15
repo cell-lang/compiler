@@ -65,7 +65,7 @@ implicit {
       print_stmt(e?)          = expr_wf_errors(e, all_vars),
       seq_update_stmt()       = expr_wf_errors(stmt.idx, all_vars) & expr_wf_errors(stmt.value, all_vars),
       return_stmt             = (),
-      proc_call_stmt()        = join((expr_wf_errors(e, all_vars) : e <- stmt.args)),
+      proc_call_stmt()        = (),
 
       send_msg_stmt()         = expr_wf_errors(stmt.msg, all_vars),
       try_update_stmt()       = join((expr_wf_errors(e, all_vars) : e <- stmt.args)),
@@ -381,6 +381,17 @@ implicit {
         proc_def = proc_defs_by_id[proc_name];
         arity = |proc_def.args|;
         has_ret_val = proc_def.res_type != nothing;
+        if arity != |stmt.args|:
+          args_info = proc_args_info(proc_name);
+          args_errs = join((
+            match (args_info(i))
+              value_arg           = expr_wf_errors(e, ro_vars & rw_vars),
+              rel_auto_arg(id?)   = rel_auto_arg_errs(e, id, i, proc_name, ro_vars, rw_vars),
+              react_auto_arg(id?) = react_auto_arg_errs(e, id, i, proc_name, ro_vars, rw_vars)
+            : e @ i <- stmt.args
+          ));
+          return args_errs if args_errs != ();
+        ;
       ;
     else
       arity, has_ret_val = builtin_procs_map[proc_name];
@@ -393,6 +404,25 @@ implicit {
     );
 
     return var_errs & proc_errs;
+
+
+    ExprWFError* rel_auto_arg_errs(SynExpr expr, Symbol rel_auto_type, Nat idx, ProcSymbol proc, [DefVar] ro_vars, [StdVar] rw_vars) {
+      if not expr :: ConstOrVar:
+        return (actual_argument_not_an_auto_var(expr, proc, idx, db_symbol(rel_auto_type)));
+      ;
+      var_symb = match (expr) const_or_var(s?) = s;
+      if not loc_db_vars(loc_db_var(var_symb), *):
+        is_auto_var = loc_auto_vars(loc_auto_var(var_symb), *);
+        is_obj_var = ro_vars(var(var_symb)) or rw_vars(var(var_symb));
+        return (undef_static_auto_var(var_symb, is_auto_var, is_obj_var));
+      ;
+      return ();
+    }
+
+
+    ExprWFError* react_auto_arg_errs(SynExpr expr, Symbol rel_auto_type, Nat idx, ProcSymbol proc, [DefVar] ro_vars, [StdVar] rw_vars) {
+      fail;
+    }
   }
 
 
