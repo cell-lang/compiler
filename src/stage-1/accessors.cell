@@ -186,6 +186,13 @@ implicit syn_prg : SynPrg {
   [ProcSymbol -> SynProcDef] proc_defs_by_id = [p.name -> p : p <- syn_proc_defs];
 
 
+  [Symbol] proc_auto_args(ProcSymbol proc_id) {
+    args = proc_defs_by_id(proc_id, !!).args;
+    args_info = proc_args_info(proc_id);
+    return [a.var : a @ i <~ args, args_info(i) != :value_arg];
+  }
+
+
   ProcArgInfo* proc_args_info(ProcSymbol proc_id) {
     return if builtin_procs_map(proc_id, *)
       then (:value_arg : i < left(builtin_procs_map(proc_id, !!)))
@@ -490,6 +497,11 @@ implicit syn_prg : SynPrg, artifact : Artifact {
                           : a @ i <~ proc_args_info(artifact.name), rel_auto_arg(t?) ?= a
                         ],
       _               = [];
+
+
+  [Symbol] proc_auto_args =
+    match (artifact)
+      syn_proc_def()  = proc_auto_args(artifact.name);
 
 
   [NestedAutoVar -> AutoSymbol] nested_auto_vars =

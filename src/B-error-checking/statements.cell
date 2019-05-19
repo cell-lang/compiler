@@ -381,7 +381,7 @@ implicit {
         proc_def = proc_defs_by_id[proc_name];
         arity = |proc_def.args|;
         has_ret_val = proc_def.res_type != nothing;
-        if arity != |stmt.args|:
+        if arity == |stmt.args|:
           args_info = proc_args_info(proc_name);
           args_errs = join((
             match (args_info(i))
@@ -452,9 +452,12 @@ implicit {
 
   ExprWFError* restore_state_ctrl_stmt_local_wf_errors(Atom res_var_id, Atom auto_var_id, [DefVar] ro_vars, [StdVar] rw_vars) {
     errs = auto_var_errors(auto_var_id, ro_vars, rw_vars);
+    return errs if errs != ();
     res_var_already_def = already_def(res_var_id, ro_vars) or is_already_def_as_auto_or_db_var(res_var_id);
-    errs = (errs | ro_vars_asgnm([var(res_var_id)])) if res_var_already_def;
-    return errs;
+    return (
+      ro_vars_asgnm([var(res_var_id)]) if res_var_already_def,
+      cannot_set_state_of_auto_arg(auto_var_id) if in(auto_var_id, proc_auto_args)
+    );
   }
 
   //////////////////////////////////////////////////////////////////////////////

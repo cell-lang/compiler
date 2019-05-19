@@ -146,6 +146,7 @@ type ExprSpecWFError    = already_def_var(Var),
                           unknown_rel_var(var: Atom, schema_def: SchemaDef),
                           non_relvar_aggr_fns_iter(cls: SynIterClause),
                           actual_argument_not_an_auto_var(expr: SynExpr, proc: ProcSymbol, idx: Nat, type: <DBSymbol, AutoSymbol>),
+                          cannot_set_state_of_auto_arg(var: Symbol),
 
                           undef_auto_var(var: Atom, is_data_var: Bool),
 
@@ -367,9 +368,9 @@ ExprSpecWFError invalid_rel_var_arity(Atom v, NzNat a, NzNat ra)  = invalid_rel_
 ExprSpecWFError not_a_rel_var(Atom v, SchemaDef d)                = not_a_rel_var(var: v, schema_def: d);
 ExprSpecWFError unknown_rel_var(Atom v, SchemaDef d)              = unknown_rel_var(var: v, schema_def: d);
 ExprSpecWFError non_relvar_aggr_fns_iter(SynIterClause c)         = non_relvar_aggr_fns_iter(cls: c);
+ExprSpecWFError cannot_set_state_of_auto_arg(Symbol v)            = cannot_set_state_of_auto_arg(var: v);
 ExprSpecWFError actual_argument_not_an_auto_var(SynExpr e, ProcSymbol p, Nat i, <DBSymbol, AutoSymbol> t) =
   actual_argument_not_an_auto_var(expr: e, proc: p, idx: i, type: t);
-
 ExprSpecWFError undef_auto_var(Atom v, Bool b)                    = undef_auto_var(var: v, is_data_var: b);
 
 ExprSpecWFError anchored_errors(ExprWFError+ es, Any a)           = anchored_errors(errors: es, anchor: a);
@@ -488,6 +489,7 @@ Any* anchor_objs(ExprSpecWFError err) =
   not_a_rel_var()                         = (),
   unknown_rel_var()                       = (),
   non_relvar_aggr_fns_iter()              = (err.cls),
+  cannot_set_state_of_auto_arg()          = (),
   actual_argument_not_an_auto_var()       = (),
 
   undef_auto_var()                        = (),
@@ -943,6 +945,7 @@ String* basic_err_msg(ExprSpecWFError err) =
   not_a_rel_var()             = ("Not a relational variable: " & _print_(err.var)),
   unknown_rel_var()           = ("Unknown relational variable: " & _print_(err.var)),
   non_relvar_aggr_fns_iter()  = non_relvar_aggr_fns_iter_err_msg(err.cls),
+  cannot_set_state_of_auto_arg()    = cannot_set_state_of_auto_arg_err_msg(err.var),
   actual_argument_not_an_auto_var() = actual_argument_not_an_auto_var_err_msg(err.expr, err.proc, err.idx, err.type),
 
   undef_auto_var()            = ( if err.is_data_var
@@ -954,6 +957,13 @@ String* basic_err_msg(ExprSpecWFError err) =
 
   annotated_syn_expr_error()  = basic_err_msg(err.error),
   annotated_syn_stmt_error()  = basic_err_msg(err.error);
+
+
+String* cannot_set_state_of_auto_arg_err_msg(Symbol var) = (
+  "It is not yet possible to directly set the state of an automaton instance such as " & _print_(var),
+  "that has been passed as an argument to the current procedure. The write instruction",
+  "can at the moment be used only with locally defined automaton instances"
+);
 
 
 String* actual_argument_not_an_auto_var_err_msg(SynExpr expr, ProcSymbol proc, Nat idx, <DBSymbol, AutoSymbol> type) = (
