@@ -12,18 +12,18 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
 
 
     [PhysRelVar -> [RelVar]] required_insertions_map(Database rel_auto) {
-      ins_keys = [k : k <- rel_auto.foreign_keys, requires_insertion(k)];
+      ins_keys = [k : k <- rel_auto.foreign_keys, insertion_is_statically_checked(k)];
       links = [k.source_rel_var, only(k.target_rel_vars) : k <- ins_keys];
       return [sv -> [logical_rel_var(tv) : tv <- links(sv, ?)] : sv <- keys(rel_auto.rel_vars)];
     }
-
-
-    Bool requires_insertion(ForeignKey key) =
-      match (key.source_args, key.target_args)
-        (just()),         (just(), nothing)           = true,
-        (just(), just()), (just(), just(), nothing)   = true,
-        _,                _                           = false;
   }
+
+
+  Bool insertion_is_statically_checked(ForeignKey key) =
+    match (key.source_args, key.target_args)
+      (just()),         (just(), nothing)           = true,
+      (just(), just()), (just(), just(), nothing)   = true,
+      _,                _                           = false;
 
 
   Bool is_one_to_one_attribute(DBSymbol rel_auto, PhysRelVar rel_var) {

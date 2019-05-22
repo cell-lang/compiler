@@ -6,23 +6,35 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
     msg_types = [h.type : h <- database.handlers];
     msg_memb_pred = if msg_types != [] then just(memb_test_preds_map[ne_union_type(msg_types)]) else nothing;
 
+    insert_checked_foreign_keys = [
+      bk : k, bk <- physical_foreign_keys_map, not insertion_is_statically_checked(k)
+    ];
+    delete_checked_foreign_keys = [
+      bk : k, bk <- physical_foreign_keys_map,
+        not database.attr_map(only(k.target_rel_vars), k.source_rel_var) and not
+        ( database.attr_map(k.source_rel_var, only(k.target_rel_vars)) and
+          is_one_to_one_attribute(database.name, only(k.target_rel_vars))
+        )
+    ];
+
     return static_block(
-      name:                     database.name,
-      links:                    database.links,
-      state_vars:               [v -> info.type : v, info <- database.state_vars],
-      value_stores:             value_stores,
-      tables:                   tables_info,
-      foreign_keys:             physical_foreign_keys,
-      nested_blocks:            database.nested_dbs,
-      init_code:                database_init_code,
-      cleanup_code:             database_cleanup_code,
-      copy_state_code:          database_copy_state_code(rel_vars_args_perms),
-      set_state_code:           database_set_state_code(rel_vars_args_perms),
-      foreign_keys_check_code:  database_foreign_keys_check_code,
-      methods:                  methods,
-      accessors:                [], ## TODO: REMOVE ALTOGETHER
-      updates:                  handlers & updates,
-      msg_memb_pred:            msg_memb_pred
+      name:                         database.name,
+      links:                        database.links,
+      state_vars:                   [v -> info.type : v, info <- database.state_vars],
+      value_stores:                 value_stores,
+      tables:                       tables_info,
+      insert_checked_foreign_keys:  insert_checked_foreign_keys,
+      delete_checked_foreign_keys:  delete_checked_foreign_keys,
+      nested_blocks:                database.nested_dbs,
+      init_code:                    database_init_code,
+      cleanup_code:                 database_cleanup_code,
+      copy_state_code:              database_copy_state_code(rel_vars_args_perms),
+      set_state_code:               database_set_state_code(rel_vars_args_perms),
+      foreign_keys_check_code:      database_foreign_keys_check_code,
+      methods:                      methods,
+      accessors:                    [], ## TODO: REMOVE ALTOGETHER
+      updates:                      handlers & updates,
+      msg_memb_pred:                msg_memb_pred
     );
   }
 
@@ -476,10 +488,13 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 ////////////////////////////////////////////////////////////////////////////////
 
 implicit program : Program, typedefs : [TypeName -> NeType], database : Database {
-  [BlockForeignKey] physical_foreign_keys = [
-    foreign_key(table_var(k.source_rel_var), table_var(only(k.target_rel_vars)), foreign_key_type(k))
+  [ForeignKey -> BlockForeignKey] physical_foreign_keys_map = [
+    k -> foreign_key(table_var(k.source_rel_var), table_var(only(k.target_rel_vars)), foreign_key_type(k))
     : k <- database.foreign_keys
   ];
+
+
+  [BlockForeignKey] physical_foreign_keys = values(physical_foreign_keys_map);
 
 
   ForeignKeyType foreign_key_type(ForeignKey key) {

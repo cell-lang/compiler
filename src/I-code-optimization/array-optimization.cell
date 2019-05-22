@@ -29,22 +29,25 @@ ObjProcDef optimize_array_init(ObjProcDef pd) =
 
 StaticBlock optimize_array_init(StaticBlock block) =
   static_block(
-    name:                     block.name,
-    links:                    block.links,
-    state_vars:               block.state_vars,
-    nested_blocks:            block.nested_blocks,
-    value_stores:             block.value_stores,
-    tables:                   block.tables,
-    foreign_keys:             block.foreign_keys,
-    init_code:                block.init_code,
-    cleanup_code:             block.cleanup_code,
-    copy_state_code:          block.copy_state_code,
-    set_state_code:           block.set_state_code,
-    foreign_keys_check_code:  block.foreign_keys_check_code,
-    methods:                  [id -> optimize_array_init(m) : id, m <- block.methods],
-    accessors:                block.accessors,
-    updates:                  [id -> compiled_update(u.args_vars, optimize_array_ops(u.body, [])) : id, u <- block.updates],
-    msg_memb_pred:            block.msg_memb_pred
+    name:                         block.name,
+    links:                        block.links,
+    state_vars:                   block.state_vars,
+    nested_blocks:                block.nested_blocks,
+    value_stores:                 block.value_stores,
+    tables:                       block.tables,
+    insert_checked_foreign_keys:  block.insert_checked_foreign_keys,
+    delete_checked_foreign_keys:  block.delete_checked_foreign_keys,
+    init_code:                    block.init_code,
+    cleanup_code:                 block.cleanup_code,
+    copy_state_code:              block.copy_state_code,
+    set_state_code:               block.set_state_code,
+    foreign_keys_check_code:      block.foreign_keys_check_code,
+    methods:                      [id -> optimize_array_init(m) : id, m <- block.methods],
+    accessors:                    block.accessors,
+    updates:                      [ id -> compiled_update(u.args_vars, optimize_array_ops(u.body, []))
+                                    : id, u <- block.updates
+                                  ],
+    msg_memb_pred:                block.msg_memb_pred
   );
 
 
