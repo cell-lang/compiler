@@ -79,6 +79,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
       react_auto_args:  procedure.react_auto_args,
       ret_val_repr:     :object,
       // type:             fn_type((a.type : a <- procedure.args), (), proc_ret_type),
+      loc_vars_types:   [],
       loc_auto_vars:    procedure.loc_react_auto_vars,
       loc_db_vars:      [v -> info.type : v, info <- procedure.loc_rel_auto_vars],
       body:             nonempty(body),
@@ -112,6 +113,10 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
       body = (push_call_info(func.id, (obj_expr(v) : v <- args))) & body & (pop_call_info);
     ;
 
+    loc_vars_types = match (func.expr)
+      do_expr() = func.expr.typed_vars,
+      _         = [];
+
     return obj_proc_def(
       name:             func.id,
       args:             args,
@@ -121,6 +126,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
       react_auto_args:  (),
       ret_val_repr:     ret_val_repr,
       type:             signature(func),
+      loc_vars_types:   loc_vars_types,
       loc_auto_vars:    [],
       loc_db_vars:      [],
       body:             (body | ret_val_instr),
@@ -213,6 +219,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
       react_auto_args:  (),
       ret_val_repr:     aggr_sign.ret_value,
       type:             proc_type,
+      loc_vars_types:   [],
       loc_auto_vars:    [],
       loc_db_vars:      [],
       body:             code,
@@ -258,6 +265,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
         react_auto_args:  (),
         ret_val_repr:     repr,
         type:             fn_type(args_types & extra_args_types(aggr_fn), (), aggr_fn.type),
+        loc_vars_types:   [],
         loc_auto_vars:    [],
         loc_db_vars:      [],
         body:             body,
@@ -279,6 +287,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
         react_auto_args:  (),
         ret_val_repr:     repr,
         type:             fn_type(extra_args_types(aggr_fn), (), type),
+        loc_vars_types:   [],
         loc_auto_vars:    [],
         loc_db_vars:      [],
         body:             body,
@@ -305,6 +314,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
         react_auto_args:  (),
         ret_val_repr:     var_repr,
         type:             fn_type((aggr_fn.elt_type) & extra_args_types(aggr_fn), (), var_type),
+        loc_vars_types:   [],
         loc_auto_vars:    [],
         loc_db_vars:      [],
         body:             body,
@@ -330,6 +340,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
         react_auto_args:  (),
         ret_val_repr:     var_repr,
         type:             fn_type((var_type, var_type) & extra_args_types(aggr_fn), (), var_type),
+        loc_vars_types:   [],
         loc_auto_vars:    [],
         loc_db_vars:      [],
         body:             body,

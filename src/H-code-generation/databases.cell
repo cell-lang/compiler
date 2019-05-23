@@ -370,6 +370,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
         args:             args,
         args_types:       (ne_union_superset([left(m.args(i)) : m <- methods]) : i < |args|),
         args_memb_preds:  [(memb_test_preds_map[t] : t, unused_var_2 <- m.args) : m <- methods],
+        loc_vars_types:   [],
         ret_type:         ne_union_superset([m.ret_type : m <- methods]),
         ret_val_repr:     aggr_sign.ret_value,
         body:             body
@@ -399,13 +400,18 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 
       body = (body | ret_val(low_level_expr(ret_val_repr, ret_val_surr)));
 
+      loc_vars_types = match (method.expr)
+        do_expr() = method.expr.typed_vars,
+        _         = [];
+
       return opt_comp_method(
-        args:               args,
-        args_types:         left(unzip(method.args)),
-        args_memb_preds:    [(memb_test_preds_map[t] : t, unused_var_2 <- method.args)],
-        ret_type:           method.ret_type,
-        ret_val_repr:       ret_val_repr,
-        body:               body
+        args:             args,
+        args_types:       left(unzip(method.args)),
+        args_memb_preds:  [(memb_test_preds_map[t] : t, unused_var_2 <- method.args)],
+        loc_vars_types:   loc_vars_types,
+        ret_type:         method.ret_type,
+        ret_val_repr:     ret_val_repr,
+        body:             body
       );
     }
   }
