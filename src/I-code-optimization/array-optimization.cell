@@ -102,9 +102,11 @@ Instr* optimize_array_ops(Instr* code, [StdVar -> LowLevelEltRepr] pending_exter
   Bool link_is_affected(StdVar var, RefObjExpr expr, [StdVar -> LowLevelEltRepr] pending) {
     if pending(var, *):
       if expr :: <append_to_seq(seq: StdVar, new_elem: AtomicExpr)>:
-        if expr.seq == var and certainly_includes(pending(var), expr.new_elem):
-          return false;
-    ; ; ;
+        return false if expr.seq == var and certainly_includes(pending(var), expr.new_elem);
+      elif expr :: <update_seq_at(seq: StdVar, idx: IntExpr, value: AtomicExpr)>:
+        return false if expr.seq == var and certainly_includes(pending(var), expr.value);
+      ;
+    ;
     return true;
   }
 
@@ -122,7 +124,12 @@ Instr* optimize_array_ops(Instr* code, [StdVar -> LowLevelEltRepr] pending_exter
       if instr.var == instr.value.seq and pending(instr.var, *):
         return pending_vars_used(instr.value.new_elem, pending);
       ;
+    elif instr :: <set_rc_var(var: StdVar, value: update_seq_at(seq: StdVar, idx: IntExpr, value: AtomicExpr))>:
+      if instr.var == instr.value.seq and pending(instr.var, *):
+        return pending_vars_used(instr.value.idx, pending) & pending_vars_used(instr.value.value, pending);
+      ;
     ;
+
     return search_nested(instr, pending_vars_used($, pending), pending_vars_used($, pending));
   }
 
@@ -178,14 +185,34 @@ Instr* optimize_array_ops(Instr* code, [StdVar -> LowLevelEltRepr] pending_exter
   ;
 
   if instr :: <set_rc_var(var: StdVar, value: append_to_seq(seq: StdVar, new_elem: AtomicExpr))>:
-    if instr.var == instr.value.seq and pending(instr.var, *):
-      var_id = bare_id(instr.var);
+    var = instr.var;
+    value = instr.value;
+    if var == value.seq and pending(var, *):
+      var_id = bare_id(var);
+      var_repr = pending(var);
+      rw_new_elem = rewrite_seq_ops(value.new_elem, pending);
       rw_instr = array_append(
-        shadow_array_var(var_id, pending(instr.var)),
+        shadow_array_var(var_id, var_repr),
         shadow_array_size_var(var_id),
-        low_level_expr(pending(instr.var), instr.value.new_elem)
+        rw_new_elem
       );
       return ((rw_instr), pending_local);
+    ;
+  ;
+
+  if instr :: <set_rc_var(var: StdVar, value: update_seq_at(seq: StdVar, idx: IntExpr, value: AtomicExpr))>:
+    var = instr.var;
+    value = instr.value;
+    if var == value.seq and pending(var, *):
+      var_id = bare_id(var);
+      idx = value.idx;
+      var_repr = pending(var);
+      rw_elt_value = rewrite_seq_ops(value.value, pending);
+      rw_instrs = (
+        check(and(is_le(0, idx), is_lt(idx, upcast_int32(shadow_array_size_var(var_id))))),
+        array_write(shadow_array_var(var_id, var_repr), cast_int32(idx), obj_expr(rw_elt_value))
+      );
+      return (rw_instrs, pending_local);
     ;
   ;
 
