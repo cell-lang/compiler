@@ -47,7 +47,10 @@ implicit program           : Program,
 
 
   (Instr*, ObjExpr, VarGen) opt_eval_info(LeafObj expr, VarGen var_gen) {
-    return ((), expr, var_gen);
+    ll_expr = match (expr)
+      object(<+>)       = expr,
+      object(<*..*> n?) = int_obj(n);
+    return ((), ll_expr, var_gen);
   }
 
 
@@ -1081,7 +1084,12 @@ assert [j -> ord_args(k) : j @ k <~ args_idxs] == args;
     code = target_eval_code & arg_eval_code;
 
     if is_subset(target_type, type_seq):
-      expr_surr = at(target_surr, get_int_val(arg_surr));
+      type = types(expr_id);
+      return ((terminate), :invalid_var, init_var_gen) if type == empty_type;
+      repr = opt_repr(type);
+      res_var, var_gen = next_var(repr, var_gen);
+      code = (code | set_any_var(res_var, at(target_surr, get_int_val(arg_surr))));
+      expr_surr = obj_expr(res_var);
 
     elif is_subset(target_type, type_set):
       expr_surr = bool_obj(rel_obj_contains(target_surr, (just(arg_surr))));

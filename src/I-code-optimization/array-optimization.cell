@@ -1,273 +1,287 @@
-CompiledPrg optimize_array_init(CompiledPrg prg) =
-  compiled_prg(
-    typedefs:       prg.typedefs,
-    opt_reprs:      prg.opt_reprs,
-    bool_procs:     prg.bool_procs,
-    procs:          [optimize_array_init(pd) : pd <- prg.procs],
-    react_blocks:   prg.react_blocks,
-    static_blocks:  [optimize_array_init(b)  : b <- prg.static_blocks],
-    int_seqs:       prg.int_seqs
-  );
+implicit typedefs : [TypeName -> NeType] {
+  CompiledPrg optimize_array_init(CompiledPrg prg) =
+    compiled_prg(
+      typedefs:       prg.typedefs,
+      opt_reprs:      prg.opt_reprs,
+      bool_procs:     prg.bool_procs,
+      procs:          [optimize_array_init(pd) : pd <- prg.procs],
+      react_blocks:   prg.react_blocks,
+      static_blocks:  [optimize_array_init(b)  : b <- prg.static_blocks],
+      int_seqs:       prg.int_seqs
+    );
 
 
-ObjProcDef optimize_array_init(ObjProcDef pd) =
-  obj_proc_def(
-    name:             pd.name,
-    args:             pd.args,
-    cls_args:         pd.cls_args,
-    impl_args:        pd.impl_args,
-    rel_auto_args:    pd.rel_auto_args,
-    react_auto_args:  pd.react_auto_args,
-    ret_val_repr:     pd.ret_val_repr,
-    type:             pd.type if pd.type?,
-    loc_vars_types:   pd.loc_vars_types,
-    loc_auto_vars:    pd.loc_auto_vars,
-    loc_db_vars:      pd.loc_db_vars,
-    body:             nonempty(optimize_array_ops(pd.body, [])),
-    cached:           pd.cached
-  );
+  ObjProcDef optimize_array_init(ObjProcDef pd) =
+    obj_proc_def(
+      name:             pd.name,
+      args:             pd.args,
+      cls_args:         pd.cls_args,
+      impl_args:        pd.impl_args,
+      rel_auto_args:    pd.rel_auto_args,
+      react_auto_args:  pd.react_auto_args,
+      ret_val_repr:     pd.ret_val_repr,
+      type:             pd.type if pd.type?,
+      loc_vars_types:   pd.loc_vars_types,
+      loc_auto_vars:    pd.loc_auto_vars,
+      loc_db_vars:      pd.loc_db_vars,
+      body:             nonempty(optimize_array_ops(pd.body, [], loc_vars_types = pd.loc_vars_types)),
+      cached:           pd.cached
+    );
 
 
-StaticBlock optimize_array_init(StaticBlock block) =
-  static_block(
-    name:                         block.name,
-    links:                        block.links,
-    state_vars:                   block.state_vars,
-    nested_blocks:                block.nested_blocks,
-    value_stores:                 block.value_stores,
-    tables:                       block.tables,
-    insert_checked_foreign_keys:  block.insert_checked_foreign_keys,
-    delete_checked_foreign_keys:  block.delete_checked_foreign_keys,
-    init_code:                    block.init_code,
-    cleanup_code:                 block.cleanup_code,
-    copy_state_code:              block.copy_state_code,
-    set_state_code:               block.set_state_code,
-    foreign_keys_check_code:      block.foreign_keys_check_code,
-    methods:                      [id -> optimize_array_init(m) : id, m <- block.methods],
-    accessors:                    block.accessors,
-    updates:                      [ id -> compiled_update(u.args_vars, optimize_array_ops(u.body, []))
-                                    : id, u <- block.updates
-                                  ],
-    msg_memb_pred:                block.msg_memb_pred
-  );
+  StaticBlock optimize_array_init(StaticBlock block) =
+    static_block(
+      name:                         block.name,
+      links:                        block.links,
+      state_vars:                   block.state_vars,
+      nested_blocks:                block.nested_blocks,
+      value_stores:                 block.value_stores,
+      tables:                       block.tables,
+      insert_checked_foreign_keys:  block.insert_checked_foreign_keys,
+      delete_checked_foreign_keys:  block.delete_checked_foreign_keys,
+      init_code:                    block.init_code,
+      cleanup_code:                 block.cleanup_code,
+      copy_state_code:              block.copy_state_code,
+      set_state_code:               block.set_state_code,
+      foreign_keys_check_code:      block.foreign_keys_check_code,
+      methods:                      [id -> optimize_array_init(m) : id, m <- block.methods],
+      accessors:                    block.accessors,
+      updates:                      [ id ->
+                                        compiled_update(
+                                          u.args_vars,
+                                          optimize_array_ops(u.body, [], loc_vars_types = [])
+                                        )
+                                      : id, u <- block.updates
+                                    ],
+      msg_memb_pred:                block.msg_memb_pred
+    );
 
 
-OptCompMethod optimize_array_init(OptCompMethod method) =
-  opt_comp_method(
-    args:             method.args,
-    args_types:       method.args_types,
-    args_memb_preds:  method.args_memb_preds,
-    loc_vars_types:   method.loc_vars_types,
-    ret_type:         method.ret_type,
-    ret_val_repr:     method.ret_val_repr,
-    body:             optimize_array_ops(method.body, [])
-  );
-
+  OptCompMethod optimize_array_init(OptCompMethod method) =
+    opt_comp_method(
+      args:             method.args,
+      args_types:       method.args_types,
+      args_memb_preds:  method.args_memb_preds,
+      loc_vars_types:   method.loc_vars_types,
+      ret_type:         method.ret_type,
+      ret_val_repr:     method.ret_val_repr,
+      body:             optimize_array_ops(method.body, [], loc_vars_types = method.loc_vars_types)
+    );
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 
-Instr* optimize_array_ops(Instr* code, [StdVar -> LowLevelEltRepr] pending_external) {
-  pending : [StdVar -> LowLevelEltRepr];
+implicit typedefs : [TypeName -> NeType], loc_vars_types : [StdVar -> NeType] {
+  Instr* optimize_array_ops(Instr* code, [StdVar -> LowLevelEltRepr] pending_external) {
+    pending : [StdVar -> LowLevelEltRepr];
 
-  opt_code = ();
-  pending = [];
-  for instr @ i <- code:
-    // If the instruction (which can be a composite one) requires the instantiation
-    // of the sequence object, either because of an operation that cannot be mapped
-    // to an array or because of a unstructered jump, we do that before anything else
-    vars = required_insts(instr, pending);
-    assert not (v <- vars : pending_external(v, *));
-    for v <- isort(vars):
-      opt_code = (opt_code | inst_instr(v, pending(v)));
-      pending = drop(pending, v);
-    ;
-    // Rewriting the instruction if need be and updating the list of pending variables
-    instrs, pending = optimize_array_ops(instr, pending, pending_external);
-    opt_code = opt_code & instrs;
-  ;
-  // Before leaving this block of code, we instantiate all pending variables
-  ## THIS SHOULD BE DONE ONLY IF IT'S STRICTLY NECESSARY
-  ## OR ARE UNNECESSARY INSTANTIATIONS REMOVED BY OTHER OPTIMIZATION STAGES?
-  return opt_code & (inst_instr(v, pending(v)) : v <- _isort_(keys(pending)));
-
-  //////////////////////////////////////////////////////////////////////////////
-
-  [StdVar] required_insts(Instr instr, [StdVar -> LowLevelEltRepr] pending) {
-    outcomes = code_outcomes(instr);
-    return keys(pending) if outcomes(:breaks_loop) or outcomes(:exits_block);
-    affected_vars = affected_std_vars(instr, link_is_affected($a, $b, pending));
-    affected_pending_vars = [v : v <- affected_vars, pending(v, *)];
-    return affected_pending_vars & pending_vars_used(instr, pending);
-  }
-
-
-  Bool link_is_affected(StdVar var, RefObjExpr expr, [StdVar -> LowLevelEltRepr] pending) {
-    if pending(var, *):
-      if expr :: <append_to_seq(seq: StdVar, new_elem: AtomicExpr)>:
-        return false if expr.seq == var and certainly_includes(pending(var), expr.new_elem);
-      elif expr :: <update_seq_at(seq: StdVar, idx: IntExpr, value: AtomicExpr)>:
-        return false if expr.seq == var and certainly_includes(pending(var), expr.value);
+    opt_code = ();
+    pending = [];
+    for instr @ i <- code:
+      // If the instruction (which can be a composite one) requires the instantiation
+      // of the sequence object, either because of an operation that cannot be mapped
+      // to an array or because of a unstructered jump, we do that before anything else
+      vars = required_insts(instr, pending);
+      assert not (v <- vars : pending_external(v, *));
+      for v <- isort(vars):
+        opt_code = (opt_code | inst_instr(v, pending(v)));
+        pending = drop(pending, v);
       ;
+      // Rewriting the instruction if need be and updating the list of pending variables
+      instrs, pending = optimize_array_ops(instr, pending, pending_external);
+      opt_code = opt_code & instrs;
     ;
-    return true;
+    // Before leaving this block of code, we instantiate all pending variables
+    ## THIS SHOULD BE DONE ONLY IF IT'S STRICTLY NECESSARY
+    ## OR ARE UNNECESSARY INSTANTIATIONS REMOVED BY OTHER OPTIMIZATION STAGES?
+    return opt_code & (inst_instr(v, pending(v)) : v <- _isort_(keys(pending)));
+
+    //////////////////////////////////////////////////////////////////////////////
+
+    [StdVar] required_insts(Instr instr, [StdVar -> LowLevelEltRepr] pending) {
+      outcomes = code_outcomes(instr);
+      return keys(pending) if outcomes(:breaks_loop) or outcomes(:exits_block);
+      affected_vars = affected_std_vars(instr, link_is_affected($a, $b, pending));
+      affected_pending_vars = [v : v <- affected_vars, pending(v, *)];
+      return affected_pending_vars & pending_vars_used(instr, pending);
+    }
+
+
+    Bool link_is_affected(StdVar var, RefObjExpr expr, [StdVar -> LowLevelEltRepr] pending) {
+      if pending(var, *):
+        if expr :: <append_to_seq(seq: StdVar, new_elem: AtomicExpr)>:
+          return false if expr.seq == var and certainly_includes(pending(var), expr.new_elem);
+        elif expr :: <update_seq_at(seq: StdVar, idx: IntExpr, value: AtomicExpr)>:
+          return false if expr.seq == var and certainly_includes(pending(var), expr.value);
+        ;
+      ;
+      return true;
+    }
+
+
+    Bool certainly_includes(LowLevelEltRepr repr, AtomicExpr expr) =
+      bool,     bool_obj()    = true,
+      int,      int_obj()     = true,
+      float,    float_obj()   = true,
+      object,   _             = true,
+      _,        _             = false;
+
+
+    [StdVar] pending_vars_used(Instr instr, [StdVar -> LowLevelEltRepr] pending) {
+      if instr :: <set_rc_var(var: StdVar, value: append_to_seq(seq: StdVar, new_elem: AtomicExpr))>:
+        if instr.var == instr.value.seq and pending(instr.var, *):
+          return pending_vars_used(instr.value.new_elem, pending);
+        ;
+      elif instr :: <set_rc_var(var: StdVar, value: update_seq_at(seq: StdVar, idx: IntExpr, value: AtomicExpr))>:
+        if instr.var == instr.value.seq and pending(instr.var, *):
+          return pending_vars_used(instr.value.idx, pending) & pending_vars_used(instr.value.value, pending);
+        ;
+      ;
+
+      return search_nested(instr, pending_vars_used($, pending), pending_vars_used($, pending));
+    }
+
+
+    [StdVar] pending_vars_used(AnyTypeExpr expr, [StdVar -> LowLevelEltRepr] pending) =
+      var()         = [expr if pending(expr, *)],
+      at()          = {if not pending(expr.seq, *) then pending_vars_used(expr.seq, pending) else []} &
+                      pending_vars_used(expr.idx, pending),
+      get_size(e?)  = if not pending(e, *) then pending_vars_used(e, pending) else [],
+      _             = search_nested(expr, pending_vars_used($, pending));
+
+    //////////////////////////////////////////////////////////////////////////////
+
+    Instr inst_instr(StdVar var, LowLevelEltRepr repr) {
+      var_id = bare_id(var);
+      array_var = shadow_array_var(var_id, repr);
+      array_size_var = shadow_array_size_var(var_id);
+      return mk_seq(var, array_var, array_size_var);
+    }
   }
 
+  ////////////////////////////////////////////////////////////////////////////////
 
-  Bool certainly_includes(LowLevelEltRepr repr, AtomicExpr expr) =
-    bool,     bool_obj()    = true,
-    int,      int_obj()     = true,
-    float,    float_obj()   = true,
-    object,   _             = true,
-    _,        _             = false;
+  (Instr*, [StdVar -> LowLevelEltRepr]) optimize_array_ops(<BasicInstr, JumpInstr> instr, [StdVar -> LowLevelEltRepr] pending_local, [StdVar -> LowLevelEltRepr] pending_external) {
+    pending = pending_local & pending_external;
 
+    if instr :: <set_var(var: StdVar, value: empty_seq)>:
+      var = instr.var;
+      assert not pending_external(var, *) or pending_external(var) == :object;
+      var_id = bare_id(var);
+      elt_repr = :object;
+      if loc_vars_types(var, *):
+        elt_type = seq_elem_supertype(loc_vars_types(var));
+        if elt_type != empty_type:
+          elt_repr = low_level_elt_repr(elt_type);
+        ;
+      ;
+      instrs = (
+        set_ivar32(shadow_array_size_var(var_id), 0),
+        array_alloc(shadow_array_var(var_id, elt_repr), 0)
+      );
+      pending_after = if not pending_external(var, *)
+        then put(pending_local, instr.var, elt_repr)
+        else pending_local;
+      return (instrs, pending_after);
+    ;
 
-  [StdVar] pending_vars_used(Instr instr, [StdVar -> LowLevelEltRepr] pending) {
+    if instr :: <set_rc_var(var: StdVar, value: mk_seq_from_array(array: avar(id: Nat, repr: LowLevelEltRepr), size: Int32Expr))>:
+      var = instr.var;
+      assert not pending_external(var, *) or pending_external(var) == :object;
+      var_id = bare_id(var);
+      instrs = (
+        set_ivar32(shadow_array_size_var(var_id), instr.value.size),
+        array_set_var(shadow_array_var(var_id, instr.value.array.repr), instr.value.array)
+      );
+      pending_after = if not pending_external(var, *)
+        then put(pending_local, instr.var, instr.value.array.repr)
+        else pending_local;
+      return (instrs, pending_after);
+    ;
+
     if instr :: <set_rc_var(var: StdVar, value: append_to_seq(seq: StdVar, new_elem: AtomicExpr))>:
-      if instr.var == instr.value.seq and pending(instr.var, *):
-        return pending_vars_used(instr.value.new_elem, pending);
+      var = instr.var;
+      value = instr.value;
+      if var == value.seq and pending(var, *):
+        var_id = bare_id(var);
+        var_repr = pending(var);
+        rw_new_elem = rewrite_seq_ops(value.new_elem, pending);
+        rw_instr = array_append(
+          shadow_array_var(var_id, var_repr),
+          shadow_array_size_var(var_id),
+          low_level_expr(var_repr, obj_expr(rw_new_elem))
+        );
+        return ((rw_instr), pending_local);
       ;
-    elif instr :: <set_rc_var(var: StdVar, value: update_seq_at(seq: StdVar, idx: IntExpr, value: AtomicExpr))>:
-      if instr.var == instr.value.seq and pending(instr.var, *):
-        return pending_vars_used(instr.value.idx, pending) & pending_vars_used(instr.value.value, pending);
+    ;
+
+    if instr :: <set_rc_var(var: StdVar, value: update_seq_at(seq: StdVar, idx: IntExpr, value: AtomicExpr))>:
+      var = instr.var;
+      value = instr.value;
+      if var == value.seq and pending(var, *):
+        var_id = bare_id(var);
+        idx = value.idx;
+        var_repr = pending(var);
+        rw_elt_value = rewrite_seq_ops(value.value, pending);
+        rw_instrs = (
+          check(and(is_le(0, idx), is_lt(idx, upcast_int32(shadow_array_size_var(var_id))))),
+          array_write(shadow_array_var(var_id, var_repr), cast_int32(idx), obj_expr(rw_elt_value))
+        );
+        return (rw_instrs, pending_local);
       ;
     ;
 
-    return search_nested(instr, pending_vars_used($, pending), pending_vars_used($, pending));
+    rw_instr = rewrite_exprs(instr, rewrite_seq_ops($, pending), rewrite_nested($, rewrite_seq_ops($, pending)));
+    return ((rw_instr), pending_local);
   }
 
 
-  [StdVar] pending_vars_used(AnyTypeExpr expr, [StdVar -> LowLevelEltRepr] pending) =
-    var()         = [expr if pending(expr, *)],
-    at()          = {if not pending(expr.seq, *) then pending_vars_used(expr.seq, pending) else []} &
-                    pending_vars_used(expr.idx, pending),
-    get_size(e?)  = if not pending(e, *) then pending_vars_used(e, pending) else [],
-    _             = search_nested(expr, pending_vars_used($, pending));
+  (Instr*, [StdVar -> LowLevelEltRepr]) optimize_array_ops(CompInstr instr, [StdVar -> LowLevelEltRepr] pending_local, [StdVar -> LowLevelEltRepr] pending_external) {
+    pending = pending_local & pending_external;
+    rw_instr = match (instr)
+      branch()          = opt_branch(instr.cond, instr.when_true, instr.when_false, pending),
+      switch_on_nat()   = opt_switch_on_nat(instr.value, instr.cases, pending),
+      symb_switch()     = opt_symb_switch(instr.value, instr.cases, instr.else, pending),
+      repeat(b?)        = repeat(nonempty(optimize_array_ops(b, pending))),
+      execute_block(b?) = execute_block(nonempty(optimize_array_ops(b, pending))),
+      try_block()       = try_block(instr.var, nonempty(optimize_array_ops(instr.body, pending))),
+      foreach()         = opt_foreach(instr, pending);
+    return ((rw_instr), pending_local);
 
-  //////////////////////////////////////////////////////////////////////////////
 
-  Instr inst_instr(StdVar var, LowLevelEltRepr repr) {
-    var_id = bare_id(var);
-    array_var = shadow_array_var(var_id, repr);
-    array_size_var = shadow_array_size_var(var_id);
-    return mk_seq(var, array_var, array_size_var);
-  }
-}
+    Instr opt_branch(BoolExpr cond, Instr+ when_true, Instr* when_false, [StdVar -> LowLevelEltRepr] pending) {
+      opt_cond = cast_bool_expr(rewrite_seq_ops(cond, pending));
+      opt_then = optimize_array_ops(when_true, pending);
+      opt_else = optimize_array_ops(when_false, pending);
+      return branch(opt_cond, opt_then, opt_else);
+    }
 
-////////////////////////////////////////////////////////////////////////////////
+    Instr opt_switch_on_nat(IntExpr value, Instr*+ cases, [StdVar -> LowLevelEltRepr] pending) {
+      opt_value = cast_int_expr(rewrite_seq_ops(value, pending));
+      opt_cases = (optimize_array_ops(c, pending) : c <- cases);
+      return switch_on_nat(opt_value, opt_cases);
+    }
 
-(Instr*, [StdVar -> LowLevelEltRepr]) optimize_array_ops(<BasicInstr, JumpInstr> instr, [StdVar -> LowLevelEltRepr] pending_local, [StdVar -> LowLevelEltRepr] pending_external) {
-  pending = pending_local & pending_external;
+    Instr opt_symb_switch(ObjExpr value, [+([+SymbObj], Instr+)] cases, Instr* else, [StdVar -> LowLevelEltRepr] pending) {
+      opt_value = cast_obj_expr(rewrite_seq_ops(value, pending));
+      opt_cases = [(left(c), nonempty(optimize_array_ops(right(c), pending))) : c <- cases];
+      opt_else  = optimize_array_ops(else, pending);
+      return symb_switch(opt_value, opt_cases, opt_else);
+    }
 
-  if instr :: <set_var(var: StdVar, value: empty_seq)>:
-    var = instr.var;
-    assert not pending_external(var, *) or pending_external(var) == :object;
-    var_id = bare_id(var);
-    instrs = (
-      set_ivar32(shadow_array_size_var(var_id), 0),
-      array_alloc(shadow_array_var(var_id, :object), 0)
-    );
-    pending_after = if not pending_external(var, *)
-      then put(pending_local, instr.var, :object)
-      else pending_local;
-    return (instrs, pending_after);
-  ;
-
-  if instr :: <set_rc_var(var: StdVar, value: mk_seq_from_array(array: avar(id: Nat, repr: LowLevelEltRepr), size: Int32Expr))>:
-    var = instr.var;
-    assert not pending_external(var, *) or pending_external(var) == :object;
-    var_id = bare_id(var);
-    instrs = (
-      set_ivar32(shadow_array_size_var(var_id), instr.value.size),
-      array_set_var(shadow_array_var(var_id, instr.value.array.repr), instr.value.array)
-    );
-    pending_after = if not pending_external(var, *)
-      then put(pending_local, instr.var, instr.value.array.repr)
-      else pending_local;
-    return (instrs, pending_after);
-  ;
-
-  if instr :: <set_rc_var(var: StdVar, value: append_to_seq(seq: StdVar, new_elem: AtomicExpr))>:
-    var = instr.var;
-    value = instr.value;
-    if var == value.seq and pending(var, *):
-      var_id = bare_id(var);
-      var_repr = pending(var);
-      rw_new_elem = rewrite_seq_ops(value.new_elem, pending);
-      rw_instr = array_append(
-        shadow_array_var(var_id, var_repr),
-        shadow_array_size_var(var_id),
-        rw_new_elem
+    Instr opt_foreach(ForeachInstr instr, [StdVar -> LowLevelEltRepr] pending) {
+      assert not pending(instr.seq, *);
+      opt_body = optimize_array_ops(instr.body, pending);
+      return foreach(
+        seq:        instr.seq,
+        src_array:  instr.src_array,
+        tmp_buffer: instr.tmp_buffer if instr.tmp_buffer?,
+        count_var:  instr.count_var,
+        idx_var:    instr.idx_var,
+        it_var:     instr.it_var,
+        body:       opt_body
       );
-      return ((rw_instr), pending_local);
-    ;
-  ;
-
-  if instr :: <set_rc_var(var: StdVar, value: update_seq_at(seq: StdVar, idx: IntExpr, value: AtomicExpr))>:
-    var = instr.var;
-    value = instr.value;
-    if var == value.seq and pending(var, *):
-      var_id = bare_id(var);
-      idx = value.idx;
-      var_repr = pending(var);
-      rw_elt_value = rewrite_seq_ops(value.value, pending);
-      rw_instrs = (
-        check(and(is_le(0, idx), is_lt(idx, upcast_int32(shadow_array_size_var(var_id))))),
-        array_write(shadow_array_var(var_id, var_repr), cast_int32(idx), obj_expr(rw_elt_value))
-      );
-      return (rw_instrs, pending_local);
-    ;
-  ;
-
-  rw_instr = rewrite_exprs(instr, rewrite_seq_ops($, pending), rewrite_nested($, rewrite_seq_ops($, pending)));
-  return ((rw_instr), pending_local);
-}
-
-
-(Instr*, [StdVar -> LowLevelEltRepr]) optimize_array_ops(CompInstr instr, [StdVar -> LowLevelEltRepr] pending_local, [StdVar -> LowLevelEltRepr] pending_external) {
-  pending = pending_local & pending_external;
-  rw_instr = match (instr)
-    branch()          = opt_branch(instr.cond, instr.when_true, instr.when_false, pending),
-    switch_on_nat()   = opt_switch_on_nat(instr.value, instr.cases, pending),
-    symb_switch()     = opt_symb_switch(instr.value, instr.cases, instr.else, pending),
-    repeat(b?)        = repeat(nonempty(optimize_array_ops(b, pending))),
-    execute_block(b?) = execute_block(nonempty(optimize_array_ops(b, pending))),
-    try_block()       = try_block(instr.var, nonempty(optimize_array_ops(instr.body, pending))),
-    foreach()         = opt_foreach(instr, pending);
-  return ((rw_instr), pending_local);
-
-
-  Instr opt_branch(BoolExpr cond, Instr+ when_true, Instr* when_false, [StdVar -> LowLevelEltRepr] pending) {
-    opt_cond = cast_bool_expr(rewrite_seq_ops(cond, pending));
-    opt_then = optimize_array_ops(when_true, pending);
-    opt_else = optimize_array_ops(when_false, pending);
-    return branch(opt_cond, opt_then, opt_else);
-  }
-
-  Instr opt_switch_on_nat(IntExpr value, Instr*+ cases, [StdVar -> LowLevelEltRepr] pending) {
-    opt_value = cast_int_expr(rewrite_seq_ops(value, pending));
-    opt_cases = (optimize_array_ops(c, pending) : c <- cases);
-    return switch_on_nat(opt_value, opt_cases);
-  }
-
-  Instr opt_symb_switch(ObjExpr value, [+([+SymbObj], Instr+)] cases, Instr* else, [StdVar -> LowLevelEltRepr] pending) {
-    opt_value = cast_obj_expr(rewrite_seq_ops(value, pending));
-    opt_cases = [(left(c), nonempty(optimize_array_ops(right(c), pending))) : c <- cases];
-    opt_else  = optimize_array_ops(else, pending);
-    return symb_switch(opt_value, opt_cases, opt_else);
-  }
-
-  Instr opt_foreach(ForeachInstr instr, [StdVar -> LowLevelEltRepr] pending) {
-    assert not pending(instr.seq, *);
-    opt_body = optimize_array_ops(instr.body, pending);
-    return foreach(
-      seq:        instr.seq,
-      src_array:  instr.src_array,
-      tmp_buffer: instr.tmp_buffer if instr.tmp_buffer?,
-      count_var:  instr.count_var,
-      idx_var:    instr.idx_var,
-      it_var:     instr.it_var,
-      body:       opt_body
-    );
+    }
   }
 }
 
