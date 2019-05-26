@@ -204,7 +204,7 @@ implicit typedefs : [TypeName -> NeType], loc_vars_types : [StdVar -> NeType] {
         var_repr = pending(var);
         rw_elt_value = rewrite_seq_ops(value.value, pending);
         rw_instrs = (
-          check(and(is_le(0, idx), is_lt(idx, upcast_int32(shadow_array_size_var(var_id))))),
+          check(is_lt(idx, upcast_int32(shadow_array_size_var(var_id)))),
           array_write(shadow_array_var(var_id, var_repr), cast_int32(idx), obj_expr(rw_elt_value))
         );
         return (rw_instrs, pending_local);
@@ -317,9 +317,10 @@ AnyTypeExpr rewrite_seq_ops(AnyTypeExpr expr, [StdVar -> LowLevelEltRepr] pendin
 
 Bool certainly_includes(LowLevelEltRepr repr, AtomicExpr expr) =
   bool,     bool_obj()    = true,
-  int8,     int_obj()     = true,
-  int16,    int_obj()     = true,
-  int32,    int_obj()     = true,
+  int8,     int_obj()     = true, ## BUG BUG BUG: REQUIRES CHECK AGAINST THE DECLARATION OF THE VARIABLE
+  nat8,     int_obj()     = true, ## DITTO
+  int16,    int_obj()     = true, ## DITTO
+  int32,    int_obj()     = true, ## DITTO
   int,      int_obj()     = true,
   float,    float_obj()   = true,
   object,   _             = true,
