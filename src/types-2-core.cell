@@ -221,8 +221,23 @@ type MapCompExpr      = map_comp(key_expr: Expr, value_expr: Expr, source: Claus
 type BinRelCompExpr   = bin_rel_comp(exprs: (Expr, Expr), source: Clause);
 type TernRelCompExpr  = tern_rel_comp(exprs: (Expr, Expr, Expr), source: Clause);
 
-type SeqCompExpr    = seq_comp(expr: Expr, vars: StdVar+, idx_var: StdVar?, src_expr: Expr, sel_expr: Expr?);
-type RangeCompExpr  = range_comp(expr: Expr, var: StdVar, bound_expr: Expr, inclusive: Bool, sel_expr: Expr?);
+type SeqCompExpr    = seq_comp(
+                        expr:           Expr,
+                        decl_elt_type:  NeType?, ## BAD BAD BAD: THIS IS A HACK. TODO: ADD IT EVERYWHERE IT'S NEEDED (REWRITING AND SO ON)
+                        vars:           StdVar+,
+                        idx_var:        StdVar?,
+                        src_expr:       Expr,
+                        sel_expr:       Expr?
+                      );
+
+type RangeCompExpr  = range_comp(
+                        expr:           Expr,
+                        decl_elt_type:  NeType?, ## BAD BAD BAD: THIS IS A HACK. TODO: ADD IT EVERYWHERE IT'S NEEDED (REWRITING AND SO ON)
+                        var:            StdVar,
+                        bound_expr:     Expr,
+                        inclusive:      Bool,
+                        sel_expr:       Expr?
+                      );
 
 type OutputIsDefExpr  = output_is_def(var: LocAutoVar, output: Symbol);
 type OutputIsSetExpr  = output_is_set(var: LocAutoVar, output: Symbol);

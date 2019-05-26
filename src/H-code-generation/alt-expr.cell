@@ -119,31 +119,33 @@ Expr* exprs_cluster(TernRelExpr expr, Nat offset) =
     tern_rel_expr(nonempty([(args: (e(0), e(1), e(2)), cond: e(3) if |e| == 4) : e <- $]))
   );
 
-// seq_comp(expr: Expr, vars: StdVar+, idx_var: StdVar?, src_expr: Expr, sel_expr: Expr?);
+// seq_comp(expr: Expr, decl_elt_type: NeType?, vars: StdVar+, idx_var: StdVar?, src_expr: Expr, sel_expr: Expr?);
 Expr* exprs_cluster(SeqCompExpr expr, Nat offset) =
   exprs_cluster(
     (expr.expr, expr.sel_expr if expr.sel_expr?, expr.src_expr),
     offset,
     seq_comp(
-      expr:     $(0),
-      vars:     expr.vars,
-      idx_var:  expr.idx_var if expr.idx_var?,
-      src_expr: rat($, 0),
-      sel_expr: $(1) if expr.sel_expr?
+      expr:           $(0),
+      decl_elt_type:  expr.decl_elt_type if expr.decl_elt_type?,
+      vars:           expr.vars,
+      idx_var:        expr.idx_var if expr.idx_var?,
+      src_expr:       rat($, 0),
+      sel_expr:       $(1) if expr.sel_expr?
     )
   );
 
-// range_comp(expr: Expr, var: StdVar, bound_expr: Expr, inclusive: Bool, sel_expr: Expr?);
+// range_comp(expr: Expr, decl_elt_type: NeType?, var: StdVar, bound_expr: Expr, inclusive: Bool, sel_expr: Expr?);
 Expr* exprs_cluster(RangeCompExpr expr, Nat offset) =
   exprs_cluster(
     (expr.expr, expr.sel_expr if expr.sel_expr?, expr.bound_expr),
     offset,
     range_comp(
-      expr:       $(0),
-      var:        expr.var,
-      bound_expr: rat($, 0),
-      inclusive:  expr.inclusive,
-      sel_expr:   $(1) if expr.sel_expr?
+      expr:           $(0),
+      decl_elt_type:  expr.decl_elt_type if expr.decl_elt_type?,
+      var:            expr.var,
+      bound_expr:     rat($, 0),
+      inclusive:      expr.inclusive,
+      sel_expr:       $(1) if expr.sel_expr?
     )
   );
 

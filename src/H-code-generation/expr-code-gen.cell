@@ -838,7 +838,7 @@ assert [j -> ord_args(k) : j @ k <~ args_idxs] == args;
 
     // Low-level representation of elements of source and destination sequences
     src_repr = opt_repr(src_elt_type);
-    elt_repr = opt_repr(elt_type);
+    elt_repr = low_level_elt_repr(if expr.decl_elt_type? then expr.decl_elt_type else elt_type);
 
     // Evaluation of source expression
     eval_code, src_surr, var_gen = opt_eval_info(expr.src_expr, var_gen);
@@ -949,10 +949,9 @@ assert [j -> ord_args(k) : j @ k <~ args_idxs] == args;
       bound_surr = get_int_val(bound_surr);
     ;
 
-    // Types and low-level representation of the elements of the output sequence
-    elt_type = subexpr_type(expr.expr);
-    fail if elt_type == empty_type;
-    elt_repr = opt_repr(elt_type);
+    // Type and low-level representation of the elements of the output sequence
+    elt_type = nonempty_type(subexpr_type(expr.expr));
+    elt_repr = low_level_elt_repr(if expr.decl_elt_type? then expr.decl_elt_type else elt_type);
 
     // Allocation of destination array
     array_var, var_gen = next_array_var(var_gen, elt_repr);

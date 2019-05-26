@@ -493,11 +493,30 @@ implicit program           : Program,
 
 
   StmtCompInfo assignment_stmt_opt_code(StdVar+ vars, Expr value, [EnvVar -> Type] env, VarGen init_var_gen) {
-    type = expr_type(value, env);
-    return ((terminate), just(surrogates), [], init_var_gen) if type == empty_type;
+    value_type = expr_type(value, env);
+    return ((terminate), just(surrogates), [], init_var_gen) if value_type == empty_type;
 
-    repr = opt_repr(type);
-    code, surr, var_gen = opt_eval_code(value, env, init_var_gen);
+    rw_value = value;
+    if |vars| == 1:
+      var = only(vars);
+      if typed_vars(var, *):
+        var_type = typed_vars(var);
+        if is_subset(var_type, type_seq):
+          decl_elt_type = seq_elem_supertype(var_type);
+          if decl_elt_type != empty_type:
+            if is_subset(decl_elt_type, integer) and not is_subset(integer, decl_elt_type):
+              rw_value = match (value)
+                seq_comp()    |
+                range_comp()  = annotate(value, decl_elt_type),
+                _             = value;
+            ;
+          ;
+        ;
+      ;
+    ;
+
+    repr = opt_repr(value_type);
+    code, surr, var_gen = opt_eval_code(rw_value, env, init_var_gen);
 
     if |vars| == 1:
       var = only(vars);
@@ -509,9 +528,9 @@ implicit program           : Program,
 
     else
       assert repr == :object;
-      types = tuple_field_supertypes(type, |vars|);
+      types = tuple_field_supertypes(value_type, |vars|);
       ## REMOVE WHEN DONE
-      assert types == (restricted_seq_elem_supertype(type, singleton_type(i)) : i < |vars|);
+      assert types == (restricted_seq_elem_supertype(value_type, singleton_type(i)) : i < |vars|);
       reprs = (opt_repr(t) : t <- types);
       phys_vars = (low_level_var(reprs(i), v) : v @ i <- vars);
       code = code & (set_any_var(v, at(surr, i)) : v @ i <- phys_vars);
@@ -520,6 +539,28 @@ implicit program           : Program,
     ;
 
     return (code, just(surrs), [], var_gen);
+
+
+    SeqCompExpr annotate(SeqCompExpr expr, NeType decl_elt_type) =
+      seq_comp(
+        expr:           expr.expr,
+        decl_elt_type:  decl_elt_type,
+        vars:           expr.vars,
+        idx_var:        expr.idx_var if expr.idx_var?,
+        src_expr:       expr.src_expr,
+        sel_expr:       expr.sel_expr if expr.sel_expr?
+      );
+
+
+    RangeCompExpr annotate(RangeCompExpr expr, NeType decl_elt_type) =
+      range_comp(
+        expr:           expr.expr,
+        decl_elt_type:  decl_elt_type,
+        var:            expr.var,
+        bound_expr:     expr.bound_expr,
+        inclusive:      expr.inclusive,
+        sel_expr:       expr.sel_expr if expr.sel_expr?
+      );
   }
 
 
