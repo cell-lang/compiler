@@ -101,30 +101,10 @@ implicit typedefs : [TypeName -> NeType], loc_vars_types : [StdVar -> NeType] {
     [StdVar] required_insts(Instr instr, [StdVar -> LowLevelEltRepr] pending) {
       outcomes = code_outcomes(instr);
       return keys(pending) if outcomes(:breaks_loop) or outcomes(:exits_block);
-      affected_vars = affected_std_vars(instr, link_is_affected($a, $b, pending));
+      affected_vars = affected_std_vars(instr, pending);
       affected_pending_vars = [v : v <- affected_vars, pending(v, *)];
       return affected_pending_vars & pending_vars_used(instr, pending);
     }
-
-
-    Bool link_is_affected(StdVar var, RefObjExpr expr, [StdVar -> LowLevelEltRepr] pending) {
-      if pending(var, *):
-        if expr :: <append_to_seq(seq: StdVar, new_elem: AtomicExpr)>:
-          return false if expr.seq == var and certainly_includes(pending(var), expr.new_elem);
-        elif expr :: <update_seq_at(seq: StdVar, idx: IntExpr, value: AtomicExpr)>:
-          return false if expr.seq == var and certainly_includes(pending(var), expr.value);
-        ;
-      ;
-      return true;
-    }
-
-
-    Bool certainly_includes(LowLevelEltRepr repr, AtomicExpr expr) =
-      bool,     bool_obj()    = true,
-      int,      int_obj()     = true,
-      float,    float_obj()   = true,
-      object,   _             = true,
-      _,        _             = false;
 
 
     [StdVar] pending_vars_used(Instr instr, [StdVar -> LowLevelEltRepr] pending) {
@@ -335,34 +315,62 @@ AnyTypeExpr rewrite_seq_ops(AnyTypeExpr expr, [StdVar -> LowLevelEltRepr] pendin
 
 ////////////////////////////////////////////////////////////////////////////////
 
-[StdVar] affected_std_vars(BasicInstr instr, (StdVar RefObjExpr -> Bool) is_affected) =
-  set_var()                       |
-  set_bvar()                      |
-  set_ivar()                      |
-  set_ivar32()                    |
-  set_fvar()                      = associated_std_var(instr.var),
+Bool certainly_includes(LowLevelEltRepr repr, AtomicExpr expr) =
+  bool,     bool_obj()    = true,
+  int8,     int_obj()     = true,
+  int16,    int_obj()     = true,
+  int32,    int_obj()     = true,
+  int,      int_obj()     = true,
+  float,    float_obj()   = true,
+  object,   _             = true,
+  _,        _             = false;
 
-  set_rc_var()                    = if not instr.var :: StdVar or is_affected(instr.var, instr.value)
-                                      then associated_std_var(instr.var)
-                                      else [],
+////////////////////////////////////////////////////////////////////////////////
 
-  nullify_var(v?)                 = [v if v :: StdVar],
-
-  call_proc()                     = if instr.var? then associated_std_var(instr.var) else [],
-  call_cls()                      = associated_std_var(instr.var),
-
-  set_state()                     = associated_std_var(instr.res_var),
-
-  invoke_auto_method()            = associated_std_var(instr.res_var),
-  invoke_db_method()              = associated_std_var(instr.res_var),
-
-  lookup_or_queue_insert_value()  = associated_std_var(instr.res_var),
-  immediate_insert_or_add_ref()   = associated_std_var(instr.res_var),
-
-  _                               = [];
+implicit loc_vars_types : [StdVar -> NeType] {
+  Bool is_affected(StdVar var, RefObjExpr expr, [StdVar -> LowLevelEltRepr] pending) {
+    if pending(var, *):
+      if expr :: <append_to_seq(seq: StdVar, new_elem: AtomicExpr)>:
+        return false if expr.seq == var and certainly_includes(pending(var), expr.new_elem);
+      elif expr :: <update_seq_at(seq: StdVar, idx: IntExpr, value: AtomicExpr)>:
+        return false if expr.seq == var and certainly_includes(pending(var), expr.value);
+      ;
+    ;
+    return true;
+  }
 
 
-[StdVar] affected_std_vars(JumpInstr instr, (StdVar RefObjExpr -> Bool) is_affected) = [];
+  [StdVar] affected_std_vars(BasicInstr instr, [StdVar -> LowLevelEltRepr] pending) =
+    set_var()                       |
+    set_bvar()                      |
+    set_ivar()                      |
+    set_ivar32()                    |
+    set_fvar()                      = associated_std_var(instr.var),
 
-[StdVar] affected_std_vars(CompInstr instr, (StdVar RefObjExpr -> Bool) is_affected) =
-  search_nested(instr, affected_std_vars($, is_affected), []);
+                                      ## BUG BUG BUG: I DON'T UNDERSTAND THIS STUFF,
+                                      ## I THINK THERE'S A BUG HERE BUT I'M NOT SURE
+    set_rc_var()                    = if not instr.var :: StdVar or is_affected(instr.var, instr.value, pending)
+                                        then associated_std_var(instr.var)
+                                        else [],
+
+    nullify_var(v?)                 = [v if v :: StdVar],
+
+    call_proc()                     = if instr.var? then associated_std_var(instr.var) else [],
+    call_cls()                      = associated_std_var(instr.var),
+
+    set_state()                     = associated_std_var(instr.res_var),
+
+    invoke_auto_method()            = associated_std_var(instr.res_var),
+    invoke_db_method()              = associated_std_var(instr.res_var),
+
+    lookup_or_queue_insert_value()  = associated_std_var(instr.res_var),
+    immediate_insert_or_add_ref()   = associated_std_var(instr.res_var),
+
+    _                               = [];
+
+
+  [StdVar] affected_std_vars(JumpInstr instr, [StdVar -> LowLevelEltRepr] pending) = [];
+
+  [StdVar] affected_std_vars(CompInstr instr, [StdVar -> LowLevelEltRepr] pending) =
+    search_nested(instr, affected_std_vars($, pending), []);
+}
