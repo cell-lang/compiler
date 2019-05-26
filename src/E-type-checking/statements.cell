@@ -58,10 +58,12 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
 
   [TypeCheckingError] typecheck_seq_update_stmt(StdVar seq_var, Expr idx, Expr value, [EnvVar -> Type] env) {
-    seq_var_errs = typecheck(seq_var, type_seq, env);
-    idx_errs = typecheck(idx, integer, env);
-    value_errs = typecheck(value, type_any, env);
-    return seq_var_errs & idx_errs & value_errs;
+    errs = typecheck(seq_var, type_seq, env);
+    return errs if errs != [];
+    errs = typecheck(idx, integer, env);
+    return errs if errs != [];
+    elt_type = if typed_vars(seq_var, *) then seq_elem_supertype(typed_vars(seq_var)) else type_any;
+    return typecheck(value, elt_type, env);
   }
 
 
