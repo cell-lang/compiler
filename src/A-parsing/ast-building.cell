@@ -1650,7 +1650,7 @@ implicit filename : String, lines : Nat** {
 
   SynStmt build_insert_with_attrs_stmt_ast(RuleMatch mtc) {
     nodes = rule_seq_nodes(mtc);
-    assert |nodes| == 6;
+    assert |nodes| == 5;
 
     relvar = get_lowercase_id(nodes(1));
     args_nodes = rule_seq_nodes(block_node(nodes(2)));
@@ -1686,7 +1686,7 @@ implicit filename : String, lines : Nat** {
         src_expr: src_expr
       );
       return (name: name, value: value, iter: iter);
-    } : attrs_node <- rep_rule_nodes(nodes(4)));
+    } : attrs_node <- rep_rule_nodes(nodes(3)));
 
     return insert_with_attrs_stmt(relvar: relvar, args: args, attrs: nonempty(attrs));
   }
@@ -2125,7 +2125,7 @@ implicit filename : String, lines : Nat** {
 
   RelVarsDecl build_relvar_attrs_decl_ast(RuleMatch mtc) {
     nodes = rule_seq_nodes(mtc);
-    assert |nodes| == 5;
+    assert |nodes| == 4;
     name = get_lowercase_id(nodes(0));
     args_nodes = rule_seq_nodes(block_node(nodes(1)));
     assert |args_nodes| == 2;
@@ -2137,7 +2137,7 @@ implicit filename : String, lines : Nat** {
       symmetric = false;
     ;
     col_types = col_types & (build_type_ast(n) : n <- rep_rule_nodes(args_nodes(1)));
-    attrs = (build_attr_relvar_ast(n) : n <- rep_rule_nodes(nodes(3)));
+    attrs = (build_attr_relvar_ast(n) : n <- rep_rule_nodes(nodes(2)));
     return relvars_decl(name, nonempty(col_types), (), symmetric, attrs);
 
     AttrRelVar build_attr_relvar_ast(RuleMatch mtc) {
