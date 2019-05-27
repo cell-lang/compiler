@@ -568,12 +568,27 @@ ParsingRule rule_stmt(StmtCtx ctx) =
     (:ctrl_read,          rule_read_state_ctrl_stmt)        if ctx == :proc,
     (:ctrl_write,         rule_write_state_ctrl_stmt)       if ctx == :proc,
 
+    (:if_stmt_old,        rule_if_stmt_old(ctx)),
+    (:loop_stmt_old,      rule_loop_stmt_old(ctx))          if ctx != :auto_method,
+    (:while_stmt_old,     rule_while_stmt_old(ctx))         if ctx != :auto_method,
+    (:let_stmt_old,       rule_let_stmt_old(ctx))           if ctx != :auto_method,
+    (:for_stmt_old,       rule_for_stmt_old(ctx))           if ctx != :auto_method,
+
     (:if_stmt,            rule_if_stmt(ctx)),
 
     (:loop_stmt,          rule_loop_stmt(ctx))              if ctx != :auto_method,
+    (:loop_while_stmt,    rule_loop_while_stmt(ctx))        if ctx != :auto_method,
     (:while_stmt,         rule_while_stmt(ctx))             if ctx != :auto_method,
     (:let_stmt,           rule_let_stmt(ctx))               if ctx != :auto_method,
     (:for_stmt,           rule_for_stmt(ctx))               if ctx != :auto_method
+  ));
+
+ParsingRule rule_stmt_block(StmtCtx ctx) = brace_rule(rep_rule_nonempty(rule_ref_stmt(ctx)));
+
+ParsingRule rule_stmt_or_stmt_block(StmtCtx ctx) =
+  rule_choice((
+    (:single_stmt,  rule_ref_stmt(ctx)),
+    (:stmts_block,  rule_stmt_block(ctx))
   ));
 
 ParsingRule rule_asgnm_stmt =
@@ -593,7 +608,7 @@ ParsingRule rule_ret_val_stmt =
     rule_semicolon
   ));
 
-ParsingRule rule_if_stmt(StmtCtx ctx) =
+ParsingRule rule_if_stmt_old(StmtCtx ctx) =
   rule_seq((
     keyword_if,
     rule_ref_expr,
@@ -616,7 +631,7 @@ ParsingRule rule_if_stmt(StmtCtx ctx) =
     rule_semicolon
   ));
 
-ParsingRule rule_loop_stmt(StmtCtx ctx) =
+ParsingRule rule_loop_stmt_old(StmtCtx ctx) =
   rule_seq((
     keyword_loop,
     rep_rule(rule_ref_stmt(ctx), true),
@@ -624,7 +639,7 @@ ParsingRule rule_loop_stmt(StmtCtx ctx) =
     rule_semicolon
   ));
 
-ParsingRule rule_while_stmt(StmtCtx ctx) =
+ParsingRule rule_while_stmt_old(StmtCtx ctx) =
   rule_seq((
     keyword_while,
     rule_ref_expr,
@@ -633,13 +648,59 @@ ParsingRule rule_while_stmt(StmtCtx ctx) =
     rule_semicolon
   ));
 
-ParsingRule rule_for_stmt(StmtCtx ctx) =
+ParsingRule rule_for_stmt_old(StmtCtx ctx) =
   rule_seq((
     keyword_for,
     rep_rule(rule_for_range, rule_semicolon, true, false),
     rule_colon,
     rep_rule(rule_ref_stmt(ctx), true),
     rule_semicolon
+  ));
+
+ParsingRule rule_let_stmt_old(StmtCtx ctx) =
+  rule_seq((
+    keyword_let,
+    comma_sep_seq(rule_seq((rule_id, rule_equals, rule_ref_expr))),
+    rule_colon,
+    rep_rule(rule_ref_stmt(ctx), true),
+    rule_semicolon
+  ));
+
+ParsingRule rule_if_stmt(StmtCtx ctx) =
+  rule_seq((
+    keyword_if,
+    rule_ref_expr,
+    rule_stmt_or_stmt_block(ctx),
+    optional_rule_seq((keyword_else, rule_stmt_or_stmt_block(ctx)))
+  ));
+
+ParsingRule rule_loop_stmt(StmtCtx ctx) =
+  rule_seq((
+    keyword_loop,
+    rule_stmt_or_stmt_block(ctx)
+  ));
+
+ParsingRule rule_loop_while_stmt(StmtCtx ctx) =
+  rule_seq((
+    keyword_loop,
+    rep_rule(rule_ref_stmt(ctx), true),
+    keyword_while,
+    rule_ref_expr,
+    rule_semicolon
+  ));
+
+ParsingRule rule_while_stmt(StmtCtx ctx) =
+  rule_seq((
+    keyword_while,
+    rule_ref_expr,
+    rule_stmt_or_stmt_block(ctx)
+  ));
+
+ParsingRule rule_for_stmt(StmtCtx ctx) =
+  rule_seq((
+    keyword_for,
+    rep_rule(rule_for_range, rule_semicolon, true, false),
+    rule_stmt_or_stmt_block(ctx)
   ));
 
 ParsingRule rule_for_range =
@@ -656,9 +717,7 @@ ParsingRule rule_let_stmt(StmtCtx ctx) =
   rule_seq((
     keyword_let,
     comma_sep_seq(rule_seq((rule_id, rule_equals, rule_ref_expr))),
-    rule_colon,
-    rep_rule(rule_ref_stmt(ctx), true),
-    rule_semicolon
+    rule_stmt_or_stmt_block(ctx)
   ));
 
 ParsingRule rule_break_stmt =
