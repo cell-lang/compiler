@@ -624,13 +624,20 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
   }
 
 
-  [TableVar -> Table] tables_info {
+  [TableVar -> <Table, Column>] tables_info {
     auto_id = database.name;
     col_to_vs_map = table_col_value_store_map;
     return [
       tv -> {
-        value_stores = (col_to_vs_map((tv, i)) : i < |info.signature|);
-        return table(value_stores, info.keys, info.signature, info.symmetric);
+        if is_columnar_relvar(auto_id, logical_rel_var(rv)):
+          value_store = col_to_vs_map((tv, 0));
+          signature = info.signature;
+          fail if |signature| != 2;
+          return column(value_store, column_type(signature(1)), signature);
+        else
+          value_stores = (col_to_vs_map((tv, i)) : i < |info.signature|);
+          return table(value_stores, info.keys, info.signature, info.symmetric);
+        ;
       } : rv, info <- database.rel_vars, tv = table_var(rv)
     ];
   }
@@ -730,6 +737,11 @@ implicit typedefs : [TypeName -> NeType] {
       type_ref(ts?)   = mono_tagged_integer(nonempty_type(expand_type_ref(ts, typedefs))),
       _               = nothing;
   }
+
+  ColumnType column_type(NeType type) =
+    if   is_subset(type, integer)     then :integer
+    elif is_subset(type, float_type)  then :float
+    else                                   :object;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

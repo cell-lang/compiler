@@ -313,7 +313,7 @@ RefObjExpr parse_value(AtomicExpr s)  = parse_value(value: s);
 RefObjExpr print_value(AtomicExpr s)  = print_value(value: s);
 
 RefObjExpr copy_state(AnyDBVar dv, DBSymbol t) = copy_state(var: dv, type: t);
-RefObjExpr copy_rel([+TableVar -> Table] ts, [+Nat -> Nat] p) = copy_rel(tables: ts, applied_perm: p);
+RefObjExpr copy_rel([+TableVar -> <Table, Column>] ts, [+Nat -> Nat] p) = copy_rel(tables: ts, applied_perm: p);
 
 RefObjExpr copy_persistent_state(AnyAutoVar av, AutoSymbol t) = copy_persistent_state(var: av, type: t);
 
@@ -374,7 +374,7 @@ BasicInstr parse_value(WriteObjVar v, AtomicExpr s)  = set_var(v, parse_value(va
 BasicInstr print_value(WriteObjVar v, AtomicExpr s)  = set_var(v, print_value(value: s));
 
 BasicInstr copy_state(WriteObjVar rv, AnyDBVar dv, DBSymbol t) = set_var(rv, copy_state(var: dv, type: t));
-BasicInstr copy_rel(WriteObjVar ov, [+TableVar -> Table] ts, [+Nat -> Nat] p) = set_var(ov, copy_rel(tables: ts, applied_perm: p));
+BasicInstr copy_rel(WriteObjVar ov, [+TableVar -> <Table, Column>] ts, [+Nat -> Nat] p) = set_var(ov, copy_rel(tables: ts, applied_perm: p));
 
 BasicInstr copy_persistent_state(WriteObjVar rv, AnyAutoVar av, AutoSymbol t) = set_var(rv, copy_persistent_state(var: av, type: t));
 
@@ -560,8 +560,9 @@ BasicInstr invoke_db_method(AnyWriteVar rv, AnyDBVar dv, DBSymbol t, MethodId id
 
 BasicInstr init_value_store(ValueStoreId s)    = init_value_store(store: s);
 BasicInstr cleanup_value_store(ValueStoreId s) = cleanup_value_store(store: s);
-BasicInstr init_table(TableVar v, Table t)     = init_table(table_var: v, table: t);
-BasicInstr cleanup_table(TableVar v, Table t)  = cleanup_table(table_var: v, table: t);
+
+BasicInstr init_table(TableVar v, <Table, Column> t)    = init_table(table_var: v, table: t);
+BasicInstr cleanup_table(TableVar v, <Table, Column> t) = cleanup_table(table_var: v, table: t);
 
 BasicInstr get_table_iter(TableItVar v, AnyTableVar t, Maybe[Int32Var]+ as) {
   assert (a <~ as : a == nothing);
@@ -619,6 +620,8 @@ Table table(ValueStoreId+ vs, [[+Nat]] ks, NeType+ ts, Bool s) {
   assert |vs| == |ts|;
   return table(value_stores: vs, keys: ks, col_types: ts, symmetric: s);
 }
+
+Column column(ValueStoreId s, ColumnType t, (NeType, NeType) ts) = column(value_store: s, type: t, col_types: ts);
 
 ForeignKeyType unary_binary(Nat i)  = if i :: <0..1> then :unary_binary(i)  else undefined;
 ForeignKeyType unary_ternary(Nat i) = if i :: <0..2> then :unary_ternary(i) else undefined;

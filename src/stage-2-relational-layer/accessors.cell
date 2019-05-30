@@ -54,8 +54,12 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
     rel_var_keys(rel_auto_id, logical_rel_var(original_rel_var(table_var)));
 
 
-  ValueStoreId table_col_store_id(DBSymbol rel_auto_id, TableVar var, Nat col_idx) =
-    tables_by_db(rel_auto_id, !!)(var).value_stores(col_idx);
+  ValueStoreId table_col_store_id(DBSymbol rel_auto_id, TableVar var, Nat col_idx) {
+    table = tables_by_db(rel_auto_id, !!)(var);
+    return match (table, col_idx)
+      table(),    _   = table.value_stores(col_idx),
+      column(),   0   = table.value_store;
+  }
 
 
   [TableVar] overlapping_tables(DBSymbol rel_auto_id, RelVar rel_var, Maybe[NeType]+ args_types) {
@@ -128,7 +132,7 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
 
 
   ## DEPRECATED
-  [DBSymbol -> [TableVar -> Table]] tables_by_db = [
+  [DBSymbol -> [TableVar -> <Table, Column>]] tables_by_db = [
     db.name -> tables_info(database=db) : db <- program.data_bases
   ];
 }
