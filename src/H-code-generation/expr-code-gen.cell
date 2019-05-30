@@ -346,19 +346,18 @@ assert [j -> ord_args(k) : j @ k <~ args_idxs] == args;
 
     ## TEST IT WITH POLYMORPHIC TABLES AND WITH CLOSURES
 
-    if |candidate_tables| == 1:
-      table = only(candidate_tables);
-      arg_store_id = table_col_store_id(table, 0);
-      arg_store_type = value_store_type(rel_auto_type(rel_var), unqualified(arg_store_id));
-      arg_store_id = substitute(arg_store_id);
-      code = (
-        arg_eval_code |
-        set_ivar32(arg_surr_var, value_to_surr(arg_store_id, value_store_encoded_expr(arg_store_type, arg_alias))),
-        check(neg(is_eq(arg_surr_var, -1))),
-        set_any_var(res_var, column_lookup(substitute(table), arg_surr_var))
-      );
-      return (code, obj_expr(res_var), ret_var_gen);
-    ;
+    first_table = candidate_tables(0);
+    arg_store_id = table_col_store_id(first_table, 0);
+    arg_store_type = value_store_type(rel_auto_type(rel_var), unqualified(arg_store_id));
+    arg_store_id = substitute(arg_store_id);
+    code = (
+      arg_eval_code |
+      set_ivar32(arg_surr_var, value_to_surr(arg_store_id, value_store_encoded_expr(arg_store_type, arg_alias))),
+      check(neg(is_eq(arg_surr_var, -1))),
+      set_any_var(res_var, column_lookup(substitute(first_table), arg_surr_var))
+    );
+
+    return (code, obj_expr(res_var), ret_var_gen) if |candidate_tables| == 1;
 
     fail; ## IMPLEMENT IMPLEMENT IMPLEMENT
   }

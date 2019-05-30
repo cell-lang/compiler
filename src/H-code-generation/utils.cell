@@ -121,7 +121,7 @@ Instr surr_to_decoded_value(IntVar var, AnyValueStoreId store_id, ValueStoreType
 ////////////////////////////////////////////////////////////////////////////////
 
 type GenVarType = obj, int, int32, float, bool, array, tag_rec,
-                  set_it, seq_it, bin_rel_it, tern_rel_it, table_it, stream, vector;
+                  set_it, seq_it, bin_rel_it, tern_rel_it, table_it, column_it, stream, vector;
 
 type VarGen = CounterSet[GenVarType];
 
@@ -150,6 +150,9 @@ VarGen blank_var_gen = counter_set(nz_ctrs: []);
 
 (TableItVar, VarGen) next_table_it_var(VarGen gen, NzNat arity, Bool symmetric) =
   next_var(gen, :table_it, table_it_var($, arity, symmetric));
+
+(ColumnItVar, VarGen) next_column_it_var(VarGen gen, ColumnType type) =
+  next_var(gen, :column_it, column_it_var($, type));
 
 (StreamVar,  VarGen) next_stream_var(VarGen gen)                      = next_var(gen, :stream, svar);
 (VecVar,     VarGen) next_vector_var(VarGen gen, NzNat size)          = next_var(gen, :vector, vvar($, size));

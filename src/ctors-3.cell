@@ -87,6 +87,7 @@ BinRelItVar bin_rel_it_var(Nat n)   = :bin_rel_it_var(n);
 TernRelItVar tern_rel_it_var(Nat n) = :tern_rel_it_var(n);
 
 TableItVar table_it_var(Nat id, NzNat a, Bool s) = table_it_var(id: id, arity: a, symmetric: s);
+ColumnItVar column_it_var(Nat id, ColumnType t) = column_it_var(id: id, type: t);
 
 TableVar table_var(PhysRelVar v)        = :table_var(v);
 
@@ -164,10 +165,11 @@ IntNatOp rand_nat(ObjExpr e)  = :rand_nat(get_int_val(e));
 IntNatOp rand_nat(IntExpr e)  = :rand_nat(e);
 IntNatOp ticks                = :ticks;
 
-Int32NatOp bool_to_bit(BoolExpr e)                = :bool_to_bit(e);
-Int32NatOp get_size(ObjExpr e)                    = :get_size(e);
-Int32NatOp add32(Int32Expr e1, Int32Expr e2)      = :add32(e1, e2);
+Int32NatOp bool_to_bit(BoolExpr e)              = :bool_to_bit(e);
+Int32NatOp get_size(ObjExpr e)                  = :get_size(e);
+Int32NatOp add32(Int32Expr e1, Int32Expr e2)    = :add32(e1, e2);
 Int32NatOp get_unknown_arg(TableItVar v, Nat i) = get_unknown_arg(iter: v, arg: if i :: <0..2> then i else undefined);
+Int32NatOp get_col_index(ColumnItVar v)         = get_col_index(iter: v);
 Int32NatOp value_to_surr(AnyValueStoreId s, <AtomicExpr, IntExpr> e) = value_to_surr(store: s, value: e);
 Int32NatOp get_count(AnyTableVar v, Maybe[Int32Var]+ as, Bool s) = get_count(table: v, args: as, symmetric: s);
 Int32NatOp table_lookup(AnyTableVar v, Maybe[Int32Var]+ as, Bool s) = table_lookup(table: v, args: as, symmetric: s);
@@ -570,6 +572,8 @@ BasicInstr get_table_iter(TableItVar v, AnyTableVar t, Maybe[Int32Var]+ as) {
   assert v.arity == |as|;
   return get_table_iter(it_var: v, table: t, args: as);
 }
+
+BasicInstr get_column_iter(ColumnItVar v, AnyTableVar c) = get_column_iter(it_var: v, column: c);
 
 BasicInstr queue_deletes(TableVar tv, Maybe[Int32Var]+ as, Bool s) = queue_deletes(table_var: tv, args: as, symmetric: s);
 

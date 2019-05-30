@@ -66,12 +66,62 @@ implicit program           : Program,
     yield_value_action()    = yield_value_action_opt_code(action, var_gen),
     set_yield_action()      = set_yield_action_opt_code(action, var_gen),
     rel_yield_action()      = rel_yield_action_opt_code(action, var_gen),
-    relvar_yield_action()   = relvar_yield_action_opt_code(action, var_gen),
+    relvar_yield_action()   = if is_columnar_relvar(action.relvar)
+                                then columnar_relvar_yield_action_opt_code(action, var_gen)
+                                else relvar_yield_action_opt_code(action, var_gen),
     seq_yield_action()      = seq_yield_action_opt_code(action, var_gen),
     match_yield_action()    = match_yield_action_opt_code(action, var_gen),
     let_yield_action()      = let_yield_action_opt_code(action, var_gen),
     cond_yield_action()     = cond_yield_action_opt_code(action, var_gen),
     yield_actions(as?)      = join((yield_action_opt_code(a, var_gen) : a <- as));
+
+
+  // relvar_yield_action(vars: StdVar+, relvar: AnyRelVar, args: Maybe[Expr]+, next: YieldAction)
+  Instr* columnar_relvar_yield_action_opt_code(RelVarYieldAction action, VarGen init_var_gen) {
+    fail if not action.args :: (Maybe[ExprRef], Nothing) or |action.vars| != 2;
+
+    if action.args(0) != nothing:
+      fail; ## IMPLEMENT IMPLEMENT IMPLEMENT
+    ;
+
+    var_0, var_1 = action.vars;
+    surr_var_0 = shadow_surr_var(var_0);
+
+    // Selecting the candidate tables among those the logical relation is partitioned into
+    // In this specific case, that means all of them
+    candidate_tables = overlapping_tables(action.relvar, (nothing, nothing));
+
+    code = ();
+
+    // Iterating through all candidate tables
+    for tv <- isort(candidate_tables):
+      store_id = table_col_store_id(tv, 0);
+      store_type = value_store_type(rel_auto_type(action.relvar), unqualified(store_id));
+      store_id = substitute(store_id);
+
+      col_type = column_type(table_signature(tv)(1));
+      it_var, var_gen = next_column_it_var(init_var_gen, col_type);
+
+      vars_setup_code = (
+        set_ivar32(surr_var_0, get_col_index(it_var)),
+        surr_to_decoded_value(var_0, store_id, store_type, surr_var_0),
+        set_any_var(var_1, column_lookup(substitute(tv), surr_var_0))
+      );
+
+      action_code = yield_action_opt_code(action.next, var_gen);
+
+      loop_code = (break_if(is_out_of_range(it_var))) & vars_setup_code & action_code & (move_forward(it_var));
+
+      table_code = (
+        get_column_iter(it_var, substitute(tv)),
+        repeat(nonempty(loop_code))
+      );
+
+      code = code & table_code;
+    ;
+
+    return code;
+  }
 
 
   // relvar_yield_action(vars: StdVar+, relvar: AnyRelVar, args: Maybe[Expr]+, next: YieldAction)
