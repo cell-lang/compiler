@@ -110,6 +110,7 @@ type BinRelItVar    = bin_rel_it_var(Nat);  ## DITTO
 type TernRelItVar   = tern_rel_it_var(Nat); ## DITTO
 
 type TableItVar     = table_it_var(id: Nat, arity: NzNat, symmetric: Bool); ## DITTO
+type ColumnItVar    = column_it_var(id: Nat);
 
 type ItVar          = SeqItVar, SetItVar, BinRelItVar, TernRelItVar, TableItVar;
 
@@ -211,6 +212,8 @@ type ObjNatOp       = at(seq: ObjExpr, idx: IntExpr),
                       get_curr_obj(<SetItVar, SeqItVar>),
                       get_curr_arg(var: BinRelItVar,  arg: <0..1>),
                       get_curr_arg(var: TernRelItVar, arg: <0..2>),
+                      column_lookup(var: AnyTableVar, key: Int32Var),
+                      get_value(var: ColumnItVar),
                       rand_elem(ObjExpr); // Non-deterministic (unless applied to a singleton)
 
 type BoolFnCall     = is_member(pred: MembTestPredId, obj: AtomicExpr),
@@ -385,6 +388,7 @@ type BasicInstr     = init_stream(StreamVar),
                       cleanup_table(table_var: TableVar, table: Table),
 
                       get_table_iter(it_var: TableItVar, table: AnyTableVar, args: Maybe[Int32Var]+),
+                      get_column_iter(it_var: ColumnItVar, column: AnyTableVar),
                       queue_deletes(table_var: TableVar, args: Maybe[Int32Var]+, symmetric: Bool),
                       lookup_or_queue_insert_value(res_var: Int32Var, store: ValueStoreId, value: <AtomicExpr, IntExpr>), // Ownership transfer: <value>
                       queue_insert_tuple(table_var: TableVar, tuple: Int32Var+),
@@ -485,6 +489,10 @@ type Table  = table(
                 symmetric:    Bool
               );
 
+type ColumnType = object, integer, float;
+
+type Column = column(value_store: ValueStoreId, type: ColumnType, col_types: (NeType, NeType));
+
 type ForeignKeyType = unary_unary, unary_binary(<0..1>), unary_ternary(<0..2>),
                       binary_unary(<0..1>), ternary_unary(<0..2>),
                       binary_ternary, ternary_binary,
@@ -544,7 +552,7 @@ type StaticBlock = static_block(
                     links:                        DBSymbol*,
                     state_vars:                   [MembVar -> NeType],
                     value_stores:                 [ValueStoreId -> ValueStoreType],
-                    tables:                       [TableVar -> Table],
+                    tables:                       [TableVar -> <Table, Column>],
                     insert_checked_foreign_keys:  [BlockForeignKey],
                     delete_checked_foreign_keys:  [BlockForeignKey],
                     nested_blocks:                [NestedDBVar -> DBSymbol],
