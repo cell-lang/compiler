@@ -102,7 +102,9 @@ implicit program           : Program,
     rel_memb_test()     = rel_memb_test_opt_eval_info(expr.rel, expr.args, var_gen),
     rel_lookup()        = rel_lookup_opt_eval_info(expr, var_gen),
     relvar_memb_test()  = relvar_memb_test_opt_eval_info(expr.rel_var, expr.args, var_gen),
-    relvar_lookup()     = relvar_lookup_opt_eval_info(expr.rel_var, expr.args, var_gen),
+    relvar_lookup()     = if is_columnar_relvar(expr.rel_var)
+                            then columnar_relvar_lookup_opt_eval_info(expr.rel_var, expr.args, var_gen)
+                            else relvar_lookup_opt_eval_info(expr.rel_var, expr.args, var_gen),
     and_expr()          = and_expr_opt_eval_info(expr.left, expr.right, var_gen),
     or_expr()           = or_expr_opt_eval_info(expr.left, expr.right, var_gen),
     not_expr(e?)        = not_expr_opt_eval_info(e, var_gen),
@@ -312,6 +314,53 @@ assert [j -> ord_args(k) : j @ k <~ args_idxs] == args;
     } : tv <- isort(candidate_tables)));
 
     return ((args_eval_code | execute_block((lookup_code | terminate))), res_var, ret_var_gen);
+  }
+
+
+  // relvar_lookup(rel_var: AnyRelVar, args: Maybe[Expr]+)
+  (Instr*, ObjExpr, VarGen) columnar_relvar_lookup_opt_eval_info(AnyRelVar rel_var, Maybe[Expr]+ maybe_args, VarGen init_var_gen) {
+    fail if not maybe_args :: (Just[ExprRef], Nothing);
+
+    arg = value(maybe_args(0));
+    arg_type = subexpr_type(arg);
+    return ((), :invalid_var, init_var_gen) if arg_type == empty_type;
+
+    res_type = types(expr_id);
+    res_repr = opt_repr(res_type);
+
+    res_var, ret_var_gen = next_var(res_repr, init_var_gen);
+
+    // Evaluation of arguments
+    arg_eval_code, arg_alias, var_gen = opt_eval_info(arg, ret_var_gen);
+
+    // Argument surrogate
+    exp_arg = expand_subexpr(arg);
+    if exp_arg :: StdVar:
+      arg_surr_var = shadow_surr_var(exp_arg);
+    else
+      arg_surr_var, var_gen = next_int32_var(var_gen);
+    ;
+
+    // Selecting the candidate tables among those the logical relation is partitioned into
+    candidate_tables = _isort_(overlapping_tables(rel_var, (just(arg_type), nothing)));
+
+    ## TEST IT WITH POLYMORPHIC TABLES AND WITH CLOSURES
+
+    if |candidate_tables| == 1:
+      table = only(candidate_tables);
+      arg_store_id = table_col_store_id(table, 0);
+      arg_store_type = value_store_type(rel_auto_type(rel_var), unqualified(arg_store_id));
+      arg_store_id = substitute(arg_store_id);
+      code = (
+        arg_eval_code |
+        set_ivar32(arg_surr_var, value_to_surr(arg_store_id, value_store_encoded_expr(arg_store_type, arg_alias))),
+        check(neg(is_eq(arg_surr_var, -1))),
+        set_any_var(res_var, column_lookup(substitute(table), arg_surr_var))
+      );
+      return (code, obj_expr(res_var), ret_var_gen);
+    ;
+
+    fail; ## IMPLEMENT IMPLEMENT IMPLEMENT
   }
 
 
