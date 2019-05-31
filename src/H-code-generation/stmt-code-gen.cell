@@ -73,8 +73,12 @@ implicit program           : Program,
     try_update_stmt()     = try_update_stmt_opt_code(stmt.name, stmt.args, env, var_gen),
     set_memb_var_stmt()   = set_memb_var_stmt_opt_code(stmt.var, stmt.value, env, var_gen),
     delete_stmt()         = delete_stmt_opt_code(stmt.var, stmt.args, env, var_gen),
-    insert_stmt()         = insert_stmt_opt_code(stmt.var, stmt.args, env, var_gen),
-    update_stmt()         = update_stmt_opt_code(stmt.var, stmt.args, env, var_gen),
+    insert_stmt()         = if is_columnar_relvar(stmt.var)
+                              then columnar_relvar_insert_stmt_opt_code(stmt.var, stmt.args, false, env, var_gen)
+                              else insert_stmt_opt_code(stmt.var, stmt.args, env, var_gen),
+    update_stmt()         = if is_columnar_relvar(stmt.var)
+                              then columnar_relvar_insert_stmt_opt_code(stmt.var, stmt.args, true, env, var_gen)
+                              else update_stmt_opt_code(stmt.var, stmt.args, env, var_gen),
 
     set_input_ctrl_stmt()         = set_input_ctrl_stmt_opt_code(stmt.var, stmt.input, stmt.value, env, var_gen),
     clear_input_ctrl_stmt()       = clear_input_ctrl_stmt_opt_code(stmt.var, stmt.input, env, var_gen),
@@ -228,6 +232,68 @@ implicit program           : Program,
     code = (args_eval_code | execute_block(dynamic_dispatch_code(args_aliases, cases)));
 
     return (code, just(surrogates), [], init_var_gen);
+  }
+
+
+  StmtCompInfo columnar_relvar_insert_stmt_opt_code(RelVar rel_var, Expr+ args, Bool forced, [EnvVar -> Type] env, VarGen init_var_gen) {
+    fail if |args| != 2;
+    arg_0, arg_1 = args;
+
+    arg_0_type = expr_type(arg_0, env);
+    arg_1_type = expr_type(arg_1, env);
+
+    if arg_0_type == empty_type or arg_1_type == empty_type:
+      return ((terminate(true)), just(surrogates), [], init_var_gen);
+    ;
+
+    args_eval_code, args_aliases, var_gen = opt_eval_code(args, env, init_var_gen);
+    fail if |args_aliases| != 2;
+    arg_0_alias, arg_1_alias = args_aliases;
+
+    surr_var_0, var_gen = next_int32_var(var_gen);
+
+    // Selecting the candidate tables among those the logical relation is partitioned into
+    candidate_tables = nonempty(overlapping_tables(rel_var, (just(arg_0_type), just(arg_1_type))));
+
+    assert relvar_keys(rel_var) == [[0]];
+
+    if |candidate_tables| == 1:
+      // Easy case: there's only one table
+      table_var = only(candidate_tables);
+
+      store_id = table_col_store_id(table_var, 0);
+      store_type = value_store_type(this_db_symbol, store_id);
+
+      enc_expr = value_store_encoded_expr(store_type, arg_0_alias);
+
+      update_code = (
+        lookup_or_queue_insert_value(surr_var_0, store_id, enc_expr),
+        column_insert_deferred(table_var, surr_var_0, arg_1_alias, true)
+      );
+
+      return (args_eval_code & update_code, just(surrogates), [], init_var_gen);
+
+    else
+      // Choosing the dispatch arguments
+      signatures = [table_signature(tv) : tv <- candidate_tables];
+      disp_args = optimal_dispatch_args(signatures, typedefs);
+
+      cases = [{
+        store_id = table_col_store_id(tv, 0);
+        store_type = value_store_type(this_db_symbol, store_id);
+        enc_expr = value_store_encoded_expr(store_type, arg_0_alias);
+        code = (
+          lookup_or_queue_insert_value(surr_var_0, store_id, enc_expr),
+          column_insert_deferred(tv, surr_var_0, arg_1_alias, true),
+          exit_block
+        );
+        return (table_signature(tv), code);
+      } : tv <- candidate_tables];
+
+      code = (args_eval_code | execute_block(dynamic_dispatch_code(args_aliases, cases)));
+
+      return (code, just(surrogates), [], init_var_gen);
+    ;
   }
 
 
