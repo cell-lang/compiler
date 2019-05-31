@@ -506,7 +506,7 @@ implicit {
     pop_call_info         = mk_call("pop_call_info", ()),
     runtime_check()       = compile_runtime_check_to_c(instr.cond, instr.file, instr.line, instr.text, instr.vars),
     branch()              = compile_branch_to_c(instr.cond, instr.when_true, instr.when_false, block_id),
-    queue_update()        = compile_queue_update_to_c(instr.type, instr.id, instr.args),
+    queue_node_update()   = compile_queue_node_update_to_c(instr.type, instr.id, instr.args),
     insert_timer()        = (insert_timer_method_name(instr.type) & "(self, " & to_c_expr(instr.idx) & ", " & to_c_expr(instr.time) & ");"),
     clear_timer()         = (clear_timer_method_name(instr.type) & "(self, " & to_c_expr(instr.idx) & ");"),
     auto_pre_init()       = (pre_init_method_name(instr.type) & "(&" & to_c_var_ref_name(instr.var) & ", env);"),
@@ -546,7 +546,7 @@ implicit {
   }
 
 
-  String* compile_queue_update_to_c(AutoSymbol type, BlockNodeId node_id, Nat* args) {
+  String* compile_queue_node_update_to_c(AutoSymbol type, BlockNodeId node_id, Nat* args) {
     method_name = queue_update_method_name(type, node_id);
     args_str = append((", " & printed(a) : a <- args));
     return (method_name & "(self" & args_str & ");");
