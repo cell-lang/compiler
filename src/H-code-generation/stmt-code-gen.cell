@@ -266,9 +266,11 @@ implicit program           : Program,
 
       enc_expr = value_store_encoded_expr(store_type, arg_0_alias);
 
+      col_repr = column_repr(table_signature(table_var)(1));
+
       update_code = (
         lookup_or_queue_insert_value(surr_var_0, store_id, enc_expr),
-        column_insert_deferred(table_var, surr_var_0, arg_1_alias, true)
+        column_insert_deferred(table_var, surr_var_0, low_level_expr(col_repr, arg_1_alias), forced)
       );
 
       return (args_eval_code & update_code, just(surrogates), [], init_var_gen);
@@ -282,9 +284,12 @@ implicit program           : Program,
         store_id = table_col_store_id(tv, 0);
         store_type = value_store_type(this_db_symbol, store_id);
         enc_expr = value_store_encoded_expr(store_type, arg_0_alias);
+
+        col_repr = column_repr(table_signature(tv)(1));
+
         code = (
           lookup_or_queue_insert_value(surr_var_0, store_id, enc_expr),
-          column_insert_deferred(tv, surr_var_0, arg_1_alias, true),
+          column_insert_deferred(tv, surr_var_0, low_level_expr(col_repr, arg_1_alias), forced),
           exit_block
         );
         return (table_signature(tv), code);
@@ -983,13 +988,13 @@ implicit program           : Program,
       store_type = value_store_type(rel_auto_type(iter.rel_var), unqualified(store_id));
       store_id = substitute(store_id);
 
-      col_type = column_type(table_signature(tv)(1));
-      it_var, var_gen = next_column_it_var(init_var_gen, col_type);
+      col_repr = column_repr(table_signature(tv)(1));
+      it_var, var_gen = next_column_it_var(init_var_gen, col_repr);
 
       vars_setup_code = (
         set_ivar32(surr_var_0, get_col_index(it_var)) if var_0 != nothing or var_1 != nothing,
         surr_to_decoded_value(value(var_0), store_id, store_type, surr_var_0) if var_0 != nothing,
-        set_any_var(value(var_1), column_lookup(substitute(tv), surr_var_0)) if var_1 != nothing
+        set_any_var(value(var_1), column_lookup(substitute(tv), surr_var_0, col_repr)) if var_1 != nothing
       );
 
       // Environment the body runs in

@@ -110,7 +110,7 @@ type BinRelItVar    = bin_rel_it_var(Nat);  ## DITTO
 type TernRelItVar   = tern_rel_it_var(Nat); ## DITTO
 
 type TableItVar     = table_it_var(id: Nat, arity: NzNat, symmetric: Bool); ## DITTO
-type ColumnItVar    = column_it_var(id: Nat, type: ColumnType);
+type ColumnItVar    = column_it_var(id: Nat, repr: ColumnRepr);
 
 type ItVar          = SeqItVar, SetItVar, BinRelItVar, TernRelItVar, TableItVar, ColumnItVar;
 
@@ -213,7 +213,7 @@ type ObjNatOp       = at(seq: ObjExpr, idx: IntExpr),
                       get_curr_obj(<SetItVar, SeqItVar>),
                       get_curr_arg(var: BinRelItVar,  arg: <0..1>),
                       get_curr_arg(var: TernRelItVar, arg: <0..2>),
-                      column_lookup(var: AnyTableVar, key: Int32Var),
+                      column_lookup(var: AnyTableVar, key: Int32Var, repr: ColumnRepr),
                       get_value(var: ColumnItVar),
                       rand_elem(ObjExpr); // Non-deterministic (unless applied to a singleton)
 
@@ -492,9 +492,9 @@ type Table  = table(
                 symmetric:    Bool
               );
 
-type ColumnType = object, integer, float;
+type ColumnRepr = object, int, float;
 
-type Column = column(value_store: ValueStoreId, type: ColumnType, col_types: (NeType, NeType));
+type Column = column(value_store: ValueStoreId, repr: ColumnRepr, col_types: (NeType, NeType));
 
 type ForeignKeyType = unary_unary, unary_binary(<0..1>), unary_ternary(<0..2>),
                       binary_unary(<0..1>), ternary_unary(<0..2>),

@@ -74,7 +74,8 @@
   cast_int32(e?)    = search(e),
   add32(e1?, e2?)   = search(e1) & search(e2),
   value_to_surr()   = search(expr.value),
-  get_unknown_arg() = [];
+  get_unknown_arg() = [],
+  get_col_index()   = [];
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -110,6 +111,8 @@
   get_curr_obj()    = [],
   get_curr_arg()    = [],
   get_curr_arg()    = [],
+  column_lookup()   = search(expr.key),
+  get_value()       = [],
   rand_elem(e?)     = search(e);
 
 
@@ -221,10 +224,12 @@
   cleanup_value_store()     = [],
   init_table()              = [],
   cleanup_table()           = [],
-  get_table_iter()          |
+  get_table_iter()          = union([search(value(a)) : a <~ instr.args, a != nothing]),
+  get_column_iter()         = [],
   queue_deletes()           = union([search(value(a)) : a <~ instr.args, a != nothing]),
   lookup_or_queue_insert_value() = search(instr.value),
   queue_insert_tuple()      = union([search(v) : v <~ instr.tuple]),
+  column_insert_deferred()  = search(instr.key_surr) & search(instr.value),
   immediate_insert_or_add_ref() = search(instr.value),
   immediate_insert_tuple()  = union([search(v) : v <~ instr.tuple]);
 

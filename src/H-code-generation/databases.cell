@@ -635,7 +635,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
           value_store = col_to_vs_map((tv, 0));
           signature = info.signature;
           fail if |signature| != 2;
-          return column(value_store, column_type(signature(1)), signature);
+          return column(value_store, column_repr(signature(1)), signature);
         else
           value_stores = (col_to_vs_map((tv, i)) : i < |info.signature|);
           return table(value_stores, info.keys, info.signature, info.symmetric);
@@ -740,8 +740,8 @@ implicit typedefs : [TypeName -> NeType] {
       _               = nothing;
   }
 
-  ColumnType column_type(NeType type) =
-    if   is_subset(type, integer)     then :integer
+  ColumnRepr column_repr(NeType type) =
+    if   is_subset(type, integer)     then :int
     elif is_subset(type, float_type)  then :float
     else                                   :object;
 }

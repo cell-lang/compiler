@@ -87,7 +87,7 @@ BinRelItVar bin_rel_it_var(Nat n)   = :bin_rel_it_var(n);
 TernRelItVar tern_rel_it_var(Nat n) = :tern_rel_it_var(n);
 
 TableItVar table_it_var(Nat id, NzNat a, Bool s) = table_it_var(id: id, arity: a, symmetric: s);
-ColumnItVar column_it_var(Nat id, ColumnType t) = column_it_var(id: id, type: t);
+ColumnItVar column_it_var(Nat id, ColumnRepr r) = column_it_var(id: id, repr: r);
 
 TableVar table_var(PhysRelVar v)        = :table_var(v);
 
@@ -228,7 +228,7 @@ ObjNatOp get_inner_obj(ObjExpr e)                     = :get_inner_obj(e);
 ObjNatOp get_curr_obj(<SetItVar, SeqItVar> it)        = :get_curr_obj(it);
 ObjNatOp get_curr_arg(BinRelItVar v,  Nat a)          = get_curr_arg(var: v, arg: if a :: <0..1> then a else undefined);
 ObjNatOp get_curr_arg(TernRelItVar v, Nat a)          = get_curr_arg(var: v, arg: if a :: <0..2> then a else undefined);
-ObjNatOp column_lookup(AnyTableVar v, Int32Var k)     = column_lookup(var: v, key: k);
+ObjNatOp column_lookup(AnyTableVar v, Int32Var k, ColumnRepr r) = column_lookup(var: v, key: k, repr: r);
 ObjNatOp rand_elem(ObjExpr s)                         = :rand_elem(s);
 
 ObjNatOp lookup_field(ObjExpr e, SymbObj f, Maybe[LowLevelRepr] r) {
@@ -629,7 +629,7 @@ Table table(ValueStoreId+ vs, [[+Nat]] ks, NeType+ ts, Bool s) {
   return table(value_stores: vs, keys: ks, col_types: ts, symmetric: s);
 }
 
-Column column(ValueStoreId s, ColumnType t, (NeType, NeType) ts) = column(value_store: s, type: t, col_types: ts);
+Column column(ValueStoreId s, ColumnRepr r, (NeType, NeType) ts) = column(value_store: s, repr: r, col_types: ts);
 
 ForeignKeyType unary_binary(Nat i)  = if i :: <0..1> then :unary_binary(i)  else undefined;
 ForeignKeyType unary_ternary(Nat i) = if i :: <0..2> then :unary_ternary(i) else undefined;

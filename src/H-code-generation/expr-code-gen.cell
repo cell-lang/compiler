@@ -350,11 +350,14 @@ assert [j -> ord_args(k) : j @ k <~ args_idxs] == args;
     arg_store_id = table_col_store_id(first_table, 0);
     arg_store_type = value_store_type(rel_auto_type(rel_var), unqualified(arg_store_id));
     arg_store_id = substitute(arg_store_id);
+
+    col_repr = column_repr(table_signature(first_table)(1));
+
     code = (
       arg_eval_code |
       set_ivar32(arg_surr_var, value_to_surr(arg_store_id, value_store_encoded_expr(arg_store_type, arg_alias))),
       check(neg(is_eq(arg_surr_var, -1))),
-      set_any_var(res_var, column_lookup(substitute(first_table), arg_surr_var))
+      set_any_var(res_var, column_lookup(substitute(first_table), arg_surr_var, col_repr))
     );
 
     return (code, obj_expr(res_var), ret_var_gen) if |candidate_tables| == 1;
