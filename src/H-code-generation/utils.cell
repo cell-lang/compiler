@@ -114,8 +114,43 @@ Instr surr_to_decoded_value(WriteObjVar var, AnyValueStoreId store_id, ValueStor
 
 Instr surr_to_decoded_value(IntVar var, AnyValueStoreId store_id, ValueStoreType store_type, Int32Var surr) =
   match (store_type)
-    integer = set_ivar(var, surr_to_int_value(store_id, surr)),
-    _       = undefined;
+    integer               = set_ivar(var, surr_to_int_value(store_id, surr)),
+    object                = undefined, ## CAN THIS ACTUALLY HAPPEN?
+    mono_tagged_integer() = undefined;
+
+
+Instr surr_to_decoded_value(FloatVar var, AnyValueStoreId store_id, ValueStoreType store_type, Int32Var surr) =
+  match (store_type)
+    object                = set_fvar(var, float_value(surr_to_value(store_id, surr))),
+    integer               = undefined,
+    mono_tagged_integer() = undefined;
+
+
+Instr surr_to_decoded_value(BoolVar var, AnyValueStoreId store_id, ValueStoreType store_type, Int32Var surr) =
+  match (store_type)
+    object                = set_bvar(var, bool_value(surr_to_value(store_id, surr))),
+    integer               = undefined,
+    mono_tagged_integer() = undefined;
+
+
+Instr surr_to_decoded_value(LocOptTagRecVar var, AnyValueStoreId store_id, ValueStoreType store_type, Int32Var surr) =
+  match (store_type)
+    object                = set_var(var, surr_to_value(store_id, surr)),
+    integer               = undefined,
+    mono_tagged_integer() = undefined;
+
+
+// Instr* surr_to_decoded_value(WriteObjVar var, AnyValueStoreId store_id, ValueStoreType store_type, Int32Var surr, VarGen var_gen) {
+//   tmp_var, unused_var = next_int_var(var_gen);
+//   return match (store_type)
+//     object                  = (surr_to_value(var, store_id, surr)),
+//     integer                 = ( set_ivar(tmp_var, surr_to_int_value(store_id, surr)),
+//                                 set_var(var, int_obj(tmp_var))
+//                               ),
+//     mono_tagged_integer(s?) = ( set_ivar(tmp_var, surr_to_int_value(store_id, surr)),
+//                                 set_var(var, mk_tagged_obj(object(s), int_obj(tmp_var)))
+//                               );
+// }
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////

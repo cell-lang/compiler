@@ -213,8 +213,9 @@ type ObjNatOp       = at(seq: ObjExpr, idx: IntExpr),
                       get_curr_obj(<SetItVar, SeqItVar>),
                       get_curr_arg(var: BinRelItVar,  arg: <0..1>),
                       get_curr_arg(var: TernRelItVar, arg: <0..2>),
+                      surr_to_value(store: AnyValueStoreId, surrogate: Int32Var),
                       column_lookup(var: AnyTableVar, key: Int32Var, repr: ColumnRepr),
-                      get_value(var: ColumnItVar),
+                      get_value(var: ColumnItVar), ## WHAT IS THIS FOR? IT'S NOT EVEN USED...
                       rand_elem(ObjExpr); // Non-deterministic (unless applied to a singleton)
 
 type BoolFnCall     = is_member(pred: MembTestPredId, obj: AtomicExpr),
@@ -280,8 +281,7 @@ type RefObjExpr     = mk_set_from_stream(stream: StreamVar),
 
                       // Can be used only once per pending variable, and does not automatically clear it,
                       // it has to be manually cleared with init_memb_var(...)
-                      read_pending_var(<PendingStateVar, PendingInputVar>),
-                      surr_to_value(store: AnyValueStoreId, surrogate: Int32Var); ## THIS SHOULD BELONG IN ObjNatOp, NOT HERE...
+                      read_pending_var(<PendingStateVar, PendingInputVar>);
 
 type BasicInstr     = init_stream(StreamVar),
                       append(stream: StreamVar, obj: AtomicExpr),  // Ownership transfer: <obj>
