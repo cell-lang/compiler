@@ -726,7 +726,7 @@ assert [j -> ord_args(k) : j @ k <~ args_idxs] == args;
   (Instr*, ObjExpr, VarGen) accessor_opt_eval_info(Expr expr, SymbObj field, VarGen init_var_gen) {
     code, surr, var_gen = opt_eval_info(expr, init_var_gen);
     target_type = subexpr_type(expr);
-    maybe_repr = nothing;
+    maybe_field_repr = nothing;
     if is_subset(target_type, tag_obj_type(atom_type, type_any)):
       tag_type = tag_supertype(target_type);
       if is_symb_singl_type(tag_type):
@@ -740,13 +740,19 @@ assert [j -> ord_args(k) : j @ k <~ args_idxs] == args;
           if is_subset(target_type, tag_obj_type(tag_type, t)):
             surr = cast_opt_tag_rec(tag, i, surr) if not surr :: OptTagRecVar;
             fields_reprs = untag(optimized_tagged_records(tag, !!)(i));
-            maybe_repr = just(fields_reprs(untag(field), !!).repr);
+            maybe_field_repr = just(fields_reprs(untag(field), !!).repr);
             break;
           ;
         ;
       ;
     ;
-    return (code, lookup_field(surr, field, maybe_repr), var_gen);
+
+    type = types(expr_id);
+    repr = if type != empty_type then low_level_repr(type) else :object;
+    res_var, var_gen = next_var(repr, var_gen);
+    code = (code | set_any_var(res_var, lookup_field(surr, field, maybe_field_repr)));
+
+    return (code, obj_expr(res_var), var_gen);
   }
 
 
