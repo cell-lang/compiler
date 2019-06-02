@@ -85,7 +85,11 @@ type PropIntExpr      = LocIntVar, IntFnArg,
                         surr_to_int_value(store: AnyValueStoreId, surrogate: Int32Var),
                         get_int_val(PropAtomicExpr);
 
-type PropAtomicExpr   = StdVar, LocVar, int_obj(PropIntExpr), get_inner_obj(PropAtomicExpr);
+type PropAtomicExpr   = StdVar, LocVar,
+                        int_obj(PropIntExpr),
+                        get_inner_obj(PropAtomicExpr),
+                        lookup_field(record: ObjExpr, field: SymbObj, repr: Maybe[LowLevelRepr]);
+
 type PropExpr         = PropAtomicExpr, mk_tagged_obj(tag: SymbObj, obj: PropAtomicExpr);
 
 type PropInt32Expr      = value_to_surr(store: AnyValueStoreId, value: <PropAtomicExpr, PropIntExpr>);
@@ -272,13 +276,34 @@ NodeInfo rewrite_node(NodeInfo node, PropInfo info) =
     _                               = instr;
 
 
-  BasicInstr rewrite_lookup_or_queue_insert_value(BasicInstr instr, Int32Var res_var, ValueStoreId store, <AtomicExpr, IntExpr> value, PropInfo info) =
-    if value :: <PropExpr, PropIntExpr> and is_ex_surr_of(res_var, store, value, info) then :no_op else instr;
+  BasicInstr rewrite_lookup_or_queue_insert_value(BasicInstr instr, Int32Var res_var, ValueStoreId store, <AtomicExpr, IntExpr> value, PropInfo info) {
+    value_copy = value; ## BAD BAD BAD: THIS IS A HACK TO WORK AROUND THE LIMITATIONS OF THE TYPE CHECKER
+    return :no_op if value_copy :: <PropExpr, PropIntExpr> and is_ex_surr_of(res_var, store, value_copy, info);
+
+    rw_value = rewrite_expr(value, info);
+    return instr if rw_value == value;
+
+    rw_instr = lookup_or_queue_insert_value(res_var, store, rw_value);
+    return match (rw_value)
+      surr_to_int_value()   = if rw_value.store == store then set_ivar32(res_var, rw_value.surrogate) else rw_instr,
+      _                     = rw_instr;
+  }
+
+
 
   BasicInstr rewrite_set_ivar32(BasicInstr instr, Int32Var var, Int32Expr value, PropInfo info) {
     return :no_op if value :: PropInt32Expr and is_curr_value(info, var, value);
     rw_value = rewrite_int32_expr(value, info);
     return if rw_value :: Int32Var then set_ivar32(var, rw_value) else instr;
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  IntExpr rewrite_expr(IntExpr expr, PropInfo info) = rewrite_int_expr(expr, info);
+
+  AtomicExpr rewrite_expr(AtomicExpr expr, PropInfo info) {
+    rw_expr = rewrite_atomic_expr(expr, info);
+    return if rw_expr :: AtomicExpr then rw_expr else expr;
   }
 }
 
