@@ -35,7 +35,7 @@ StaticBlock optimize_static_block(StaticBlock block) =
 
 
 OptCompMethod optimize_static_block_method(OptCompMethod method) {
-  opt_body = if method.body != () then optimize_code(method.body) else ();
+  opt_body = if method.body != () then repeatedly_optimize_code(method.body) else ();
   return opt_comp_method(
     args:             method.args,
     args_types:       method.args_types,
@@ -49,12 +49,22 @@ OptCompMethod optimize_static_block_method(OptCompMethod method) {
 
 
 CompiledUpdate optimize_static_block_update(CompiledUpdate update) {
-  opt_body = if update.body != () then optimize_code(update.body) else ();
+  opt_body = if update.body != () then repeatedly_optimize_code(update.body) else ();
   return compiled_update(update.args_vars, opt_body);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
+
+Instr+ repeatedly_optimize_code(Instr+ init_instrs) {
+  instrs = init_instrs;
+  loop
+    opt_instrs = optimize_code(instrs);
+    return instrs if opt_instrs == instrs;
+    instrs = opt_instrs;
+  ;
+}
+
 
 Instr+ optimize_code(Instr+ instrs) {
   leaf_nodes, code_tree = build_root_code_graph(instrs);
@@ -290,11 +300,16 @@ NodeInfo rewrite_node(NodeInfo node, PropInfo info) =
   }
 
 
-
   BasicInstr rewrite_set_ivar32(BasicInstr instr, Int32Var var, Int32Expr value, PropInfo info) {
-    return :no_op if value :: PropInt32Expr and is_curr_value(info, var, value);
+    return :no_op if var == value or (value :: PropInt32Expr and is_curr_value(info, var, value));
     rw_value = rewrite_int32_expr(value, info);
-    return if rw_value :: Int32Var then set_ivar32(var, rw_value) else instr;
+    if var == rw_value:
+      return :no_op;
+    elif rw_value :: Int32Var:
+      return set_ivar32(var, rw_value);
+    else
+      return instr;
+    ;
   }
 
   //////////////////////////////////////////////////////////////////////////////
