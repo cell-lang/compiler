@@ -984,6 +984,10 @@ implicit program           : Program,
     surrs = surrogates;
     for tv <- isort(candidate_tables):
 
+      sign = table_signature(tv);
+      vars_reprs = [value(v) -> low_level_repr(sign(i)) : v @ i <~ iter.vars, v != nothing];
+      low_level_vars = [v -> low_level_var(r, v) : v, r <- vars_reprs];
+
       store_id = table_col_store_id(tv, 0);
       store_type = value_store_type(rel_auto_type(iter.rel_var), unqualified(store_id));
       store_id = substitute(store_id);
@@ -993,8 +997,14 @@ implicit program           : Program,
 
       vars_setup_code = (
         set_ivar32(surr_var_0, get_col_index(it_var)) if var_0 != nothing or var_1 != nothing,
-        surr_to_decoded_value(value(var_0), store_id, store_type, surr_var_0) if var_0 != nothing,
-        set_any_var(value(var_1), column_lookup(substitute(tv), surr_var_0, col_repr)) if var_1 != nothing
+        ## WORKAROUND FOR A BUG IN VERSION 0.1 OF THE COMPILER
+        { llvar = low_level_vars(value(var_0));
+          return surr_to_decoded_value(llvar, store_id, store_type, surr_var_0);
+        } if var_0 != nothing,
+        ## WORKAROUND FOR A BUG IN VERSION 0.1 OF THE COMPILER
+        { llvar = low_level_vars(value(var_1));
+          return set_any_var(llvar, column_lookup(substitute(tv), surr_var_0, col_repr));
+        } if var_1 != nothing
       );
 
       // Environment the body runs in
@@ -1003,14 +1013,7 @@ implicit program           : Program,
       exit_env = update_env(body, env & loop_vars);
       body_env = merge_envs(env, exit_env) & loop_vars;
 
-      ## IGNORING LOW LEVEL REPRESENTATION FOR NOW. THIS OPTIMIZATION WILL BE PART OF RELEASE 0.4
-      // args_reprs = (opt_repr(t) : t <- args_types);
-      // low_level_vars = [
-      //   var -> low_level_var(args_reprs(i), var)
-      //   : v @ i <~ iter.vars, v != nothing, var = value(v)
-      // ];
-      // local_surrs = [v -> obj_expr(lv) : v, lv <- low_level_vars];
-      local_surrs = [];
+      local_surrs = [v -> obj_expr(llv) : v, llv <- low_level_vars];
 
       let surrogates = surrs:
         entry_code_fixes, body_code, surrs = loop_stable_code(body, local_surrs, body_env, var_gen);
