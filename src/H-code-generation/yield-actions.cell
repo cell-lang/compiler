@@ -78,10 +78,11 @@ implicit program           : Program,
 
   // relvar_yield_action(vars: StdVar+, relvar: AnyRelVar, args: Maybe[Expr]+, next: YieldAction)
   Instr* columnar_relvar_yield_action_opt_code(RelVarYieldAction action, VarGen var_gen) {
-    fail if not action.args :: (Maybe[ExprRef], Nothing) or |action.vars| != 2;
+    fail if not action.args :: (Maybe[ExprRef], Nothing);
 
     arg0 = action.args(0);
     if arg0 == nothing:
+      fail if |action.vars| != 2;
       var_0, var_1 = action.vars;
       return full_column_iter_code(var_0, var_1, action.relvar, action.next, var_gen);
     else
@@ -92,7 +93,50 @@ implicit program           : Program,
 
 
     Instr* one_value_iter_code(Expr key_arg, StdVar value_var, AnyRelVar relvar, YieldAction next_action, VarGen init_var_gen) {
-      fail;
+      key_arg_eval_code, key_arg_alias, var_gen = opt_eval_info(key_arg, init_var_gen);
+
+      key_arg_surr, var_gen = next_int32_var(var_gen);
+
+      // Selecting the candidate tables among those the logical relation is partitioned into
+      key_arg_type = subexpr_type(key_arg);
+      return (terminate(true)) if key_arg_type == empty_type;
+      candidate_tables = overlapping_tables(relvar, (just(key_arg_type), nothing));
+
+      cases = [{
+        sign = table_signature(tv);
+        value_repr = low_level_repr(sign(1));
+        ll_value_var = low_level_var(value_repr, value_var);
+
+        store_id = table_col_store_id(tv, 0);
+        store_type = value_store_type(rel_auto_type(relvar), unqualified(store_id));
+        store_id = substitute(store_id);
+
+        next_action_surrs = surrogates & [value_var -> obj_expr(ll_value_var)];
+        action_code = yield_action_opt_code(next_action, var_gen, surrogates = next_action_surrs);
+
+        code = (
+          set_ivar32(key_arg_surr, value_to_surr(store_id, value_store_encoded_expr(store_type, key_arg_alias))),
+          do_if_not(
+            is_eq(key_arg_surr, -1),
+            do_if(
+              table_contains(tv, (just(key_arg_surr), nothing), false),
+              ( set_any_var(
+                  ll_value_var,
+                  column_lookup(substitute(tv), key_arg_surr, column_repr(sign(1)))
+                )
+              ) & action_code
+            )
+          )
+        );
+
+        return ((sign(0)), code);
+      } : tv <- candidate_tables];
+
+      iter_code = if |cases| != 1
+        then (execute_block(dynamic_dispatch_code((key_arg_alias), cases)))
+        else right(only(cases));
+
+      return key_arg_eval_code & iter_code;
     }
 
 
