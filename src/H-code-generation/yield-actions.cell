@@ -95,20 +95,27 @@ implicit program           : Program,
 
     // Iterating through all candidate tables
     for tv <- isort(candidate_tables):
+      sign = table_signature(tv);
+      repr_0 = low_level_repr(sign(0));
+      repr_1 = low_level_repr(sign(1));
+      ll_var_0 = low_level_var(repr_0, var_0);
+      ll_var_1 = low_level_var(repr_1, var_1);
+
       store_id = table_col_store_id(tv, 0);
       store_type = value_store_type(rel_auto_type(action.relvar), unqualified(store_id));
       store_id = substitute(store_id);
 
-      col_repr = column_repr(table_signature(tv)(1));
+      col_repr = column_repr(sign(1));
       it_var, var_gen = next_column_it_var(init_var_gen, col_repr);
 
       vars_setup_code = (
         set_ivar32(surr_var_0, get_col_index(it_var)),
-        surr_to_decoded_value(var_0, store_id, store_type, surr_var_0),
-        set_any_var(var_1, column_lookup(substitute(tv), surr_var_0, col_repr))
+        surr_to_decoded_value(ll_var_0, store_id, store_type, surr_var_0),
+        set_any_var(ll_var_1, column_lookup(substitute(tv), surr_var_0, col_repr))
       );
 
-      action_code = yield_action_opt_code(action.next, var_gen);
+      next_action_surrs = surrogates & [var_0 -> obj_expr(ll_var_0), var_1 -> obj_expr(ll_var_1)];
+      action_code = yield_action_opt_code(action.next, var_gen, surrogates = next_action_surrs);
 
       loop_code = (break_if(is_out_of_range(it_var))) & vars_setup_code & action_code & (move_forward(it_var));
 
