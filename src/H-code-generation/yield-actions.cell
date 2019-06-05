@@ -156,8 +156,6 @@ assert bound_args_idxs == old_unfiltered_idxs;
 assert free_args_idxs == old_blank_idxs;
 assert surr_args == old_surr_args;
 
-    action_code = yield_action_opt_code(action.next, var_gen);
-
     symmetric = symmetric(action.relvar);
 
     // Selecting the candidate tables among those the logical relation is partitioned into
@@ -171,11 +169,9 @@ assert surr_args == old_surr_args;
     for tv <- isort(candidate_tables):
       assert (a <~ surr_args : a == nothing);
 
-      // lookup_exprs = (
-      //   surr_to_value(substitute(table_col_store_id(tv, i)), get_unknown_arg(it_var, j))
-      //   : i @ j <- blank_idxs
-      // );
-      // vars_setup_code = (set_var(v, lookup_exprs(i)) : v @ i <- action.vars);
+      sign = table_signature(tv);
+      vars_types = (sign(free_args_idxs(i)) : i < |action.vars|);
+      low_level_vars = (low_level_var(low_level_repr(vars_types(i)), v) : v @ i <- action.vars);
 
       vars_setup_code = join(({
         shadow_surr_var = shadow_surr_vars(i);
@@ -186,7 +182,10 @@ assert surr_args == old_surr_args;
           set_ivar32(shadow_surr_var, get_unknown_arg(it_var, i)),
           surr_to_decoded_value(v, store_id, store_type, shadow_surr_var)
         );
-      } : v @ i <- action.vars));
+      } : v @ i <- low_level_vars));
+
+      next_action_surrs = surrogates & [v -> obj_expr(low_level_vars(i)) : v @ i <~ action.vars];
+      action_code = yield_action_opt_code(action.next, var_gen, surrogates = next_action_surrs);
 
       loop_code = (break_if(is_out_of_range(it_var))) & vars_setup_code & action_code & (move_forward(it_var));
       table_code = (
