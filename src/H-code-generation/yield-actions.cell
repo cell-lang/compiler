@@ -77,57 +77,70 @@ implicit program           : Program,
 
 
   // relvar_yield_action(vars: StdVar+, relvar: AnyRelVar, args: Maybe[Expr]+, next: YieldAction)
-  Instr* columnar_relvar_yield_action_opt_code(RelVarYieldAction action, VarGen init_var_gen) {
+  Instr* columnar_relvar_yield_action_opt_code(RelVarYieldAction action, VarGen var_gen) {
     fail if not action.args :: (Maybe[ExprRef], Nothing) or |action.vars| != 2;
 
-    if action.args(0) != nothing:
-      fail; ## IMPLEMENT IMPLEMENT IMPLEMENT
+    arg0 = action.args(0);
+    if arg0 == nothing:
+      var_0, var_1 = action.vars;
+      return full_column_iter_code(var_0, var_1, action.relvar, action.next, var_gen);
+    else
+      key_arg = value(arg0);
+      value_var = only_unsafe(action.vars);
+      return one_value_iter_code(key_arg, value_var, action.relvar, action.next, var_gen);
     ;
 
-    var_0, var_1 = action.vars;
-    surr_var_0 = shadow_surr_var(var_0);
 
-    // Selecting the candidate tables among those the logical relation is partitioned into
-    // In this specific case, that means all of them
-    candidate_tables = overlapping_tables(action.relvar, (nothing, nothing));
+    Instr* one_value_iter_code(Expr key_arg, StdVar value_var, AnyRelVar relvar, YieldAction next_action, VarGen init_var_gen) {
+      fail;
+    }
 
-    code = ();
 
-    // Iterating through all candidate tables
-    for tv <- isort(candidate_tables):
-      sign = table_signature(tv);
-      repr_0 = low_level_repr(sign(0));
-      repr_1 = low_level_repr(sign(1));
-      ll_var_0 = low_level_var(repr_0, var_0);
-      ll_var_1 = low_level_var(repr_1, var_1);
+    Instr* full_column_iter_code(StdVar var_0, StdVar var_1, AnyRelVar relvar, YieldAction next_action, VarGen init_var_gen) {
+      surr_var_0 = shadow_surr_var(var_0);
 
-      store_id = table_col_store_id(tv, 0);
-      store_type = value_store_type(rel_auto_type(action.relvar), unqualified(store_id));
-      store_id = substitute(store_id);
+      // Selecting the candidate tables among those the logical relation is partitioned into
+      // In this specific case, that means all of them
+      candidate_tables = overlapping_tables(relvar, (nothing, nothing));
 
-      col_repr = column_repr(sign(1));
-      it_var, var_gen = next_column_it_var(init_var_gen, col_repr);
+      code = ();
 
-      vars_setup_code = (
-        set_ivar32(surr_var_0, get_col_index(it_var)),
-        surr_to_decoded_value(ll_var_0, store_id, store_type, surr_var_0),
-        set_any_var(ll_var_1, column_lookup(substitute(tv), surr_var_0, col_repr))
-      );
+      // Iterating through all candidate tables
+      for tv <- isort(candidate_tables):
+        sign = table_signature(tv);
+        repr_0 = low_level_repr(sign(0));
+        repr_1 = low_level_repr(sign(1));
+        ll_var_0 = low_level_var(repr_0, var_0);
+        ll_var_1 = low_level_var(repr_1, var_1);
 
-      next_action_surrs = surrogates & [var_0 -> obj_expr(ll_var_0), var_1 -> obj_expr(ll_var_1)];
-      action_code = yield_action_opt_code(action.next, var_gen, surrogates = next_action_surrs);
+        store_id = table_col_store_id(tv, 0);
+        store_type = value_store_type(rel_auto_type(relvar), unqualified(store_id));
+        store_id = substitute(store_id);
 
-      loop_code = (break_if(is_out_of_range(it_var))) & vars_setup_code & action_code & (move_forward(it_var));
+        col_repr = column_repr(sign(1));
+        it_var, var_gen = next_column_it_var(init_var_gen, col_repr);
 
-      table_code = (
-        get_column_iter(it_var, substitute(tv)),
-        repeat(nonempty(loop_code))
-      );
+        vars_setup_code = (
+          set_ivar32(surr_var_0, get_col_index(it_var)),
+          surr_to_decoded_value(ll_var_0, store_id, store_type, surr_var_0),
+          set_any_var(ll_var_1, column_lookup(substitute(tv), surr_var_0, col_repr))
+        );
 
-      code = code & table_code;
-    ;
+        next_action_surrs = surrogates & [var_0 -> obj_expr(ll_var_0), var_1 -> obj_expr(ll_var_1)];
+        action_code = yield_action_opt_code(next_action, var_gen, surrogates = next_action_surrs);
 
-    return code;
+        loop_code = (break_if(is_out_of_range(it_var))) & vars_setup_code & action_code & (move_forward(it_var));
+
+        table_code = (
+          get_column_iter(it_var, substitute(tv)),
+          repeat(nonempty(loop_code))
+        );
+
+        code = code & table_code;
+      ;
+
+      return code;
+    }
   }
 
 
