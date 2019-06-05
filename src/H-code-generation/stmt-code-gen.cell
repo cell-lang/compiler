@@ -959,82 +959,97 @@ implicit program           : Program,
 
 
   // type RelVarIter = rel_var_iter(vars: Maybe[StdVar]+, rel_var: AnyRelVar, args: Maybe[Expr]+);
-  StmtCompInfo columnar_rel_var_iter_opt_code(RelVarIter iter, Statement+ body, [EnvVar -> Type] env, VarGen init_var_gen) {
-    fail if not iter.args :: (Maybe[ExprRef], Nothing) or |iter.vars| != 2;
+  StmtCompInfo columnar_rel_var_iter_opt_code(RelVarIter iter, Statement+ body, [EnvVar -> Type] env, VarGen var_gen) {
+    fail if not iter.args :: (Maybe[ExprRef], Nothing);
 
-    if iter.args(0) != nothing:
-      fail; ## IMPLEMENT IMPLEMENT IMPLEMENT
-    ;
+    arg_0 = iter.args(0);
+    if arg_0 == nothing:
+      fail if |iter.vars| != 2;
+      return full_column_iter_code(iter.vars, iter.rel_var, body, env, var_gen);
 
-    var_0, var_1 = iter.vars;
-    if var_0 != nothing:
-      surr_var_0 = shadow_surr_var(value(var_0));
-      var_gen = init_var_gen;
     else
-      surr_var_0, var_gen = next_int32_var(init_var_gen);
+      key_arg = value(arg_0);
+      value_var = only_unsafe(iter.vars);
+      return one_value_iter_code(key_arg, value_var, iter.rel_var, body, env, var_gen);
     ;
 
-    // Selecting the candidate tables among those the logical relation is partitioned into
-    // In this specific case, that means all of them
-    candidate_tables = overlapping_tables(iter.rel_var, (nothing, nothing));
 
-    // Iterating through all candidate tables
-    entry_code = ();
-    code = ();
-    surrs = surrogates;
-    for tv <- isort(candidate_tables):
+    StmtCompInfo one_value_iter_code(Expr key_arg, Maybe[StdVar] value_var, AnyRelVar rel_var, Statement+ body, [EnvVar -> Type] env, VarGen init_var_gen) {
+      fail;
+    }
 
-      sign = table_signature(tv);
-      vars_reprs = [value(v) -> low_level_repr(sign(i)) : v @ i <~ iter.vars, v != nothing];
-      low_level_vars = [v -> low_level_var(r, v) : v, r <- vars_reprs];
 
-      store_id = table_col_store_id(tv, 0);
-      store_type = value_store_type(rel_auto_type(iter.rel_var), unqualified(store_id));
-      store_id = substitute(store_id);
+    StmtCompInfo full_column_iter_code((Maybe[StdVar], Maybe[StdVar]) vars, AnyRelVar rel_var, Statement+ body, [EnvVar -> Type] env, VarGen init_var_gen) {
+      var_0, var_1 = vars;
 
-      col_repr = column_repr(sign(1));
-      it_var, var_gen = next_column_it_var(init_var_gen, col_repr);
-
-      vars_setup_code = (
-        set_ivar32(surr_var_0, get_col_index(it_var)) if var_0 != nothing or var_1 != nothing,
-        ## WORKAROUND FOR A BUG IN VERSION 0.1 OF THE COMPILER
-        { llvar = low_level_vars(value(var_0));
-          return surr_to_decoded_value(llvar, store_id, store_type, surr_var_0);
-        } if var_0 != nothing,
-        ## WORKAROUND FOR A BUG IN VERSION 0.1 OF THE COMPILER
-        { llvar = low_level_vars(value(var_1));
-          return set_any_var(llvar, column_lookup(substitute(tv), surr_var_0, col_repr));
-        } if var_1 != nothing
-      );
-
-      // Environment the body runs in
-      sgn = table_signature(tv);
-      loop_vars = [value(v) -> sgn(i) : v @ i <~ iter.vars, v != nothing];
-      exit_env = update_env(body, env & loop_vars);
-      body_env = merge_envs(env, exit_env) & loop_vars;
-
-      local_surrs = [v -> obj_expr(llv) : v, llv <- low_level_vars];
-
-      let surrogates = surrs:
-        entry_code_fixes, body_code, surrs = loop_stable_code(body, local_surrs, body_env, var_gen);
+      if var_0 != nothing:
+        surr_var_0 = shadow_surr_var(value(var_0));
+        var_gen = init_var_gen;
+      else
+        surr_var_0, var_gen = next_int32_var(init_var_gen);
       ;
 
-      if body_code != ():
-        entry_code = entry_code & entry_code_fixes; ## BUG: NOT SURE WHAT THIS IS FOR, AND WHETHER IT'S OK
+      // Selecting the candidate tables among those the logical relation is partitioned into
+      // In this specific case, that means all of them
+      candidate_tables = overlapping_tables(rel_var, (nothing, nothing));
 
-        loop_code = (break_if(is_out_of_range(it_var))) & vars_setup_code & body_code & (move_forward(it_var));
-        table_code = (
-          get_column_iter(it_var, substitute(tv)),
-          repeat(loop_code)
+      // Iterating through all candidate tables
+      entry_code = ();
+      code = ();
+      surrs = surrogates;
+      for tv <- isort(candidate_tables):
+
+        sign = table_signature(tv);
+        vars_reprs = [value(v) -> low_level_repr(sign(i)) : v @ i <~ vars, v != nothing];
+        low_level_vars = [v -> low_level_var(r, v) : v, r <- vars_reprs];
+
+        store_id = table_col_store_id(tv, 0);
+        store_type = value_store_type(rel_auto_type(rel_var), unqualified(store_id));
+        store_id = substitute(store_id);
+
+        col_repr = column_repr(sign(1));
+        it_var, var_gen = next_column_it_var(init_var_gen, col_repr);
+
+        vars_setup_code = (
+          set_ivar32(surr_var_0, get_col_index(it_var)) if var_0 != nothing or var_1 != nothing,
+          ## WORKAROUND FOR A BUG IN VERSION 0.1 OF THE COMPILER
+          { llvar = low_level_vars(value(var_0));
+            return surr_to_decoded_value(llvar, store_id, store_type, surr_var_0);
+          } if var_0 != nothing,
+          ## WORKAROUND FOR A BUG IN VERSION 0.1 OF THE COMPILER
+          { llvar = low_level_vars(value(var_1));
+            return set_any_var(llvar, column_lookup(substitute(tv), surr_var_0, col_repr));
+          } if var_1 != nothing
         );
 
-        code = code & table_code;
+        // Environment the body runs in
+        sgn = table_signature(tv);
+        loop_vars = [value(v) -> sgn(i) : v @ i <~ vars, v != nothing];
+        exit_env = update_env(body, env & loop_vars);
+        body_env = merge_envs(env, exit_env) & loop_vars;
+
+        local_surrs = [v -> obj_expr(llv) : v, llv <- low_level_vars];
+
+        let surrogates = surrs:
+          entry_code_fixes, body_code, surrs = loop_stable_code(body, local_surrs, body_env, var_gen);
+        ;
+
+        if body_code != ():
+          entry_code = entry_code & entry_code_fixes; ## BUG: NOT SURE WHAT THIS IS FOR, AND WHETHER IT'S OK
+
+          loop_code = (break_if(is_out_of_range(it_var))) & vars_setup_code & body_code & (move_forward(it_var));
+          table_code = (
+            get_column_iter(it_var, substitute(tv)),
+            repeat(loop_code)
+          );
+
+          code = code & table_code;
+        ;
       ;
-    ;
 
-    return (code, just(surrs), [], init_var_gen);
+      return (code, just(surrs), [], init_var_gen);
+    }
   }
-
 
   // type RelVarIter = rel_var_iter(vars: Maybe[StdVar]+, rel_var: AnyRelVar, args: Maybe[Expr]+);
   StmtCompInfo rel_var_iter_opt_code(RelVarIter iter, Statement+ body, [EnvVar -> Type] env, VarGen init_var_gen) {
