@@ -250,7 +250,9 @@ assert |args_types| == |args|;
     is_unique = (k <- relvar_keys(rel_var) : not k(target_idx));
 
     res_surr_var, var_gen = next_int32_var(init_var_gen);
-    res_var, ret_var_gen = next_obj_var(var_gen);
+
+    res_repr = opt_repr(types(expr_id));
+    res_var, ret_var_gen = next_var(res_repr, init_var_gen);
 
     // Evaluation of arguments
     args_eval_code, args_aliases, var_gen = opt_eval_info(ord_args, ret_var_gen);
@@ -313,7 +315,7 @@ assert [j -> ord_args(k) : j @ k <~ args_idxs] == args;
       return code;
     } : tv <- isort(candidate_tables)));
 
-    return ((args_eval_code | execute_block((lookup_code | terminate))), res_var, ret_var_gen);
+    return ((args_eval_code | execute_block((lookup_code | terminate))), obj_expr(res_var), ret_var_gen);
   }
 
 
@@ -342,27 +344,50 @@ assert [j -> ord_args(k) : j @ k <~ args_idxs] == args;
     ;
 
     // Selecting the candidate tables among those the logical relation is partitioned into
-    candidate_tables = _isort_(overlapping_tables(rel_var, (just(arg_type), nothing)));
+    candidate_tables = overlapping_tables(rel_var, (just(arg_type), nothing));
 
     ## TEST IT WITH POLYMORPHIC TABLES AND WITH CLOSURES
 
-    first_table = candidate_tables(0);
-    arg_store_id = table_col_store_id(first_table, 0);
-    arg_store_type = value_store_type(rel_auto_type(rel_var), unqualified(arg_store_id));
-    arg_store_id = substitute(arg_store_id);
+    if |candidate_tables| == 1:
+      table = only(candidate_tables);
+      arg_store_id = table_col_store_id(table, 0);
+      arg_store_type = value_store_type(rel_auto_type(rel_var), unqualified(arg_store_id));
+      arg_store_id = substitute(arg_store_id);
 
-    col_repr = column_repr(table_signature(first_table)(1));
+      col_repr = column_repr(table_signature(table)(1));
 
-    code = (
-      arg_eval_code |
-      set_ivar32(arg_surr_var, value_to_surr(arg_store_id, value_store_encoded_expr(arg_store_type, arg_alias))),
-      check(neg(is_eq(arg_surr_var, -1))),
-      set_any_var(res_var, column_lookup(substitute(first_table), arg_surr_var, col_repr))
-    );
+      code = (
+        arg_eval_code |
+        set_ivar32(arg_surr_var, value_to_surr(arg_store_id, value_store_encoded_expr(arg_store_type, arg_alias))),
+        check(neg(is_eq(arg_surr_var, -1))),
+        set_any_var(res_var, column_lookup(substitute(table), arg_surr_var, col_repr))
+      );
 
-    return (code, obj_expr(res_var), ret_var_gen) if |candidate_tables| == 1;
+      return (code, obj_expr(res_var), ret_var_gen);
 
-    fail; ## IMPLEMENT IMPLEMENT IMPLEMENT
+    else
+      cases = [{
+        arg_store_id = table_col_store_id(tv, 0);
+        arg_store_type = value_store_type(rel_auto_type(rel_var), unqualified(arg_store_id));
+        arg_store_id = substitute(arg_store_id);
+
+        sign = table_signature(tv);
+        col_repr = column_repr(sign(1));
+
+        enc_expr = value_store_encoded_expr(arg_store_type, arg_alias);
+
+        code = (
+          set_ivar32(arg_surr_var, value_to_surr(arg_store_id, enc_expr)),
+          check(neg(is_eq(arg_surr_var, -1))),
+          set_any_var(res_var, column_lookup(substitute(tv), arg_surr_var, col_repr))
+        );
+
+        return ((sign(0)), code);
+      } : tv <- candidate_tables];
+
+      code = arg_eval_code & dynamic_dispatch_code((arg_alias), cases);
+      return (code, obj_expr(res_var), ret_var_gen);
+    ;
   }
 
 
