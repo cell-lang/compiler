@@ -391,7 +391,9 @@ implicit syn_prg : SynPrg {
 
     body = proc_def.body;
     return () if body == ();
-    vars = [var(a.var) : a <~ proc_def.args];
+
+    args_info = proc_args_info(proc_def.name);
+    vars = [var(a.var) : a @ i <~ proc_def.args, args_info(i) == :value_arg];
     has_ret_val = proc_def.res_type != nothing;
     let artifact = proc_def, impl_args = [], actual_arg_arity = 0:
       errs = root_stmt_block_wf_errors(body, (), vars, has_ret_val, true);
