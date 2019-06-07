@@ -342,15 +342,15 @@ implicit filename : String, lines : Nat** {
       typevars:   []
     );
 
-    (Atom, SynType) build_var_decl(RuleMatch mtc) {
-      nodes = rule_seq_nodes(mtc);
-      assert |nodes| == 4;
-      name = get_lowercase_id(nodes(0));
-      type = build_type_ast(nodes(2));
-      return attach_src_code_info((name, type), mtc);
-    }
-
     SynFnDef build_loc_fndef_ast(RuleMatch mtc) = attach_src_code_info(build_fndef_ast(mtc), filename, mtc);
+  }
+
+  (Atom, SynType) build_var_decl(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 4;
+    name = get_lowercase_id(nodes(0));
+    type = build_type_ast(nodes(2));
+    return attach_src_code_info((name, type), mtc);
   }
 
   SynFnDef build_match_fndef_ast(RuleMatch mtc) {
@@ -443,11 +443,17 @@ implicit filename : String, lines : Nat** {
     assert |nodes| == 4;
     arg_nodes = if nodes(2) != null_match then rep_rule_nodes(block_node(nodes(2))) else ();
     args = ((build_type_ast(rule_seq_node(n, 0)), get_lowercase_id(rule_seq_node(n, 1))) : n <- arg_nodes);
+
+    body_nodes = rule_seq_nodes(block_node(nodes(3)));
+    assert |body_nodes| == 2;
+    vars_decls = (build_var_decl(n) : n <- rep_rule_nodes(body_nodes(0)));
+    stmts = build_stmts_ast(body_nodes(1));
+
     return db_method_def(
       name:       get_lowercase_id(nodes(1)),
       args:       args,
       ret_type:   build_type_ast(nodes(0)),
-      expr:       syn_do_expr(nonempty(build_stmts_ast(block_node(nodes(3)))), ())
+      expr:       syn_do_expr(stmts, vars_decls)
     );
   }
 

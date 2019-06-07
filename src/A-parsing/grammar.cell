@@ -240,7 +240,12 @@ ParsingRule rule_proc_db_method_def =
     rule_type,
     rule_id,
     optional_rule(par_rule(comma_sep_seq(rule_seq((rule_type, rule_id))))),
-    brace_rule(rep_rule(rule_stmt(:db_method), true))
+    brace_rule(
+      rule_seq((
+        rep_rule_seq((rule_id, rule_colon, rule_ref_type, rule_semicolon)),
+        rep_rule_nonempty(rule_stmt(:db_method))
+      ))
+    )
   ));
 
 ParsingRule rule_match_db_method_def =
