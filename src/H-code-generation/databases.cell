@@ -302,13 +302,18 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 
     code = ();
     for tv <- tables:
-      log_rel_var = original_rel_var(tv);
-      arity = arity(rel_auto_id, log_rel_var);
-      src_is_sym = symmetric(rel_auto_id, log_rel_var);
+      rel_var = original_rel_var(tv);
+      arity = arity(rel_auto_id, rel_var);
+      src_is_sym = symmetric(rel_auto_id, rel_var);
 
       surr_vars = (ivar32(i) : i < 3);
-      it_var = table_it_var(0, arity, src_is_sym);
       foreign_keys = lookup(phys_keys_by_table, tv, []);
+
+      sign = table_signature(rel_auto_id, tv);
+
+      it_var = if is_columnar_relvar(rel_auto_id, logical_rel_var(rel_var))
+        then column_it_var(0, column_repr(sign(1)))
+        else table_it_var(0, arity, src_is_sym);
 
       if foreign_keys != []:
         conds = ({
@@ -351,10 +356,20 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
           : fk <- foreign_keys
         ]));
 
-        surrs_reads = (set_ivar32(surr_vars(i), get_unknown_arg(it_var, i)) : i <- surr_vars_used);
+        assert match (it_var)
+          table_it_var()   = true,
+          column_it_var()  = surr_vars_used == (0);
+
+        surrs_reads = match (it_var)
+          table_it_var()  = (set_ivar32(surr_vars(i), get_unknown_arg(it_var, i)) : i <- surr_vars_used),
+          column_it_var() = (set_ivar32(surr_vars(0), get_col_index(it_var)));
+
+        get_iter_instr = match (it_var)
+          table_it_var()  = get_table_iter(it_var, tv, (nothing : i < arity)),
+          column_it_var() = get_column_iter(it_var, tv);
 
         code = (code |
-          get_table_iter(it_var, tv, (nothing : i < arity)),
+          get_iter_instr,
           repeat((
             break_if(is_out_of_range(it_var))
           ) & surrs_reads & (
