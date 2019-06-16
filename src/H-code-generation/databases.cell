@@ -30,6 +30,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
       cleanup_code:                 database_cleanup_code,
       copy_state_code:              database_copy_state_code(rel_vars_args_perms),
       set_state_code:               database_set_state_code(rel_vars_args_perms),
+      rel_vars_load_code:           database_rel_vars_load_code(rel_vars_args_perms),
       foreign_keys_check_code:      database_foreign_keys_check_code,
       methods:                      methods,
       accessors:                    [], ## TODO: REMOVE ALTOGETHER
@@ -103,6 +104,133 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
     ;
 
     return (code | mk_map(res_var, keys_var, values_var, count), ret_val(res_var));
+  }
+
+
+  [RelVar -> (LocVar+, BoolExpr, Instr+)] database_rel_vars_load_code([RelVar -> [+Nat -> Nat]] rel_vars_args_perms) {
+    rel_auto_id = database.name;
+
+    args_vars = (lvar(i) : i < 3);
+    surr_vars = (ivar32(i) : i < 3);
+
+    return [v -> {
+      arity = arity(rel_auto_id, v);
+      args_perm = rel_vars_args_perms(v);
+
+      core_loop_code = if is_columnar_relvar(rel_auto_id, v)
+        then column_core_loop_code(rel_auto_id, v, arity, args_vars, surr_vars(0))
+        else table_core_loop_code(rel_auto_id, v, arity, args_vars, surr_vars);
+
+      signatures = rel_var_signatures(database, v);
+
+      arg_type_is_unique = ({
+        types = [s(i) : s <- signatures];
+        a_type = an_elem(types);
+        return not (t <- types : not is_eq(t, a_type));
+      } : i < arity);
+
+      mono_args = ((i, an_elem([s(i) : s <- signatures])) : i < arity, arg_type_is_unique(i));
+      args_types_conds = (is_member(memb_test_preds_map(t, !!), args_vars(i)) : i, t <- mono_args);
+
+      poly_args = (i : i < arity, not arg_type_is_unique(i));
+      if poly_args != ():
+        poly_conds = (
+          and_then((is_member(memb_test_preds_map(s(i), !!), args_vars(i))  : i <- poly_args))
+        : s <- isort(signatures));
+        args_types_conds = (args_types_conds | or_else(poly_conds));
+      ;
+
+      type_check_expr = and_then(nonempty(args_types_conds));
+
+      ## BUG BUG BUG: THE ARGUMENT VARIABLES NEED TO BE PERMUTATED
+      return (nonempty(take(args_vars, arity)), type_check_expr, nonempty(core_loop_code));
+    } : v <- logical_rel_vars(database)];
+  }
+
+
+  Instr* table_core_loop_code(DBSymbol rel_auto_id, RelVar rel_var, NzNat arity, LocVar+ args_vars, Int32Var+ surr_vars) {
+    // Physical tables the logical relation is partitioned into
+    tables = [table_var(i) : i <- physical_rel_vars(database, rel_var)];
+
+    if |tables| == 1:
+      table_var = only(tables);
+      stores_ids = (table_col_store_id(rel_auto_id, table_var, i) : i < arity);
+      stores_types = (value_store_type(rel_auto_id, id) : id <- stores_ids);
+      store_args = (value_store_encoded_expr(stores_types(i), args_vars(i)) : i < arity);
+      core_loop_code = (
+        (immediate_insert_or_add_ref(surr_vars(i), stores_ids(i), store_args(i)) : i < arity) |
+        immediate_insert_tuple(table_var, nonempty(take(surr_vars, arity)))
+      );
+
+    else
+      // Choosing the dispatch arguments
+      signatures = [table_signature(rel_auto_id, tv) : tv <- tables];
+      disp_args_idxs = optimal_dispatch_args(signatures, typedefs);
+      disp_args = (args_vars(i) : i <- disp_args_idxs);
+
+      cases = [{
+        stores_ids = (table_col_store_id(rel_auto_id, tv, i) : i < arity);
+        stores_types = (value_store_type(rel_auto_id, id) : id <- stores_ids);
+        store_args = (value_store_encoded_expr(stores_types(i), args_vars(i)) : i < arity);
+        case_code = (
+          (immediate_insert_or_add_ref(surr_vars(i), stores_ids(i), store_args(i)) : i < arity) |
+          immediate_insert_tuple(tv, nonempty(take(surr_vars, arity))),
+          exit_block
+        );
+        types = table_signature(rel_auto_id, tv);
+        disp_types = (types(i) : i <- disp_args_idxs);
+        return (disp_types, case_code);
+      } : tv <- tables];
+
+      block_body = dynamic_dispatch_code(disp_args, cases);
+      core_loop_code = (execute_block(block_body));
+    ;
+
+    return core_loop_code;
+  }
+
+
+  Instr* column_core_loop_code(DBSymbol rel_auto_id, RelVar rel_var, NzNat arity, LocVar+ args_vars, Int32Var key_surr_var) {
+    // Physical tables the logical relation is partitioned into
+    tables = [table_var(i) : i <- physical_rel_vars(database, rel_var)];
+
+    if |tables| == 1:
+      table_var = only(tables);
+      store_id = table_col_store_id(rel_auto_id, table_var, 0);
+      store_type = value_store_type(rel_auto_id, store_id);
+      store_arg = value_store_encoded_expr(store_type, args_vars(0));
+      col_repr = column_repr(table_signature(rel_auto_id, table_var)(1));
+      core_loop_code = (
+        immediate_insert_or_add_ref(key_surr_var, store_id, store_arg),
+        column_insert_immediate(table_var, key_surr_var, low_level_expr(col_repr, args_vars(1)))
+      );
+
+    else
+      // Choosing the dispatch arguments
+      signatures = [table_signature(rel_auto_id, tv) : tv <- tables];
+      disp_args_idxs = optimal_dispatch_args(signatures, typedefs);
+      disp_args = (args_vars(i) : i <- disp_args_idxs);
+
+      cases = [{
+        store_id = table_col_store_id(rel_auto_id, tv, 0);
+        store_type = value_store_type(rel_auto_id, store_id);
+        store_arg = value_store_encoded_expr(store_type, args_vars(0));
+        col_repr = column_repr(table_signature(rel_auto_id, tv)(1));
+        case_code = (
+          immediate_insert_or_add_ref(key_surr_var, store_id, store_arg),
+          column_insert_immediate(tv, key_surr_var, low_level_expr(col_repr, args_vars(1))),
+          exit_block
+        );
+        types = table_signature(rel_auto_id, tv);
+        disp_types = (types(i) : i <- disp_args_idxs);
+        return (disp_types, case_code);
+      } : tv <- tables];
+
+      block_body = dynamic_dispatch_code(disp_args, cases);
+      core_loop_code = (execute_block(block_body));
+    ;
+
+    return core_loop_code;
   }
 
 
@@ -205,92 +333,6 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
     ;
 
     return (code | ret_val(true));
-
-
-    Instr* table_core_loop_code(DBSymbol rel_auto_id, RelVar rel_var, NzNat arity, LocVar+ args_vars, Int32Var+ surr_vars) {
-      // Physical tables the logical relation is partitioned into
-      tables = [table_var(i) : i <- physical_rel_vars(database, rel_var)];
-
-      if |tables| == 1:
-        table_var = only(tables);
-        stores_ids = (table_col_store_id(rel_auto_id, table_var, i) : i < arity);
-        stores_types = (value_store_type(rel_auto_id, id) : id <- stores_ids);
-        store_args = (value_store_encoded_expr(stores_types(i), args_vars(i)) : i < arity);
-        core_loop_code = (
-          (immediate_insert_or_add_ref(surr_vars(i), stores_ids(i), store_args(i)) : i < arity) |
-          immediate_insert_tuple(table_var, nonempty(take(surr_vars, arity)))
-        );
-
-      else
-        // Choosing the dispatch arguments
-        signatures = [table_signature(rel_auto_id, tv) : tv <- tables];
-        disp_args_idxs = optimal_dispatch_args(signatures, typedefs);
-        disp_args = (args_vars(i) : i <- disp_args_idxs);
-
-        cases = [{
-          stores_ids = (table_col_store_id(rel_auto_id, tv, i) : i < arity);
-          stores_types = (value_store_type(rel_auto_id, id) : id <- stores_ids);
-          store_args = (value_store_encoded_expr(stores_types(i), args_vars(i)) : i < arity);
-          case_code = (
-            (immediate_insert_or_add_ref(surr_vars(i), stores_ids(i), store_args(i)) : i < arity) |
-            immediate_insert_tuple(tv, nonempty(take(surr_vars, arity))),
-            exit_block
-          );
-          types = table_signature(rel_auto_id, tv);
-          disp_types = (types(i) : i <- disp_args_idxs);
-          return (disp_types, case_code);
-        } : tv <- tables];
-
-        block_body = dynamic_dispatch_code(disp_args, cases);
-        core_loop_code = (execute_block(block_body));
-      ;
-
-      return core_loop_code;
-    }
-
-
-    Instr* column_core_loop_code(DBSymbol rel_auto_id, RelVar rel_var, NzNat arity, LocVar+ args_vars, Int32Var key_surr_var) {
-      // Physical tables the logical relation is partitioned into
-      tables = [table_var(i) : i <- physical_rel_vars(database, rel_var)];
-
-      if |tables| == 1:
-        table_var = only(tables);
-        store_id = table_col_store_id(rel_auto_id, table_var, 0);
-        store_type = value_store_type(rel_auto_id, store_id);
-        store_arg = value_store_encoded_expr(store_type, args_vars(0));
-        col_repr = column_repr(table_signature(rel_auto_id, table_var)(1));
-        core_loop_code = (
-          immediate_insert_or_add_ref(key_surr_var, store_id, store_arg),
-          column_insert_immediate(table_var, key_surr_var, low_level_expr(col_repr, args_vars(1)))
-        );
-
-      else
-        // Choosing the dispatch arguments
-        signatures = [table_signature(rel_auto_id, tv) : tv <- tables];
-        disp_args_idxs = optimal_dispatch_args(signatures, typedefs);
-        disp_args = (args_vars(i) : i <- disp_args_idxs);
-
-        cases = [{
-          store_id = table_col_store_id(rel_auto_id, tv, 0);
-          store_type = value_store_type(rel_auto_id, store_id);
-          store_arg = value_store_encoded_expr(store_type, args_vars(0));
-          col_repr = column_repr(table_signature(rel_auto_id, tv)(1));
-          case_code = (
-            immediate_insert_or_add_ref(key_surr_var, store_id, store_arg),
-            column_insert_immediate(tv, key_surr_var, low_level_expr(col_repr, args_vars(1))),
-            exit_block
-          );
-          types = table_signature(rel_auto_id, tv);
-          disp_types = (types(i) : i <- disp_args_idxs);
-          return (disp_types, case_code);
-        } : tv <- tables];
-
-        block_body = dynamic_dispatch_code(disp_args, cases);
-        core_loop_code = (execute_block(block_body));
-      ;
-
-      return core_loop_code;
-    }
   }
 
 
