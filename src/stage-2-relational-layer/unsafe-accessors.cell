@@ -18,7 +18,12 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context {
                       else only_unsafe((a.type : a <- context.rel_auto_args, a.var == var));
 
 
-  DBSymbol var_type(QualDBVar var) = rel_auto_by_id(var_type(var.outer)).nested_dbs[var.inner];
+  DBSymbol var_type(QualDBVar var) {
+    rel_auto = rel_auto_by_id(var_type(var.outer));
+    return match (var.inner)
+      linked_db_var(i?) = rel_auto.links(i),
+      nested_db_var()   = rel_auto.nested_dbs(var.inner);
+  }
 
 
   DBSymbol this_db_symbol = ## RENAME THIS
