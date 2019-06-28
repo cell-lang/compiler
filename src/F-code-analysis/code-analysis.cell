@@ -37,7 +37,12 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Database,
       errs = match (s)
         insert_stmt()     |
         delete_stmt()     |
-        assignment_stmt() = analyse(s, curr_reqrs, curr_env),
+        assignment_stmt() |
+        if_stmt()         |
+        loop_stmt()       |
+        foreach_stmt()    |
+        for_stmt()        |
+        let_stmt()        = analyse(s, curr_reqrs, curr_env),
         _                 = [];
 
       return errs if errs != [];
@@ -49,6 +54,41 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Database,
       possible_foreign_key_violation(s, nonempty([v : v, unused_var <- curr_reqrs(?, ?, s)]))
       : s <- prob_stmts
     ];
+  }
+
+
+  [AnalysisError] analyse(IfStmt stmt, [RelVar, Expr+, InsertStmt] reqrs, [EnvVar -> Type] env) {
+    then_env, else_env = refine_env(stmt.cond, env);
+    return analyse(stmt.body, then_env) & analyse(stmt.else, else_env);
+  }
+
+
+  [AnalysisError] analyse(LoopStmt stmt, [RelVar, Expr+, InsertStmt] reqrs, [EnvVar -> Type] env) {
+    body = match (stmt) loop_stmt(ss?) = ss;
+    reentry_env = update_env(body, env);
+    return analyse(body, env) & analyse(body, reentry_env);
+  }
+
+
+  [AnalysisError] analyse(ForeachStmt stmt, [RelVar, Expr+, InsertStmt] reqrs, [EnvVar -> Type] env) {
+    loop_vars = loop_vars(stmt.iter, env);
+    env_0 = env & loop_vars;
+    env_1 = update_env(stmt.body, env_0);
+    return analyse(stmt.body, env_0) & analyse(stmt.body, env_1);
+  }
+
+
+  [AnalysisError] analyse(ForStmt stmt, [RelVar, Expr+, InsertStmt] reqrs, [EnvVar -> Type] env) {
+    env_0 = env & [stmt.var -> type_nat if stmt.var?];
+    env_1 = update_env(stmt.body, env_0);
+    return analyse(stmt.body, env_0) & analyse(stmt.body, env_1);
+  }
+
+
+  [AnalysisError] analyse(LetStmt stmt, [RelVar, Expr+, InsertStmt] reqrs, [EnvVar -> Type] env) {
+    env_delta = [v -> expr_type(e, env) : v, e <- stmt.asgnms];
+    new_env = update(env, env_delta);
+    return analyse(stmt.body, new_env);
   }
 
 
@@ -73,7 +113,6 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Database,
   }
 
 
-  // type DeleteStmt = delete_stmt(var: RelVar, args: Maybe[Expr]+);
   [AnalysisError] analyse(DeleteStmt stmt, [RelVar, Expr+, InsertStmt] reqrs, [EnvVar -> Type] env) {
     args_types = (apply(a, expr_type($, env)) : a <- stmt.args);
     return [] if not args_types :: Maybe[NeType]+;
