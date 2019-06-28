@@ -276,8 +276,9 @@ PropInfo outgoing_prop_info(NodeInfo node, PropInfo info) {
 ////////////////////////////////////////////////////////////////////////////////
 
 NodeInfo rewrite_node(NodeInfo node, PropInfo info) =
-  std_node(i?)  = std_node(rewrite_instr(i, info)),
-  _             = node;
+  std_node(i?)    = std_node(rewrite_instr(i, info)),
+  branch_node(e?) = branch_node(rewrite_bool_expr(e, info)),
+  _               = node;
 
 
 <BasicInstr, JumpInstr> rewrite_instr(<BasicInstr, JumpInstr> instr, PropInfo info) {
@@ -315,6 +316,8 @@ NodeInfo rewrite_node(NodeInfo node, PropInfo info) =
 
   //////////////////////////////////////////////////////////////////////////////
 
+  BoolExpr rewrite_expr(BoolExpr expr, PropInfo info) = rewrite_bool_expr(expr, info);
+
   IntExpr rewrite_expr(IntExpr expr, PropInfo info) = rewrite_int_expr(expr, info);
 
   AtomicExpr rewrite_expr(AtomicExpr expr, PropInfo info) {
@@ -325,6 +328,36 @@ NodeInfo rewrite_node(NodeInfo node, PropInfo info) =
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
+
+BoolExpr rewrite_bool_expr(BoolExpr expr, PropInfo info) {
+  return match (expr)
+    are_eq(e1?, e2?)  = rewrite_are_eq_expr(e1, e2, info),
+    neg(e?)           = neg(rewrite_bool_expr(e, info)),
+    _                 = expr;
+
+
+  BoolExpr rewrite_are_eq_expr(AtomicExpr expr1, AtomicExpr expr2, PropInfo info) {
+    if expr1 :: StdVar and expr2 :: StdVar:
+      return rewrite_vars_are_eq_expr(expr1, expr2, info);
+    ;
+
+    rw_expr_1 = rewrite_atomic_expr(expr1, info);
+    rw_expr_1 = expr1 if not is_atomic_expr(rw_expr_1);
+
+    rw_expr_2 = rewrite_atomic_expr(expr2, info);
+    rw_expr_2 = expr1 if not is_atomic_expr(rw_expr_2);
+
+    return are_eq(rw_expr_1, rw_expr_2);
+  }
+
+
+  BoolExpr rewrite_vars_are_eq_expr(StdVar var1, StdVar var2, PropInfo info) {
+    ## TODO: OPTIMIZE HERE...
+    return are_eq(var1, var2);
+  }
+
+}
+
 
 Int32Expr rewrite_int32_expr(Int32Expr expr, PropInfo info) {
   return match (expr)
@@ -364,6 +397,7 @@ IntExpr rewrite_int_expr(IntExpr expr, PropInfo info) {
   return match (expr)
     var() e? | lvar() e?  = lookup(info, e, e),
     get_inner_obj(e?)     = rewrite_get_inner_obj(e, info, expr),
+    bool_obj(e?)          = bool_obj(rewrite_bool_expr(e, info)),
     _                     = expr;
 
 
