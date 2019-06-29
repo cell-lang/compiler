@@ -1038,6 +1038,23 @@ assert [j -> ord_args(k) : j @ k <~ args_idxs] == args;
     // Allocation of destination array
     array_var, var_gen = next_array_var(var_gen, elt_repr);
     size_expr = if expr.inclusive then add(bound_surr, 1) else bound_surr;
+    if not is_subset(subexpr_type(expr.bound_expr), type_nat):
+      if size_expr :: IntVar:
+        instr = do_if(is_lt(size_expr, 0), set_ivar(size_expr, 0));
+      elif size_expr :: <upcast_int32(Int32Var)>:
+        size_var = match (size_expr) upcast_int32(v?) = v;
+        instr = do_if(is_lt(size_expr, 0), set_ivar32(size_var, 0));
+      else
+        size_var, var_gen = next_int_var(var_gen);
+        instr = branch(
+          is_ge(size_expr, 0),
+          (set_ivar(size_var, size_expr)),
+          (set_ivar(size_var, 0))
+        );
+        size_expr = size_var;
+      ;
+      code = (code | instr);
+    ;
     code = (code | array_alloc(array_var, cast_int32(size_expr)));
 
     let surrogates = surrogates & [expr.var -> obj_expr(idx_var)]:
