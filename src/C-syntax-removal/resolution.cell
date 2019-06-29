@@ -375,12 +375,13 @@ implicit syn_prg : SynPrg {
       if automaton_is_static(v.type) then loc_db_var(symbol) else loc_auto_var(symbol)
       : v <~ artifact.auto_or_db_vars, v.var == symbol
     ];
-    auto_args = [
+    auto_args = union([
       match (info)
-        rel_auto_arg()    = loc_db_var(symbol),
-        react_auto_arg()  = loc_auto_var(symbol)
-      : info <~ proc_args_info(artifact.name), info != :value_arg
-    ];
+        value_arg           = [],
+        rel_auto_arg(s?)    = [loc_db_var(symbol) if artifact.args(i).var == symbol],
+        react_auto_arg(s?)  = [loc_auto_var(symbol) if artifact.args(i).var == symbol]
+      : info @ i <~ proc_args_info(artifact.name)
+    ]);
     return loc_auto_vars & auto_args;
   }
 

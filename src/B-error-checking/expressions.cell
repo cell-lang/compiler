@@ -236,6 +236,9 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg], actual_ar
     return (ambiguous_expr(target, resols)) if |resols| > 1;
 
     if resols == []:
+      head = head(symbols);
+      return (undef_var_or_const(head)) if resolve_symbol(head, def_vars) == [];
+
       ## BAD BAD BAD: USING A FIXED MAXIMUM ARITY
       // Now passing and empty set of defined vars, so we avoid unary or binary pseudocalls
       valid_arities = set((a : a < 20, resolve_by_priority_as_call_lookalike_target(symbols, a, []) != []));
