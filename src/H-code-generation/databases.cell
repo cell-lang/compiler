@@ -163,10 +163,15 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
       stores_ids = (table_col_store_id(rel_auto_id, table_var, i) : i < arity);
       stores_types = (value_store_type(rel_auto_id, id) : id <- stores_ids);
       store_args = (value_store_encoded_expr(stores_types(i), args_vars(i)) : i < arity);
-      core_loop_code = (
-        (immediate_insert_or_add_ref(surr_vars(i), stores_ids(i), store_args(i)) : i < arity) |
-        immediate_insert_tuple(table_var, nonempty(take(surr_vars, arity)))
-      );
+
+      store_inserts = (immediate_insert_or_add_ref(surr_vars(i), stores_ids(i), store_args(i)) : i < arity);
+      table_insert = immediate_insert_tuple(table_var, nonempty(take(surr_vars, arity)));
+      if arity == 2:
+        symmetric = symmetric(rel_auto_id, rel_var);
+        guard_expr = neg(table_contains(table_var, (just(surr_vars(i)) : i < arity), symmetric));
+        table_insert = do_if(guard_expr, table_insert);
+      ;
+      core_loop_code = (store_inserts | table_insert);
 
     else
       // Choosing the dispatch arguments
@@ -178,11 +183,18 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
         stores_ids = (table_col_store_id(rel_auto_id, tv, i) : i < arity);
         stores_types = (value_store_type(rel_auto_id, id) : id <- stores_ids);
         store_args = (value_store_encoded_expr(stores_types(i), args_vars(i)) : i < arity);
-        case_code = (
-          (immediate_insert_or_add_ref(surr_vars(i), stores_ids(i), store_args(i)) : i < arity) |
-          immediate_insert_tuple(tv, nonempty(take(surr_vars, arity))),
-          exit_block
+
+        store_inserts = (
+          immediate_insert_or_add_ref(surr_vars(i), stores_ids(i), store_args(i)) : i < arity
         );
+        table_insert = immediate_insert_tuple(tv, nonempty(take(surr_vars, arity)));
+        if arity == 2:
+          symmetric = symmetric(rel_auto_id, rel_var);
+          guard_expr = neg(table_contains(tv, (just(surr_vars(i)) : i < arity), symmetric));
+          table_insert = do_if(guard_expr, table_insert);
+        ;
+        case_code = (store_inserts | table_insert, exit_block);
+
         types = table_signature(rel_auto_id, tv);
         disp_types = (types(i) : i <- disp_args_idxs);
         return (disp_types, case_code);
