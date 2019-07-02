@@ -142,8 +142,9 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 
       type_check_expr = and_then(nonempty(args_types_conds));
 
-      ## BUG BUG BUG: THE ARGUMENT VARIABLES NEED TO BE PERMUTATED
-      return (nonempty(take(args_vars, arity)), type_check_expr, nonempty(core_loop_code));
+      rel_args_vars = (args_vars(args_perm(i)) : i < arity);
+
+      return (rel_args_vars, type_check_expr, nonempty(core_loop_code));
     } : v <- logical_rel_vars(database)];
   }
 
