@@ -56,6 +56,15 @@ type CodeOutcome = fails, returns, breaks_loop, exits_block, falls_through;
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
+[MembVar] updated_memb_vars(CompiledUpdate update) {
+  return search_instrs(update.body, updated_memb_vars);
+
+  [MembVar] updated_memb_vars(Instr instr) =
+    set_var()   = [corresponding_memb_var(instr.var) if instr.var :: PendingStateVar],
+    _           = search_nested(instr, updated_memb_vars, []);
+}
+
+
 [ValueStoreId] updated_value_stores(CompiledUpdate update) {
   return search_instrs(update.body, updated_value_stores);
 
@@ -110,6 +119,14 @@ implicit block : StaticBlock {
     shallow_graph = [id -> invoked_mutators(u) : id, u <- block.updates];
     deep_graph = transitive_closure(shallow_graph);
     return [s, t : s, ts <- deep_graph, t <- ts];
+  }
+
+
+  [UpdateId, MembVar] updated_memb_vars {
+    directly_touched = [id -> updated_memb_vars(u) : id, u <- block.updates];
+    deep_call_map = call_graph_transitive_closure;
+    indirectly_touched = [s, v : s, t <- deep_call_map, v <- directly_touched(t)];
+    return [u, v : u, vs <- directly_touched, v <- vs | v <- indirectly_touched(u, ?)];
   }
 
 

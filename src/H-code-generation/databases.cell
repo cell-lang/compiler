@@ -17,6 +17,10 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
         )
     ];
 
+    memb_var_check_exprs = [
+      v -> is_member(memb_test_preds_map(info.type, !!), v) : v, info <- database.state_vars
+    ];
+
     return static_block(
       name:                         database.name,
       links:                        database.links,
@@ -30,6 +34,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
       cleanup_code:                 database_cleanup_code,
       copy_state_code:              database_copy_state_code(rel_vars_args_perms),
       set_state_code:               database_set_state_code(rel_vars_args_perms),
+      memb_var_check_exprs:         memb_var_check_exprs,
       rel_vars_load_code:           database_rel_vars_load_code(rel_vars_args_perms),
       foreign_keys_check_code:      database_foreign_keys_check_code,
       methods:                      methods,
