@@ -104,6 +104,7 @@ type ExprSpecWFError    = already_def_var(Var),
                           return_in_let_body(<SynReturnStmt, return_stmt>),
                           vars_redef(anchor: Any, vars: [+Var]),
                           undef_update_var(stmt: SynSeqUpdateStmt, var: StdVar),
+                          not_an_explicitly_typed_loc_var(stmt: SynSeqUpdateStmt, var: StdVar),
                           wrong_proc_arity(stmt: SynProcCallStmt, exp_arity: Nat),
                           uncaught_ret_val(SynProcCallStmt),
                           proc_has_no_ret_val(SynProcCallStmt),
@@ -326,6 +327,7 @@ ExprSpecWFError wrong_return(<SynReturnStmt, return_stmt> s)    = :wrong_return(
 ExprSpecWFError return_in_let_body(<SynReturnStmt, return_stmt> s)  = :return_in_let_body(s);
 ExprSpecWFError vars_redef(Any a, [+Var] vs)                    = vars_redef(anchor: a, vars: vs);
 ExprSpecWFError undef_update_var(SynSeqUpdateStmt s, StdVar v)  = undef_update_var(stmt: s, var: v);
+ExprSpecWFError not_an_explicitly_typed_loc_var(SynSeqUpdateStmt s, StdVar v) = not_an_explicitly_typed_loc_var(stmt: s, var: v);
 ExprSpecWFError wrong_proc_arity(SynProcCallStmt s, Nat a)      = wrong_proc_arity(stmt: s, exp_arity: a);
 ExprSpecWFError uncaught_ret_val(SynProcCallStmt s)             = :uncaught_ret_val(s);
 ExprSpecWFError proc_has_no_ret_val(SynProcCallStmt s)          = :proc_has_no_ret_val(s);
@@ -448,6 +450,7 @@ Any* anchor_objs(ExprSpecWFError err) =
   return_in_let_body(s?)                  = (s),
   vars_redef()                            = (err.anchor),
   undef_update_var()                      = (err.stmt),
+  not_an_explicitly_typed_loc_var()       = (err.stmt),
   wrong_proc_arity()                      = (err.stmt),
   uncaught_ret_val(s?)                    = (s),
   proc_has_no_ret_val(s?)                 = (s),
@@ -877,6 +880,7 @@ String* basic_err_msg(ExprSpecWFError err) =
   return_in_let_body()        = ("Return statements are not allowed inside the body of a let statement"),
   vars_redef()                = ("Variable is already defined: " & user_repr(v) : v <- rand_sort(err.vars)),
   undef_update_var()          = ("Variable is not defined: " & user_repr(err.var)),
+  not_an_explicitly_typed_loc_var() = ("Only explicitly typed local variables can be updated imperatively. Variable: " & user_repr(err.var)),
   wrong_proc_arity()          = ("Wrong number of arguments: " & user_repr(err.stmt.proc_name) & ", expected arity: " & printed(err.exp_arity)),
   uncaught_ret_val(p?)        = ("Return value cannot be ignored: " & user_repr(p.proc_name)),
   proc_has_no_ret_val(p?)     = ("Procedure has no return value: " & user_repr(p.proc_name)),

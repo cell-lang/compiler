@@ -10,8 +10,12 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg], actual_ar
       errs = (errs | vars_redef(typed_vars(i), [var(v)])) if is_already_def;
       errs = errs & param_type_wf_errors(t, def_type_vars);
     ;
-    let allow_proc_calls=allow_proc_calls, has_return_value=has_ret_val, stmt_stack=():
-      errs = errs & stmts_wf_errors(stmts, ext_vars, []);
+    return errs if errs != ();
+    typed_loc_vars = [v : v, unused_var <~ typed_vars];
+    let typed_loc_vars = typed_loc_vars, allow_proc_calls = allow_proc_calls:
+      let has_return_value = has_ret_val, stmt_stack = ():
+        errs = errs & stmts_wf_errors(stmts, ext_vars, []);
+      ;
     ;
     return if errs != () then errs else (missing_ret_stmt(stmts) if has_ret_val and syn_may_fall_through(stmts));
   }
@@ -22,6 +26,7 @@ implicit {
   syn_prg           : SynPrg,
   artifact          : Artifact,
   impl_args         : [ImplArg],
+  typed_loc_vars    : [Atom],
   actual_arg_arity  : Nat,
   allow_proc_calls  : Bool,
   has_return_value  : Bool,
@@ -361,11 +366,12 @@ implicit {
 
   ExprWFError* seq_update_stmt_local_wf_errors(SynSeqUpdateStmt stmt, [DefVar] ro_vars, [StdVar] rw_vars) {
     var = stmt.obj;
-    // The variable whose content is update must already exist.
+    // The variable whose content is updated must already exist.
     // Does it have to be a read/write one, or can it be a read-only one too?
     // It has to be a standard variable, so no searching through implicit parameters
     var_errs = (undef_update_var(stmt, var) if not in(var, ro_vars) and not in(var, rw_vars));
-    return var_errs;
+    return var_errs if var_errs != ();
+    return (not_an_explicitly_typed_loc_var(stmt, var) if not typed_loc_vars(bare_id(var)));
   }
 
 
