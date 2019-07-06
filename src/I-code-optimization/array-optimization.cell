@@ -1,18 +1,33 @@
 implicit typedefs : [TypeName -> NeType] {
-  CompiledPrg optimize_array_init(CompiledPrg prg) =
-    compiled_prg(
+  Result[CompiledPrg, ([ObjFnName], [DBSymbol -> [+<MethodId, UpdateId>]])]
+  optimize_array_init(CompiledPrg prg) {
+    proc_results = [p.name -> optimize_array_init(p) : p <- prg.procs];
+    blocks_results = [b.name -> optimize_array_init(b)  : b <- prg.static_blocks];
+
+    proc_failures = [p.name : p <- prg.procs, proc_results(p.name) == nothing];
+    block_failures = [b.name -> error(r) : b <- prg.static_blocks, r = blocks_results(b.name), failed(r)];
+    return failure((proc_failures, block_failures)) if proc_failures != [] or block_failures != [];
+
+    opt_procs = [value_unsafe(r) : unused_var, r <- proc_results];
+    opt_static_blocks = [match (r) success(b?) = b, failure() = undefined : unused_var, r <- blocks_results];
+
+    opt_prg = compiled_prg(
       typedefs:       prg.typedefs,
       opt_reprs:      prg.opt_reprs,
       bool_procs:     prg.bool_procs,
-      procs:          [optimize_array_init(pd) : pd <- prg.procs],
+      procs:          opt_procs,
       react_blocks:   prg.react_blocks,
-      static_blocks:  [optimize_array_init(b)  : b <- prg.static_blocks],
+      static_blocks:  opt_static_blocks,
       int_seqs:       prg.int_seqs
     );
+    return success(opt_prg);
+  }
 
 
-  ObjProcDef optimize_array_init(ObjProcDef pd) =
-    obj_proc_def(
+  Maybe[ObjProcDef] optimize_array_init(ObjProcDef pd) {
+    result = try_to_optimize_array_ops(pd.body, pd.loc_vars_types);
+    return nothing if result == nothing;
+    opt_proc = obj_proc_def(
       name:             pd.name,
       args:             pd.args,
       cls_args:         pd.cls_args,
@@ -24,13 +39,24 @@ implicit typedefs : [TypeName -> NeType] {
       loc_vars_types:   pd.loc_vars_types,
       loc_auto_vars:    pd.loc_auto_vars,
       loc_db_vars:      pd.loc_db_vars,
-      body:             nonempty(optimize_array_ops(pd.body, [], loc_vars_types = pd.loc_vars_types)),
+      body:             nonempty(value(result)),
       cached:           pd.cached
     );
+    return just(opt_proc);
+  }
 
 
-  StaticBlock optimize_array_init(StaticBlock block) =
-    static_block(
+  Result[StaticBlock, [+<MethodId, UpdateId>]] optimize_array_init(StaticBlock block) {
+    opt_methods = [id -> optimize_array_init(m) : id, m <- block.methods];
+    opt_updates = [id -> optimize_array_init(u) : id, u <- block.methods];
+
+    failures = [id : id, r <- opt_methods | id, r <- opt_updates, r == nothing];
+    return failure(failures) if failures != [];
+
+    opt_methods = [id -> value_unsafe(r) : id, r <- opt_methods];
+    opt_updates = [id -> value_unsafe(r) : id, r <- opt_updates];
+
+    opt_block = static_block(
       name:                         block.name,
       links:                        block.links,
       state_vars:                   block.state_vars,
@@ -46,29 +72,58 @@ implicit typedefs : [TypeName -> NeType] {
       memb_var_check_exprs:         block.memb_var_check_exprs,
       rel_vars_load_code:           block.rel_vars_load_code,
       foreign_keys_check_code:      block.foreign_keys_check_code,
-      methods:                      [id -> optimize_array_init(m) : id, m <- block.methods],
+      methods:                      opt_methods,
       accessors:                    block.accessors,
-      updates:                      [ id ->
-                                        compiled_update(
-                                          u.args_vars,
-                                          optimize_array_ops(u.body, [], loc_vars_types = [])
-                                        )
-                                      : id, u <- block.updates
-                                    ],
+      updates:                      opt_updates,
       msg_memb_pred:                block.msg_memb_pred
     );
+    return success(opt_block);
+  }
 
 
-  OptCompMethod optimize_array_init(OptCompMethod method) =
-    opt_comp_method(
+  Maybe[OptCompMethod] optimize_array_init(OptCompMethod method) {
+    result = try_to_optimize_array_ops(method.body, method.loc_vars_types);
+    return nothing if result == nothing;
+    opt_method = opt_comp_method(
       args:             method.args,
       args_types:       method.args_types,
       args_memb_preds:  method.args_memb_preds,
       loc_vars_types:   method.loc_vars_types,
       ret_type:         method.ret_type,
       ret_val_repr:     method.ret_val_repr,
-      body:             optimize_array_ops(method.body, [], loc_vars_types = method.loc_vars_types)
+      body:             value(result)
     );
+    return just(opt_method);
+  }
+
+
+  Maybe[CompiledUpdate] optimize_array_init(CompiledUpdate update) {
+    result = try_to_optimize_array_ops(update.body, []);
+    return if result != nothing
+      then just(compiled_update(update.args_vars, value(result)))
+      else nothing;
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+implicit typedefs : [TypeName -> NeType] {
+  Maybe[Instr*] try_to_optimize_array_ops(Instr* code, [StdVar -> NeType] loc_vars_types) {
+    needs_optimization = search_instrs(code, has_update_seq_at_instrs) == [true];
+    return just(code) if not needs_optimization;
+
+    opt_code = optimize_array_ops(code, [], loc_vars_types = loc_vars_types);
+    optimization_succeeded = search_instrs(opt_code, has_update_seq_at_instrs) == [];
+    return if optimization_succeeded then just(opt_code) else nothing;
+
+
+    [True] has_update_seq_at_instrs(Instr instr) =
+      set_rc_var()  = { match (instr.value)
+                          update_seq_at() = [true],
+                          _               = []
+                      },
+      _             = search_nested(instr, has_update_seq_at_instrs, []);
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
