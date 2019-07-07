@@ -1,5 +1,5 @@
 implicit syn_prg : SynPrg {
-  [WFError] schemas_wf_errors([SchemaDef] schemas, [BasicTypeSymbol -> [+Nat]] type_arity_map) {
+  [WFError] schemas_wf_errors([SchemaDef] schemas, [BasicTypeSymbol -> [+Nat]] type_arity_map, Bool allow_nested_rel_autos) {
     errs = [duplicate_schema_defs(rand_sort(dbs)) : id, dbs <- group_by(schemas, $.name), |dbs| > 1];
     return errs if errs != [];
 
@@ -12,7 +12,7 @@ implicit syn_prg : SynPrg {
     return errs if errs != [];
 
     let type_arity_map = type_arity_map:
-      errs = [db_def_errors(d, es) : d <- schemas, es = schema_wf_errors(d), es != ()];
+      errs = [db_def_errors(d, es) : d <- schemas, es = schema_wf_errors(d, allow_nested_rel_autos), es != ()];
     ;
     return errs;
 
@@ -23,7 +23,7 @@ implicit syn_prg : SynPrg {
 
 
 implicit syn_prg : SynPrg, type_arity_map : [BasicTypeSymbol -> [+Nat]] {
-  ExprWFError* schema_wf_errors(SchemaDef db_def) {
+  ExprWFError* schema_wf_errors(SchemaDef db_def, Bool allow_nested_rel_autos) {
     confl_type_name = type_symbol(db_def.name);
     if type_arity_map(confl_type_name, *):
       confl_tdefs = rand_sort([td : td <- syn_tdefs | td <- syn_par_tdefs, td.name == confl_type_name]);
@@ -34,6 +34,10 @@ implicit syn_prg : SynPrg, type_arity_map : [BasicTypeSymbol -> [+Nat]] {
     rel_vars     = (d : d <- db_def.decls, d :: RelVarsDecl);
     nested_dbs   = (d : d <- db_def.decls, d :: NestedDBDecl);
     foreign_keys = (d : d <- db_def.decls, d :: ForeignKeyDecl);
+
+    if not allow_nested_rel_autos and nested_dbs != ():
+      return (nested_dbs_are_not_supported_anymore(d) : d <- nested_dbs);
+    ;
 
     // Starting with state variables and nested automata, whose names cannot be overloaded
     non_overloadable_decls = sort(state_vars & nested_dbs, _print_($a.name) < _print_($b.name));

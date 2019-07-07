@@ -138,6 +138,7 @@ type ExprSpecWFError    = already_def_var(Var),
                           db_has_no_handlers(db_type: Atom),
                           not_a_nested_db_var(var: Atom, schema_def: SchemaDef),
                           unknown_nested_db_var(var: Atom, schema_def: SchemaDef),
+                          nested_dbs_are_not_supported_anymore(decl: NestedDBDecl),
                           unknown_update(name: Atom, db_type: Atom),
                           invalid_update_arity(name: Atom, arity: Nat, arities: [+Nat]),
                           not_a_memb_var(var: Atom, schema_def: SchemaDef),
@@ -362,6 +363,7 @@ ExprSpecWFError wrong_auto_arg_type(Atom v, Atom av, Atom a, Atom e)  = wrong_au
 ExprSpecWFError db_has_no_handlers(Atom t)                        = db_has_no_handlers(db_type: t);
 ExprSpecWFError not_a_nested_db_var(Atom v, SchemaDef d)          = not_a_nested_db_var(var: v, schema_def: d);
 ExprSpecWFError unknown_nested_db_var(Atom v, SchemaDef d)        = unknown_nested_db_var(var: v, schema_def: d);
+ExprSpecWFError nested_dbs_are_not_supported_anymore(NestedDBDecl d) = nested_dbs_are_not_supported_anymore(decl: d);
 ExprSpecWFError unknown_update(Atom n, Atom t)                    = unknown_update(name: n, db_type: t);
 ExprSpecWFError invalid_update_arity(Atom n, Nat a, [+Nat] as)    = invalid_update_arity(name: n, arity: a, arities: as);
 ExprSpecWFError not_a_memb_var(Atom v, SchemaDef d)               = not_a_memb_var(var: v, schema_def: d);
@@ -484,6 +486,7 @@ Any* anchor_objs(ExprSpecWFError err) =
   db_has_no_handlers()                    = (),
   not_a_nested_db_var()                   = (),
   unknown_nested_db_var()                 = (),
+  nested_dbs_are_not_supported_anymore()  = (err.decl),
   unknown_update()                        = (),
   invalid_update_arity()                  = (),
   not_a_memb_var()                        = (),
@@ -936,6 +939,7 @@ String* basic_err_msg(ExprSpecWFError err) =
   db_has_no_handlers()        = ("Automaton " & user_repr(db_symbol(err.db_type)) & " has no message handlers"),
   not_a_nested_db_var()       = ("Not a nested automaton: " & _print_(err.var)),
   unknown_nested_db_var()     = ("Unknown automaton variable: " & _print_(err.var)),
+  nested_dbs_are_not_supported_anymore() = ("Nested relational automata are not supported anymore. Nested automaton: " & user_repr(nested_db_var(err.decl.name))),
   unknown_update()            = ("Unknown update: " & _print_(err.name)),
   invalid_update_arity()      = ( "Wrong number of arguments: " & printed(err.arity) &
                                   ", actual arity: " & append((printed(a) : a <- rand_sort(err.arities)), ", ")
