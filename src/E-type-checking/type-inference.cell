@@ -1179,7 +1179,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     once(e?)      = once_set_comp_type(e, expr),
     repeated(t?)  = set_comp_type(t, expr),
     any(ts?)      = set_comp_union_type([set_comp_type(t, expr) : t <- ts]),
-    all(ts?)      = fold((set_comp_type(t, expr) : t <- ts), set_both);
+    all(ts?)      = fold((set_comp_type(t, expr) : t <- ts), type_of_set_union);
 
 
   SetType once_set_comp_type([EnvVar -> Type] env, Expr expr) {
@@ -1324,12 +1324,29 @@ TernRelCompType tern_rel_comp_union_type([+TernRelCompType] types) {
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-SetType set_both(SetType type1, SetType type2) =
-  empty_rel_type,   _               = type2,
-  _,                empty_rel_type  = type1,
-  union_type(ts?),  _               = fold(rand_sort(ts & [type2]), set_both),
-  _,                union_type(ts?) = fold(rand_sort(ts & [type1]), set_both),
-  ne_set_type(),    ne_set_type()   = ne_set_type(ne_union_superset([type1.elem_type, type2.elem_type]));
+SetType type_of_set_union(SetType type1, SetType type2) =
+  union_type(ts1?), union_type(ts2?)  = type_of_set_union(ts1, ts2),
+  union_type(ts?),  ne_set_type()     = type_of_set_union(ts, [type2]),
+  union_type(ts?),  empty_rel_type    = type_of_set_union(ts, [type2]),
+  _,                union_type(ts?)   = type_of_set_union(type2, type1),
+  empty_rel_type,   empty_rel_type    = empty_rel_type,
+  empty_rel_type,   ne_set_type()     = :union_type([type1, type2]),
+  ne_set_type(),    empty_rel_type    = :union_type([type1, type2]),
+  ne_set_type(),    ne_set_type()     = ne_set_type(ne_union_superset([type1.elem_type, type2.elem_type]));
+
+
+SetType type_of_set_union([+<empty_rel_type, NeSetType>] types1, [+<empty_rel_type, NeSetType>] types2) {
+  elt_types = [t.elem_type : t <- types1 | t <- types2, t != empty_rel_type];
+  if elt_types != []:
+    type = ne_set_type(ne_union_superset(elt_types));
+    may_be_empty = types1(empty_rel_type) and types2(empty_rel_type);
+    type = :union_type([type, empty_rel_type]) if may_be_empty;
+    return type;
+  else
+    assert types1 == [empty_rel_type] and types2 == empty_rel_type;
+    return empty_rel_type;
+  ;
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
