@@ -150,9 +150,12 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     return errs if errs != [];
 
     rv_sgns = relvar_signatures(rel_var);
-    assert not (s <- rv_sgns : |s| != |args|); ## THIS SHOULD NOT BE AN ASSERTION, BUT A REGULAR WELL-FORMEDNESS CHECK
+    assert not (s <- rv_sgns : |s| != |args|);
 
-    return [];
+    args_types = (apply(a, expr_type($, env)) : a <- args);
+
+    candidate_sgns = [s : s <- rv_sgns, signature_overlaps_partial_signature(s, args_types)];
+    return [no_matching_relvar(rel_var, args_types, rv_sgns) if candidate_sgns == []];
   }
 
 
