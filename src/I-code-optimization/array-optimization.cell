@@ -372,12 +372,12 @@ AnyTypeExpr rewrite_seq_ops(AnyTypeExpr expr, [StdVar -> LowLevelEltRepr] pendin
 
 ////////////////////////////////////////////////////////////////////////////////
 
-Bool certainly_includes(LowLevelEltRepr repr, AtomicExpr expr) =
+Bool certainly_includes(LowLevelEltRepr repr, AtomicExpr expr, Bool var_is_explicitly_declared) =
   bool,     bool_obj()    = true,
-  int8,     int_obj()     = true, ## BUG BUG BUG: REQUIRES CHECK AGAINST THE DECLARATION OF THE VARIABLE
-  nat8,     int_obj()     = true, ## DITTO
-  int16,    int_obj()     = true, ## DITTO
-  int32,    int_obj()     = true, ## DITTO
+  int8,     int_obj()     = var_is_explicitly_declared,
+  nat8,     int_obj()     = var_is_explicitly_declared,
+  int16,    int_obj()     = var_is_explicitly_declared,
+  int32,    int_obj()     = var_is_explicitly_declared,
   int,      int_obj()     = true,
   float,    float_obj()   = true,
   object,   _             = true,
@@ -389,9 +389,10 @@ implicit loc_vars_types : [StdVar -> NeType] {
   Bool is_affected(StdVar var, RefObjExpr expr, [StdVar -> LowLevelEltRepr] pending) {
     if pending(var, *):
       if expr :: <append_to_seq(seq: StdVar, new_elem: AtomicExpr)>:
-        return false if expr.seq == var and certainly_includes(pending(var), expr.new_elem);
+        return false if expr.seq == var and certainly_includes(pending(var), expr.new_elem, loc_vars_types(var, *));
       elif expr :: <update_seq_at(seq: StdVar, idx: IntExpr, value: AtomicExpr)>:
-        return false if expr.seq == var and certainly_includes(pending(var), expr.value);
+        assert loc_vars_types(var, *);
+        return false if expr.seq == var and certainly_includes(pending(var), expr.value, true);
       ;
     ;
     return true;
