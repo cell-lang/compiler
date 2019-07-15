@@ -9,26 +9,26 @@ implicit program           : Program,
          options           : CompOptions {
 
   (Instr*, ObjExpr, VarGen) opt_eval_code(Expr expr, [EnvVar -> Type] env, VarGen init_var_gen) {
+    envs : [EnvVar -> Type]+;
+
     exprs_cluster = exprs_cluster(expr);
     rec_exprs = reconstruct_all(exprs_cluster);
 
     cltr_size = |exprs_cluster|;
     envs = (if i == 0 then env else [] : i < cltr_size);
 
-    let rec_exprs = rec_exprs:
-      for e @ i <- exprs_cluster:
-        for j, vs <- subenvs(e, envs(i)):
-          assert envs(j) == [];
+    let rec_exprs = rec_exprs {
+      for e @ i <- exprs_cluster {
+        env_i = envs(i);
+        for j, vs <- subenvs(e, env_i)
           envs(j) := vs;
-        ;
-      ;
-    ;
+      }
+    }
 
     types = (expr_type(e, envs(i)) : e @ i <- rec_exprs);
 
-    let cluster = exprs_cluster, types = types, environments = envs, expr_id = 0:
+    let cluster = exprs_cluster, types = types, environments = envs, expr_id = 0
       eval_code, surr, var_gen = opt_eval_info(exprs_cluster(0), init_var_gen);
-    ;
 
     return (eval_code, surr, var_gen);
   }
@@ -38,11 +38,11 @@ implicit program           : Program,
     var_gen = init_var_gen;
     code = ();
     surrs = ();
-    for e <- exprs:
+    for e <- exprs {
       expr_code, surr, var_gen = opt_eval_code(e, env, var_gen);
       code = code & expr_code;
       surrs = (surrs | surr);
-    ;
+    }
     return (code, surrs, var_gen);
   }
 
@@ -53,15 +53,16 @@ implicit program           : Program,
     var_gen = init_var_gen;
     code = ();
     surrs = ();
-    for e <- exprs:
-      if e != nothing:
+    for e <- exprs {
+      if e != nothing {
         expr_code, surr, var_gen = opt_eval_code(value(e), env, var_gen);
         code = code & expr_code;
         surrs = (surrs | just(surr));
-      else
+      }
+      else {
         surrs = (surrs | nothing);
-      ;
-    ;
+      }
+    }
     return (code, surrs, var_gen);
   }
 }
@@ -147,14 +148,15 @@ implicit program     : Program,
 
 
   (Nat, [EnvVar -> Type])* subenvs(Expr* then_exprs, Expr* else_exprs, Opt[Expr] guard, [EnvVar -> Type] env) {
-    if guard != ():
+    if guard != () {
       then_env, else_env = refine_env(rec_exprs(expr_ref_id_unsafe(only(guard))), env);
       guard_envs = ((expr_ref_id_unsafe(only(guard)), env));
-    else
+    }
+    else {
       then_env = env;
       else_env = env;
       guard_envs = ();
-    ;
+    }
     then_subenvs = ((expr_ref_id_unsafe(e), then_env) : e <- then_exprs);
     else_subenvs = ((expr_ref_id_unsafe(e), else_env) : e <- else_exprs);
     return then_subenvs & else_subenvs & guard_envs;
@@ -164,10 +166,10 @@ implicit program     : Program,
   (Nat, [EnvVar -> Type])* match_expr_subenvs(MatchExpr expr, [EnvVar -> Type] env) {
     envs = ((expr_ref_id_unsafe(e), env) : e <- expr.exprs);
     exprs = (rec_exprs(expr_ref_id_unsafe(e)) : e <- expr.exprs);
-    for c <- expr.cases:
+    for c <- expr.cases {
       case_expr_env = update_env(exprs, c.ptrns, env);
       envs = (envs | (expr_ref_id_unsafe(c.expr), case_expr_env));
-    ;
+    }
     return envs;
   }
 
@@ -178,12 +180,13 @@ implicit program     : Program,
     src_expr = rec_exprs(expr_ref_id_unsafe(expr.src_expr));
     src_elt_type = seq_elem_supertype(expr_type(src_expr, env));
     sel_env = env & asgnm_env_updates(expr.vars, src_elt_type) & [expr.idx_var -> type_nat if expr.idx_var?];
-    if expr.sel_expr?:
+    if expr.sel_expr? {
       sel_expr = rec_exprs(expr_ref_id_unsafe(expr.sel_expr));
       elt_env, unused_var = refine_env(sel_expr, sel_env);
-    else
+    }
+    else {
       elt_env = sel_env;
-    ;
+    }
     return (
       (expr_ref_id_unsafe(expr.src_expr), env),
       (expr_ref_id_unsafe(expr.sel_expr), sel_env) if expr.sel_expr?,
@@ -196,12 +199,13 @@ implicit program     : Program,
   (Nat, [EnvVar -> Type])* range_comp_subenvs(RangeCompExpr expr, [EnvVar -> Type] env) {
     ## BAD: HERE WE COULD TAKE ADVANTAGE OF THE KNOWLEDGE ON THE TYPE OF THE UPPER BOUND
     sel_env = update(env, [expr.var -> type_nat]);
-    if expr.sel_expr?:
+    if expr.sel_expr? {
       sel_expr = rec_exprs(expr_ref_id_unsafe(expr.sel_expr));
       elt_env, unused_var = refine_env(sel_expr, sel_env);
-    else
+    }
+    else {
       elt_env = sel_env;
-    ;
+    }
     return (
       (expr_ref_id_unsafe(expr.bound_expr), env),
       (expr_ref_id_unsafe(expr.sel_expr),   sel_env) if expr.sel_expr?,
@@ -264,15 +268,16 @@ implicit program     : Program,
     src_type = expr_type(src_expr, env);
     src_elt_type = seq_elem_supertype(src_type);
     exprs_env = env & [value(cls.idx_var) -> type_nat if cls.idx_var? and cls.idx_var != nothing];
-    if |cls.vars| == 1:
+    if |cls.vars| == 1 {
       var = only(cls.vars);
       exprs_env = exprs_env & [value(var) -> src_elt_type if var != nothing];
-    else
+    }
+    else {
        exprs_env = exprs_env & [
         value(v) -> restricted_seq_elem_supertype(src_elt_type, singleton_type(i))
         : v @ i <~ cls.vars, v != nothing
       ];
-    ;
+    }
     return (((expr_ref_id_unsafe(e), exprs_env) : e <- exprs) | (expr_ref_id_unsafe(cls.src), env));
   }
 

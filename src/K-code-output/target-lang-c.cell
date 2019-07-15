@@ -55,12 +55,12 @@ CCodeOutput compile_to_c(CompiledPrg prg, Bool include_runtime) {
     cached_semi_consts_by_impl_arg  = cached_semi_consts_by_impl_arg(prg)
   );
 
-  let typedefs = prg.typedefs:
+  let typedefs = prg.typedefs {
     auto_wrappers_decls, auto_wrappers_impls = unzip(rand_sort([react_auto_wrapper(block=b) : b <- prg.react_blocks]));
     static_blocks = [b.name -> b : b <- prg.static_blocks];
     db_wrappers = (static_auto_wrapper(b, static_blocks) : b <- ord_static_blocks);
     db_wrappers_decls, db_wrappers_private_decls, db_wrappers_impls = unzip3(db_wrappers);
-  ;
+  }
   wrappers_decls = join(intermix(auto_wrappers_decls & db_wrappers_decls, ("", "")));
   wrappers_private_decls = join(intermix(auto_wrappers_decls & db_wrappers_private_decls, ("", "")));
   wrappers_impls = join(intermix(auto_wrappers_impls & db_wrappers_impls, ("", "")));
@@ -122,7 +122,7 @@ CCodeOutput compile_to_c(CompiledPrg prg, Bool include_runtime) {
     c_main_fn if (p <- prg.procs : p.name == proc_symbol(:main))
   ));
 
-  if wrappers_decls != ():
+  if wrappers_decls != () {
     header = (
       "#ifndef CELL_LANG_GEN_",
       "#define CELL_LANG_GEN_",
@@ -142,9 +142,10 @@ CCodeOutput compile_to_c(CompiledPrg prg, Bool include_runtime) {
       "",
       "#endif // CELL_LANG_GEN_"
     );
-  else
+  }
+  else {
     header = ();
-  ;
+  }
 
   return (body: body, header: header);
 
@@ -177,9 +178,8 @@ String* gen_env_decl(CompiledPrg prg) {
 
 
 String int_type_c_name(Int min_val, Int max_val) {
-  for lb, up, type_name <- type_bounds:
+  for lb, up, type_name <- type_bounds
     return type_name if min_val >= lb and max_val < up;
-  ;
   return "int64";
 }
 
@@ -196,9 +196,8 @@ String int_type_c_name(Int min_val, Int max_val) {
 
 Int pow(Int b, Nat e) {
   res = 1;
-  for e:
+  for e
     res = b * res;
-  ;
   return res;
 }
 
@@ -221,15 +220,16 @@ Int pow(Int b, Nat e) {
 
   strs = (printed(n) : n <- int_seq);
   total_len = sum((length(s) : s <- strs)) + 2 * |strs|;
-  if total_len < 60:
+  if total_len < 60 {
     def = (sgn & " = {" & append(strs, ", ") & "};");
-  else
+  }
+  else {
     max_len = nat(max((length(printed(n)) : n <- (min_elem, max_elem))));
     last_idx = |int_seq| - 1;
     strs = (align_text(s, max_len, ascii_space) & if i != last_idx then ", " else "" : s @ i <- strs);
     cont_lines = ("  " & append(ss) : ss <- split_into_groups(strs, nz_nat(100 / (max_len + 2))));
     def = ({sgn & " = {"}) & cont_lines & ("};");
-  ;
+  }
 
   return (decl, def);
 
@@ -257,15 +257,15 @@ String+ generate_push_call_info_wrapper(Nat arity) {
   signature = "void push_call_info_wrapper(const char *fn_name" &
               append((", OBJ " & to_c_var_decl_name(fn_arg(i)) : i < arity)) & ")";
   code = (signature & " {", "#ifndef NDEBUG");
-  if arity == 0:
+  if arity == 0 {
     code = (code | "  push_call_info(fn_name, 0, (OBJ *)0);");
-  else
+  }
+  else {
     code = (code | "  OBJ *params = new_obj_array(" & printed(arity) & ");");
-    for i < arity:
+    for i < arity
       code = (code | "  params[" & printed(i) & "] = " & to_c_var_decl_name(fn_arg(i)) & ";");
-    ;
     code = (code | "  push_call_info(fn_name, " & printed(arity) & ", params);");
-  ;
+  }
   return nonempty((code | "#endif", "}"));
 }
 
@@ -381,7 +381,7 @@ implicit {
     code = ({signature & " {"}) & indent_lines(var_decls) & indent_lines(auto_var_decls) &
            indent_lines(db_vars_decls) & ("" if has_var_decls) & indent_lines(comp_body) & ("}");
 
-    if cached:
+    if cached {
       is_real_const = pd.cached? and pd.impl_args == [];
       cache_var_name = if is_real_const then "cached_res" else "env." & to_c_memo_var_name(pd.name);
 
@@ -407,7 +407,7 @@ implicit {
         "}"
       );
       code = code & wrapper_code;
-    ;
+    }
 
     return code;
 
@@ -506,7 +506,7 @@ implicit {
     pop_call_info         = mk_call("pop_call_info", ()),
     runtime_check()       = compile_runtime_check_to_c(instr.cond, instr.file, instr.line, instr.text, instr.vars),
     branch()              = compile_branch_to_c(instr.cond, instr.when_true, instr.when_false, block_id),
-    queue_update()        = compile_queue_update_to_c(instr.type, instr.id, instr.args),
+    queue_node_update()   = compile_queue_node_update_to_c(instr.type, instr.id, instr.args),
     insert_timer()        = (insert_timer_method_name(instr.type) & "(self, " & to_c_expr(instr.idx) & ", " & to_c_expr(instr.time) & ");"),
     clear_timer()         = (clear_timer_method_name(instr.type) & "(self, " & to_c_expr(instr.idx) & ");"),
     auto_pre_init()       = (pre_init_method_name(instr.type) & "(&" & to_c_var_ref_name(instr.var) & ", env);"),
@@ -546,7 +546,7 @@ implicit {
   }
 
 
-  String* compile_queue_update_to_c(AutoSymbol type, BlockNodeId node_id, Nat* args) {
+  String* compile_queue_node_update_to_c(AutoSymbol type, BlockNodeId node_id, Nat* args) {
     method_name = queue_update_method_name(type, node_id);
     args_str = append((", " & printed(a) : a <- args));
     return (method_name & "(self" & args_str & ");");
@@ -711,14 +711,15 @@ implicit {
 
   String* compile_repeat_to_c(Instr+ body, Maybe[Nat] block_id) {
     head = body(0);
-    if head :: <branch(cond: BoolExpr, when_true: (<break_loop>), when_false: ())>:
+    if head :: <branch(cond: BoolExpr, when_true: (<break_loop>), when_false: ())> {
       cond_str = to_c_expr(neg(head.cond));
       body_text = (indent_lines(compile_to_c(tail(body), block_id)) | "}");
       return ({"while (" & cond_str & ") {"}) & body_text;
-    else
+    }
+    else {
       body_text = (indent_lines(compile_to_c(body, block_id)) | "}");
       return ("for ( ; ; ) {") & body_text;
-    ;
+    }
   }
 
 
@@ -733,13 +734,14 @@ implicit {
 
 
   String compile_send_msg_to_c(AnyDBVar db_var, DBSymbol type, AtomicExpr msg, Bool is_root, Maybe[BoolVar] maybe_res_var) {
-    if is_root:
+    if is_root {
       name_str = update_entry_point_name(type);
       db_var_str = "&" & to_c_var_ref_name(db_var);
       return if maybe_res_var == nothing
         then mk_gen_call(name_str, (db_var_str), (msg), ("env"))
         else mk_gen_call(value(maybe_res_var), name_str, (db_var_str), (msg), ("env"));
-    else
+    }
+    else {
       assert db_var :: NestedDBVar;
       fail if not db_var :: NestedDBVar;
       name_str = update_name(type, main_handler);
@@ -747,7 +749,7 @@ implicit {
       aux_db_var_str = aux_struct_var_ref_name(db_var);
       return mk_gen_call(name_str, (db_var_str, aux_db_var_str), (msg), ("env")) & " /" & "/ HEREHEREHERE";
 
-    ;
+    }
   }
 
 
@@ -756,16 +758,17 @@ implicit {
 
 
   String compile_set_state_to_c(AtomicExpr state, AnyDBVar db_var, DBSymbol type, Maybe[BoolVar] maybe_res_var) {
-    if maybe_res_var != nothing:
+    if maybe_res_var != nothing {
       proc_name_str = set_state_entry_point_name(type);
       db_var_str = "&" & to_c_var_ref_name(db_var);
       return mk_gen_call(value(maybe_res_var), proc_name_str, (db_var_str), (state), ());
-    else
+    }
+    else {
       fail if not db_var :: NestedDBVar; ## BAD BAD BAD: CHANGE THE DEFINITION OF set_state()
       proc_name_str = set_state_proc_name(type);
       self_and_aux_vars = ("&" & to_c_var_ref_name(db_var), aux_struct_var_ref_name(db_var));
       return mk_gen_call(proc_name_str, self_and_aux_vars, (state), ());
-    ;
+    }
   }
 
 
@@ -779,10 +782,10 @@ implicit {
 
   String* gen_cache_clearing_code(ImplArg arg) {
     code = ();
-    for fn_id <- rand_sort(lookup(cached_semi_consts_by_impl_arg, arg, [])):
+    for fn_id <- rand_sort(lookup(cached_semi_consts_by_impl_arg, arg, [])) {
       cache_var_name = to_c_memo_var_name(fn_id);
       code = (code | "release(env." & cache_var_name & ");", "env." & cache_var_name & " = make_blank_obj();");
-    ;
+    }
     return code;
   }
 
@@ -864,7 +867,7 @@ implicit {
 
     copy_persistent_state()     = (compile_copy_persistent_state_to_c(var, expr.var, expr.type)),
 
-    lookup_surrogate()          = mk_call(var, "lookup_surrogate",    (expr.store, expr.surrogate)),
+    surr_to_value()             = mk_call(var, "lookup_surrogate",    (expr.store, expr.surrogate)),
     read_pending_var(v?)        = (to_c_var_ref_name(var) & " = " & to_c_var_ref_name(v) & ";");
 
 
@@ -944,35 +947,37 @@ implicit {
           par_name & ".fn_ptr_" & printed(p.cls.arity) & " = " & "lambda_" & printed(cls2id(p.cls)) & ";"
         );
 
-        if p.capt_vars != ():
-          if |p.capt_vars| != 1:
+        if p.capt_vars != () {
+          if |p.capt_vars| != 1 {
             var_name = "cd_" & printed(par_id);
             code = (code | "OBJ " & var_name & "[" & printed(|p.capt_vars|) & "];");
-            for v @ i <- p.capt_vars:
+            for v @ i <- p.capt_vars
               code = (code | var_name & "[" & printed(i) & "] = " & to_c_expr(v) & ";");
-            ;
             code = (code | par_name & ".data = " & var_name & ";");
-          else
+          }
+          else {
             code = (code | par_name & ".data = &" & to_c_expr(only(p.capt_vars)) & ";");
-          ;
-        else
+          }
+        }
+        else {
           code = (code | par_name & ".data = 0;");
-        ;
+        }
 
-        if p.capt_cls_vars != ():
-          if |p.capt_cls_vars| != 1:
+        if p.capt_cls_vars != () {
+          if |p.capt_cls_vars| != 1 {
             var_name = "cd_" & printed(par_id);
             code = (code | "CLS " & var_name & "[" & printed(|p.capt_cls_vars|) & "];");
-            for v @ i <- p.capt_cls_vars:
+            for v @ i <- p.capt_cls_vars
               code = (code | var_name & "[" & printed(i) & "] = " & to_c_expr(v) & ";");
-            ;
             code = (code | par_name & ".cls = " & var_name & ";");
-          else
+          }
+          else {
             code = (code | par_name & ".cls = &" & to_c_expr(only(p.capt_cls_vars)) & ";");
-          ;
-        else
+          }
+        }
+        else {
           code = (code | par_name & ".cls = 0;");
-        ;
+        }
 
         return (code, par_var);
       };
@@ -984,9 +989,8 @@ implicit {
     code = ({"if (" & to_c_expr(cond) & ") {"}) &
            indent_lines(compile_to_c(when_true, block_id)) &
            ("}");
-    if when_false != ():
+    if when_false != ()
       code = (code | "else {") & indent_lines(compile_to_c(when_false, block_id)) & ("}");
-    ;
     return code;
   }
 

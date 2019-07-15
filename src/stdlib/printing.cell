@@ -7,9 +7,8 @@ String printed(Any obj) {
 
   Nat* walk_print_tree(PrintTree pt, Nat* buff) {
     b = buff;
-    for n <- pt.subnodes:
+    for n <- pt.subnodes
       b = walk_print_tree(n, b);
-    ;
     return b;
   }
 }
@@ -35,7 +34,7 @@ String printed(Any obj, Nat line_len) {
     needs_splitting = size(node) > line_len and not only_subnode_has_early_cut;
 
     new_buff = buff;
-    for n @ i <- subnodes:
+    for n @ i <- subnodes {
       // We insert a new line here if the object needs splitting, this is not the first node
       // and if either the node is a nested node or if it's the last one in the sequence
       is_leaf = is_leaf(n);
@@ -43,7 +42,7 @@ String printed(Any obj, Nat line_len) {
       new_depth = nat(depth + bit(ins_new_line and not is_leaf));
       new_buff = insert_new_line(new_buff, new_depth) if ins_new_line;
       new_buff = walk_print_tree(n, new_buff, new_depth, line_len);
-    ;
+    }
     return new_buff;
   }
 
@@ -54,9 +53,8 @@ String printed(Any obj, Nat line_len) {
 
   Nat* insert_new_line(Nat* buff, Nat depth) {
     new_buff = (buff | ascii_newline);
-    for depth:
+    for depth
       new_buff = (new_buff | ascii_space, ascii_space);
-    ;
     return new_buff;
   }
 }
@@ -113,10 +111,10 @@ PrintTree print_tree(Any obj) {
     return "0" if n == 0;
     m = if n >= 0 then n else -n;
     rev_chs = ();
-    while m > 0:
+    while m > 0 {
       rev_chs = (rev_chs | nat(ascii_0 + mod(m, 10)));
       m = m / 10;
-    ;
+    }
     rev_chs = (rev_chs | ascii_minus) if n < 0;
     return string(reverse(rev_chs));
   }
@@ -135,19 +133,18 @@ PrintTree print_tree(Any obj) {
 
   String printed_raw_string(Nat* chs) {
     qstr = ();
-    for ch <- chs:
-      if ch == ascii_newline:
+    for ch <- chs {
+      if ch == ascii_newline
         qchs = (ascii_backslash, ascii_lower_n);
-      elif ch == ascii_backslash:
+      else if ch == ascii_backslash
         qchs = (ascii_backslash, ascii_backslash);
-      elif ch == ascii_double_quotes:
+      else if ch == ascii_double_quotes
         qchs = (ascii_backslash, ascii_double_quotes);
       else
         qchs = (ch);
-      ;
 
       qstr = qstr & qchs;
-    ;
+    }
     return "\"" & string(qstr) & "\"";
   }
 
@@ -171,13 +168,14 @@ PrintTree print_tree(Any obj) {
     // entries = rand_sort_pairs(map);
     // separator = if map :: Record then ": " else " -> ";
     // entry_nodes = (print_tree_node((print_tree(k), separator, print_tree(v))) : k, v <- entries);
-    if map :: Record:
+    if map :: Record {
       entry_nodes = [print_tree_node((_print_(k) & ": ", print_tree(v))) : k, v <- map];
       nodes = ("(") & intermix(rand_sort(entry_nodes), ", ") & (")");
-    else
+    }
+    else {
       entry_nodes = [print_tree_node((print_tree(k), " -> ", print_tree(v))) : k, v <- map];
       nodes = ("[") & intermix(rand_sort(entry_nodes), ", ") & ("]");
-    ;
+    }
     return print_tree_node(nonempty(nodes));
   }
 
@@ -201,12 +199,13 @@ PrintTree print_tree(Any obj) {
   PrintTree tag_obj_print_tree(Atom tag, Any obj) {
     return print_tree_node((printed_raw_string(obj))) if tag == :string and obj :: Nat*;
     pt = print_tree(obj);
-    if (obj :: Seq and |obj| > 1) or (obj :: Record and obj != []):
+    if (obj :: Seq and |obj| > 1) or (obj :: Record and obj != []) {
       assert |pt.subnodes| > 2;
       obj_nodes = subseq(pt.subnodes, 1, :blank, 1);
-    else
+    }
+    else {
       obj_nodes = (pt);
-    ;
+    }
     nodes = (_print_(tag), "(") & obj_nodes & (")");
     return print_tree_node(nonempty(nodes));
   }

@@ -6,23 +6,41 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
     msg_types = [h.type : h <- database.handlers];
     msg_memb_pred = if msg_types != [] then just(memb_test_preds_map[ne_union_type(msg_types)]) else nothing;
 
+    insert_checked_foreign_keys = [
+      bk : k, bk <- physical_foreign_keys_map, not insertion_is_statically_checked(k)
+    ];
+    delete_checked_foreign_keys = [
+      bk : k, bk <- physical_foreign_keys_map,
+        not database.attr_map(only(k.target_rel_vars), k.source_rel_var) and not
+        ( database.attr_map(k.source_rel_var, only(k.target_rel_vars)) and
+          is_one_to_one_attribute(database.name, only(k.target_rel_vars))
+        )
+    ];
+
+    memb_var_check_exprs = [
+      v -> is_member(memb_test_preds_map(info.type, !!), v) : v, info <- database.state_vars
+    ];
+
     return static_block(
-      name:                     database.name,
-      links:                    database.links,
-      state_vars:               [v -> info.type : v, info <- database.state_vars],
-      value_stores:             value_stores,
-      tables:                   tables_info,
-      foreign_keys:             physical_foreign_keys,
-      nested_blocks:            database.nested_dbs,
-      init_code:                database_init_code,
-      cleanup_code:             database_cleanup_code,
-      copy_state_code:          database_copy_state_code(rel_vars_args_perms),
-      set_state_code:           database_set_state_code(rel_vars_args_perms),
-      foreign_keys_check_code:  database_foreign_keys_check_code,
-      methods:                  methods,
-      accessors:                [], ## TODO: REMOVE ALTOGETHER
-      updates:                  handlers & updates,
-      msg_memb_pred:            msg_memb_pred
+      name:                         database.name,
+      links:                        database.links,
+      state_vars:                   [v -> info.type : v, info <- database.state_vars],
+      value_stores:                 value_stores,
+      tables:                       tables_info,
+      insert_checked_foreign_keys:  insert_checked_foreign_keys,
+      delete_checked_foreign_keys:  delete_checked_foreign_keys,
+      nested_blocks:                database.nested_dbs,
+      init_code:                    database_init_code,
+      cleanup_code:                 database_cleanup_code,
+      copy_state_code:              database_copy_state_code(rel_vars_args_perms),
+      set_state_code:               database_set_state_code(rel_vars_args_perms),
+      memb_var_check_exprs:         memb_var_check_exprs,
+      rel_vars_load_code:           database_rel_vars_load_code(rel_vars_args_perms),
+      foreign_keys_check_code:      database_foreign_keys_check_code,
+      methods:                      methods,
+      accessors:                    [], ## TODO: REMOVE ALTOGETHER
+      updates:                      handlers & updates,
+      msg_memb_pred:                msg_memb_pred
     );
   }
 
@@ -31,16 +49,16 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
     nested_dbs = database.nested_dbs;
 
     vars_pre_init_code = rand_sort([init_memb_var(v, :blank) : v, unused_var <- state_vars]);
-    let context = database, typed_vars = [], surrogates = []:
+    let context = database, typed_vars = [], surrogates = [] {
       vars_init_code = join(({
           eval_code, surr, unused_var = opt_eval_code(d.init_value, [], blank_var_gen);
           return (eval_code | set_var(v, surr));
         } : v, d <- isort(state_vars)
       ));
-    ;
+    }
     nested_dbs_init_code = rand_sort([init_db(v, (), t) : v, t <- nested_dbs]);
 
-    value_stores_init_code = (init_value_store(vs) : vs <- rand_sort(value_stores));
+    value_stores_init_code = (init_value_store(vs) : vs <- rand_sort(keys(value_stores)));
     tables_init_code = rand_sort([init_table(v, t) : v, t <- tables_info]);
 
     return vars_pre_init_code & vars_init_code & nested_dbs_init_code & value_stores_init_code & tables_init_code;
@@ -54,7 +72,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
     vars_cleanup_code = rand_sort([reset_memb_var(v, :blank) : v, unused_var <- state_vars]);
     nested_dbs_cleanup_code = rand_sort([cleanup_db(v, t) : v, t <- nested_dbs]);
 
-    value_stores_cleanup_code = (cleanup_value_store(vs) : vs <- rand_sort(value_stores));
+    value_stores_cleanup_code = (cleanup_value_store(vs) : vs <- rand_sort(keys(value_stores)));
     tables_cleanup_code = rand_sort([cleanup_table(v, t) : v, t <- tables_info]);
 
     return vars_cleanup_code & nested_dbs_cleanup_code & value_stores_cleanup_code & tables_cleanup_code;
@@ -75,7 +93,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
     nested_autos = rand_sort(keys(database.nested_dbs));
     all_vars = state_vars & log_rel_vars & nested_autos;
 
-    let context = database:
+    let context = database {
       code = join(({
         set_label_instr = set_var(evar(keys_var.id, i), object(bare_id(var)));
         value_var = evar(values_var.id, i);
@@ -88,9 +106,149 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
                             };
         return (set_label_instr, set_value_instr);
       } : var @ i <- all_vars));
-    ;
+    }
 
     return (code | mk_map(res_var, keys_var, values_var, count), ret_val(res_var));
+  }
+
+
+  [RelVar -> (LocVar+, BoolExpr, Instr+)] database_rel_vars_load_code([RelVar -> [+Nat -> Nat]] rel_vars_args_perms) {
+    rel_auto_id = database.name;
+
+    args_vars = (lvar(i) : i < 3);
+    surr_vars = (ivar32(i) : i < 3);
+
+    return [v -> {
+      arity = arity(rel_auto_id, v);
+      args_perm = rel_vars_args_perms(v);
+
+      core_loop_code = if is_columnar_relvar(rel_auto_id, v)
+        then column_core_loop_code(rel_auto_id, v, arity, args_vars, surr_vars(0))
+        else table_core_loop_code(rel_auto_id, v, arity, args_vars, surr_vars);
+
+      signatures = rel_var_signatures(database, v);
+
+      arg_type_is_unique = ({
+        types = [s(i) : s <- signatures];
+        a_type = an_elem(types);
+        return not (t <- types : not is_eq(t, a_type));
+      } : i < arity);
+
+      mono_args = ((i, an_elem([s(i) : s <- signatures])) : i < arity, arg_type_is_unique(i));
+      args_types_conds = (is_member(memb_test_preds_map(t, !!), args_vars(i)) : i, t <- mono_args);
+
+      poly_args = (i : i < arity, not arg_type_is_unique(i));
+      if poly_args != () {
+        poly_conds = (
+          and_then((is_member(memb_test_preds_map(s(i), !!), args_vars(i))  : i <- poly_args))
+        : s <- isort(signatures));
+        args_types_conds = (args_types_conds | or_else(poly_conds));
+      }
+
+      type_check_expr = and_then(nonempty(args_types_conds));
+
+      rel_args_vars = (args_vars(args_perm(i)) : i < arity);
+
+      return (rel_args_vars, type_check_expr, nonempty(core_loop_code));
+    } : v <- logical_rel_vars(database)];
+  }
+
+
+  Instr* table_core_loop_code(DBSymbol rel_auto_id, RelVar rel_var, NzNat arity, LocVar+ args_vars, Int32Var+ surr_vars) {
+    // Physical tables the logical relation is partitioned into
+    tables = [table_var(i) : i <- physical_rel_vars(database, rel_var)];
+
+    if |tables| == 1 {
+      table_var = only(tables);
+      stores_ids = (table_col_store_id(rel_auto_id, table_var, i) : i < arity);
+      stores_types = (value_store_type(rel_auto_id, id) : id <- stores_ids);
+      store_args = (value_store_encoded_expr(stores_types(i), args_vars(i)) : i < arity);
+
+      store_inserts = (immediate_insert_or_add_ref(surr_vars(i), stores_ids(i), store_args(i)) : i < arity);
+      table_insert = immediate_insert_tuple(table_var, nonempty(take(surr_vars, arity)));
+      if arity == 2 {
+        symmetric = symmetric(rel_auto_id, rel_var);
+        guard_expr = neg(table_contains(table_var, (just(surr_vars(i)) : i < arity), symmetric));
+        table_insert = do_if(guard_expr, table_insert);
+      }
+      core_loop_code = (store_inserts | table_insert);
+    }
+    else {
+      // Choosing the dispatch arguments
+      signatures = [table_signature(rel_auto_id, tv) : tv <- tables];
+      disp_args_idxs = optimal_dispatch_args(signatures, typedefs);
+      disp_args = (args_vars(i) : i <- disp_args_idxs);
+
+      cases = [{
+        stores_ids = (table_col_store_id(rel_auto_id, tv, i) : i < arity);
+        stores_types = (value_store_type(rel_auto_id, id) : id <- stores_ids);
+        store_args = (value_store_encoded_expr(stores_types(i), args_vars(i)) : i < arity);
+
+        store_inserts = (
+          immediate_insert_or_add_ref(surr_vars(i), stores_ids(i), store_args(i)) : i < arity
+        );
+        table_insert = immediate_insert_tuple(tv, nonempty(take(surr_vars, arity)));
+        if arity == 2 {
+          symmetric = symmetric(rel_auto_id, rel_var);
+          guard_expr = neg(table_contains(tv, (just(surr_vars(i)) : i < arity), symmetric));
+          table_insert = do_if(guard_expr, table_insert);
+        }
+        case_code = (store_inserts | table_insert, exit_block);
+
+        types = table_signature(rel_auto_id, tv);
+        disp_types = (types(i) : i <- disp_args_idxs);
+        return (disp_types, case_code);
+      } : tv <- tables];
+
+      block_body = dynamic_dispatch_code(disp_args, cases);
+      core_loop_code = (execute_block(block_body));
+    }
+
+    return core_loop_code;
+  }
+
+
+  Instr* column_core_loop_code(DBSymbol rel_auto_id, RelVar rel_var, NzNat arity, LocVar+ args_vars, Int32Var key_surr_var) {
+    // Physical tables the logical relation is partitioned into
+    tables = [table_var(i) : i <- physical_rel_vars(database, rel_var)];
+
+    if |tables| == 1 {
+      table_var = only(tables);
+      store_id = table_col_store_id(rel_auto_id, table_var, 0);
+      store_type = value_store_type(rel_auto_id, store_id);
+      store_arg = value_store_encoded_expr(store_type, args_vars(0));
+      col_repr = column_repr(table_signature(rel_auto_id, table_var)(1));
+      core_loop_code = (
+        immediate_insert_or_add_ref(key_surr_var, store_id, store_arg),
+        column_insert_immediate(table_var, key_surr_var, low_level_expr(col_repr, args_vars(1)))
+      );
+    }
+    else {
+      // Choosing the dispatch arguments
+      signatures = [table_signature(rel_auto_id, tv) : tv <- tables];
+      disp_args_idxs = optimal_dispatch_args(signatures, typedefs);
+      disp_args = (args_vars(i) : i <- disp_args_idxs);
+
+      cases = [{
+        store_id = table_col_store_id(rel_auto_id, tv, 0);
+        store_type = value_store_type(rel_auto_id, store_id);
+        store_arg = value_store_encoded_expr(store_type, args_vars(0));
+        col_repr = column_repr(table_signature(rel_auto_id, tv)(1));
+        case_code = (
+          immediate_insert_or_add_ref(key_surr_var, store_id, store_arg),
+          column_insert_immediate(tv, key_surr_var, low_level_expr(col_repr, args_vars(1))),
+          exit_block
+        );
+        types = table_signature(rel_auto_id, tv);
+        disp_types = (types(i) : i <- disp_args_idxs);
+        return (disp_types, case_code);
+      } : tv <- tables];
+
+      block_body = dynamic_dispatch_code(disp_args, cases);
+      core_loop_code = (execute_block(block_body));
+    }
+
+    return core_loop_code;
   }
 
 
@@ -110,7 +268,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
     );
 
     // Member variables
-    for v, info <- isort(database.state_vars):
+    for v, info <- isort(database.state_vars) {
       pred = memb_test_preds_map(info.type, !!);
       instr = do_if(
         has_field(state_var, object(bare_id(v))),
@@ -121,49 +279,19 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
         )
       );
       code = (code | instr);
-    ;
+    }
 
     // Mutable relation variables
     ord_rel_vars = sort_by_key(logical_rel_vars(database), arity(rel_auto_id, $));
-    for v <- ord_rel_vars:
+    for v <- ord_rel_vars {
       arity = arity(rel_auto_id, v);
       args_perm = rel_vars_args_perms(v);
       // phys_args_vars = (log_args_vars(args_perm(i)) : i < arity);
       it_var = it_vars[arity]; // Need to use [] instead of () because of the typechecker...
 
-      // Physical tables the logical relation is partitioned into
-      tables = [table_var(i) : i <- physical_rel_vars(database, v)];
-
-      if |tables| == 1:
-        table_var = only(tables);
-        stores_ids = (table_col_store_id(rel_auto_id, table_var, i) : i < arity);
-        core_loop_code = (
-        ) & (
-          immediate_insert_or_add_ref(surr_vars(i), stores_ids(i), args_vars(i)) : i < arity
-        ) & (
-          immediate_insert_tuple(table_var, nonempty(take(surr_vars, arity)))
-        );
-
-      else
-        // Choosing the dispatch arguments
-        signatures = [table_signature(rel_auto_id, tv) : tv <- tables];
-        disp_args_idxs = optimal_dispatch_args(signatures, typedefs);
-        disp_args = (args_vars(i) : i <- disp_args_idxs);
-
-        cases = [{
-          stores_ids = (table_col_store_id(rel_auto_id, tv, i) : i < arity);
-          case_code = (
-            (immediate_insert_or_add_ref(surr_vars(i), stores_ids(i), args_vars(i)) : i < arity) |
-            immediate_insert_tuple(tv, nonempty(take(surr_vars, arity)))
-          );
-          types = table_signature(rel_auto_id, tv);
-          disp_types = (types(i) : i <- disp_args_idxs);
-          return (disp_types, case_code);
-        } : tv <- tables];
-
-        block_body = dynamic_dispatch_code(disp_args, cases);
-        core_loop_code = (execute_block(block_body));
-      ;
+      core_loop_code = if is_columnar_relvar(rel_auto_id, v)
+        then column_core_loop_code(rel_auto_id, v, arity, args_vars, surr_vars(0))
+        else table_core_loop_code(rel_auto_id, v, arity, args_vars, surr_vars);
 
       signatures = rel_var_signatures(database, v);
 
@@ -177,12 +305,12 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
       args_types_conds = (is_member(memb_test_preds_map(t, !!), args_vars(i)) : i, t <- mono_args);
 
       poly_args = (i : i < arity, not arg_type_is_unique(i));
-      if poly_args != ():
+      if poly_args != () {
         poly_conds = (
           and_then((is_member(memb_test_preds_map(s(i), !!), args_vars(i))  : i <- poly_args))
         : s <- isort(signatures));
         args_types_conds = (args_types_conds | or_else(poly_conds));
-      ;
+      }
 
       core_loop_code = (do_if_not(and_then(nonempty(args_types_conds)), ret_val(false))) & core_loop_code;
 
@@ -206,11 +334,11 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
       );
 
       code = (code | instr);
-    ;
+    }
 
     // Nested automata
     nested_dbs = rand_sort(keys(database.nested_dbs));
-    for db <- nested_dbs:
+    for db <- nested_dbs {
       db_type = database.nested_dbs[db];
       instr = do_if(
         has_field(state_var, object(bare_id(db))),
@@ -220,7 +348,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
         )
       );
       code = (code | instr);
-    ;
+    }
 
     return (code | ret_val(true));
   }
@@ -233,16 +361,21 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
     tables = sort_by_key(keys(phys_keys_by_table), arity(rel_auto_id, original_rel_var($)));
 
     code = ();
-    for tv <- tables:
-      log_rel_var = original_rel_var(tv);
-      arity = arity(rel_auto_id, log_rel_var);
-      src_is_sym = symmetric(rel_auto_id, log_rel_var);
+    for tv <- tables {
+      rel_var = original_rel_var(tv);
+      arity = arity(rel_auto_id, rel_var);
+      src_is_sym = symmetric(rel_auto_id, rel_var);
 
       surr_vars = (ivar32(i) : i < 3);
-      it_var = table_it_var(0, arity, src_is_sym);
       foreign_keys = lookup(phys_keys_by_table, tv, []);
 
-      if foreign_keys != []:
+      sign = table_signature(rel_auto_id, tv);
+
+      it_var = if is_columnar_relvar(rel_auto_id, logical_rel_var(rel_var))
+        then column_it_var(0, column_repr(sign(1)))
+        else table_it_var(0, arity, src_is_sym);
+
+      if foreign_keys != [] {
         conds = ({
           tgt_is_sym, args_sets = match (fk.type)
             unary_unary             = (false, ((just(0)))),
@@ -283,10 +416,20 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
           : fk <- foreign_keys
         ]));
 
-        surrs_reads = (set_ivar32(surr_vars(i), get_unknown_arg(it_var, i)) : i <- surr_vars_used);
+        assert match (it_var)
+          table_it_var()   = true,
+          column_it_var()  = surr_vars_used == (0);
+
+        surrs_reads = match (it_var)
+          table_it_var()  = (set_ivar32(surr_vars(i), get_unknown_arg(it_var, i)) : i <- surr_vars_used),
+          column_it_var() = (set_ivar32(surr_vars(0), get_col_index(it_var)));
+
+        get_iter_instr = match (it_var)
+          table_it_var()  = get_table_iter(it_var, tv, (nothing : i < arity)),
+          column_it_var() = get_column_iter(it_var, tv);
 
         code = (code |
-          get_table_iter(it_var, tv, (nothing : i < arity)),
+          get_iter_instr,
           repeat((
             break_if(is_out_of_range(it_var))
           ) & surrs_reads & (
@@ -294,55 +437,107 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
             move_forward(it_var)
           ))
         );
-      ;
-    ;
+      }
+    }
 
     return code;
   }
 
 
-  ## COMPILATION OF METHODS FOR BOTH TYPES OF AUTOMATA IS ALMOST IDENTICAL, CAN WE SHARE SOME CODE HERE?
-  [MethodId -> CompiledMethod] compiled_database_methods([Method] methods) {
-    return merge([compiled(ms) : unused_var, ms <- group_by(methods, ($.name, |$.args|))]);
+  [MethodId -> OptCompMethod] compiled_database_methods([Method] methods) {
+    return merge([compiled(ms) : unused_var, ms <- group_by(methods, family_id($.id))]);
 
 
-    [MethodId -> CompiledMethod] compiled([+Method] methods) {
-      a_method = an_elem(methods);
-      name = a_method.name;
-      arity = |a_method.args|;
-      return [method_id(name, arity) -> compiled(a_method)] if |methods| == 1;
-
-      sorted_methods = rand_sort(methods);
-      comp_methods = merge(([method_id(m.name, arity, i) -> compiled(m)] : m @ i <- sorted_methods));
-
-      disp_method = compiled_method(
-        (nothing : i < arity),
-        (ne_union_superset([left(m.args(i)) : m <- methods]) : i < arity),
-        [(memb_test_preds_map[t] : t, unused_var <- m.args) : m <- methods],
-        ne_union_superset([m.ret_type : m <- methods]),
-        method_dispatch_code(database.name, sorted_methods)
-      );
-
-      return comp_methods & [method_id(name, arity) -> disp_method];
+    [MethodId -> OptCompMethod] compiled([+Method] methods) {
+      comp_methods = [m.id -> compiled(m) : m <- methods];
+      if |methods| > 1 {
+        id = only([family_id(m.id) : m <- methods]);
+        comp_methods = comp_methods & [id -> dispatch_method(methods)];
+      }
+      return comp_methods;
     }
 
 
-    CompiledMethod compiled(Method method) =
-      compiled_method(
-        (v : unused_var, v <- method.args),
-        (t : t, unused_var <- method.args),
-        [(memb_test_preds_map[t] : t, unused_var <- method.args)],
-        method.ret_type,
-        method_body(method)
+    OptCompMethod dispatch_method([+Method] methods) {
+      assert |methods| > 1;
+      assert |[m.id.symbol : m <- methods]| == 1;
+      assert |[|m.args| : m <- methods]| == 1; // All functions have the same arity
+      assert only([|m.args| : m <- methods]) > 0;
+
+      count = |methods|;
+
+      disp_args = choose_disp_args((nonempty(left(unzip(m.args))) : m <- isort(methods)), program.typedefs);
+
+      low_level_signs = [m.id -> low_level_sign(m) : m <- methods];
+      aggr_sign = aggr_sign([s : unused_var, s <- low_level_signs]);
+
+      args = (low_level_arg(fn_arg(i), r) : r @ i <- aggr_sign.args);
+
+      aggr_ret_var, unused_var_1 = next_var(aggr_sign.ret_value, blank_var_gen);
+
+      cases = [{
+        types = (left(m.args(i)) : i <- disp_args);
+        sign = low_level_signs(m.id);
+        call_args = (low_level_expr(r, obj_expr(args(j))) : r @ j <- sign.args);
+        // We can reuse the same seed to generate variables
+        ret_var, unused_var_2 = next_var(sign.ret_value, blank_var_gen);
+        code = (
+          invoke_db_method(ret_var, database.name, m.id, call_args),
+          ## THESE TWO INSTRUCTIONS SHOULD BE MERGED
+          set_any_var(aggr_ret_var, obj_expr(ret_var)) if ret_var != aggr_ret_var,
+          ret_val(aggr_ret_var)
+        );
+        return (types, code);
+      } : m <- methods];
+
+      body = dynamic_dispatch_code((fn_arg(i) : i <- disp_args), cases);
+
+      return opt_comp_method(
+        args:             args,
+        args_types:       (ne_union_superset([left(m.args(i)) : m <- methods]) : i < |args|),
+        args_memb_preds:  [(memb_test_preds_map[t] : t, unused_var_2 <- m.args) : m <- methods],
+        loc_vars_types:   [],
+        ret_type:         ne_union_superset([m.ret_type : m <- methods]),
+        ret_val_repr:     aggr_sign.ret_value,
+        body:             body
       );
+    }
 
 
-    Instr* method_body(Method method) {
-      env = [if a != nothing then value(a) else fn_arg(i) -> t : t, a @ i <~ method.args];
-      let context = database, typed_vars = [], surrogates = []:
-        eval_code, surr, unused_var = opt_eval_code(method.expr, env, blank_var_gen);
-      ;
-      return (eval_code | ret_val(surr));
+    OptCompMethod compiled(Method method) {
+      vars = (if v != nothing then value(v) else fn_arg(i) : t, v @ i <- method.args);
+      args = (low_level_arg(vars(i), fn_arg_low_level_repr(t)) : t, unused_var @ i <- method.args);
+      args_surrs = [vars(i) -> obj_expr(a) : a @ i <~ args];
+
+      env = [v -> left(method.args(i)) : v @ i <~ vars];
+
+      ret_val_repr = opt_repr(method.ret_type);
+
+      let context = database, surrogates = args_surrs, typed_vars = [] {
+        body, ret_val_surr, unused_var_1 = match (method.expr)
+          do_expr() = do_expr_opt_eval_code(method.expr, ret_val_repr, env, blank_var_gen),
+          _         = opt_eval_code(method.expr, env, blank_var_gen);
+      }
+
+      // Adding push_call_info/pop_call_info debug mode instructions
+      if options.debug_mode
+        body = (push_call_info(method.id.symbol, (obj_expr(v) : v <- args))) & body & (pop_call_info);
+
+      body = (body | ret_val(low_level_expr(ret_val_repr, ret_val_surr)));
+
+      loc_vars_types = match (method.expr)
+        do_expr() = method.expr.typed_vars,
+        _         = [];
+
+      return opt_comp_method(
+        args:             args,
+        args_types:       left(unzip(method.args)),
+        args_memb_preds:  [(memb_test_preds_map[t] : t, unused_var_2 <- method.args)],
+        loc_vars_types:   loc_vars_types,
+        ret_type:         method.ret_type,
+        ret_val_repr:     ret_val_repr,
+        body:             body
+      );
     }
   }
 
@@ -424,10 +619,13 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 ////////////////////////////////////////////////////////////////////////////////
 
 implicit program : Program, typedefs : [TypeName -> NeType], database : Database {
-  [BlockForeignKey] physical_foreign_keys = [
-    foreign_key(table_var(k.source_rel_var), table_var(only(k.target_rel_vars)), foreign_key_type(k))
+  [ForeignKey -> BlockForeignKey] physical_foreign_keys_map = [
+    k -> foreign_key(table_var(k.source_rel_var), table_var(only(k.target_rel_vars)), foreign_key_type(k))
     : k <- database.foreign_keys
   ];
+
+
+  [BlockForeignKey] physical_foreign_keys = values(physical_foreign_keys_map);
 
 
   ForeignKeyType foreign_key_type(ForeignKey key) {
@@ -465,7 +663,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
       (_, _, _),  (_, _)      = origin_symmetric == target_symmetric,
       _,          _           = not origin_symmetric and not target_symmetric;
 
-    if origin_symmetric or target_symmetric:
+    if origin_symmetric or target_symmetric {
       key_type = match (origin_args, target_args)
         (_),                        (_, _)      = :unary_sym_binary,
         (_),                        (_, _, _)   = :unary_sym_ternary,
@@ -474,8 +672,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
         (_, _, _),                  (_)         = :sym_ternary_unary,
         (_, _),                     (_, _, _)   = :sym_binary_sym_ternary,
         (_, _, _),                  (_, _)      = :sym_ternary_sym_binary;
-
-    else
+    }
+    else {
       key_type = match (origin_args, target_args)
         (just()),           (just())          = :unary_unary,
         (just()),           (just(), nothing) = unary_binary(0),
@@ -488,7 +686,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 
         (_, _, _) oas?,     (just() ta?)      = ternary_unary(only_unsafe((i : a @ i <- oas, a == ta))),
         (_, _, _),          (_, _)            = :ternary_binary;
-    ;
+    }
 
     return key_type;
   }
@@ -530,7 +728,16 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 
 
 implicit program : Program, typedefs : [TypeName -> NeType], database : Database { ## program IS NOT REALLY NEEDED, BUT THE TYPECHECKER...
-  [ValueStoreId] value_stores = values(table_col_value_store_map);
+  [ValueStoreId -> ValueStoreType] value_stores = [
+    vs -> {
+      cols = nonempty([c : c <- table_col_value_store_map(?, vs)]);
+      // types = [database.rel_vars(_untag_(left(c))).signature(right(c)) : c <- cols];
+      ## WORKAROUND FOR COMPILER BUG IN VERSION 0.1 (IS IT GONE IN 0.3?)
+      ## THE COMMENTED OUT VERSION ABOVE DOES NOT WORK
+      types = [database.rel_vars(rv).signature(idx) : c <- cols, rv = untag(left(c)), idx = right(c)];
+      return value_store_type(ne_union_superset(types));
+    } : vs <- values(table_col_value_store_map)
+  ];
 
 
   [(TableVar, Nat) -> ValueStoreId] table_col_value_store_map {
@@ -542,13 +749,21 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
   }
 
 
-  [TableVar -> Table] tables_info {
+  [TableVar -> <Table, Column>] tables_info {
     auto_id = database.name;
     col_to_vs_map = table_col_value_store_map;
     return [
       tv -> {
-        value_stores = (col_to_vs_map((tv, i)) : i < |info.signature|);
-        return table(value_stores, info.keys, info.signature, info.symmetric);
+        if is_columnar_relvar(auto_id, logical_rel_var(rv)) {
+          value_store = col_to_vs_map((tv, 0));
+          signature = info.signature;
+          fail if |signature| != 2;
+          return column(value_store, column_repr(signature(1)), signature);
+        }
+        else {
+          value_stores = (col_to_vs_map((tv, i)) : i < |info.signature|);
+          return table(value_stores, info.keys, info.signature, info.symmetric);
+        }
       } : rv, info <- database.rel_vars, tv = table_var(rv)
     ];
   }
@@ -558,33 +773,33 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 ////////////////////////////////////////////////////////////////////////////////
 
 implicit typedefs : [TypeName -> NeType] {
-  ## THIS IS AN ALMOST PERFECT DUPLICATE OF gen_dispatch_auto_method_body().
-  Instr* method_dispatch_code(DBSymbol db_type, Method+ methods) {
-    assert |methods| > 1;
-    assert |[m.name : m <~ methods]| == 1;    // All methods must have the same name
-    assert |[|m.args| : m <~ methods]| == 1;  // All methods have the same arity
-    assert |head(methods).args| > 0;          // No-argument methods cannot be polymorphic
+  // ## THIS IS AN ALMOST PERFECT DUPLICATE OF gen_dispatch_auto_method_body().
+  // Instr* method_dispatch_code(DBSymbol db_type, Method+ methods) {
+  //   assert |methods| > 1;
+  //   assert |[m.name : m <~ methods]| == 1;    // All methods must have the same name
+  //   assert |[|m.args| : m <~ methods]| == 1;  // All methods have the same arity
+  //   assert |head(methods).args| > 0;          // No-argument methods cannot be polymorphic
 
 
-    l0 = lvar(0);
-    count = |methods|;
+  //   l0 = lvar(0);
+  //   count = |methods|;
 
-    a_method  = head(methods);
-    name      = a_method.name;
-    arity     = |a_method.args|;
+  //   a_method  = head(methods);
+  //   name      = a_method.name;
+  //   arity     = |a_method.args|;
 
-    disp_args = choose_disp_args(((t : t, unused_var <- nonempty(m.args)) : m <- methods), typedefs);
+  //   disp_args = choose_disp_args(((t : t, unused_var <- nonempty(m.args)) : m <- methods), typedefs);
 
-    cases = [{
-      types = (left(m.args(j)) : j <- disp_args);
-      invoke_method_instr = invoke_db_method(l0, db_type, method_id(name, arity, i), (fn_arg(j) : j < arity));
-      code = (invoke_method_instr, ret_val(l0));
-      return (types, code);
-    } : m @ i <~ methods];
+  //   cases = [{
+  //     types = (left(m.args(j)) : j <- disp_args);
+  //     invoke_method_instr = invoke_db_method(l0, db_type, method_id(name, arity, i), (fn_arg(j) : j < arity));
+  //     code = (invoke_method_instr, ret_val(l0));
+  //     return (types, code);
+  //   } : m @ i <~ methods];
 
-    code = dynamic_dispatch_code((fn_arg(i) : i <- disp_args), cases);
-    return (code | ret_val(l0));
-  }
+  //   code = dynamic_dispatch_code((fn_arg(i) : i <- disp_args), cases);
+  //   return (code | ret_val(l0));
+  // }
 
 
   Instr* update_dispatch_code(DBSymbol db_type, <Update+, Handler+> updates) {
@@ -622,6 +837,39 @@ implicit typedefs : [TypeName -> NeType] {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+implicit typedefs : [TypeName -> NeType] {
+  ValueStoreType value_store_type(NeType type) {
+    return :integer if is_subset(type, integer);
+
+    tag_int_type = mono_tagged_integer(type);
+    return value(tag_int_type) if tag_int_type != nothing;
+
+    return :object;
+
+
+    Maybe[<mono_tagged_integer(Symbol)>] mono_tagged_integer(NeType type) =
+      tag_obj_type()  = if type.tag_type :: SymbType and is_subset(type.obj_type, integer)
+                          then just(:mono_tagged_integer(untag(untag(type.tag_type))))
+                          else nothing,
+      union_type(ts?) = { maybe_types = [mono_tagged_integer(t) : t <- ts];
+                          if maybe_types :: [+Just[<mono_tagged_integer(Symbol)>]] {
+                            types = [value(t) : t <- maybe_types];
+                            return just(only(types)) if |types| == 1;
+                          }
+                          return nothing;
+                        },
+      type_ref(ts?)   = mono_tagged_integer(nonempty_type(expand_type_ref(ts, typedefs))),
+      _               = nothing;
+  }
+
+  ColumnRepr column_repr(NeType type) =
+    if is_subset(type, integer)     then :int     else
+    if is_subset(type, float_type)  then :float   else
+                                         :object;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 
 Maybe[UpdateSymbol] name(<Update, Handler>) =

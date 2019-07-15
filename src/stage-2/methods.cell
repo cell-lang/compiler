@@ -144,6 +144,8 @@ SignalVar cast_signal_var(Var v) =
 
 Nat arity(Function fn) = |fn.args|;
 
+Nat arity(ReactMethod m) = |m.args|;
+
 Nat arity(Method m) = |m.args|;
 
 Nat arity(Update u) = |u.args|;
@@ -173,6 +175,10 @@ PlainFnFamilyId family_id(PlainFnId id) =
   unique_fn_id()  = id.family;
 
 NestedFnFamilyId family_id(NestedFnId id) = nested_fn_id(id.outer, family_id(id.inner));
+
+////////////////////////////////////////////////////////////////////////////////
+
+MethodFamilyId family_id(MethodId id) = method_id(id.symbol, id.arity);
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -213,6 +219,10 @@ RelVar unqualified(AnyRelVar var) =
 PlainAggrFnId plain_id(AggrFnId id) =
   aggr_fn_id()              = id,
   unique_aggr_fn_id(s?, _)  = aggr_fn_id(s);
+
+ValueStoreId unqualified(<ValueStoreId, NestedValueStoreId> id) =
+  value_store_id()        = id,
+  nested_value_store_id() = id.store_id;
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////

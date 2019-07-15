@@ -44,47 +44,46 @@ Nat* trigger_times(CyclicTimeExpr time_expr) {
 
   times = ();
 
-  while li < ll or ri < rl:
-    if li >= ll:
+  while li < ll or ri < rl {
+    if li >= ll {
       new_time = right_times(ri);
       curr_right_val = not curr_right_val;
       ri = ri + 1;
-
-    elif ri >= rl:
+    }
+    else if ri >= rl {
       new_time = left_times(li);
       curr_left_val = not curr_left_val;
       li = li + 1;
-
-    else
+    }
+    else {
       left_time = left_times(li);
       right_time = right_times(ri);
 
-      if left_time == right_time:
+      if left_time == right_time {
         new_time = left_time;
         curr_left_val = not curr_left_val;
         curr_right_val = not curr_right_val;
         li = li + 1;
         ri = ri + 1;
-
-
-      elif left_time < right_time:
+      }
+      else if left_time < right_time {
         new_time = left_time;
         curr_left_val = not curr_left_val;
         li = li + 1;
-
-      else // left_time > right_time
+      }
+      else { // left_time > right_time
         new_time = right_time;
         curr_right_val = not curr_right_val;
         ri = ri + 1;
-      ;
-    ;
+      }
+    }
 
     new_value = op(curr_left_val, curr_right_val);
-    if new_value != curr_val:
+    if new_value != curr_val {
       times = (times | new_time);
       curr_val = new_value;
-    ;
-  ;
+    }
+  }
 
   return (initial_value, nonempty(times));
 }

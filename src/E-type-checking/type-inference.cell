@@ -77,11 +77,11 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     return set_elem_supertype(rel_type) if arity == 1;
     args_types = (apply(a, expr_type($, env)) : a <- expr.args);
     target_idx = index_only(expr.args, nothing);
-    if arity == 2:
+    if arity == 2 {
       return if target_idx == 1
         then restricted_bin_rel_arg1_supertype(rel_type, value_unsafe(args_types(0)))
         else bin_rel_arg_supertype(rel_type, 0);
-    ;
+    }
     assert arity == 3;
     fail if not target_idx :: <0..2>;
     return tern_rel_arg_supertype(rel_type, target_idx);
@@ -93,8 +93,9 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     overlapping_sgns = [
       s : s <- relvar_signatures(expr.rel_var), signature_overlaps_partial_signature(s, args_types)
     ];
+    return empty_type if overlapping_sgns == [];
     target_idx = index_only(expr.args, nothing);
-    return union_superset(nonempty([s(target_idx) : s <- overlapping_sgns]));
+    return ne_union_superset([s(target_idx) : s <- overlapping_sgns]);
   }
 
 
@@ -102,9 +103,9 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     actual_type = expr_type(obj, env);
     return if actual_type == empty_type
         then empty_type
-      elif is_subset(actual_type, type)
+      else if is_subset(actual_type, type)
         then type_true
-      elif are_ptype_disjoint(actual_type, type)
+      else if are_ptype_disjoint(actual_type, type)
         then type_false
       else
         type_bool;
@@ -155,9 +156,9 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     type2 = expr_type(expr2, env);
     return if type1 == empty_type or type2 == empty_type
         then empty_type
-      elif are_ptype_disjoint(type1, type2)
+      else if are_ptype_disjoint(type1, type2)
         then type_false
-      elif is_singleton(type1) and is_singleton(type2)
+      else if is_singleton(type1) and is_singleton(type2)
         // The case where the two types are different is in theory
         // a subcase of the previous one, but in practice these are
         // all appoximations that are not necessarily syncronized
@@ -193,18 +194,18 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     entries = [entry_info(e, env) : e <- raw_entries];
     is_record = not (e <- entries : not is_symb_singl_type(e.key_type));
 
-    if is_record:
+    if is_record {
       fields = [only_symb(e.key_type) -> (type: e.value_type, optional: e.optional) : e <- entries];
       return record_type(fields);
-    else
+    }
+    else {
       key_type = union_superset([e.key_type : e <- entries]);
       value_type = union_superset([e.value_type : e <- entries]);
       nonempty = (e <- entries : not e.optional);
-      if key_type == empty_type or value_type == empty_type:
+      if key_type == empty_type or value_type == empty_type
         return if nonempty then empty_type else empty_rel_type;
-      ;
       return type_map(key_type, value_type, nonempty);
-    ;
+    }
 
 
     (key_type: Type, value_type: Type, optional: Bool) entry_info((key: Expr, value: Expr, cond: Expr?) entry, [EnvVar -> Type] env) {
@@ -267,10 +268,10 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     return singleton_type(0) if is_subset(coll_type, empty_seq_type) or is_subset(coll_type, empty_rel_type);
 
     maybe_tuple_types = maybe_tuple_types_union(coll_type);
-    if maybe_tuple_types != nothing:
+    if maybe_tuple_types != nothing {
       sizes = [|ts| : ts <- value(maybe_tuple_types)];
       return int_range(min(sizes), max(sizes));
-    ;
+    }
 
     may_be_empty = is_subset(empty_seq_type, coll_type) or is_subset(empty_rel_type, coll_type);
     return high_ints(if may_be_empty then 0 else 1);
@@ -285,20 +286,19 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
     arg_type = expr_type(arg, env);
 
-    if is_subset(target_type, atom_type):
-      if is_eq(target_type, atom_type):
+    if is_subset(target_type, atom_type) {
+      if is_eq(target_type, atom_type)
         return tag_obj_type(atom_type, arg_type);
       else
         return union_type([tag_obj_type(symb_type(s), arg_type) : s <- finite_symb_set_enum(target_type)]);
-      ;
-
-    elif is_subset(target_type, type_seq):
+    }
+    else if is_subset(target_type, type_seq) {
       return restricted_seq_elem_supertype(target_type, arg_type);
-
-    else
+    }
+    else {
       assert is_subset(target_type, type_bin_rel);
       return restricted_bin_rel_arg1_supertype(target_type, arg_type);
-    ;
+    }
   }
 
 
@@ -386,9 +386,9 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     return empty_type if src_type == empty_type;
     return empty_seq_type if is_subset(src_type, empty_seq_type);
 
-    if not expr.sel_expr?:
+    if not expr.sel_expr? {
       maybe_src_tuple_types_set = maybe_tuple_types_union(src_type);
-      if maybe_src_tuple_types_set != nothing:
+      if maybe_src_tuple_types_set != nothing {
         src_tuple_types_set = value(maybe_src_tuple_types_set);
         tuple_types = [({
               env_delta = asgnm_env_updates(expr.vars, field_type);
@@ -399,8 +399,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
           ) : src_tuple_types <- src_tuple_types_set
         ];
         return union_type([if ts != () then tuple_type(ts) else empty_seq_type : ts <- tuple_types]);
-      ;
-    ;
+      }
+    }
 
     src_elem_type = seq_elem_supertype(src_type);
     assert src_elem_type != empty_type;
@@ -444,19 +444,19 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   ([EnvVar -> Type], [EnvVar -> Type]) refine_env(Expr cond, [EnvVar -> Type] env) {
     type = expr_type(cond, env);
 
-    if type == empty_type:
+    if type == empty_type {
       // The expression if unreachable, so both branches are unreachable as well
       unreachable_env = unreachable_env(env);
       return (unreachable_env, unreachable_env);
-
-    elif is_eq(type, type_true):
+    }
+    else if is_eq(type, type_true) {
       // Only the true branch is ever executed
       return (env, unreachable_env(env));
-
-    elif is_eq(type, type_false):
+    }
+    else if is_eq(type, type_false) {
       // Only the false branch is ever executed
       return (unreachable_env(env), env);
-    ;
+    }
 
     // Here both branches can be executed
     return match (cond)
@@ -486,33 +486,33 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
     [EnvVar -> Type] refine_fn_env(FnCallExpr expr, FnType type, [EnvVar -> Type] env) {
       ref_env = env;
-      for e, t <- zip(expr.args, type.args):
+      for e, t <- zip(expr.args, type.args) {
         assert t != empty_type;
         ref_env = left(refine_fn_arg_env(e, t, ref_env)) if e :: Expr and t :: NeType;
-      ;
+      }
       return ref_env;
     }
 
 
     ([EnvVar -> Type], [EnvVar -> Type]) refine_fn_arg_env(Expr obj, NeType arg_type, [EnvVar -> Type] env) {
-      if obj :: EnvVar:
+      if obj :: EnvVar {
         var_type = env(obj, !!);
         in_type, out_type = branch_types_after_check(var_type, arg_type);
         var_group = var_group(obj);
         env_delta_in = [v -> in_type : v <- var_group];
         env_delta_out = [v -> out_type : v <- var_group];
-
-      // elif obj :: VarField:
+      }
+      // else if obj :: VarField {
       //   var_type = env[obj.expr];
       //   new_var_type = if var_type != empty_type
       //     then update_mandatory_field_type(var_type, obj.field, type)
       //     else empty_type;
       //   env_delta = [v -> new_var_type : v <- var_group(obj.expr)];
-
-      else
+      // }
+      else {
         env_delta_in = [];
         env_delta_out = [];
-      ;
+      }
 
       return (update(env, env_delta_in), update(env, env_delta_out));
     }
@@ -520,19 +520,19 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
 
   ([EnvVar -> Type], [EnvVar -> Type]) refine_membership_env(Expr obj, NeType type, [EnvVar -> Type] env) {
-    if obj :: EnvVar:
+    if obj :: EnvVar {
       env_delta = [v -> type : v <- var_group(obj)];
-
-    elif obj :: VarField:
+    }
+    else if obj :: VarField {
       var_type = env[obj.expr];
       new_var_type = if var_type != empty_type
         then update_mandatory_field_type(var_type, obj.field, type)
         else empty_type;
       env_delta = [v -> new_var_type : v <- var_group(obj.expr)];
-
-    else
+    }
+    else {
       env_delta = [];
-    ;
+    }
 
     ## HERE MAYBE I COULD TRY TO REFINE THE FALSE BRANCH AS WELL...
     return (update(env, env_delta), env);
@@ -543,15 +543,15 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     env_delta_eq, env_delta_not_eq =
       if left :: EnvVar
         then refine(left, right, env)
-      elif right :: EnvVar
+      else if right :: EnvVar
         then refine(right, left, env)
-      elif left :: VarField
+      else if left :: VarField
         then refine(left.expr, left.field, right, env)
-      elif right :: VarField
+      else if right :: VarField
         then refine(right.expr, right.field, left, env)
-      elif left :: <size_expr(coll: <EnvVar, VarField>)> and right :: <object(Nat)>
+      else if left :: <size_expr(coll: <EnvVar, VarField>)> and right :: <object(Nat)>
         then refine(left.coll, bare_obj(right), env)
-      elif right :: <size_expr(coll: <EnvVar, VarField>)> and left :: <object(Nat)>
+      else if right :: <size_expr(coll: <EnvVar, VarField>)> and left :: <object(Nat)>
         then refine(right.coll, bare_obj(left), env)
       else
         ([], []);
@@ -625,10 +625,10 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
   ([EnvVar -> Type], [EnvVar -> Type]) refine_accessor_test_env(Expr expr, SymbObj field, [EnvVar -> Type] env) {
     expr_type = expr_type(expr, env);
-    if expr_type == empty_type:
+    if expr_type == empty_type {
       unreachable_env = unreachable_env(env);
       return (unreachable_env, unreachable_env);
-    ;
+    }
 
     return (env, env) if not expr :: EnvVar;
 
@@ -659,12 +659,13 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     }
 
     (Type, Type) accessor_test_refine(TagObjType type, SymbObj field, Bool look_inside) {
-      if look_inside:
+      if look_inside {
         ref_types = accessor_test_refine(type.obj_type, field, false);
         return (tag_obj_type(type.tag_type, left(ref_types)), tag_obj_type(type.tag_type, right(ref_types)));
-      else
+      }
+      else {
         return (empty_type, type);
-      ;
+      }
     }
 
     (Type, Type) accessor_test_refine(UnionType type, SymbObj field, Bool look_inside) {
@@ -699,14 +700,16 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   // [EnvVar -> Type] downstream_env(CollValueIter iter, [EnvVar -> Type] env) {
   //   src_type = expr_type(iter.src_expr, env);
 
-  //   if is_subset(src_type, type_seq):
+  //   if is_subset(src_type, type_seq) {
   //     return seq_iter_env(iter, src_type, env);
-  //   elif |iter.vars| == 1:
+  //   }
+  //   else if |iter.vars| == 1 {
   //     var = only(iter.vars);
   //     return env & [value(var) -> set_elem_supertype(src_type) if var != nothing];
-  //   else
+  //   }
+  //   else {
   //     return rel_iter_env(iter.vars, (nothing : unused_var <- iter.vars), src_type, env);
-  //   ;
+  //   }
 
 
   //   [EnvVar -> Type] seq_iter_env(CollValueIter iter, Type src_type, [EnvVar -> Type] env) {
@@ -764,13 +767,14 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     elem_type = seq_elem_supertype(src_expr_type);
 
     nvars = nz_nat(|vars|);
-    if nvars == 1:
+    if nvars == 1 {
       var = vars(0);
       env_delta = [value(var) -> elem_type if var != nothing];
-    else
+    }
+    else {
       types = tuple_field_supertypes(elem_type, nvars);
       env_delta = merge(([value(v) -> t] : v, t <- zip(vars, types), v != nothing));
-    ;
+    }
     env_delta = env_delta & [value(idx_var) -> type_nat] if idx_var != nothing;
 
     return env & env_delta;
@@ -807,13 +811,14 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
   // We assume the assignment typechecks
   [EnvVar -> Type] partial_asgnm_env_updates(Maybe[EnvVar]+ vars, Type value_type) {
-    if |vars| == 1:
+    if |vars| == 1 {
       var = only(vars);
       return [value(var) -> value_type if var != nothing];
-    else
+    }
+    else {
       types = tuple_field_supertypes(value_type, |vars|);
       return [value(v) -> types(i) : v @ i <~ vars, v != nothing];
-    ;
+    }
   }
 
 
@@ -830,9 +835,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   [EnvVar -> Type] merge_envs([+[EnvVar -> Type]] envs) {
     sorted_envs = nonempty(rand_sort(envs));
     merged_env = head(sorted_envs);
-    for e <- tail(sorted_envs):
+    for e <- tail(sorted_envs)
       merged_env = merge_envs(merged_env, e);
-    ;
     return merged_env;
   }
 
@@ -853,19 +857,19 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     assert |actual_types| == |formal_types|;
     assert |cls_args| == |cls_types|;
     type_var_insts = type_var_instantiations_for_subset(actual_types, formal_types);
-    loop
+    loop {
       new_type_pairs = ();
-      for t @ i <- cls_types:
+      for t @ i <- cls_types {
         rwr_cls = rewrite_cls_expr(cls_args(i));
         actual_ret_type = get_return_type(rwr_cls, t, type_var_insts, env);
         assert is_subset(actual_ret_type, replace_type_vars_with_type_any(t.out_type));
         new_type_pairs = (new_type_pairs | (actual_ret_type, t.out_type));
-      ;
+      }
       new_actual_types, new_formal_types = unzip(new_type_pairs);
       new_type_var_insts = type_var_instantiations_for_subset(new_actual_types, new_formal_types);
       return type_var_insts if has_reached_fixpoint(type_var_insts, new_type_var_insts);
       type_var_insts = merge_insts(type_var_insts, new_type_var_insts);
-    ;
+    }
   }
 
 
@@ -887,19 +891,18 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     lower_bound = lower_bound(lower_bound_type);
     upper_bound = upper_bound(upper_bound_type);
 
-    if lower_bound == nothing:
-      if upper_bound == nothing:
+    if lower_bound == nothing {
+      if upper_bound == nothing
         return integer;
       else
         return low_ints(value(upper_bound) + upper_bound_adj);
-      ;
-    else
-      if upper_bound == nothing:
+    }
+    else {
+      if upper_bound == nothing
         return high_ints(value(lower_bound));
       else
         return int_range(value(lower_bound), value(upper_bound) + upper_bound_adj);
-      ;
-    ;
+    }
 
 
     Maybe[Int] lower_bound(NeType type) =
@@ -930,9 +933,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   [EnvVar -> Type] update_env(Expr+ exprs, Pattern+ ptrns, [EnvVar -> Type] env) {
     assert |exprs| == |ptrns|;
     new_env = env;
-    for expr, ptrn <- zip(exprs, ptrns):
+    for expr, ptrn <- zip(exprs, ptrns)
       new_env = update_env(expr, ptrn, new_env);
-    ;
     return new_env;
   }
 
@@ -945,18 +947,18 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     ## AM I SURE generate_env(Pattern, Type) CANNOT ACCEPT THE EMPTY TYPE?
     return new_env & [v -> empty_type : v <- pattern_vars(ptrn)] if type == empty_type;
 
-    if expr :: EnvVar:
+    if expr :: EnvVar {
       refined_type = type_pattern_intersection_superset(type, ptrn);
-      assert refined_type != empty_type; ## WHAT IS THIS ASSERTION FOR? WHY CAN'T THE ORIGINAL TYPE ITSELF BE EMPTY?
+      // assert refined_type != empty_type; ## WHAT IS THIS ASSERTION FOR? WHY CAN'T THE ORIGINAL TYPE ITSELF BE EMPTY?
       new_env = update(new_env, [v -> refined_type : v <- var_group(expr)]);
-
-    elif expr :: VarField:
+    }
+    else if expr :: VarField {
       var_type = expr_type(expr.expr, env);
       refined_field_type = type_pattern_intersection_superset(type, ptrn);
       fail if var_type == empty_type or refined_field_type == empty_type;
       refined_type = update_mandatory_field_type(var_type, expr.field, refined_field_type);
       new_env = update(new_env, [v -> refined_type : v <- var_group(expr.expr)]);
-    ;
+    }
 
     return new_env & generate_env(ptrn, type);
   }
@@ -967,16 +969,19 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
   [EnvVar -> Type] loop_vars(CollValueIter iter, [EnvVar -> Type] env) {
     src_type = expr_type(iter.src_expr, env);
-    if is_subset(src_type, type_seq):
+    if is_subset(src_type, type_seq) {
       return seq_loop_vars(iter, env);
-    elif is_subset(src_type, type_set):
+    }
+    else if is_subset(src_type, type_set) {
       return set_loop_vars(iter, env);
-    elif is_subset(src_type, type_bin_rel):
+    }
+    else if is_subset(src_type, type_bin_rel) {
       return bin_rel_loop_vars(iter, env);
-    else
+    }
+    else {
       assert is_subset(src_type, type_tern_rel);
       return tern_rel_loop_vars(iter, env);
-    ;
+    }
   }
 
 
@@ -996,21 +1001,22 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     sgns = relvar_signatures(iter.rel_var);
     args_types = (apply(a, expr_type($, env)) : a <- iter.args);
     return [value(v) -> empty_type : v @ i <~ iter.vars, v != nothing] if not args_types :: Maybe[NeType]+;
-    filtered_sgns = [s : s <- sgns, signature_overlaps_partial_signature(s, args_types)];
-    vars_types = (ne_union_superset(nonempty([s(i) : s <- filtered_sgns])) : v @ i <- iter.args, v == nothing);
+    filtered_sgns = nonempty([s : s <- sgns, signature_overlaps_partial_signature(s, args_types)]);
+    vars_types = (ne_union_superset([s(i) : s <- filtered_sgns]) : v @ i <- iter.args, v == nothing);
     return [value(v) -> vars_types(i) : v @ i <~ iter.vars, v != nothing];
   }
 
 
   [EnvVar -> Type] seq_loop_vars(CollValueIter iter, [EnvVar -> Type] env) {
     elem_type = seq_elem_supertype(expr_type(iter.src_expr, env));
-    if |iter.vars| == 1:
+    if |iter.vars| == 1 {
       var = only(iter.vars);
       loop_vars = [value(var) -> elem_type if var != nothing];
-    else
+    }
+    else {
       field_types = tuple_field_supertypes(elem_type, |iter.vars|);
       loop_vars = [value(v) -> field_types(i) : v @ i <~ iter.vars, v != nothing];
-    ;
+    }
     loop_vars = loop_vars & [iter.idx_var -> type_nat] if iter.idx_var?;
     return loop_vars;
   }
@@ -1063,7 +1069,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     iter_tree_when_true = tail(left(refine_env(cond, env)));
     return if is_subset(type, type_true)
         then iter_tree_when_true
-      elif is_subset(type, type_false)
+      else if is_subset(type, type_false)
         then :never
       else
         :any([:never, iter_tree_when_true]);
@@ -1086,13 +1092,14 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     elem_type = seq_elem_supertype(src_type);
     return :never if elem_type == empty_type;
     nvars = nz_nat(|vars|);
-    if nvars == 1:
+    if nvars == 1 {
       var = vars(0);
       env_delta = [value(var) -> elem_type if var != nothing];
-    else
+    }
+    else {
       types = tuple_field_supertypes(elem_type, nvars);
       env_delta = merge(([value(v) -> t] : v, t <- zip(vars, types), v != nothing));
-    ;
+    }
     env_delta = env_delta & [value(idx_var) -> type_nat] if idx_var != nothing;
     new_env = env & env_delta;
     tree = :repeated(tail(new_env));
@@ -1178,7 +1185,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     once(e?)      = once_set_comp_type(e, expr),
     repeated(t?)  = set_comp_type(t, expr),
     any(ts?)      = set_comp_union_type([set_comp_type(t, expr) : t <- ts]),
-    all(ts?)      = fold((set_comp_type(t, expr) : t <- ts), set_both);
+    all(ts?)      = fold((set_comp_type(t, expr) : t <- ts), type_of_set_union);
 
 
   SetType once_set_comp_type([EnvVar -> Type] env, Expr expr) {
@@ -1204,10 +1211,10 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     ## HANDLE THIS CASE...
     return empty_rel_type if type1 == empty_type or type2 == empty_type;
 
-    if is_symb_singl_type(type1):
+    if is_symb_singl_type(type1) {
       symb = only_symb(type1);
       return ne_record_type([symb -> (type: type2, optional: false)]);
-    ;
+    }
 
     return ne_map_type(key_type: type1, value_type: type2);
   }
@@ -1323,12 +1330,30 @@ TernRelCompType tern_rel_comp_union_type([+TernRelCompType] types) {
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-SetType set_both(SetType type1, SetType type2) =
-  empty_rel_type,   _               = type2,
-  _,                empty_rel_type  = type1,
-  union_type(ts?),  _               = fold(rand_sort(ts & [type2]), set_both),
-  _,                union_type(ts?) = fold(rand_sort(ts & [type1]), set_both),
-  ne_set_type(),    ne_set_type()   = ne_set_type(ne_union_superset([type1.elem_type, type2.elem_type]));
+SetType type_of_set_union(SetType type1, SetType type2) =
+  union_type(ts1?), union_type(ts2?)  = type_of_set_union(ts1, ts2),
+  union_type(ts?),  ne_set_type()     = type_of_set_union(ts, [type2]),
+  union_type(ts?),  empty_rel_type    = type_of_set_union(ts, [type2]),
+  _,                union_type(ts?)   = type_of_set_union(type2, type1),
+  empty_rel_type,   empty_rel_type    = empty_rel_type,
+  empty_rel_type,   ne_set_type()     = :union_type([type1, type2]),
+  ne_set_type(),    empty_rel_type    = :union_type([type1, type2]),
+  ne_set_type(),    ne_set_type()     = ne_set_type(ne_union_superset([type1.elem_type, type2.elem_type]));
+
+
+SetType type_of_set_union([+<empty_rel_type, NeSetType>] types1, [+<empty_rel_type, NeSetType>] types2) {
+  elt_types = [t.elem_type : t <- types1 | t <- types2, t != empty_rel_type];
+  if elt_types != [] {
+    type = ne_set_type(ne_union_superset(elt_types));
+    may_be_empty = types1(empty_rel_type) and types2(empty_rel_type);
+    type = :union_type([type, empty_rel_type]) if may_be_empty;
+    return type;
+  }
+  else {
+    assert types1 == [empty_rel_type] and types2 == empty_rel_type;
+    return empty_rel_type;
+  }
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -1353,7 +1378,7 @@ implicit typedefs : [TypeName -> NeType] {
   MapCompType union_both([+MapCompType] types1, [+MapCompType] types2) {
     nonempty_types_1 = types1 - [empty_rel_type];
     nonempty_types_2 = types2 - [empty_rel_type];
-    if |nonempty_types_1| == 1 and |nonempty_types_2| == 1:
+    if |nonempty_types_1| == 1 and |nonempty_types_2| == 1 {
       ne_type_1 = only(nonempty_types_1);
       ne_type_2 = only(nonempty_types_2);
       nonempty_1 = not types1(empty_rel_type);
@@ -1361,7 +1386,7 @@ implicit typedefs : [TypeName -> NeType] {
       return match (ne_type_1, ne_type_2)
         ne_record_type(fs1?), ne_record_type(fs2?)  = union_both_special_case(fs1, fs2, nonempty_1, nonempty_2),
         _,                    _                     = union_both_default(types1, types2);
-    ;
+    }
     return union_both_default(types1, types2);
 
 
@@ -1370,24 +1395,24 @@ implicit typedefs : [TypeName -> NeType] {
 
 
     MapCompType union_both_special_case(RecordTypeFields fs1, RecordTypeFields fs2, Bool nonempty_1, Bool nonempty_2) {
-      if not nonempty_1 and (|fs1| == 1 or not (l, f <- fs1 : not f.optional)):
+      if not nonempty_1 and (|fs1| == 1 or not (l, f <- fs1 : not f.optional)) {
         adj_fs1 = [l -> (type: f.type, optional: true) : l, f <- fs1];
         return union_both_special_case(adj_fs1, fs2, true, nonempty_2);
-
-      elif not nonempty_2 and (|fs2| == 1 or not (l, f <- fs2 : not f.optional)):
+      }
+      else if not nonempty_2 and (|fs2| == 1 or not (l, f <- fs2 : not f.optional)) {
         adj_fs2 = [l -> (type: f.type, optional: true) : l, f <- fs2];
         return union_both_special_case(fs1, adj_fs2, nonempty_1, true);
-
-      elif nonempty_1 and nonempty_2:
+      }
+      else if nonempty_1 and nonempty_2 {
         fs = merge_fields(fs1, fs2);
         nonempty = (l, f <- fs : not f.optional);
         return map_comp_union_type([empty_rel_type if not nonempty, ne_record_type(fs)]);
-
-      else
+      }
+      else {
         rec_types_1 = [empty_rel_type if not nonempty_1, ne_record_type(fs1)];
         rec_types_2 = [empty_rel_type if not nonempty_2, ne_record_type(fs2)];
         return union_both_default(rec_types_1, rec_types_2);
-      ;
+      }
     }
   }
 
@@ -1408,9 +1433,8 @@ implicit typedefs : [TypeName -> NeType] {
     assert type_contains_obj(type2, []) == is_subset(empty_rel_type, type2);
 
     type = ne_map_type(key_type, value_type);
-    if type_contains_obj(type1, []) and type_contains_obj(type2, []):
+    if type_contains_obj(type1, []) and type_contains_obj(type2, [])
       type = map_comp_union_type([empty_rel_type, type]);
-    ;
     return type;
   }
 
@@ -1491,11 +1515,11 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   Type return_type(Statement* stmts, [EnvVar -> Type] env) {
     curr_env = env;
     ret_types = [];
-    for s <- stmts:
+    for s <- stmts {
       ret_type = return_type(s, curr_env);
       ret_types = ret_types & [ret_type];
       curr_env = update_env(s, curr_env);
-    ;
+    }
     return union_superset(ret_types);
   }
 
@@ -1563,9 +1587,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
   [EnvVar -> Type] update_env(Statement* stmts, [EnvVar -> Type] env) {
     curr_env = env;
-    for s <- stmts:
+    for s <- stmts
       curr_env = update_env(s, curr_env);
-    ;
     assert may_fall_through(stmts) or curr_env :: [Var -> <empty_type>];
     return curr_env;
   }
@@ -1642,19 +1665,18 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     res_env_true = update_env(body, if_true_env);
     res_env_false = update_env(else_body, if_false_env);
 
-    if may_fall_through(body):
-      if may_fall_through(else_body):
+    if may_fall_through(body) {
+      if may_fall_through(else_body)
         return merge_envs(res_env_true, res_env_false);
       else
         return res_env_true;
-      ;
-    else
-      if may_fall_through(else_body):
+    }
+    else {
+      if may_fall_through(else_body)
         return res_env_false;
       else
         return unreachable_env(env);
-      ;
-    ;
+    }
   }
 
 
@@ -1706,11 +1728,11 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   [EnvVar -> Type] break_env(Statement* stmts, [EnvVar -> Type] env) {
     env_through = env;
     env_break = unreachable_env(env);
-    for s <- stmts:
+    for s <- stmts {
       env_break = merge_envs(env_break, break_env(s, env_through));
       env_through = update_env(s, env_through);
       break if not may_fall_through(s);
-    ;
+    }
     return env_break;
   }
 

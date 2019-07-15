@@ -1,0 +1,115 @@
+CompiledPrg merge_instrs(CompiledPrg prg) {
+  opt_procs = [merge_instrs(p) : p <- prg.procs];
+  opt_static_blocks = [merge_instrs(b) : b <- prg.static_blocks];
+  return compiled_prg(
+    typedefs:       prg.typedefs,
+    opt_reprs:      prg.opt_reprs,
+    bool_procs:     prg.bool_procs,
+    procs:          opt_procs,
+    react_blocks:   prg.react_blocks,
+    static_blocks:  opt_static_blocks,
+    int_seqs:       prg.int_seqs
+  );
+}
+
+
+ObjProcDef merge_instrs(ObjProcDef proc) =
+  obj_proc_def(
+    name:             proc.name,
+    args:             proc.args,
+    cls_args:         proc.cls_args,
+    impl_args:        proc.impl_args,
+    rel_auto_args:    proc.rel_auto_args,
+    react_auto_args:  proc.react_auto_args,
+    ret_val_repr:     proc.ret_val_repr,
+    type:             proc.type if proc.type?,
+    loc_vars_types:   proc.loc_vars_types,
+    loc_auto_vars:    proc.loc_auto_vars,
+    loc_db_vars:      proc.loc_db_vars,
+    body:             merge_instrs(proc.body),
+    cached:           proc.cached
+  );
+
+
+StaticBlock merge_instrs(StaticBlock block) =
+  static_block(
+    name:                         block.name,
+    links:                        block.links,
+    state_vars:                   block.state_vars,
+    value_stores:                 block.value_stores,
+    tables:                       block.tables,
+    insert_checked_foreign_keys:  block.insert_checked_foreign_keys,
+    delete_checked_foreign_keys:  block.delete_checked_foreign_keys,
+    nested_blocks:                block.nested_blocks,
+    init_code:                    block.init_code,
+    cleanup_code:                 block.cleanup_code,
+    copy_state_code:              block.copy_state_code,
+    set_state_code:               block.set_state_code,
+    memb_var_check_exprs:         block.memb_var_check_exprs,
+    rel_vars_load_code:           block.rel_vars_load_code,
+    foreign_keys_check_code:      block.foreign_keys_check_code,
+    methods:                      [id -> merge_instrs(def) : id, def <- block.methods],
+    updates:                      [id -> merge_instrs(def) : id, def <- block.updates],
+    accessors:                    block.accessors,
+    msg_memb_pred:                block.msg_memb_pred
+  );
+
+
+OptCompMethod merge_instrs(OptCompMethod method) {
+  opt_body = if method.body != () then merge_instrs(method.body) else ();
+  return opt_comp_method(
+    args:             method.args,
+    args_types:       method.args_types,
+    args_memb_preds:  method.args_memb_preds,
+    loc_vars_types:   method.loc_vars_types,
+    ret_type:         method.ret_type,
+    ret_val_repr:     method.ret_val_repr,
+    body:             opt_body
+  );
+}
+
+
+CompiledUpdate merge_instrs(CompiledUpdate update) {
+  opt_body = if update.body != () then merge_instrs(update.body) else ();
+  return compiled_update(update.args_vars, opt_body);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+Instr+ merge_instrs(Instr+ instrs) {
+  leaf_nodes, code_tree = build_root_code_graph(instrs);
+  assert reconstruct_code(code_tree, leaf_nodes) == instrs;
+  flow_map = build_flow_map(code_tree, leaf_nodes);
+  no_end_node_flow_map = ((n : n <- ns, n != end_node) : ns <- flow_map);
+  rev_flow_map = reverse_flow_map(no_end_node_flow_map);
+  vars_used_map = (std_loc_vars_used(n) : n <- leaf_nodes);
+  vars_set_map = (std_loc_vars_set(n) : n <- leaf_nodes);
+  live_vars_before_map, live_vars_after_map = build_live_vars_maps(leaf_nodes, no_end_node_flow_map, vars_used_map, vars_set_map);
+
+  merged_instrs = [
+    i -> value(mi)
+      : i <- range(nat(|leaf_nodes|-1)),
+        rev_flow_map(i+1) == [i],
+        mi = merged_instr(leaf_nodes(i), leaf_nodes(i+1), live_vars_after_map(i+1)),
+        mi != nothing
+  ];
+  return instrs if merged_instrs == [];
+
+  rewritten_nodes = (
+    if merged_instrs(i, *)    then std_node(merged_instrs(i)) else
+    if merged_instrs(i-1, *)  then std_node(:no_op)           else
+                                   n
+    : n @ i <- leaf_nodes
+  );
+
+  return nonempty(reconstruct_code(code_tree, rewritten_nodes));
+
+
+  Maybe[BasicInstr] merged_instr(NodeInfo info1, NodeInfo info2, [<StdVar, LocVar>] live_vars) =
+    std_node(set_rc_var() i1?), std_node(set_var() i2?) = if i1.var == i2.value and i2.var :: StdVar and
+                                                             i1.var :: <StdVar, LocVar> and not live_vars(i1.var)
+                                                            then just(set_var(i2.var, i1.value))
+                                                            else nothing,
+    _,                          _                       = nothing;
+}

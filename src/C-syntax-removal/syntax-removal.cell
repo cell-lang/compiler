@@ -59,24 +59,43 @@ implicit syn_prg : SynPrg {
 
 
   Procedure desugar_proc_def(SynProcDef pd) {
-    args = ((var: p.var, type: desugar_schema_aware_type(p.type, schema_names)) : p <- pd.args);
+    args = ();
+    rel_auto_args = ();
+    react_auto_args = ();
+    for a <- pd.args {
+      if a.type :: <type_ref(type_symbol(<+>))> {
+        symb = match (a.type) type_ref(type_symbol(s?)) = s;
+        if in(symb, schema_names)
+          rel_auto_args = (rel_auto_args | (var: loc_db_var(a.var), type: db_symbol(symb)));
+        else if in(symb, react_autos_names)
+          react_auto_args = (react_auto_args | (var: loc_auto_var(a.var), type: auto_symbol(symb)));
+        else
+          args = (args | (var: var(a.var), type: desugar_schema_aware_type(a.type, schema_names)));
+      }
+      else {
+        args = (args | (var: var(a.var), type: desugar_schema_aware_type(a.type, schema_names)));
+      }
+    }
+
     maybe_ret_type = if pd.res_type != nothing
       then just(desugar_schema_aware_type(value(pd.res_type), schema_names))
       else nothing;
-    body = desugar_stmts(pd.body, [p.var : p <~ pd.args], artifact = pd, impl_args = []);
-    auto_vars = merge(([loc_auto_var(v.var) -> auto_symbol(v.type)] : v <- pd.auto_or_db_vars, automaton_is_reactive(v.type)));
-    db_vars = merge((
+    body = desugar_stmts(pd.body, [a.var : a <~ args], artifact = pd, impl_args = []);
+    react_auto_vars = merge(([loc_auto_var(v.var) -> auto_symbol(v.type)] : v <- pd.auto_or_db_vars, automaton_is_reactive(v.type)));
+    rel_auto_vars = merge((
       [loc_db_var(v.var) -> (type: db_symbol(v.type), links: (loc_db_var(a) : a <- v.args))]
       : v <- pd.auto_or_db_vars, automaton_is_static(v.type)
     ));
 
     proc = procedure(
-      id:         pd.name,
-      args:       args,
-      res_type:   maybe_ret_type,
-      auto_vars:  auto_vars,
-      db_vars:    db_vars,
-      body:       body
+      id:                   pd.name,
+      args:                 args,
+      rel_auto_args:        rel_auto_args,
+      react_auto_args:      react_auto_args,
+      res_type:             maybe_ret_type,
+      loc_rel_auto_vars:    rel_auto_vars,
+      loc_react_auto_vars:  react_auto_vars,
+      body:                 body
     );
     return transfer(proc, pd);
   }
@@ -105,9 +124,8 @@ implicit syn_prg : SynPrg {
       // Desugaring each group
       nested_fns = union([desugar_nested_fn_def_family(fds, fn_def, final_id, impl_args) : fds <- nested_fn_def_groups]);
       // Desugaring the main function
-      let artifact = top_level_fn_def(fn_def, final_id, impl_args):
+      let artifact = top_level_fn_def(fn_def, final_id, impl_args)
         fn = make_fn_def(final_id, fn_def.args, impl_args, fn_def.res_type, fn_def.expr, fn_def.typevars);
-      ;
       return nested_fns & [transfer(fn, fn_def)];
     }
 
@@ -125,9 +143,8 @@ implicit syn_prg : SynPrg {
       local_id = fn_family_id(fn_def.name, |fn_def.args|);
       local_id = unique_fn_id(local_id, value(maybe_idx)) if maybe_idx != nothing;
       final_id = nested_fn_id(outer_fn_id, local_id);
-      let artifact = nested_fn_def(fn_def, outer_fn_def, outer_fn_id, impl_args):
+      let artifact = nested_fn_def(fn_def, outer_fn_def, outer_fn_id, impl_args)
         fn = make_fn_def(final_id, fn_def.args, impl_args, fn_def.res_type, fn_def.expr, fn_def.typevars);
-      ;
       return transfer(fn, fn_def);
     }
   }

@@ -4,18 +4,17 @@ Nat+ choose_disp_args(NeType++ types, [TypeName -> Type] typedefs) {
 
   ## IF THERE'S MORE THAN ONE CHOICE OF DISPATCH ARGUMENTS,
   ## WE SHOULD CHOOSE THE ONE THAT IS THE MOST EFFICIENT
-  for n = 1...count:
-    for idxs <- ordered_combinations(n, count):
+  for n = 1...count {
+    for idxs <- ordered_combinations(n, count)
       return idxs if are_sufficient(idxs, ptypes, typedefs);
-    ;
-  ;
+  }
 
   fail;
 
 
   Bool are_sufficient(Nat+ arg_idxs, PseudoType++ ptypes, [TypeName -> Type] typedefs) {
     count = |ptypes|;
-    for i1 < count-1; i2 = i1+1..count:
+    for i1 < count-1; i2 = i1+1..count {
       pts1 = ptypes(i1);
       pts2 = ptypes(i2);
       // Two subsignatures are disjoint if and only if a pair of corresponding
@@ -24,7 +23,7 @@ Nat+ choose_disp_args(NeType++ types, [TypeName -> Type] typedefs) {
       // elements from the intersections of the corresponding pairs of sets/types
       disjoint = (j <~ arg_idxs : are_disjoint(pts1(j), pts2(j)));
       return false if not disjoint;
-    ;
+    }
     return true;
   }
 }
@@ -40,11 +39,10 @@ Nat+ optimal_dispatch_args([+NeType+] signatures, [TypeName -> Type] typedefs) {
 
   ## IF THERE'S MORE THAN ONE CHOICE OF DISPATCH ARGUMENTS,
   ## WE SHOULD CHOOSE THE ONE THAT IS THE MOST EFFICIENT
-  for n = 1 ... arity:
-    for idxs <- ordered_combinations(n, arity):
+  for n = 1 ... arity {
+    for idxs <- ordered_combinations(n, arity)
       return idxs if are_sufficient(idxs, ptypes, typedefs);
-    ;
-  ;
+  }
 
   fail;
 
@@ -52,16 +50,16 @@ Nat+ optimal_dispatch_args([+NeType+] signatures, [TypeName -> Type] typedefs) {
   Bool are_sufficient(Nat+ args_idxs, [+[+PseudoType+]] psgns, [TypeName -> Type] typedefs) {
     ord_psgns = isort(psgns);
     count = |psgns|;
-    for i1 < count-1; i2 = i1+1 .. count:
+    for i1 < count-1; i2 = i1+1 .. count {
       // Two sets of subsignatures are disjoint if every pairs of
       // signatures from their cartesian product is disjoint. Otherwise
       // you could take a pair that belongs in both non-disjoint
       // signatures and that would belong to both sets of signatures
-      for ps1 <- isort(ord_psgns(i1)); ps2 <- isort(ord_psgns(i2)):
+      for ps1 <- isort(ord_psgns(i1)); ps2 <- isort(ord_psgns(i2)) {
         disjoint = (j <~ args_idxs : are_disjoint(ps1(j), ps2(j)));
         return false if not disjoint;
-      ;
-    ;
+      }
+    }
     return true;
   }
 }
@@ -85,8 +83,65 @@ Nat+ optimal_dispatch_args([+NeType+] signatures, [TypeName -> Type] typedefs) {
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
+implicit typedefs : [TypeName -> NeType] {
+  BoolExpr value_store_guard(ValueStoreType, AtomicExpr expr, Type type) =
+    object                  |
+    integer                 = true,
+    mono_tagged_integer(s?) = if not is_subset(type, tag_obj_type(symb_type(s), integer))
+                                then and_then(
+                                       is_tagged_obj(expr),
+                                       is_int(get_inner_obj(expr)),
+                                       are_eq(get_tag(expr), object(s))
+                                     )
+                                else true;
+}
+
+
+<AtomicExpr, IntExpr> value_store_encoded_expr(ValueStoreType, AtomicExpr expr) =
+  object                  = expr,
+  integer                 = get_int_val(expr),
+  mono_tagged_integer()   = get_int_val(get_inner_obj(expr));
+
+
+Instr surr_to_decoded_value(WriteObjVar var, AnyValueStoreId store_id, ValueStoreType store_type, Int32Var surr) =
+  match (store_type)
+    object                  = surr_to_value(var, store_id, surr),
+    integer                 = set_var(var, int_obj(surr_to_int_value(store_id, surr))),
+    mono_tagged_integer(s?) = set_var(var, mk_tagged_obj(object(s), int_obj(surr_to_int_value(store_id, surr))));
+
+
+Instr surr_to_decoded_value(IntVar var, AnyValueStoreId store_id, ValueStoreType store_type, Int32Var surr) =
+  match (store_type)
+    integer               = set_ivar(var, surr_to_int_value(store_id, surr)),
+    object                = undefined, ## CAN THIS ACTUALLY HAPPEN?
+    mono_tagged_integer() = undefined;
+
+
+Instr surr_to_decoded_value(FloatVar var, AnyValueStoreId store_id, ValueStoreType store_type, Int32Var surr) =
+  match (store_type)
+    object                = set_fvar(var, float_value(surr_to_value(store_id, surr))),
+    integer               = undefined,
+    mono_tagged_integer() = undefined;
+
+
+Instr surr_to_decoded_value(BoolVar var, AnyValueStoreId store_id, ValueStoreType store_type, Int32Var surr) =
+  match (store_type)
+    object                = set_bvar(var, bool_value(surr_to_value(store_id, surr))),
+    integer               = undefined,
+    mono_tagged_integer() = undefined;
+
+
+Instr surr_to_decoded_value(LocOptTagRecVar var, AnyValueStoreId store_id, ValueStoreType store_type, Int32Var surr) =
+  match (store_type)
+    object                = set_var(var, surr_to_value(store_id, surr)),
+    integer               = undefined,
+    mono_tagged_integer() = undefined;
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
 type GenVarType = obj, int, int32, float, bool, array, tag_rec,
-                  set_it, seq_it, bin_rel_it, tern_rel_it, table_it, stream, vector;
+                  set_it, seq_it, bin_rel_it, tern_rel_it, table_it, column_it, stream, vector;
 
 type VarGen = CounterSet[GenVarType];
 
@@ -116,6 +171,9 @@ VarGen blank_var_gen = counter_set(nz_ctrs: []);
 (TableItVar, VarGen) next_table_it_var(VarGen gen, NzNat arity, Bool symmetric) =
   next_var(gen, :table_it, table_it_var($, arity, symmetric));
 
+(ColumnItVar, VarGen) next_column_it_var(VarGen gen, ColumnRepr repr) =
+  next_var(gen, :column_it, column_it_var($, repr));
+
 (StreamVar,  VarGen) next_stream_var(VarGen gen)                      = next_var(gen, :stream, svar);
 (VecVar,     VarGen) next_vector_var(VarGen gen, NzNat size)          = next_var(gen, :vector, vvar($, size));
 (ArrayVar,   VarGen) next_array_var(VarGen gen, LowLevelEltRepr repr) = next_var(gen, :array, avar($, repr));
@@ -128,6 +186,11 @@ VarGen blank_var_gen = counter_set(nz_ctrs: []);
 (LocBoolVar*, VarGen) next_bool_vars(VarGen gen, Nat count)   = apply_seed(count, gen, next_bool_var);
 (LocVar*,     VarGen) next_obj_vars(VarGen gen, Nat count)    = apply_seed(count, gen, next_obj_var);
 (StreamVar*,  VarGen) next_stream_vars(VarGen gen, Nat count) = apply_seed(count, gen, next_stream_var);
+
+([T -> Int32Var], VarGen) next_int32_vars(VarGen gen, [T] keys) {
+  vars, ret_gen = next_int32_vars(gen, |keys|);
+  return ([k -> vars(i) : k @ i <~ isort(keys)], ret_gen);
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////

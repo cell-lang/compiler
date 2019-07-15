@@ -64,6 +64,7 @@ Nothing maybe_var(AtomicBoolExpr) = undefined;
 [TrkVar] tracked_vars_used(RefObjExpr expr) =
   retrieve_from_nested_low_level_exprs(expr, tracked_vars_used_by_any_type_expr);
 
+## BUG BUG BUG: I THINK THIS MIGHT BE BUGGY
 [TrkVar] tracked_vars_used_by_any_type_expr(AnyTypeExpr expr) {
   return [expr] if expr :: TrkObjVar;
   return match (expr)
@@ -82,7 +83,7 @@ Nothing maybe_var(AtomicBoolExpr) = undefined;
 ////////////////////////////////////////////////////////////////////////////////
 
 [TrkVar] trk_vars(AnyVar v)    = [v if v :: TrkVar];
-[TrkVar] trk_vars([AnyVar] vs)  = [v : v <- vs, v :: TrkVar];
+[TrkVar] trk_vars([AnyVar] vs) = [v : v <- vs, v :: TrkVar];
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -91,13 +92,20 @@ Nothing maybe_var(AtomicBoolExpr) = undefined;
   branch_node()       = [],
   nat_switch_node()   = [],
   symb_switch_node()  = [],
-  set_cls_par_node()  = [];
+  set_cls_par_node()  = [],
+  ## BUG BUG BUG: THIS ACTUALLY SETS A NUMBER OF VARIABLES,
+  ## BUT ONLY IN ONE OF THE TWO POSSIBLE DIRECTIONS
+  foreach_node()      = [];
 
 
 [TrkVar] vars_set(BasicInstr instr) =
   init_stream()           = [],
   append()                = [],
-  set_at()                = [],
+  array_alloc()           = [],
+  array_write()           = [],
+  array_append()          = [],
+  write_rec_field()       = [],
+  finish_init()           = [],
   get_set_iter()          = trk_vars(instr.var),
   get_seq_iter()          = trk_vars(instr.var),
   get_bin_rel_iter()      = trk_vars(instr.var),
@@ -106,6 +114,8 @@ Nothing maybe_var(AtomicBoolExpr) = undefined;
   set_var()               = trk_vars(instr.var),
   set_bvar()              = [],
   set_ivar()              = [],
+  set_ivar32()            = [],
+  set_fvar()              = [],
   set_rc_var()            = trk_vars(instr.var),
   init_memb_var()         = [], ## NOT SURE ABOUT THIS ONE...
   reset_memb_var()        = [], ## NOT SURE ABOUT THIS ONE...
@@ -116,7 +126,7 @@ Nothing maybe_var(AtomicBoolExpr) = undefined;
   no_op                   = [],
   call_proc()             = trk_vars([instr.var if instr.var?]),
   call_cls()              = trk_vars(instr.var),
-  queue_update()          = [],
+  queue_node_update()     = [],
   insert_timer()          = [],
   clear_timer()           = [],
   auto_pre_init()         = [],
@@ -137,14 +147,13 @@ Nothing maybe_var(AtomicBoolExpr) = undefined;
   cleanup_value_store()   = [],
   init_table()            = [],
   cleanup_table()         = [],
-  set_table()             = [],
   get_table_iter()        = trk_vars(instr.it_var),
   queue_deletes()         = [],
-  queue_insert_value()    = [],
+  lookup_or_queue_insert_value()  = [],
   queue_insert_tuple()    = [],
   push_call_info()        = [],
   pop_call_info           = [],
-  runtime_check()         = [];
+  log_runtime_failure()   = [];
 
 
 [TrkVar] vars_set(JumpInstr) = [];
@@ -155,65 +164,188 @@ Nothing maybe_var(AtomicBoolExpr) = undefined;
   branch_node(e?)     = tracked_vars_used(e),
   nat_switch_node()   = [],
   symb_switch_node()  = tracked_vars_used(info.value),
-  set_cls_par_node()  = tracked_vars_used(info.cls);
+  set_cls_par_node()  = tracked_vars_used(info.cls),
+  foreach_node()      = [info.seq];
 
 
-[TrkVar] vars_used(BasicInstr instr) =
-  init_stream()         = [],
-  append()              = tracked_vars_used(instr.obj),
-  set_at()              = tracked_vars_used(instr.value) & trk_vars(instr.var), ## NOT SURE ABOUT THIS ONE.
-  get_set_iter()        = tracked_vars_used(instr.src),
-  get_seq_iter()        = tracked_vars_used(instr.src),
-  get_bin_rel_iter()    |
-  get_tern_rel_iter()   = tracked_vars_used(instr.src) & seq_union((tracked_vars_used(a) : a <- values(instr.args))),
-  // move_forward(iv?)    = {iv},
-  move_forward()        = [],
-  set_var()             = tracked_vars_used(instr.value),
-  set_bvar()            = tracked_vars_used(instr.value),
-  set_ivar()            = tracked_vars_used(instr.value),
-  set_rc_var()          = tracked_vars_used(instr.value),
-  init_memb_var()       = [],
-  reset_memb_var()      = [],
-  clear_loc_var()       = [],
-  add_ref()             = undefined,
-  release()             = undefined,
-  print_obj(e?)         = tracked_vars_used(instr.obj),
-  no_op                 = [],
-  call_proc()           = seq_union((tracked_vars_used(p) : p <- instr.args)),
-  call_cls()            = seq_union((tracked_vars_used(p) : p <- instr.args)),
-  queue_update()        = [],
-  insert_timer()        = tracked_vars_used(instr.idx) & tracked_vars_used(instr.time),
-  clear_timer()         = [],
-  auto_pre_init()       = [],
-  auto_cleanup()        = [],
-  set_input()           = tracked_vars_used(instr.value),
-  clear_input()         = [],
-  auto_update_node()    = [],
-  auto_apply()          = [],
-  set_persistent_state()= tracked_vars_used(instr.state),
-  init_db()             = [],
-  cleanup_db()          = [],
-  send_msg()            = tracked_vars_used(instr.msg),
-  try_update()          = seq_union((tracked_vars_used(a) : a <- instr.args)),
-  set_state()           = tracked_vars_used(instr.state),
-  invoke_auto_method()  |
-  invoke_db_method()    = seq_union((tracked_vars_used(a) : a <- instr.args)),
-  init_value_store()    = [],
-  cleanup_value_store() = [],
-  init_table()          = [],
-  cleanup_table()       = [],
-  get_table_iter()      = [],
-  set_table()           = tracked_vars_used(instr.state),
-  queue_deletes()       = [],
-  queue_insert_value()  = tracked_vars_used(instr.value),
-  queue_insert_tuple()  = [],
-  push_call_info()      = [],
-  pop_call_info         = [],
-  runtime_check()       = tracked_vars_used(instr.cond) & [v : v <~ instr.vars, v :: TrkVar];
+[TrkVar] vars_used(<BasicInstr, JumpInstr> instr) {
+  return search_exprs(instr, vars_used);
+
+  [TrkVar] vars_used(AnyTypeExpr expr) = if expr :: TrkVar then [expr] else search_nested(expr, vars_used);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+[T] retrieve_from_nested_low_level_exprs(BoolExpr expr, (AnyTypeExpr -> [T]) retrieve) {
+  return [] if expr :: AtomicBoolExpr;
+  return match (expr)
+    is_symb(e?)               = retrieve(e),
+    is_int(e?)                = retrieve(e),
+    is_float(e?)              = retrieve(e),
+    is_ne_set(e?)             = retrieve(e),
+    is_ne_seq(e?)             = retrieve(e),
+    is_ne_map(e?)             = retrieve(e),
+    is_ne_bin_rel(e?)         = retrieve(e),
+    is_ne_tern_rel(e?)        = retrieve(e),
+    is_tagged_obj(e?)         = retrieve(e),
+    are_eq(e1?, e2?)          = retrieve(e1) & retrieve(e2),
+    is_lt(e1?, e2?)           = retrieve(e1) & retrieve(e2),
+    is_le(e1?, e2?)           = retrieve(e1) & retrieve(e2),
+    is_flt(e1?, e2?)          = retrieve(e1) & retrieve(e2),
+    is_fle(e1?, e2?)          = retrieve(e1) & retrieve(e2),
+    is_out_of_range()         = [],
+    is_blank(v?)              = retrieve(v),
+    is_null(v?)               = if v :: NullableVar ## NOT SURE ABOUT THIS ONE...
+                                  then retrieve(v)
+                                  else {assert v :: PendingInputVar; return [];},
+    has_elem()                = retrieve(expr.set) & retrieve(expr.elt),
+    has_field()               = retrieve(expr.record),
+    contains()                = retrieve(expr.coll) & seq_union((retrieve(e) : e <- expr.entry)),
+    table_contains()          = seq_union((retrieve(value(a)) : a <- expr.tuple, a != nothing)),
+    is_member()               = retrieve(expr.obj),
+    state_is_def()            = [],
+    neg(e?)                   = retrieve(e),
+    and(es?)                  = seq_union((retrieve(e) : e <- es)),
+    or(es?)                   = seq_union((retrieve(e) : e <- es)),
+    and_then(es?)             = seq_union((retrieve(e) : e <- es)),
+    or_else(es?)              = seq_union((retrieve(e) : e <- es));
+}
 
 
-[TrkVar] vars_used(JumpInstr instr) =
-  break_loop    = [],
-  exit_block    = [],
-  ret_val(e?)   = tracked_vars_used(e),
-  terminate     = [];
+[] retrieve_from_nested_low_level_exprs(<Int, IntVar> expr, (AnyTypeExpr -> [T]) retrieve) = [];
+
+[T] retrieve_from_nested_low_level_exprs(IntConst expr, (AnyTypeExpr -> [T]) retrieve) = retrieve(expr.time_slot);
+
+[T] retrieve_from_nested_low_level_exprs(IntNatOp expr, (AnyTypeExpr -> [T]) retrieve) =
+  get_int_val(e?)       = retrieve(e),
+  // get_size(e?)          = retrieve(e),
+  minus(e?)             = retrieve(e),
+  add(e1?, e2?)         = retrieve(e1) & retrieve(e2),
+  sub(e1?, e2?)         = retrieve(e1) & retrieve(e2),
+  mult(e1?, e2?)        = retrieve(e1) & retrieve(e2),
+  div(e1?, e2?)         = retrieve(e1) & retrieve(e2),
+  mod(e1?, e2?)         = retrieve(e1) & retrieve(e2),
+  bitwise_and(e1?, e2?) = retrieve(e1) & retrieve(e2),
+  bitwise_or(e1?, e2?)  = retrieve(e1) & retrieve(e2),
+  bitwise_xor(e1?, e2?) = retrieve(e1) & retrieve(e2),
+  float_bits(e?)        = retrieve(e),
+  mantissa(e?)          = retrieve(e),
+  dec_exp(e?)           = retrieve(e),
+  upcast_int32(e?)      = retrieve(e),
+  surr_to_int_value()   = retrieve(expr.surrogate), // This is not necessary, as the type of expr.surrogate is Int32Var, not Int32Expr, but if that were to change...
+  ## MOVED TO Int32NatOp (WHICH IS NOT EVEN HERE. WHY?)
+  // value_to_surr()       = retrieve(expr.value),
+  // get_unknown_arg()     = [],
+  rand_nat(e?)          = retrieve(e),
+  unique_nat            = [],
+  ticks                 = [];
+
+
+[T] retrieve_from_nested_low_level_exprs(Int32Var, (AnyTypeExpr -> [T]) retrieve) = [];
+
+
+[T] retrieve_from_nested_low_level_exprs(Int32NatOp op, (AnyTypeExpr -> [T]) retrieve) =
+  bool_to_bit(e?)     = retrieve(e),
+  get_size(e?)        = retrieve(e),
+  get_count()         = [],
+  table_lookup()      = [],
+  cast_int32(e?)      = retrieve(e),
+  add32(e1?, e2?)     = retrieve(e1) & retrieve(e2),
+  value_to_surr()     = retrieve(op.value),
+  get_unknown_arg()   = [];
+
+
+[T] retrieve_from_nested_low_level_exprs(OptTagRecExpr expr, (AnyTypeExpr -> [T]) retrieve) =
+  opt_tag_rec_var()     |
+  opt_tag_rec_fn_arg()  = [],
+  cast_opt_tag_rec()    = retrieve(expr.expr);
+
+
+[T] retrieve_from_nested_low_level_exprs(InlineObj, (AnyTypeExpr -> [T]) retrieve) = [];
+
+
+[T] retrieve_from_nested_low_level_exprs(ObjVar v, (AnyTypeExpr -> [T]) retrieve) = [];
+
+
+[T] retrieve_from_nested_low_level_exprs(ObjNatOp expr, (AnyTypeExpr -> [T]) retrieve) =
+  at()                = retrieve(expr.seq) & retrieve(expr.idx),
+  array_at()          = retrieve(expr.size) & retrieve(expr.idx),
+  lookup()            = retrieve(expr.rel) & retrieve(expr.key),
+  lookup_field()      = retrieve(expr.record),
+  get_tag(e?)         = retrieve(e),
+  get_inner_obj(e?)   = retrieve(e),
+  bool_obj(e?)        = retrieve(e),
+  int_obj(e?)         = retrieve(e),
+  float_obj(e?)       = retrieve(e),
+  get_curr_obj()      = [],
+  get_curr_arg()      = [],
+  rand_elem(e?)       = retrieve(e);
+
+
+[T] retrieve_from_nested_low_level_exprs(FloatExpr expr, (AnyTypeExpr -> [T]) retrieve) =
+  float_lit()         = [],
+  fvar()              = [],
+  float_arg()         = [],
+  float_value(e?)     = retrieve(e),
+  neg_float(v?)       = retrieve(v),
+  add_floats(vs?)     = seq_union((retrieve(e) : e <- vs)),
+  sub_floats(vs?)     = seq_union((retrieve(e) : e <- vs)),
+  mult_floats(vs?)    = seq_union((retrieve(e) : e <- vs)),
+  div_floats(vs?)     = seq_union((retrieve(e) : e <- vs)),
+  exp_floats(vs?)     = seq_union((retrieve(e) : e <- vs)),
+  square_root(v?)     = retrieve(v),
+  int_to_float(v?)    = retrieve(v);
+
+
+[T] retrieve_from_nested_low_level_exprs(RefObjExpr expr, (AnyTypeExpr -> [T]) retrieve) =
+  mk_set_from_stream()        = [],
+  mk_set()                    = retrieve(expr.size),
+  mk_seq_from_stream()        = [],
+  mk_seq()                    = retrieve(expr.size),
+  mk_seq_from_array()         = retrieve(expr.size),
+  build_const_int_seq()       = [],
+  mk_map_from_streams()       = [],
+  mk_map()                    = retrieve(expr.size),
+  mk_bin_rel_from_streams()   = [],
+  mk_bin_rel()                = retrieve(expr.size),
+  mk_tern_rel_from_streams()  = [],
+  mk_tern_rel()               = retrieve(expr.size),
+  mk_tagged_obj()             = retrieve(expr.tag) & retrieve(expr.obj),
+  inst_opt_tag_rec()          = [],
+  get_seq_slice()             = retrieve(expr.seq) & retrieve(expr.idx_first) & retrieve(expr.len),
+  append_to_seq()             = retrieve(expr.seq) & retrieve(expr.new_elem),
+  update_seq_at()             = retrieve(expr.seq) & retrieve(expr.idx) & retrieve(expr.value),
+  join_seqs()                 = retrieve(expr.left) & retrieve(expr.right),
+  rev_seq()                   = retrieve(expr.seq),
+  parse_value()               = retrieve(expr.value),
+  print_value()               = retrieve(expr.value),
+  internal_sort()             = retrieve(expr.set),
+  insert_elt()                = retrieve(expr.set) & retrieve(expr.elt),
+  remove_elt()                = retrieve(expr.set) & retrieve(expr.elt),
+  set_key_value()             = retrieve(expr.map) & retrieve(expr.key) & retrieve(expr.value),
+  drop_key()                  = retrieve(expr.map) & retrieve(expr.key),
+  copy_state()                = [],
+  copy_rel()                  = [],
+  copy_persistent_state()     = [],
+  surr_to_value()             = retrieve(expr.surrogate),
+  read_pending_var()          = [];
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+[T] retrieve_from_nested_low_level_instrs(<BasicInstr, JumpInstr>, (Instr -> [T]) retrieve) = [];
+
+
+[T] retrieve_from_nested_low_level_instrs(CompInstr instr, (Instr -> [T]) retrieve) =
+  branch()            = retrieve_from_nested_low_level_instrs(instr.when_true & instr.when_false, retrieve),
+  repeat(is?)         = retrieve_from_nested_low_level_instrs(is, retrieve),
+  execute_block(is?)  = retrieve_from_nested_low_level_instrs(is, retrieve),
+  try_block()         = retrieve_from_nested_low_level_instrs(instr.body, retrieve),
+  switch_on_nat()     = retrieve_from_nested_low_level_instrs(join(instr.cases), retrieve),
+  symb_switch()       = union([retrieve_from_nested_low_level_instrs(right(c), retrieve) : c <- instr.cases]) &
+                        retrieve_from_nested_low_level_instrs(instr.else, retrieve),
+  foreach()           = retrieve_from_nested_low_level_instrs(instr.body, retrieve);
+
+
+[T] retrieve_from_nested_low_level_instrs(Instr* instrs, (Instr -> [T]) retrieve) = seq_union((retrieve(i) : i <- instrs));

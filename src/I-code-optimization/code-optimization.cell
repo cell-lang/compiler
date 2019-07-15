@@ -1,0 +1,481 @@
+CompiledPrg optimize_compiled_code(CompiledPrg prg) {
+  opt_static_blocks = [optimize_static_block(b) : b <- prg.static_blocks];
+  return compiled_prg(
+    typedefs:       prg.typedefs,
+    opt_reprs:      prg.opt_reprs,
+    bool_procs:     prg.bool_procs,
+    procs:          prg.procs,
+    react_blocks:   prg.react_blocks,
+    static_blocks:  opt_static_blocks,
+    int_seqs:       prg.int_seqs
+  );
+}
+
+
+StaticBlock optimize_static_block(StaticBlock block) =
+  static_block(
+    name:                         block.name,
+    links:                        block.links,
+    state_vars:                   block.state_vars,
+    value_stores:                 block.value_stores,
+    tables:                       block.tables,
+    insert_checked_foreign_keys:  block.insert_checked_foreign_keys,
+    delete_checked_foreign_keys:  block.delete_checked_foreign_keys,
+    nested_blocks:                block.nested_blocks,
+    init_code:                    block.init_code,
+    cleanup_code:                 block.cleanup_code,
+    copy_state_code:              block.copy_state_code,
+    set_state_code:               block.set_state_code,
+    memb_var_check_exprs:         block.memb_var_check_exprs,
+    rel_vars_load_code:           block.rel_vars_load_code,
+    foreign_keys_check_code:      block.foreign_keys_check_code,
+    methods:                      [id -> optimize_static_block_method(def) : id, def <- block.methods],
+    updates:                      [id -> optimize_static_block_update(def) : id, def <- block.updates],
+    accessors:                    block.accessors,
+    msg_memb_pred:                block.msg_memb_pred
+  );
+
+
+OptCompMethod optimize_static_block_method(OptCompMethod method) {
+  opt_body = if method.body != () then repeatedly_optimize_code(method.body) else ();
+  return opt_comp_method(
+    args:             method.args,
+    args_types:       method.args_types,
+    args_memb_preds:  method.args_memb_preds,
+    loc_vars_types:   method.loc_vars_types,
+    ret_type:         method.ret_type,
+    ret_val_repr:     method.ret_val_repr,
+    body:             opt_body
+  );
+}
+
+
+CompiledUpdate optimize_static_block_update(CompiledUpdate update) {
+  opt_body = if update.body != () then repeatedly_optimize_code(update.body) else ();
+  return compiled_update(update.args_vars, opt_body);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+Instr+ repeatedly_optimize_code(Instr+ init_instrs) {
+  instrs = init_instrs;
+  loop {
+    opt_instrs = optimize_code(instrs);
+    return instrs if opt_instrs == instrs;
+    instrs = opt_instrs;
+  }
+}
+
+
+Instr+ optimize_code(Instr+ instrs) {
+  leaf_nodes, code_tree = build_root_code_graph(instrs);
+  assert reconstruct_code(code_tree, leaf_nodes) == instrs;
+  flow_map = build_flow_map(code_tree, leaf_nodes);
+  no_end_node_flow_map = ((n : n <- ns, n != end_node) : ns <- flow_map);
+  rev_flow_map = reverse_flow_map(no_end_node_flow_map);
+
+  prop_info = propagate(leaf_nodes, (no_prop_info : unused_var <- leaf_nodes), rev_flow_map);
+  rewritten_nodes = (rewrite_node(n, prop_info(i)) : n @ i <- leaf_nodes);
+  vars_used_map = (std_loc_vars_used(n) : n <- rewritten_nodes);
+  vars_set_map = (std_loc_vars_set(n) : n <- rewritten_nodes);
+  live_vars_before_map, live_vars_after_map = build_live_vars_maps(rewritten_nodes, no_end_node_flow_map, vars_used_map, vars_set_map);
+  assert |rewritten_nodes| == |live_vars_after_map|;
+  rewritten_nodes_2 = (erase_useless_instrs(n, live_vars_after_map(i)) : n @ i <- rewritten_nodes);
+  opt_instrs = reconstruct_code(code_tree, rewritten_nodes_2);
+
+  return nonempty(opt_instrs);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+type DependeeVar  = StdVar, LocVar, Int32Var, LocIntVar, IntFnArg;
+type DependantVar = StdVar, LocVar;
+
+type PropIntExpr      = LocIntVar, IntFnArg,
+                        surr_to_int_value(store: AnyValueStoreId, surrogate: Int32Var),
+                        get_int_val(PropAtomicExpr);
+
+type PropAtomicExpr   = StdVar, LocVar,
+                        int_obj(PropIntExpr),
+                        get_inner_obj(PropAtomicExpr),
+                        lookup_field(record: ObjExpr, field: SymbObj, repr: Maybe[LowLevelRepr]);
+
+type PropExpr         = PropAtomicExpr, mk_tagged_obj(tag: SymbObj, obj: PropAtomicExpr);
+
+type PropInt32Expr      = value_to_surr(store: AnyValueStoreId, value: <PropAtomicExpr, PropIntExpr>);
+type PropInt32QuasiExpr = value_to_ex_surr(store: ValueStoreId, value: <PropExpr, PropIntExpr>);
+type AnyPropInt32Expr   = PropInt32Expr, PropInt32QuasiExpr;
+
+type PropInfo = prop_info(
+                  values: [DependantVar -> PropExpr],
+                  ints32: [Int32Var -> AnyPropInt32Expr]
+                );
+
+////////////////////////////////////////////////////////////////////////////////
+
+PropInfo no_prop_info = prop_info(values: [], ints32: []);
+
+////////////////////////////////////////////////////////////////////////////////
+
+PropInfo merge(PropInfo info1, PropInfo info2) {
+  values = [v -> e : v, e <- info1.values, info2.values(v, e)];
+  ints32 = [v -> e : v, e <- info1.ints32, info2.ints32(v, e)];
+  return prop_info(values: values, ints32: ints32);
+}
+
+PropInfo add_dependency(PropInfo info, DependantVar var, PropExpr expr) {
+  cleared_info = clear_dependants(info, var);
+  values = [v -> e : v, e <- cleared_info.values | v, e <- [var -> expr]];
+  return prop_info(values: values, ints32: cleared_info.ints32);
+}
+
+PropInfo add_dependency(PropInfo info, Int32Var var, PropInt32Expr expr) {
+  cleared_info = clear_dependants(info, var);
+  ints32 = [v -> e : v, e <- cleared_info.ints32 | v, e <- [var -> expr]];
+  return prop_info(values: cleared_info.values, ints32: ints32);
+}
+
+PropInfo add_dependency(PropInfo info, Int32Var var, ValueStoreId store, <PropExpr, PropIntExpr> value) {
+  cleared_info = clear_dependants(info, var);
+  quasi_expr = value_to_ex_surr(store: store, value: value);
+  ints32 = [v -> e : v, e <- cleared_info.ints32 | v, e <- [var -> quasi_expr]];
+  return prop_info(values: cleared_info.values, ints32: ints32);
+}
+
+PropInfo clear_dependants(PropInfo info, DependeeVar var) =
+  prop_info(
+    values: [v -> e : v, e <- info.values, v != var, not dependees(e)(var)],
+    ints32: [v -> e : v, e <- info.ints32, v != var, not dependees(e)(var)]
+  );
+
+////////////////////////////////////////////////////////////////////////////////
+
+PropExpr lookup(PropInfo info, DependantVar var, PropAtomicExpr default) {
+  if info.values(var, *) {
+    value = info.values(var);
+    if value :: PropExpr
+      return value;
+  }
+  return default;
+}
+
+Bool is_ex_surr_of(Int32Var var, ValueStoreId store, <PropExpr, PropIntExpr> value, PropInfo info) {
+  if info.ints32(var, *) {
+    pseudo_expr = info.ints32(var);
+    return pseudo_expr.store == store and pseudo_expr.value == value;
+  }
+  else {
+    return false;
+  }
+}
+
+Bool is_curr_value(PropInfo info, Int32Var var, PropInt32Expr value) =
+  info.ints32(var, value);
+
+////////////////////////////////////////////////////////////////////////////////
+
+[DependeeVar] dependees(PropIntExpr expr) =
+  ivar() | int_arg()    = [expr],
+  surr_to_int_value()   = [expr.surrogate],
+  get_int_val(e?)       = dependees(e);
+
+[DependeeVar] dependees(PropExpr expr) =
+  var() | lvar()    = [expr],
+  int_obj(e?)       = dependees(e),
+  get_inner_obj(e?) = dependees(e),
+  mk_tagged_obj()   = dependees(expr.obj);
+
+[DependeeVar] dependees(AnyPropInt32Expr expr) =
+  value_to_surr()     = dependees(expr.value),
+  value_to_ex_surr()  = dependees(expr.value);
+
+////////////////////////////////////////////////////////////////////////////////
+
+PropInfo* propagate(NodeInfo* nodes, PropInfo* init_info, [Nat]* rev_flow_map) {
+  assert |nodes| == |rev_flow_map|;
+  info = init_info;
+  loop {
+    in_info  = (merge_prop_info(ns, info) : ns <- rev_flow_map);
+    out_info = (outgoing_prop_info(n, in_info(i)) : n @ i <- nodes);
+    return in_info if out_info == info;
+    info = out_info;
+  }
+}
+
+
+PropInfo merge_prop_info([Nat] in_nodes, PropInfo* infos) {
+  return no_prop_info if in_nodes == [];
+  in_infos = (infos(i) : i <- isort(in_nodes));
+  return foldl(in_infos, merge);
+}
+
+
+PropInfo outgoing_prop_info(NodeInfo node, PropInfo info) {
+  return match (node)
+    std_node(instr?)  = instr_update_info(instr, info),
+    _                 = info;
+
+
+  PropInfo instr_update_info(<BasicInstr, JumpInstr> instr, PropInfo info) =
+    set_rc_var()                    = set_rc_var_update_info(instr.var, instr.value, info),
+    set_ivar32()                    = set_ivar32_update_info(instr.var, instr.value, info),
+
+    set_var()                       |
+    set_bvar()                      |
+    set_ivar()                      |
+    set_fvar()                      = clear_any(info, instr.var),
+
+    call_proc()                     = if instr.var? then clear_any(info, instr.var) else info,
+    call_cls()                      = clear_any(info, instr.var),
+
+    invoke_auto_method()            |
+    invoke_db_method()              = clear_any(info, instr.res_var),
+
+    lookup_or_queue_insert_value()  = lookup_or_queue_insert_value_update_info(instr.res_var, instr.store, instr.value, info),
+    // lookup_or_queue_insert_value()  = clear_any(info, instr.res_var),
+
+    _                               = info;
+
+    ## REVIEW AGAIN THE LIST OF INSTRUCTIONS THAT SET THE VALUE OF LOCAL VARIABLES
+
+    ## THESE SHOULD NOT AFFECT ANYTHING, BUT...
+    // write_rec_field()     =
+    // finish_init()         =
+
+
+  PropInfo lookup_or_queue_insert_value_update_info(Int32Var res_var, ValueStoreId store, <AtomicExpr, IntExpr> value, PropInfo info) =
+    if value :: PropExpr or value :: PropIntExpr
+      then add_dependency(info, res_var, store, value)
+      else clear_dependants(info, res_var);
+
+
+  PropInfo set_rc_var_update_info(<WriteObjVar, LocOptTagRecVar> var, RefObjExpr value, PropInfo pre_instr_info) {
+    info = pre_instr_info;
+    if var :: DependeeVar {
+      info = clear_any(info, var);
+      if var :: DependantVar and value :: PropExpr
+        info = add_dependency(info, var, value);
+    }
+    return info;
+  }
+
+
+  PropInfo set_ivar32_update_info(Int32Var var, Int32Expr value, PropInfo info) =
+    if value :: PropInt32Expr
+      then add_dependency(info, var, value)
+      else clear_dependants(info, var);
+
+
+  PropInfo clear_any(PropInfo info, AnyVar var) =
+    if var :: DependeeVar then clear_dependants(info, var) else info;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+NodeInfo rewrite_node(NodeInfo node, PropInfo info) =
+  std_node(i?)    = std_node(rewrite_instr(i, info)),
+  branch_node(e?) = branch_node(rewrite_bool_expr(e, info)),
+  _               = node;
+
+
+<BasicInstr, JumpInstr> rewrite_instr(<BasicInstr, JumpInstr> instr, PropInfo info) {
+  return match (instr)
+    set_ivar32()                    = rewrite_set_ivar32(instr, instr.var, instr.value, info),
+    lookup_or_queue_insert_value()  = rewrite_lookup_or_queue_insert_value(instr, instr.res_var, instr.store, instr.value, info),
+    _                               = instr;
+
+
+  BasicInstr rewrite_lookup_or_queue_insert_value(BasicInstr instr, Int32Var res_var, ValueStoreId store, <AtomicExpr, IntExpr> value, PropInfo info) {
+    value_copy = value; ## BAD BAD BAD: THIS IS A HACK TO WORK AROUND THE LIMITATIONS OF THE TYPE CHECKER
+    return :no_op if value_copy :: <PropExpr, PropIntExpr> and is_ex_surr_of(res_var, store, value_copy, info);
+
+    rw_value = rewrite_expr(value, info);
+    return instr if rw_value == value;
+
+    rw_instr = lookup_or_queue_insert_value(res_var, store, rw_value);
+    return match (rw_value)
+      surr_to_int_value()   = if rw_value.store == store then set_ivar32(res_var, rw_value.surrogate) else rw_instr,
+      _                     = rw_instr;
+  }
+
+
+  BasicInstr rewrite_set_ivar32(BasicInstr instr, Int32Var var, Int32Expr value, PropInfo info) {
+    return :no_op if var == value or (value :: PropInt32Expr and is_curr_value(info, var, value));
+    rw_value = rewrite_int32_expr(value, info);
+    if var == rw_value
+      return :no_op;
+    else if rw_value :: Int32Var
+      return set_ivar32(var, rw_value);
+    else
+      return instr;
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  BoolExpr rewrite_expr(BoolExpr expr, PropInfo info) = rewrite_bool_expr(expr, info);
+
+  IntExpr rewrite_expr(IntExpr expr, PropInfo info) = rewrite_int_expr(expr, info);
+
+  AtomicExpr rewrite_expr(AtomicExpr expr, PropInfo info) {
+    rw_expr = rewrite_atomic_expr(expr, info);
+    return if rw_expr :: AtomicExpr then rw_expr else expr;
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+BoolExpr rewrite_bool_expr(BoolExpr expr, PropInfo info) {
+  return match (expr)
+    are_eq(e1?, e2?)  = rewrite_are_eq_expr(e1, e2, info),
+    neg(e?)           = neg(rewrite_bool_expr(e, info)),
+    _                 = expr;
+
+
+  BoolExpr rewrite_are_eq_expr(AtomicExpr expr1, AtomicExpr expr2, PropInfo info) {
+    if expr1 :: StdVar and expr2 :: StdVar
+      return rewrite_vars_are_eq_expr(expr1, expr2, info);
+
+    rw_expr_1 = rewrite_atomic_expr(expr1, info);
+    rw_expr_1 = expr1 if not is_atomic_expr(rw_expr_1);
+
+    rw_expr_2 = rewrite_atomic_expr(expr2, info);
+    rw_expr_2 = expr1 if not is_atomic_expr(rw_expr_2);
+
+    return are_eq(rw_expr_1, rw_expr_2);
+  }
+
+
+  BoolExpr rewrite_vars_are_eq_expr(StdVar var1, StdVar var2, PropInfo info) {
+    ## TODO: OPTIMIZE HERE...
+    return are_eq(var1, var2);
+  }
+
+}
+
+
+Int32Expr rewrite_int32_expr(Int32Expr expr, PropInfo info) {
+  return match (expr)
+    value_to_surr()   = rewrite_value_to_surr(expr.store, expr.value, info, expr),
+    _                 = expr;
+
+
+  // value_to_surr(store: AnyValueStoreId, value: IntExpr)
+  Int32Expr rewrite_value_to_surr(AnyValueStoreId store, IntExpr value, PropInfo info, Int32Expr orig_expr) =
+    match (rewrite_int_expr(value, info))
+      surr_to_int_value() e?  = if e.store == store then e.surrogate else orig_expr,
+      _                       = orig_expr;
+
+  // value_to_surr(store: AnyValueStoreId, value: AtomicExpr)
+  Int32Expr rewrite_value_to_surr(AnyValueStoreId store, AtomicExpr value, PropInfo info, Int32Expr orig_expr) =
+    match (rewrite_atomic_expr(value, info))
+      surr_to_value() e?  = if e.store == store then e.surrogate else orig_expr,
+      _                   = orig_expr;
+}
+
+
+IntExpr rewrite_int_expr(IntExpr expr, PropInfo info) {
+  return match (expr)
+    get_int_val(e?)   = rewrite_get_int_val(e, info, expr),
+    _                 = expr;
+
+
+  // get_int_val(ObjExpr)
+  IntExpr rewrite_get_int_val(AtomicExpr expr, PropInfo info, IntExpr orig_expr) =
+    match (rewrite_atomic_expr(expr, info))
+      int_obj(e?)   = e,
+      _             = orig_expr;
+}
+
+
+<AtomicExpr, RefObjExpr> rewrite_atomic_expr(AtomicExpr expr, PropInfo info) {
+  return match (expr)
+    var() e? | lvar() e?  = lookup(info, e, e),
+    get_inner_obj(e?)     = rewrite_get_inner_obj(e, info, expr),
+    bool_obj(e?)          = bool_obj(rewrite_bool_expr(e, info)),
+    _                     = expr;
+
+
+  // get_inner_obj(ObjExpr)
+  AtomicExpr rewrite_get_inner_obj(AtomicExpr expr, PropInfo info, AtomicExpr orig_expr) =
+    match (rewrite_atomic_expr(expr, info))
+      mk_tagged_obj() e?  = e.obj,
+      _                   = orig_expr;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+NodeInfo erase_useless_instrs(NodeInfo node, [<StdVar, LocVar>] live_vars_after) =
+  std_node(set_rc_var() i?) = if i.var :: <StdVar, LocVar> and not live_vars_after(i.var)
+                                then std_node(:no_op)
+                                else node,
+  _                         = node;
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+Instr* reconstruct_code(CodeTree code_tree, NodeInfo+ nodes) {
+  return match (code_tree)
+    std_node(id?)       = {match (nodes(id)) std_node(i?) = (i if i != :no_op)},
+    branch_node()       = reconstruct_branch(code_tree.idx, code_tree.if_body, code_tree.else_body, nodes),
+    nat_switch_node()   = reconstruct_nat_switch(code_tree.idx, code_tree.cases, nodes),
+    symb_switch_node()  = reconstruct_symb_switch(code_tree.idx, code_tree.cases, code_tree.else, nodes),
+    loop_node(ts?)      = (repeat(nonempty(reconstruct(ts, nodes)))),
+    block_node(ts?)     = (execute_block(nonempty(reconstruct(ts, nodes)))),
+    try_block_node()    = (try_block(code_tree.var, nonempty(reconstruct(code_tree.body, nodes)))),
+    foreach_node()      = reconstruct_foreach(
+                            code_tree.idx,
+                            code_tree.src_array,
+                            if code_tree.tmp_buffer? then just(code_tree.tmp_buffer) else nothing,
+                            code_tree.body,
+                            nodes
+                          ),
+    root_node(ts?)      = reconstruct(ts, nodes);
+
+
+  Instr* reconstruct_foreach(Nat idx, ArrayVar src_array, Maybe[ArrayVar] tmp_buffer, CodeTree+ body, NodeInfo+ nodes) {
+    node = match (nodes(idx)) foreach_node() n? = n;
+    return (
+      foreach(
+        seq:        node.seq,
+        src_array:  src_array,
+        tmp_buffer: value(tmp_buffer) if tmp_buffer != nothing,
+        count_var:  node.count_var,
+        idx_var:    node.idx_var,
+        it_var:     node.it_var,
+        body:       reconstruct(body, nodes)
+      )
+    );
+  }
+
+
+  Instr* reconstruct_branch(Nat idx, CodeTree+ if_code_trees, CodeTree* else_code_trees, NodeInfo+ nodes) {
+    cond = match (nodes(idx)) branch_node(e?) = e;
+    if_body = reconstruct(if_code_trees, nodes);
+    else_body = reconstruct(else_code_trees, nodes);
+    return (branch(cond, if_body, else_body));
+  }
+
+
+  Instr* reconstruct_nat_switch(Nat idx, CodeTree*+ cases, NodeInfo+ nodes) {
+    expr = match (nodes(idx)) nat_switch_node(e?) = e;
+    cases_code = (reconstruct(c, nodes) : c <- cases);
+    return (switch_on_nat(expr, cases_code));
+  }
+
+
+  Instr* reconstruct_symb_switch(Nat idx, CodeTree++ cases, CodeTree* else, NodeInfo+ nodes) {
+    node = match (nodes(idx)) symb_switch_node() n? = n;
+    cases_code = (nonempty(reconstruct(c, nodes)) : c <- cases);
+    else_code = reconstruct(else, nodes);
+    return (symb_switch(node.value, set(nonempty(zip(node.cases, cases_code))), else_code));
+  }
+
+
+  Instr* reconstruct(CodeTree* code_trees, NodeInfo+ nodes) =
+    join((reconstruct_code(t, nodes) : t <- code_trees));
+}

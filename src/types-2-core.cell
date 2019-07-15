@@ -71,7 +71,7 @@ type Operator = UnaryOperator, BinaryOperator;
 type BuiltIn  = neg, add, sub, mult, div, mod, lt, le, and, or, xor,
                 fneg, fadd, fsub, fmult, fdiv, flt, fle, fexp, fsqrt,
                 floor, ceiling, float, bits, mantissa, dec_exp,
-                isort, slice, cat, rev, tag, untag, parse, print,
+                isort, slice, cat, rev, tag, untag, insert, remove, put, drop, parse, print,
                 rand_nat, rand_elem, counter, ticks;
 
 type StdFnSymb        = fn_symbol(Symbol);
@@ -95,6 +95,11 @@ type AggrFnId         = PlainAggrFnId, UniqueAggrFnId;
 
 type MethodSymbol   = method_symbol(Symbol);
 type UpdateSymbol   = msg_handler, update_symbol(Symbol);
+
+type MethodFamilyId = method_id(symbol: MethodSymbol, arity: Nat);
+type MethodId       = method_id(symbol: MethodSymbol, arity: Nat, id: Nat?);
+
+type UpdateId       = main_handler, handler_id(Nat), update_id(symbol: UpdateSymbol, arity: Nat, id: Nat?);
 
 type AutoSymbol     = auto_symbol(Symbol);
 type DBSymbol       = db_symbol(Symbol);
@@ -216,8 +221,23 @@ type MapCompExpr      = map_comp(key_expr: Expr, value_expr: Expr, source: Claus
 type BinRelCompExpr   = bin_rel_comp(exprs: (Expr, Expr), source: Clause);
 type TernRelCompExpr  = tern_rel_comp(exprs: (Expr, Expr, Expr), source: Clause);
 
-type SeqCompExpr    = seq_comp(expr: Expr, vars: StdVar+, idx_var: StdVar?, src_expr: Expr, sel_expr: Expr?);
-type RangeCompExpr  = range_comp(expr: Expr, var: StdVar, bound_expr: Expr, inclusive: Bool, sel_expr: Expr?);
+type SeqCompExpr    = seq_comp(
+                        expr:           Expr,
+                        decl_elt_type:  NeType?, ## BAD BAD BAD: THIS IS A HACK. TODO: ADD IT EVERYWHERE IT'S NEEDED (REWRITING AND SO ON)
+                        vars:           StdVar+,
+                        idx_var:        StdVar?,
+                        src_expr:       Expr,
+                        sel_expr:       Expr?
+                      );
+
+type RangeCompExpr  = range_comp(
+                        expr:           Expr,
+                        decl_elt_type:  NeType?, ## BAD BAD BAD: THIS IS A HACK. TODO: ADD IT EVERYWHERE IT'S NEEDED (REWRITING AND SO ON)
+                        var:            StdVar,
+                        bound_expr:     Expr,
+                        inclusive:      Bool,
+                        sel_expr:       Expr?
+                      );
 
 type OutputIsDefExpr  = output_is_def(var: LocAutoVar, output: Symbol);
 type OutputIsSetExpr  = output_is_set(var: LocAutoVar, output: Symbol);
@@ -303,7 +323,13 @@ type CollValueIter  = coll_value_iter(vars: Maybe[StdVar]+, idx_var: StdVar?, sr
 type RelSubsetIter  = rel_subset_iter(vars: Maybe[StdVar]+, src_expr: Expr, args: Maybe[Expr]+);
 type RelVarIter     = rel_var_iter(vars: Maybe[StdVar]+, rel_var: AnyRelVar, args: Maybe[Expr]+);
 
-type ProcCallStmt   = proc_call_stmt(res_var: StdVar?, proc_name: ProcSymbol, args: Expr*);
+type ProcCallStmt   = proc_call_stmt(
+                        res_var:          StdVar?,
+                        proc_name:        ProcSymbol,
+                        args:             Expr*,
+                        rel_auto_args:    LocDBVar*,
+                        react_auto_args:  LocAutoVar*
+                      );
 
 type SetInputCtrlStmt       = set_input_ctrl_stmt(var: LocAutoVar, input: Symbol, value: Expr);
 type ClearInputCtrlStmt     = clear_input_ctrl_stmt(var: LocAutoVar, input: Symbol);
@@ -354,12 +380,14 @@ type AggrFunct  = aggr_funct(
 type ProcSymbol = proc_symbol(Symbol);
 
 type Procedure  = procedure(
-                    id:         ProcSymbol,
-                    args:       (var: StdVar, type: NeType)*,
-                    res_type:   Maybe[NeType],
-                    auto_vars:  [LocAutoVar -> AutoSymbol],
-                    db_vars:    [LocDBVar -> (type: DBSymbol, links: LocDBVar*)],
-                    body:       Statement*
+                    id:                   ProcSymbol,
+                    args:                 (var: StdVar, type: NeType)*,
+                    rel_auto_args:        (var: LocDBVar, type: DBSymbol)*,
+                    react_auto_args:      (var: LocAutoVar, type: AutoSymbol)*,
+                    res_type:             Maybe[NeType],
+                    loc_rel_auto_vars:    [LocDBVar -> (type: DBSymbol, links: LocDBVar*)],
+                    loc_react_auto_vars:  [LocAutoVar -> AutoSymbol],
+                    body:                 Statement*
                   );
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -396,6 +424,8 @@ type TimeRule   = boolean_time_rule(expr: Expr, time_expr: TimeExpr),
 
 ///////////////////////////////////////////////////////////////////////////////
 
+type ReactMethod = react_method(name: MethodSymbol, args: (NeType, Maybe[StdVar])*, ret_type: NeType, expr: Expr);
+
 type Automaton  = automaton(
                     name:           AutoSymbol,
                     params:         [SignalVar -> (type: NeType?, value: Expr)],
@@ -407,12 +437,12 @@ type Automaton  = automaton(
                     discrete_rules: [SignalVar -> [+DiscreteRule]],
                     nested_autos:   [NestedAutoVar -> (type: AutoSymbol, args: [Symbol -> Expr], volatile: Bool)],
                     nested_dbs:     [NestedDBVar -> (type: DBSymbol, msg_send_rule: MsgSendRule?, volatile: Bool)],
-                    methods:        [Method]
+                    methods:        [ReactMethod]
                   );
 
 ///////////////////////////////////////////////////////////////////////////////
 
-type Method   = method(name: MethodSymbol, args: (NeType, Maybe[StdVar])*, ret_type: NeType, expr: Expr);
+type Method   = method(id: MethodId, args: (NeType, Maybe[StdVar])*, ret_type: NeType, expr: Expr);
 type Update   = update(name: UpdateSymbol, args: (NeType, StdVar)*, body: Statement*);
 type Handler  = handler(type: NeType, body: Statement*);
 

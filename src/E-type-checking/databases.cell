@@ -1,12 +1,12 @@
 implicit program : Program, typedefs : [TypeName -> NeType] {
   [<Database, Method, Update, Handler> -> [+TypeCheckingError]] typecheck_database(Database db) {
-    let context = db:
+    let context = db {
       schemas_errs  = [db -> es : unused_var, info <- db.state_vars,
                         es = typecheck_db_expr(info.init_value, info.type, []), es != []];
       methods_errs  = [m -> es : m <- db.methods, es = typecheck_method(m), es != []];
       updates_errs  = [u -> es : u <- db.updates, es = typecheck_update(u), es != []];
       handlers_errs = [h -> es : h <- db.handlers, es = typecheck_handler(h), es != []];
-    ;
+    }
     return schemas_errs & methods_errs & updates_errs & handlers_errs;
   }
 }

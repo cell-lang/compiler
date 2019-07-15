@@ -1,7 +1,6 @@
 [CoreWFError] core_wf_errors(Program prg) {
-  let program = prg:
+  let program = prg
     errs = core_wf_errors(program = prg, typedefs = schema_and_typedefs);
-  ;
   return errs;
 }
 
@@ -67,7 +66,7 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
 
     method_errs = union([
       [overlapping_signatures(m1, m2) : m1, m2 <- symmetric_cart_prod(ms), overlap(m1, m2)]
-      : unused_var, ms <- group_by(database.methods, ($.name, arity($)))
+      : unused_var, ms <- group_by(database.methods, family_id($.id))
     ]);
 
     updates_errs = union([
@@ -96,7 +95,7 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
 
 
     [CoreWFError] rel_var_family_errors(RelVar rel_var, [+PhysRelVar] phys_rel_vars, [PhysRelVar -> RelVarInfo] rel_vars) {
-      for s1, s2 <- isort(symmetric_cart_prod(phys_rel_vars)):
+      for s1, s2 <- isort(symmetric_cart_prod(phys_rel_vars)) {
         info1 = rel_vars(s1);
         info2 = rel_vars(s2);
 
@@ -116,14 +115,13 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
 
         // For each key, the projections of the signatures
         // over the arguments of the key must be disjoint
-        for k <- isort(keys):
+        for k <- isort(keys) {
           subsgn1 = nonempty((sgn1(i) : i < arity, k(i)));
           subsgn2 = nonempty((sgn2(i) : i < arity, k(i)));
-          if not are_ptype_disjoint(subsgn1, subsgn2):
+          if not are_ptype_disjoint(subsgn1, subsgn2)
             return [overlapping_rel_var_key_subsignatures(rel_var, (sgn1, sgn2), k)];
-          ;
-        ;
-      ;
+        }
+      }
       return [];
     }
   }
@@ -439,5 +437,8 @@ implicit program : Program, automaton : Automaton {
 
 implicit typedefs : [TypeName -> NeType] {
   Bool overlap(<Method, Update> d1, <Method, Update> d2) =
+    none((are_ptype_disjoint(left(a1), left(a2)) : a1, a2 <- zip(d1.args, d2.args)));
+
+  Bool overlap(ReactMethod d1, ReactMethod d2) =
     none((are_ptype_disjoint(left(a1), left(a2)) : a1, a2 <- zip(d1.args, d2.args)));
 }

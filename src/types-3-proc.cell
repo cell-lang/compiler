@@ -1,4 +1,4 @@
-type SmallIntRepr     = int8, int16, int32; // nat8, nat16, nat32;
+type SmallIntRepr     = int8, int16, int32, nat8; //, nat16, nat32;
 
 type LowLevelRepr     = bool, int, symbol, float, object, array(type: LowLevelEltRepr);
 
@@ -88,7 +88,7 @@ type IntVar         = LocIntVar,
                       MembIntVar,
                       LocAutoIntVar;
 
-type Int32Var       = ivar32(Nat);
+type Int32Var       = ivar32(Nat), shadow_surr_var(StdVar), shadow_array_size_var(Symbol);
 
 type LocFloatVar    = fvar(<Symbol, Nat>);
 type FloatFnArg     = float_arg(Nat);
@@ -98,7 +98,7 @@ type LocOptTagRecVar  = opt_tag_rec_var(id: <Symbol, Nat>, tag: Symbol, index: N
 type OptTagRecFnArg   = opt_tag_rec_fn_arg(id: Nat, tag: Symbol, index: Nat);
 type OptTagRecVar     = LocOptTagRecVar, OptTagRecFnArg;
 
-type ArrayVar       = avar(id: Nat, repr: LowLevelEltRepr);
+type ArrayVar       = avar(id: Nat, repr: LowLevelEltRepr), shadow_array_var(id: Symbol, repr: LowLevelEltRepr);
 
 type AnyWriteVar    = LocBoolVar, LocIntVar, FloatVar, LocOptTagRecVar, WriteObjVar;
 
@@ -110,8 +110,9 @@ type BinRelItVar    = bin_rel_it_var(Nat);  ## DITTO
 type TernRelItVar   = tern_rel_it_var(Nat); ## DITTO
 
 type TableItVar     = table_it_var(id: Nat, arity: NzNat, symmetric: Bool); ## DITTO
+type ColumnItVar    = column_it_var(id: Nat, repr: ColumnRepr);
 
-type ItVar          = SeqItVar, SetItVar, BinRelItVar, TernRelItVar, TableItVar;
+type ItVar          = SeqItVar, SetItVar, BinRelItVar, TernRelItVar, TableItVar, ColumnItVar;
 
 type AnyVar         = ObjVar, OptTagRecVar, VecVar, ArrayVar, BoolVar, IntVar,
                       Int32Var, FloatVar, ItVar, StreamVar;
@@ -134,7 +135,7 @@ type ConvFnId       = any_tag_obj_conv, tag_rec_conv(Symbol), tag_rec_repr_conv(
 
 type ObjFnName      = FnId, ProcSymbol, SubAggrFnId, ConvFnId;
 
-type InlineObj      = LeafObj, empty_seq, empty_rel;
+type InlineObj      = SymbObj, empty_seq, empty_rel;
 
 type AtomicBoolExpr = Bool, BoolVar;
 
@@ -148,31 +149,32 @@ type BoolNatOp      = is_symb(ObjExpr),
                       is_ne_tern_rel(ObjExpr),
                       is_tagged_obj(ObjExpr),
                       are_eq(ObjExpr, ObjExpr),
-                      is_lt(expr1: IntExpr, expr2: IntExpr),
-                      is_le(expr1: IntExpr, expr2: IntExpr),
+                      is_lt(IntExpr, IntExpr),
+                      is_le(IntExpr, IntExpr),
                       is_flt(FloatExpr, FloatExpr),
                       is_fle(FloatExpr, FloatExpr),
                       is_out_of_range(ItVar),
                       is_blank(<AnySignalVar, LocVar, PendingStateVar>),
                       is_null(AnyNullableVar),
-                      has_elem(set: ObjExpr, elt: ObjExpr),
                       has_field(record: ObjExpr, field: SymbObj),
-                      contains(coll: ObjExpr, entry: ObjExpr+),
+                      rel_obj_contains(rel: ObjExpr, args: Maybe[ObjExpr]+),
                       table_contains(table: AnyTableVar, tuple: Maybe[Int32Var]+, symmetric: Bool);
 
 type IntNatOp       = get_int_val(ObjExpr),
                       minus(IntExpr),
-                      add(val1: IntExpr, val2: IntExpr),
-                      sub(val1: IntExpr, val2: IntExpr),
-                      mult(val1: IntExpr, val2: IntExpr),
-                      div(val1: IntExpr, val2: IntExpr),
-                      mod(val1: IntExpr, val2: IntExpr),
+                      add(IntExpr, IntExpr),
+                      sub(IntExpr, IntExpr),
+                      mult(IntExpr, IntExpr),
+                      div(IntExpr, IntExpr),
+                      mod(IntExpr, IntExpr),
                       bitwise_and(IntExpr, IntExpr),
                       bitwise_or(IntExpr, IntExpr),
                       bitwise_xor(IntExpr, IntExpr),
                       float_bits(FloatExpr),
                       mantissa(FloatExpr),
                       dec_exp(FloatExpr),
+                      upcast_int32(<Int32Var, Int32NatOp>),
+                      surr_to_int_value(store: AnyValueStoreId, surrogate: Int32Var),
                       rand_nat(IntExpr),  // Non-deterministic
                       unique_nat,         // Non-deterministic
                       ticks;              // Impure
@@ -180,11 +182,12 @@ type IntNatOp       = get_int_val(ObjExpr),
 type Int32NatOp     = bool_to_bit(BoolExpr),
                       get_size(ObjExpr),
                       get_count(table: AnyTableVar, args: Maybe[Int32Var]+, symmetric: Bool),
+                      table_lookup(table: AnyTableVar, args: Maybe[Int32Var]+, symmetric: Bool),
                       cast_int32(IntExpr),
                       add32(Int32Expr, Int32Expr),
-                      lookup_value(store: AnyValueStoreId, value: AtomicExpr),
-                      lookup_value_ex(store: ValueStoreId, value: AtomicExpr),
-                      get_unknown_arg(iter: TableItVar, arg: <0..2>);
+                      value_to_surr(store: AnyValueStoreId, value: <AtomicExpr, IntExpr>),
+                      get_unknown_arg(iter: TableItVar, arg: <0..2>),
+                      get_col_index(iter: ColumnItVar);
 
 type FloatNatOp     = float_value(ObjExpr),
                       neg_float(FloatExpr),
@@ -199,6 +202,7 @@ type FloatNatOp     = float_value(ObjExpr),
                       int_to_float(IntExpr);
 
 type ObjNatOp       = at(seq: ObjExpr, idx: IntExpr),
+                      array_at(array: ArrayVar, size: Int32Var, idx: IntExpr),
                       lookup(rel: ObjExpr, key: ObjExpr),
                       lookup_field(record: ObjExpr, field: SymbObj, repr: Maybe[LowLevelRepr]),
                       get_tag(ObjExpr),
@@ -209,21 +213,23 @@ type ObjNatOp       = at(seq: ObjExpr, idx: IntExpr),
                       get_curr_obj(<SetItVar, SeqItVar>),
                       get_curr_arg(var: BinRelItVar,  arg: <0..1>),
                       get_curr_arg(var: TernRelItVar, arg: <0..2>),
+                      surr_to_value(store: AnyValueStoreId, surrogate: Int32Var),
+                      column_lookup(var: AnyTableVar, key: Int32Var, repr: ColumnRepr),
+                      get_value(var: ColumnItVar), ## WHAT IS THIS FOR? IT'S NOT EVEN USED...
                       rand_elem(ObjExpr); // Non-deterministic (unless applied to a singleton)
 
 type BoolFnCall     = is_member(pred: MembTestPredId, obj: AtomicExpr),
                       state_is_def(auto_var: AnyAutoVar, type: AutoSymbol);
 
-type BoolExpr       = AtomicBoolExpr,
-                      BoolNatOp,
-                      BoolFnCall,
-                      neg(BoolExpr),
-                      and(BoolExpr+), ## SEQUENCES OR SETS?
-                      or(BoolExpr+),  ## DITTO
-                      and_then(BoolExpr+),
-                      or_else(BoolExpr+);
+type CompositeBoolExpr = neg(BoolExpr),
+                         and(BoolExpr+), ## SEQUENCES OR SETS?
+                         or(BoolExpr+),  ## DITTO
+                         and_then(BoolExpr+),
+                         or_else(BoolExpr+);
 
-type IntExpr        = Int, IntConst, IntVar, IntNatOp, Int32Expr;
+type BoolExpr       = AtomicBoolExpr, BoolNatOp, BoolFnCall, CompositeBoolExpr;
+
+type IntExpr        = Int, IntConst, IntVar, IntNatOp;
 
 type Int32Expr      = Int32, Int32Var, Int32NatOp;
 
@@ -235,14 +241,14 @@ type ObjExpr        = InlineObj, StdObjVar, ObjNatOp, OptTagRecExpr;
 
 type AtomicExpr     = ObjExpr;
 
-type AnyTypeExpr    = BoolExpr, IntExpr, FloatExpr, ObjExpr;
+type AnyTypeExpr    = BoolExpr, IntExpr, Int32Expr, FloatExpr, ObjExpr;
 
 type RefObjExpr     = mk_set_from_stream(stream: StreamVar),
                       mk_set(elems: VecVar, size: IntExpr),
                       mk_set_from_array(array: ArrayVar, size: Maybe[IntExpr]),
                       mk_seq_from_stream(stream: StreamVar),
                       mk_seq(elems: VecVar, size: IntExpr),
-                      mk_seq_from_array(array: ArrayVar, size: Maybe[IntExpr]),
+                      mk_seq_from_array(array: ArrayVar, size: Int32Expr),
                       build_const_int_seq(seq_id: Nat),
                       mk_map_from_streams(key_stream: StreamVar, value_stream: StreamVar),
                       mk_map(keys: VecVar, values: VecVar, size: IntExpr),
@@ -261,34 +267,35 @@ type RefObjExpr     = mk_set_from_stream(stream: StreamVar),
                       join_seqs(left: AtomicExpr, right: AtomicExpr),
                       rev_seq(seq: AtomicExpr),
                       internal_sort(set: AtomicExpr),
+                      insert_elt(set: AtomicExpr, elt: AtomicExpr),
+                      remove_elt(set: AtomicExpr, elt: AtomicExpr),
+                      set_key_value(map: AtomicExpr, key: AtomicExpr, value: AtomicExpr), ## OWNERSHIP TRANSFER?
+                      drop_key(map: AtomicExpr, key: AtomicExpr),
                       parse_value(value: AtomicExpr),
                       print_value(value: AtomicExpr),
 
                       copy_state(var: AnyDBVar, type: DBSymbol),
-                      copy_rel(tables: [+TableVar -> Table], applied_perm: [+Nat -> Nat]),
+                      copy_rel(tables: [+TableVar -> <Table, Column>], applied_perm: [+Nat -> Nat]),
 
                       copy_persistent_state(var: AnyAutoVar, type: AutoSymbol),
 
                       // Can be used only once per pending variable, and does not automatically clear it,
                       // it has to be manually cleared with init_memb_var(...)
-                      read_pending_var(<PendingStateVar, PendingInputVar>),
-                      lookup_surrogate(store: AnyValueStoreId, surrogate: IntExpr); ## THIS SHOULD BELONG IN ObjNatOp, NOT HERE...
+                      read_pending_var(<PendingStateVar, PendingInputVar>);
 
 type BasicInstr     = init_stream(StreamVar),
                       append(stream: StreamVar, obj: AtomicExpr),  // Ownership transfer: <obj>
 
-                      ## BUG BUG BUG: IF ObjExpr CONTAINS A NON-COUNTED REFERENCE TO THE ARRAY,
-                      ## I COULD END UP WITH A CYCLE IN THE OBJECT GRAPH AND MAYBE OTHER PROBLEMS
-                      set_at(var: WriteObjVar, idx: IntExpr, value: AtomicExpr),  // Ownership transfer: <value>
-
-                      alloc_array(var: ArrayVar, size: Int32Expr),
-                      write_array(var: ArrayVar, idx: Int32Expr, value: AnyTypeExpr),
+                      array_alloc(var: ArrayVar, size: Int32Expr),
+                      array_write(var: ArrayVar, idx: Int32Expr, value: AnyTypeExpr),
+                      array_append(array_var: ArrayVar, size_var: Int32Var, value: AnyTypeExpr),
+                      array_set_var(target: ArrayVar, source: ArrayVar),
 
                       write_rec_field(var: LocOptTagRecVar, label: Symbol, value: AnyTypeExpr, optional: Bool),
                       finish_init(var: LocOptTagRecVar),
 
-                      get_set_iter(var: SetItVar, src: AtomicExpr),
                       get_seq_iter(var: SeqItVar, src: AtomicExpr),
+                      get_set_iter(var: SetItVar, src: AtomicExpr),
                       get_bin_rel_iter(var: BinRelItVar, src: AtomicExpr, args: (Maybe[AtomicExpr], Maybe[AtomicExpr])),
                       get_tern_rel_iter(var: TernRelItVar, src: AtomicExpr, args: (Maybe[AtomicExpr], Maybe[AtomicExpr], Maybe[AtomicExpr])),
 
@@ -315,10 +322,17 @@ type BasicInstr     = init_stream(StreamVar),
 
                       no_op,
 
-                      call_proc(var: AnyWriteVar?, name: ObjFnName, args: AnyTypeExpr*, cls_args: AnyLambdaExpr*),
+                      call_proc(
+                        var:              AnyWriteVar?,
+                        name:             ObjFnName,
+                        args:             AnyTypeExpr*,
+                        cls_args:         AnyLambdaExpr*,
+                        rel_auto_args:    LocDBVar*,
+                        react_auto_args:  LocAutoVar*
+                      ),
                       call_cls(var: WriteObjVar, cls_var: AnyClsVar, args: AtomicExpr+),
 
-                      push_call_info(fn_name: <FnId, ProcSymbol>, args: ObjExpr*),
+                      push_call_info(fn_name: <FnId, ProcSymbol, MethodSymbol>, args: ObjExpr*),
                       pop_call_info,
 
                       log_runtime_failure(
@@ -329,9 +343,9 @@ type BasicInstr     = init_stream(StreamVar),
                         vars: (<StdVar, ImplArg>, ObjExpr)*
                       ),
 
-                      queue_update(type: AutoSymbol, id: BlockNodeId, args: Nat*),
+                      queue_node_update(type: AutoSymbol, id: BlockNodeId, args: Nat*),
 
-                      insert_timer(type: AutoSymbol, idx: IntExpr, time: IntExpr),
+                      insert_timer(type: AutoSymbol, idx: Nat, time: IntExpr),
                       clear_timer(type: AutoSymbol, idx: IntExpr),
 
                       auto_pre_init(var: AnyAutoVar, type: AutoSymbol),
@@ -341,7 +355,6 @@ type BasicInstr     = init_stream(StreamVar),
                       clear_input(var: AnyAutoVar?, type: AutoSymbol, input: Symbol),
 
                       auto_init(var: AnyAutoVar?, type: AutoSymbol),
-                      // auto_update(var: AnyAutoVar?, type: AutoSymbol),
                       auto_update_node(type: AutoSymbol, node: BlockNodeId, time_var: IntVar?),
                       auto_apply(var: AnyAutoVar?, type: AutoSymbol),
 
@@ -362,29 +375,30 @@ type BasicInstr     = init_stream(StreamVar),
                       ),
 
                       invoke_db_method(
-                        res_var:    WriteObjVar,
+                        res_var:    AnyWriteVar,
                         db_var:     AnyDBVar?,
                         type:       DBSymbol,
                         method_id:  MethodId,
-                        args:       AtomicExpr*
+                        args:       AnyTypeExpr*
                       ),
 
                       // Table instructions
                       init_value_store(store: ValueStoreId),
                       cleanup_value_store(store: ValueStoreId),
-                      init_table(table_var: TableVar, table: Table),
-                      cleanup_table(table_var: TableVar, table: Table),
-
-                      // set_table(relvar: RelVar, table: Table, state: AtomicExpr, perm: Nat+),
+                      init_table(table_var: TableVar, table: <Table, Column>),
+                      cleanup_table(table_var: TableVar, table: <Table, Column>),
 
                       get_table_iter(it_var: TableItVar, table: AnyTableVar, args: Maybe[Int32Var]+),
+                      get_column_iter(it_var: ColumnItVar, column: AnyTableVar),
                       queue_deletes(table_var: TableVar, args: Maybe[Int32Var]+, symmetric: Bool),
-                      queue_insert_value(res_var: Int32Var, store: ValueStoreId, value: AtomicExpr), // Ownership transfer: <value>
-                      lookup_or_queue_insert_value(res_var: Int32Var, store: ValueStoreId, value: AtomicExpr), // Ownership transfer: <value>
+                      lookup_or_queue_insert_value(res_var: Int32Var, store: ValueStoreId, value: <AtomicExpr, IntExpr>), // Ownership transfer: <value>
                       queue_insert_tuple(table_var: TableVar, tuple: Int32Var+),
 
-                      immediate_insert_or_add_ref(res_var: Int32Var, store: ValueStoreId, value: AtomicExpr),
-                      immediate_insert_tuple(table_var: TableVar, tuple: Int32Var+);
+                      column_insert_deferred(table_var: TableVar, key_surr: Int32Var, value: AnyTypeExpr, forced: Bool),
+
+                      immediate_insert_or_add_ref(res_var: Int32Var, store: ValueStoreId, value: <AtomicExpr, IntExpr>),
+                      immediate_insert_tuple(table_var: TableVar, tuple: Int32Var+),
+                      column_insert_immediate(table_var: TableVar, key_surr: Int32Var, value: AnyTypeExpr);
 
 type JumpInstr      = break_loop,
                       exit_block,
@@ -433,16 +447,19 @@ type ObjProcArg     = StdVar, FnArg, LocBoolVar, BoolFnArg, LocIntVar, IntFnArg,
 type ClsProcArg     = cls(var: ClsVar, arity: NzNat);
 
 type ObjProcDef     = obj_proc_def(
-                        name:           ObjFnName,
-                        args:           ObjProcArg*,
-                        cls_args:       ClsProcArg*,
-                        impl_args:      [ImplArg],
-                        ret_val_repr:   AnyLowLevelRepr,
-                        type:           FnType,
-                        loc_auto_vars:  [LocAutoVar -> AutoSymbol],
-                        loc_db_vars:    [LocDBVar -> DBSymbol],
-                        body:           Instr+,
-                        cached:         Bool
+                        name:             ObjFnName,
+                        args:             ObjProcArg*,
+                        cls_args:         ClsProcArg*,
+                        impl_args:        [ImplArg],
+                        rel_auto_args:    (var: LocDBVar, type: DBSymbol)*,
+                        react_auto_args:  (var: LocAutoVar, type: AutoSymbol)*,
+                        ret_val_repr:     AnyLowLevelRepr,
+                        type:             FnType?,
+                        loc_vars_types:   [StdVar -> NeType],
+                        loc_auto_vars:    [LocAutoVar -> AutoSymbol],
+                        loc_db_vars:      [LocDBVar -> DBSymbol],
+                        body:             Instr+,
+                        cached:           Bool
                       );
 
 type BoolProcDef    = bool_proc_def(
@@ -462,14 +479,12 @@ type NestedAutoInputNodeId  = nested_auto_input_id(auto: Symbol, input: Symbol);
 
 type BlockNodeId    = StdBlockNodeId, CondNodeId, NestedAutoNodeId, NestedAutoInputNodeId;
 
-## PUT THEM SOMEWHERE ELSE MAYBE?
-type MethodId   = method_id(symbol: MethodSymbol, arity: Nat, id: Nat?);
-type UpdateId   = main_handler, handler_id(Nat), update_id(symbol: UpdateSymbol, arity: Nat, id: Nat?);
-
 type ValueStoreId       = value_store_id(Nat);
 type NestedValueStoreId = nested_value_store_id(db_var: AnyDBVar, store_id: ValueStoreId);
 type CaptValueStoreId   = capt_value_store_id(ValueStoreId);
 type AnyValueStoreId    = ValueStoreId, NestedValueStoreId, CaptValueStoreId;
+
+type ValueStoreType = object, integer, mono_tagged_integer(Symbol);
 
 type Table  = table(
                 value_stores: ValueStoreId+,
@@ -477,6 +492,10 @@ type Table  = table(
                 col_types:    NeType+,
                 symmetric:    Bool
               );
+
+type ColumnRepr = object, int, float;
+
+type Column = column(value_store: ValueStoreId, repr: ColumnRepr, col_types: (NeType, NeType));
 
 type ForeignKeyType = unary_unary, unary_binary(<0..1>), unary_ternary(<0..2>),
                       binary_unary(<0..1>), ternary_unary(<0..2>),
@@ -494,6 +513,16 @@ type CompiledMethod = compiled_method(
                         args_memb_preds:  [+MembTestPredId*],
                         ret_type:         NeType,
                         code:             Instr*
+                      );
+
+type OptCompMethod  = opt_comp_method(
+                        args:             ObjProcArg*, ## WHAT HAPPENS IF THE NAME OF THE ARGUMENT IS MISSING?
+                        args_types:       NeType*, ## PROBABLY NEEDED FOR THE WRAPPER CLASSES
+                        args_memb_preds:  [+MembTestPredId*], ## BAD BAD BAD
+                        loc_vars_types:   [StdVar -> NeType],
+                        ret_type:         NeType,
+                        ret_val_repr:     AnyLowLevelRepr,
+                        body:             Instr*
                       );
 
 type CompiledUpdate = compiled_update(args_vars: <StdVar, FnArg>*, body: Instr*);
@@ -523,22 +552,25 @@ type ReactBlock = react_block(
                   );
 
 type StaticBlock = static_block(
-                    name:                     DBSymbol,
-                    links:                    DBSymbol*,
-                    state_vars:               [MembVar -> NeType],
-                    value_stores:             [ValueStoreId],
-                    tables:                   [TableVar -> Table],
-                    foreign_keys:             [BlockForeignKey],
-                    nested_blocks:            [NestedDBVar -> DBSymbol],
-                    init_code:                Instr*,
-                    cleanup_code:             Instr*,
-                    copy_state_code:          Instr*,
-                    set_state_code:           Instr*,
-                    foreign_keys_check_code:  Instr*,
-                    methods:                  [MethodId -> CompiledMethod],
-                    updates:                  [UpdateId -> CompiledUpdate],
-                    accessors:                [MethodId -> CompiledMethod],
-                    msg_memb_pred:            Maybe[MembTestPredId] ## REPLACE THE MAYBE WITH A NULL OBJECT?
+                    name:                         DBSymbol,
+                    links:                        DBSymbol*,
+                    state_vars:                   [MembVar -> NeType],
+                    value_stores:                 [ValueStoreId -> ValueStoreType],
+                    tables:                       [TableVar -> <Table, Column>],
+                    insert_checked_foreign_keys:  [BlockForeignKey],
+                    delete_checked_foreign_keys:  [BlockForeignKey],
+                    nested_blocks:                [NestedDBVar -> DBSymbol],
+                    init_code:                    Instr*,
+                    cleanup_code:                 Instr*,
+                    copy_state_code:              Instr*,
+                    set_state_code:               Instr*,
+                    memb_var_check_exprs:         [MembVar -> BoolExpr],
+                    rel_vars_load_code:           [RelVar -> (LocVar+, BoolExpr, Instr+)],
+                    foreign_keys_check_code:      Instr*,
+                    methods:                      [MethodId -> OptCompMethod],
+                    updates:                      [UpdateId -> CompiledUpdate],
+                    accessors:                    [MethodId -> CompiledMethod],
+                    msg_memb_pred:                Maybe[MembTestPredId] ## REPLACE THE MAYBE WITH A NULL OBJECT?
                   );
 
 type CompiledPrg  = compiled_prg(

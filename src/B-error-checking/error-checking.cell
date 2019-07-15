@@ -1,5 +1,5 @@
 implicit syn_prg : SynPrg {
-  WFError* prg_wf_errors {
+  WFError* prg_wf_errors(Bool allow_nested_rel_autos) {
     tdefs         = [d : unused_var, ds <- syn_prg.parsed_src_files, d <~ ds, typedef()         ?= d];
     par_tdefs     = [d : unused_var, ds <- syn_prg.parsed_src_files, d <~ ds, par_typedef()     ?= d];
     schemas       = [d : unused_var, ds <- syn_prg.parsed_src_files, d <~ ds, schema_def()      ?= d];
@@ -20,12 +20,11 @@ implicit syn_prg : SynPrg {
     errs = join((aggr_funct_decl_wf_errors(f) : f <- isort(aggr_funct_decls)));
     return errs if errs != ();
 
-    errs = schemas_wf_errors(schemas, type_arity_map);
+    errs = schemas_wf_errors(schemas, type_arity_map, allow_nested_rel_autos);
     return rand_sort(errs) if errs != [];
 
-    let type_arity_map = type_arity_map, schemas = [s.name -> s : s <- schemas], tdefs = tdefs, par_tdefs = par_tdefs:
+    let type_arity_map = type_arity_map, schemas = [s.name -> s : s <- schemas], tdefs = tdefs, par_tdefs = par_tdefs
       errs = protocols_wf_errors(prot_decls);
-    ;
     return errs if errs != ();
 
     errs = typevar_decls_wf_errors(tvar_decls, prot_decls);
@@ -46,18 +45,24 @@ implicit syn_prg : SynPrg {
     proc_sgn_errs = procedures_signature_wf_errors(syn_proc_defs);
     return proc_sgn_errs if proc_sgn_errs != ();
 
+    using_blocks_errs = isort([
+      using_block_invalid_auto_errs(b)
+      : b <- using_blocks, not db_defs_by_id(db_symbol(b.target), *)
+    ]);
+    return using_blocks_errs if using_blocks_errs != ();
+
     proc_def_errs = [proc_def_errors(pd, es) : pd <- syn_proc_defs, es = proc_def_wf_errors(pd), es != ()];
 
     standalone_fndef_errs = [fndef_errors(fd, es) : fd <- syn_fn_defs, es = fndef_wf_errors(fd, []), es != ()];
 
     impl_block_fndef_errs = ();
-    for b <- rand_sort(impl_blocks):
+    for b <- rand_sort(impl_blocks) {
       impl_args = set(b.args);
-      for fd <- b.fn_defs:
+      for fd <- b.fn_defs {
         errs = fndef_wf_errors(fd, impl_args);
         impl_block_fndef_errs = (impl_block_fndef_errs | fndef_errors(fd, errs)) if errs != ();
-      ;
-    ;
+      }
+    }
 
     auto_meth_errs = join(rand_sort([auto_method_def_wf_errors(m) : m <- auto_methods]));
     db_meth_errs = join(rand_sort([db_method_def_wf_errors(db, m) : db, ms <- methods_by_db, m <- ms]));
@@ -86,7 +91,7 @@ implicit syn_prg : SynPrg {
     errs = (errs | dupl_aggr_fn_vars(isort(dupls), decl)) if dupls != [];
     taken_names = taken_names & set(vars_names);
 
-    let artifact = :null_artifact, impl_args = [], actual_arg_arity = 0:
+    let artifact = :null_artifact, impl_args = [], actual_arg_arity = 0 {
       // Return value expressions
       res_vars = [var(a) : unused_var, a <~ decl.extra_args] & [var(v.name) : v <~ decl.red_vars];
       errs = errs & expr_wf_errors(decl.null_value, res_vars) & expr_wf_errors(decl.final_value, res_vars);
@@ -106,7 +111,7 @@ implicit syn_prg : SynPrg {
         merge_errs = expr_wf_errors(merge_expr, [var(merge_arg1), var(merge_arg2)] & extra_args_vars);
         return type_errs & init_errs & merge_errs & dupl_errs;
       } : v <- decl.red_vars));
-    ;
+    }
 
     return (aggr_fn_decl_errs(decl, errs) if errs != ());
   }
@@ -122,9 +127,8 @@ implicit syn_prg : SynPrg {
     errs = (errs | dupl_par_names([a : a <- dupl_args], [])) if dupl_args != [];
 
     artifact = using_block_method_def(db_name, method);
-    let artifact = artifact, impl_args = [], actual_arg_arity = 0:
+    let artifact = artifact, impl_args = [], actual_arg_arity = 0
       errs = errs & expr_wf_errors(method.expr, seq_union(([fn_arg(i), var(n)] : n @ i <- arg_names)));
-    ;
 
     return (db_method_def_errors(db_defs_by_id[db_symbol(db_name)], method, errs) if errs != ());
   }
@@ -133,14 +137,14 @@ implicit syn_prg : SynPrg {
   WFError* handler_def_wf_errors(HandlerDef handler_def) {
     errs = plain_type_wf_errors(handler_def.type);
     db_symb = db_symbol(handler_def.target);
-    if db_defs_by_id(db_symb, *):
+    if db_defs_by_id(db_symb, *) {
       body = handler_def.body;
-      let artifact = handler_def, impl_args = [], actual_arg_arity = 0:
+      let artifact = handler_def, impl_args = [], actual_arg_arity = 0
         errs = errs & root_stmt_block_wf_errors(body, (), [var(:this)], false, false) if body != ();
-      ;
-    else
+    }
+    else {
       errs = (errs | unknown_auto(db_symb)) if not db_defs_by_id(db_symb, *);
-    ;
+    }
 
     return (handler_def_errs(handler_def, errs) if errs != ());
   }
@@ -154,12 +158,11 @@ implicit syn_prg : SynPrg {
     errs = (errs | dupl_par_names([bare_id(a) : a <- dupl_args], [])) if dupl_args != [];
 
     body = update_def.body;
-    if body != ():
+    if body != () {
       artifact = using_block_update_def(db_name, update_def);
-      let artifact = artifact, impl_args = [], actual_arg_arity = 0:
+      let artifact = artifact, impl_args = [], actual_arg_arity = 0
         errs = errs & root_stmt_block_wf_errors(body, (), set(args), false, false);
-      ;
-    ;
+    }
 
     return (update_def_errs(db_defs_by_id[db_symbol(db_name)], update_def, errs) if errs != ());
   }
@@ -175,14 +178,12 @@ implicit syn_prg : SynPrg {
     errs = (errs | dupl_par_names([bare_id(a) : a <- dupl_args], [])) if dupl_args != [];
 
     auto_symb = auto_symbol(method.target);
-    if not auto_defs_by_id(auto_symb, *):
+    if not auto_defs_by_id(auto_symb, *)
       return (auto_method_def_errors(method, (errs | unknown_auto(auto_symb))));
-    ;
     auto_def = auto_defs_by_id[auto_symb];
 
-    let artifact = method, impl_args = [], actual_arg_arity = 0:
+    let artifact = method, impl_args = [], actual_arg_arity = 0
       errs = errs & expr_wf_errors(method.expr, seq_union(([fn_arg(i), s] : s @ i <- arg_names)));
-    ;
 
     return (auto_method_def_errors(method, errs) if errs != ());
   }
@@ -208,7 +209,7 @@ implicit syn_prg : SynPrg {
     sorted_auto_ids = topological_sort(shallow_deps);
 
     resolved_autos_by_id = [];
-    for ids <- sorted_auto_ids:
+    for ids <- sorted_auto_ids {
       errs = union([{
           auto = auto_defs_by_id[auto_symbol(id)];
           res_auto = resolve_inheritance(auto, resolved_autos_by_id);
@@ -223,7 +224,7 @@ implicit syn_prg : SynPrg {
         : id <- ids, typed_id = auto_symbol(id)
       ];
       resolved_autos_by_id = resolved_autos_by_id & layer_autos_by_id;
-    ;
+    }
 
     return ();
   }
@@ -231,13 +232,12 @@ implicit syn_prg : SynPrg {
 
   WFError* block_args_wf_errors(ImplArgDecl* signatures) {
     errs = ();
-    for s1 @ i1 <- signatures ; s2 <- drop(signatures, i1+1):
+    for s1 @ i1 <- signatures ; s2 <- drop(signatures, i1+1)
       errs = (errs | dupl_impl_arg(s1, s2)) if s1.name == s2.name;
-    ;
-    for s <- signatures:
+    for s <- signatures {
       type_errs = plain_type_wf_errors(s.type);
       errs = (errs | signature_errors(s, type_errs)) if type_errs != ();
-    ;
+    }
     return errs;
   }
 
@@ -266,14 +266,14 @@ implicit syn_prg : SynPrg {
     direct_type_vars = seq_union((syn_type_vars(a.type) : a <- fndef.args, a.type :: SynType));
 
     indirect_type_vars = [];
-    for a @ i <- fndef.args:
-      if a :: SynClsArg:
+    for a @ i <- fndef.args {
+      if a :: SynClsArg {
         in_type_vars = seq_union((syn_type_vars(t) : t <- a.type.in_types));
         undef_type_vars = in_type_vars - direct_type_vars;
         errs = (errs | invalid_cls_type_vars(i, a.name, undef_type_vars)) if undef_type_vars != [];
         indirect_type_vars = indirect_type_vars & syn_type_vars(a.type.out_type);
-      ;
-    ;
+      }
+    }
 
     res_type_vars = syn_type_vars(fndef.res_type);
     undef_res_type_vars = res_type_vars - (direct_type_vars & indirect_type_vars);
@@ -284,11 +284,11 @@ implicit syn_prg : SynPrg {
 
 
   WFError* polymorphic_functions_errors(SynFnDef+ full_fndefs) {
-    for fd1 @ i1 <- full_fndefs ; fd2 <- drop(full_fndefs, i1+1):
+    for fd1 @ i1 <- full_fndefs ; fd2 <- drop(full_fndefs, i1+1) {
       assert fd1.name == fd2.name and arity(fd1) == arity(fd2);
       arity_match = (syn_type_arity(a1.type) == syn_type_arity(a2.type) : a1, a2 <- zip(fd1.args, fd2.args));
       return (incomp_pos_args(fd1, fd2, nonempty((i : b @ i <- arity_match, not b)))) if not all(arity_match);
-    ;
+    }
     return ();
   }
 
@@ -307,7 +307,7 @@ implicit syn_prg : SynPrg {
     arity = arity(proc_def);
     res_type = proc_def.res_type;
 
-    dup_pars = duplicates((match (p.var) var(n?) = n : p <- proc_def.args));
+    dup_pars = duplicates((a.var : a <- proc_def.args));
 
     errs = (
       builtin_proc_redef            if builtin_procs_map(name, *),
@@ -345,9 +345,8 @@ implicit syn_prg : SynPrg {
                         ),
         _             = ();
       return errs if errs != ();
-      let artifact = artifact, impl_args = impl_args, actual_arg_arity = 0:
+      let artifact = artifact, impl_args = impl_args, actual_arg_arity = 0
         errs = expr_wf_errors(fndef.expr, args);
-      ;
       return errs;
     }
   }
@@ -373,7 +372,7 @@ implicit syn_prg : SynPrg {
     ];
     errs = join(({
       is_static = db_vars_types(v.var, *);
-      if is_static:
+      if is_static {
         var_type = db_vars_types(v.var, !!);
         links = var_type.links;
         return (wrong_auto_var_arity(v.var, |v.args|, |links|)) if |links| != |v.args|;
@@ -383,19 +382,21 @@ implicit syn_prg : SynPrg {
           exp_type = links(i);
           return (wrong_auto_arg_type(v.var, a, arg_type.name, exp_type) if arg_type.name != exp_type);
         } : a @ i <- v.args));
-      else
+      }
+      else {
         return (wrong_auto_var_arity(v.var, |v.args|, 0) if |v.args| != 0);
-      ;
+      }
     } : v <- auto_or_db_vars));
     return errs if errs != ();
 
     body = proc_def.body;
     return () if body == ();
-    vars = [p.var : p <~ proc_def.args];
+
+    args_info = proc_args_info(proc_def.name);
+    vars = [var(a.var) : a @ i <~ proc_def.args, args_info(i) == :value_arg];
     has_ret_val = proc_def.res_type != nothing;
-    let artifact = proc_def, impl_args = [], actual_arg_arity = 0:
+    let artifact = proc_def, impl_args = [], actual_arg_arity = 0
       errs = root_stmt_block_wf_errors(body, (), vars, has_ret_val, true);
-    ;
     return errs;
   }
 
@@ -428,14 +429,6 @@ implicit syn_prg : SynPrg {
   //     return (pos_pars_info, impl_args_info);
   //   }
   // }
-
-
-  [ProcSymbol -> (Nat, Bool)] builtin_procs_map = [
-    proc_symbol(:file_read)    -> (1, true),
-    proc_symbol(:file_write)   -> (2, true),
-    proc_symbol(:print)        -> (1, false),
-    proc_symbol(:get_char)     -> (0, true)
-  ];
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -496,7 +489,7 @@ implicit type_arity_map : [BasicTypeSymbol -> [+Nat]], schemas : [Atom -> Schema
     return (dupl_type_vars(dupl_vars)) if dupl_vars != [];
 
     nvars = |decl.type_vars|;
-    for pts <- decl.prot_types:
+    for pts <- decl.prot_types {
       // No duplicates among types
       dupl_types = duplicates(pts);
       return (dupl_prot_types(dupl_types)) if dupl_types != [];
@@ -508,7 +501,7 @@ implicit type_arity_map : [BasicTypeSymbol -> [+Nat]], schemas : [Atom -> Schema
       // All protocol types must belong to the same protocol
       prot_types = prot_types_map[pts(0)];
       return (unrelated_prot_types(pts)) if not subset(set(pts), prot_types);
-    ;
+    }
 
     return ();
   }

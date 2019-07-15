@@ -109,16 +109,16 @@ Maybe[((NzNat, NzNat), (NzNat, NzNat))] source_file_location(RuleMatch mtc) =
 Maybe[((NzNat, NzNat), (NzNat, NzNat))] source_file_location_span(RuleMatch* mtcs) {
   return nothing if mtcs == ();
   start_loc = nothing;
-  for m <- mtcs:
+  for m <- mtcs {
     start_loc = source_file_location(m);
     break if start_loc != nothing;
-  ;
+  }
   return nothing if start_loc == nothing;
   end_loc = nothing;
-  for i < |mtcs|:
+  for i < |mtcs| {
     end_loc = source_file_location(rat(mtcs, i));
     break if end_loc != nothing;
-  ;
+  }
   fail if end_loc == nothing;
   return just((left(value(start_loc)), right(value(end_loc))));
 }
@@ -132,13 +132,14 @@ T attach_src_code_info(T obj, RuleMatch match) =
 
 T attach_src_code_info(T decl, String filename, RuleMatch match) {
   src_code_info = source_file_location(match);
-  if src_code_info == nothing:
+  if src_code_info == nothing {
     start_line = 1;
     end_line = 1;
-  else
+  }
+  else {
     start_pos, end_pos = value(src_code_info);
     start_line, unused_var = start_pos;
     end_line, unused_var = end_pos;
-  ;
+  }
   return attach(decl, (filename, start_line, end_line));
 }

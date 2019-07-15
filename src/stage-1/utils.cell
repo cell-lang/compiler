@@ -105,12 +105,9 @@ NeType desugar_arbitrary_type(SynType type, [Atom -> TypeVar] subst_map, [Atom] 
       type,
       match ($)
         type_var()                = $,
-        type_ref(type_symbol(a?)) = if subst_map(a, *)
-                                      then subst_map[a]
-                                    elif schemas(a)
-                                      then type_ref(schema_type_symbol(a))
-                                    else
-                                      $,
+        type_ref(type_symbol(a?)) = if subst_map(a, *) then subst_map[a]                    else
+                                    if schemas(a)      then type_ref(schema_type_symbol(a)) else
+                                                            $,
         type_ref()                = desugar_type_ref($, desugar($, subst_map, schemas))
     );
 }
@@ -208,10 +205,10 @@ NeType desugar_type(SynType type, (<SynTypeRef, SynTypeVar> -> NeType) desugar) 
 ## IS THERE A WAY TO WRITE THEM JUST ONCE?
 [+StmtOutcome] syn_outcomes(SynStmt* stmts) {
   os = [:falls_through];
-  for s <- stmts:
+  for s <- stmts {
     os = (os - [:falls_through]) & syn_outcomes(s);
     break if not os(:falls_through);
-  ;
+  }
   return nonempty(os);
 }
 
@@ -317,10 +314,10 @@ Atom rule_id(RuleDecl decl) =
   sorted_auto_ids = topological_sort(parent_child_rels);
 
   resolved_autos_by_id = [];
-  for ids <- sorted_auto_ids:
+  for ids <- sorted_auto_ids {
     layer_autos_by_id = [id -> resolve_inheritance(autos_by_id[id], resolved_autos_by_id) : id <- ids];
     resolved_autos_by_id = resolved_autos_by_id & layer_autos_by_id;
-  ;
+  }
 
   return values(resolved_autos_by_id);
 }
@@ -369,3 +366,17 @@ Atom+ destructure_id_chain(AccessorChain expr) =
   match (expr.expr)
     const_or_var(a?)  = (a, expr.field),
     accessor()        = (destructure_id_chain(expr.expr) | expr.field);
+
+////////////////////////////////////////////////////////////////////////////////
+
+## NOT SURE THIS IS THE RIGHT PLACE FOR THIS STUFF
+
+[ProcSymbol -> (Nat, Bool)] builtin_procs_map = [
+  proc_symbol(:file_read)     -> (1, true),
+  proc_symbol(:file_write)    -> (2, true),
+  proc_symbol(:file_append)   -> (2, true),
+  proc_symbol(:print)         -> (1, false),
+  proc_symbol(:get_char)      -> (0, true),
+  proc_symbol(:ticks)         -> (0, true),
+  proc_symbol(:exit)          -> (1, false)
+];

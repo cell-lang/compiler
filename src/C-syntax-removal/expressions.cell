@@ -92,12 +92,13 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
   Expr desugar_call_lookalike(AnyRelVar var, Expr+ args) {
     arity = |args|;
     rel_var_arity = rel_vars_arities[var];
-    if arity == rel_var_arity:
+    if arity == rel_var_arity {
       return relvar_memb_test(var, (just(a) : a <- args));
-    else
+    }
+    else {
       assert arity == rel_var_arity - 1;
       return relvar_lookup(var, ((just(a) : a <- args) | nothing));
-    ;
+    }
   }
 
   Expr desugar_call_lookalike(PreAutoCall pc, Expr+ args) =
@@ -113,41 +114,44 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
 
   Expr desugar_call_lookalike(SynExpr syn_target, SynExpr+ syn_args, [StdVar] def_vars) {
     arity = |syn_args|;
-    if syn_target :: IdChain:
+    if syn_target :: IdChain {
       symbols = destructure_id_chain(syn_target);
       target = only(resolve_by_priority_as_call_lookalike_target(symbols, arity, def_vars));
-      if target :: <PreFnCall, PreNestedFnCall>:
+      if target :: <PreFnCall, PreNestedFnCall> {
         fn_id = fn_family_id(target, arity);
         arg_arities = arg_arities(fn_id);
         args = (desugar_expr(a, def_vars) : a @ i <- syn_args, arg_arities(i) == 0);
         cls_args = (desugar_cls_arg(e, nz_nat(arg_arities(i)), def_vars) : e @ i <- syn_args, arg_arities(i) != 0);
         return fn_call(fn_id, args, cls_args, []);
-      else
+      }
+      else {
         args = (desugar_expr(a, def_vars) : a <- syn_args);
         return desugar_call_lookalike(target, args);
-      ;
-    else
+      }
+    }
+    else {
       args = (desugar_expr(e, def_vars) : e <- syn_args);
       target = desugar_expr(syn_target, def_vars);
-      if arity == 1:
+      if arity == 1 {
         return unary_pseudo_call(target, only_unsafe(args));
-      else
+      }
+      else {
         assert arity == 2;
         return rel_memb_test(target, (just(a) : a <- args));
-      ;
-    ;
+      }
+    }
   }
 
 
   Expr desugar_size_expr(SynExpr coll_expr, [StdVar] def_vars) {
-    if coll_expr :: IdChain:
+    if coll_expr :: IdChain {
       symbs = destructure_id_chain(coll_expr);
       resol = only(resolve_by_priority_as_expr_or_rel_var(symbs, def_vars));
-      if resol :: AnyRelVar:
+      if resol :: AnyRelVar {
         arity = relvar_arity(resol);
         return rel_var_size_expr(resol, (nothing : i < arity));
-      ;
-    ;
+      }
+    }
     return size_expr(desugar_expr(coll_expr, def_vars));
   }
 
@@ -164,11 +168,10 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
     assert (a <~ syn_args : a != nothing);
 
     args = (apply(a, desugar_expr($, def_vars)) : a <- syn_args);
-    if syn_target :: IdChain:
+    if syn_target :: IdChain
       target = only(resolve_by_priority_as_expr_or_rel_var(destructure_id_chain(syn_target), |syn_args|, def_vars));
     else
       target = desugar_expr(syn_target, def_vars);
-    ;
 
     return desugar(target, args);
 
@@ -258,12 +261,13 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
     // Choosing which types of variables are visible from within the closure body
     cls_vars = std_vars(def_vars); ## ADD IMPLICIT ARGUMENTS?
 
-    if syn_arg :: ConstOrVar:
+    if syn_arg :: ConstOrVar {
       symb = match (syn_arg) const_or_var(a?) = a;
       return only(resolve_by_priority_as_cls_expr(symb, exp_arity, cls_vars, artifact=cls_artifact));
-    else
+    }
+    else {
       return cls_expr(exp_arity, desugar_expr(syn_arg, cls_vars, artifact=cls_artifact));
-    ;
+    }
   }
 
 
@@ -322,9 +326,8 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
 
   Expr desugar_if_expr(SynIfExpr expr, [StdVar] def_vars) {
     res = desugar_expr(expr.else, def_vars);
-    for b <- reverse(expr.branches):
+    for b <- reverse(expr.branches)
       res = if_expr(desugar_expr(b.cond, def_vars), desugar_expr(b.expr, def_vars), res);
-    ;
     return res;
   }
 
@@ -352,9 +355,8 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
   Expr mk_and_expr(Expr+ exprs) { ## REMOVE DUPLICATES?
     rev_exprs = reverse(exprs);
     expr = rev_exprs(0);
-    for i = 1..|exprs|:
+    for i = 1..|exprs|
       expr = and_expr(rev_exprs(i), expr);
-    ;
     return expr;
   }
 
@@ -363,17 +365,16 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
   Clause mk_and_clause(SynClause+ clauses, [StdVar] def_vars) {
     vs = def_vars;
     cs = ();
-    for c <- clauses:
+    for c <- clauses {
       cs = cs & (desugar_clause(c, vs));
       vs = vs & syn_new_vars(c);
-    ;
+    }
 
     assert {
       rev_cs = reverse(cs);
       ref_clause = rev_cs(0);
-      for i = 1..|clauses|:
+      for i = 1..|clauses|
         ref_clause = and_clause(rev_cs(i), ref_clause);
-      ;
       foldr_clause = foldr(nonempty(cs), and_clause);
       return foldr_clause == ref_clause;
     };
@@ -401,16 +402,15 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
 
 
     Clause desugar_iter_clause(StdVar+ vars, SynExpr syn_src_expr, [StdVar] def_vars) {
-      if syn_src_expr :: IdChain:
+      if syn_src_expr :: IdChain {
         symbols = destructure_id_chain(syn_src_expr);
         resols = resolve_by_priority_as_expr_or_rel_var(symbols, |vars|, def_vars);
-        if |resols| == 1:
+        if |resols| == 1 {
           resol = only(resols);
-          if resol :: AnyRelVar:
+          if resol :: AnyRelVar
             return relvar_clause(vars, resol, (nothing : unused_var <- vars)); ## UGLY UGLY UGLY
-          ;
-        ;
-      ;
+        }
+      }
 
       src_expr = desugar_expr(syn_src_expr, def_vars);
       return if |vars| == 1
@@ -438,10 +438,10 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
   Statement+ desugar_stmts(SynStmt+ stmts, [StdVar] def_vars) {
     vs = def_vars;
     ss = ();
-    for s <- stmts:
+    for s <- stmts {
       ss = ss & desugar_stmt(s, vs);
       vs = vs & syn_new_vars(s);
-    ;
+    }
     return nonempty(ss);
   }
 
@@ -471,12 +471,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
     loop_stmt()               = desugar_loop_stmt(stmt, def_vars),
     for_stmt()                = desugar_for_stmt(stmt.loops, stmt.body, def_vars),
     return_stmt               = return_stmt,
-    proc_call_stmt()          = proc_call_stmt(
-                                  res_var:    stmt.res_var if stmt.res_var?,
-                                  proc_name:  stmt.proc_name,
-                                  args:       (desugar_expr(p, def_vars) : p <- stmt.args)
-                                ),
-
+    proc_call_stmt()          = desugar_proc_call_stmt(stmt, def_vars),
     send_msg_stmt()           = send_msg_stmt(nested_db_var(stmt.var), desugar_expr(stmt.msg, def_vars)),
     try_update_stmt()         = try_update_stmt(update_symbol(stmt.name), (desugar_expr(e, def_vars) : e <- stmt.args)),
     set_memb_var_stmt()       = set_memb_var_stmt(memb_var(stmt.var), desugar_expr(stmt.value, def_vars)),
@@ -499,6 +494,42 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
     static_auto_var = loc_db_var(auto_var_id);
     assert loc_auto_vars(react_auto_var, *) or loc_db_vars(static_auto_var, *);
     return if loc_auto_vars(react_auto_var, *) then react_auto_var else static_auto_var;
+  }
+
+
+  Statement desugar_proc_call_stmt(SynProcCallStmt stmt, [StdVar] def_vars) {
+    args_info = proc_args_info(stmt.proc_name);
+
+    args = ();
+    rel_auto_args = ();
+    react_auto_args = ();
+    for a @ i <- stmt.args {
+      arg_info = args_info(i);
+      if arg_info == :value_arg {
+        args = (args | desugar_expr(a, def_vars));
+      }
+      else {
+        id = match (a) const_or_var(s?) = s;
+        var = match (arg_info)
+          rel_auto_arg()    = loc_db_var(id),
+          react_auto_arg()  = loc_auto_var(id);
+        if var :: LocDBVar {
+          rel_auto_args = (rel_auto_args | var);
+        }
+        else {
+          fail if not var :: LocAutoVar;
+          react_auto_args = (react_auto_args | var);
+        }
+      }
+    }
+
+    return proc_call_stmt(
+      res_var:          stmt.res_var if stmt.res_var?,
+      proc_name:        stmt.proc_name,
+      args:             args,
+      rel_auto_args:    rel_auto_args,
+      react_auto_args:  react_auto_args
+    );
   }
 
 
@@ -526,20 +557,33 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
 
   Statement+ desugar_insert_with_attrs_stmt(SynInsertWithAttrsStmt stmt, [StdVar] def_vars) {
     relvar = rel_var(stmt.relvar);
-    args = (desugar_expr(a, def_vars) : a <- stmt.args);
+    args_exprs = (desugar_expr(a, def_vars) : a <- stmt.args);
+    args_code = ();
+    args = ();
+    for a @ i <- args_exprs {
+      if a :: StdVar {
+        args = (args | a);
+      }
+      else {
+        hidden_var = hidden_var(i);
+        args_code = (args_code | assignment_stmt((hidden_var), a));
+        args = (args | hidden_var);
+      }
+    }
     attrs_inserts = ({
       assert not (attr.cond? and attr.iter?);
-      if attr.iter?:
+      if attr.iter? {
         entry = (var: attr.name, args: (stmt.args | attr.value), iter: attr.iter if attr.iter?);
         return desugar_insert_entry(entry, false, def_vars);
-      else
+      }
+      else {
         attr_rel_args = (args | desugar_expr(attr.value, def_vars));
         attr_stmt = insert_stmt(rel_var(attr.name), attr_rel_args);
         attr_stmt = if_stmt(desugar_expr(attr.cond, def_vars), (attr_stmt), ()) if attr.cond?;
         return attr_stmt;
-      ;
+      }
     } : attr <- stmt.attrs);
-    return (insert_stmt(relvar, args)) & attrs_inserts;
+    return (args_code | insert_stmt(relvar, nonempty(args))) & attrs_inserts;
   }
 
 
@@ -566,11 +610,10 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
     cond      = desugar_expr(stmt.cond, cond_vars);
     exit_stmt = if_stmt(not_expr(cond), (break_stmt), ());
     body      = desugar_stmts(stmt.body, def_vars);
-    if stmt.skip_first:
+    if stmt.skip_first
       body = body & (exit_stmt);
     else
       body = (exit_stmt) & body;
-    ;
     return loop_stmt(nonempty(body));
   }
 
@@ -585,17 +628,19 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
 
 
     Statement desugar(SynCollIter syn_iter, Statement+ body, [StdVar] def_vars) {
-      if syn_iter.idx_var?:
+      if syn_iter.idx_var? {
         src_expr = desugar_expr(syn_iter.src_expr, def_vars);
         iter = coll_value_iter(syn_iter.vars, syn_iter.idx_var, src_expr);
-      elif syn_iter.src_expr :: IdChain:
+      }
+      else if syn_iter.src_expr :: IdChain {
         symbs = destructure_id_chain(syn_iter.src_expr);
         target = only(resolve_by_priority_as_expr_or_rel_var(symbs, |syn_iter.vars|, def_vars));
         iter = iter(syn_iter.vars, target);
-      else
+      }
+      else {
         src_expr = desugar_expr(syn_iter.src_expr, def_vars);
         iter = coll_value_iter(syn_iter.vars, src_expr);
-      ;
+      }
       return foreach_stmt(iter, body);
     }
 

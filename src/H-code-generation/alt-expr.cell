@@ -119,31 +119,33 @@ Expr* exprs_cluster(TernRelExpr expr, Nat offset) =
     tern_rel_expr(nonempty([(args: (e(0), e(1), e(2)), cond: e(3) if |e| == 4) : e <- $]))
   );
 
-// seq_comp(expr: Expr, vars: StdVar+, idx_var: StdVar?, src_expr: Expr, sel_expr: Expr?);
+// seq_comp(expr: Expr, decl_elt_type: NeType?, vars: StdVar+, idx_var: StdVar?, src_expr: Expr, sel_expr: Expr?);
 Expr* exprs_cluster(SeqCompExpr expr, Nat offset) =
   exprs_cluster(
     (expr.expr, expr.sel_expr if expr.sel_expr?, expr.src_expr),
     offset,
     seq_comp(
-      expr:     $(0),
-      vars:     expr.vars,
-      idx_var:  expr.idx_var if expr.idx_var?,
-      src_expr: rat($, 0),
-      sel_expr: $(1) if expr.sel_expr?
+      expr:           $(0),
+      decl_elt_type:  expr.decl_elt_type if expr.decl_elt_type?,
+      vars:           expr.vars,
+      idx_var:        expr.idx_var if expr.idx_var?,
+      src_expr:       rat($, 0),
+      sel_expr:       $(1) if expr.sel_expr?
     )
   );
 
-// range_comp(expr: Expr, var: StdVar, bound_expr: Expr, inclusive: Bool, sel_expr: Expr?);
+// range_comp(expr: Expr, decl_elt_type: NeType?, var: StdVar, bound_expr: Expr, inclusive: Bool, sel_expr: Expr?);
 Expr* exprs_cluster(RangeCompExpr expr, Nat offset) =
   exprs_cluster(
     (expr.expr, expr.sel_expr if expr.sel_expr?, expr.bound_expr),
     offset,
     range_comp(
-      expr:       $(0),
-      var:        expr.var,
-      bound_expr: rat($, 0),
-      inclusive:  expr.inclusive,
-      sel_expr:   $(1) if expr.sel_expr?
+      expr:           $(0),
+      decl_elt_type:  expr.decl_elt_type if expr.decl_elt_type?,
+      var:            expr.var,
+      bound_expr:     rat($, 0),
+      inclusive:      expr.inclusive,
+      sel_expr:       $(1) if expr.sel_expr?
     )
   );
 
@@ -362,15 +364,15 @@ Expr* subexprs_cluster(SubExpr* subexprs, Nat offset, (SubExpr* -> Expr) parent_
 (Expr**, Expr*) cluster_expr_seqs(Expr** exprs, Nat base_offset) {
   cluster = ();
   expr_refs = ();
-  for es <- exprs:
+  for es <- exprs {
     expr_refs_group = ();
-    for e <- es:
+    for e <- es {
       offset = nat(base_offset + |cluster|);
       expr_refs_group = (expr_refs_group | expr_ref(offset));
       cluster = cluster & exprs_cluster(e, offset);
-    ;
+    }
     expr_refs = (expr_refs | expr_refs_group);
-  ;
+  }
   return (expr_refs, cluster);
 }
 
@@ -380,9 +382,8 @@ Expr* subexprs_cluster(SubExpr* subexprs, Nat offset, (SubExpr* -> Expr) parent_
 Expr+ reconstruct_all(Expr+ cluster) {
   len = |cluster|;
   rec_exprs = ();
-  for i < len:
+  for i < len
     rec_exprs = (rec_exprs | replace(cluster(len-i-1), rec_exprs, len));
-  ;
   return nonempty(reverse(rec_exprs));
 
 
@@ -396,9 +397,8 @@ Expr+ reconstruct_all(Expr+ cluster) {
 Expr reconstruct(Expr+ cluster, Nat offset) {
   len = |cluster|;
   rec_exprs = ();
-  for i < len - offset:
+  for i < len - offset
     rec_exprs = (rec_exprs | replace(cluster(len-i-1), rec_exprs, len));
-  ;
   return rec_exprs(len - offset - 1);
 
 

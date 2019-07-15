@@ -4,10 +4,10 @@ implicit syn_prg : SynPrg {
 
     // Checking for conflicts with names of types or static automata
     confl_type_name = type_symbol(name);
-    if type_arity_map(confl_type_name, *):
+    if type_arity_map(confl_type_name, *) {
       confl_tdefs = rand_sort([td : td <- syn_tdefs | td <- syn_par_tdefs, td.name == confl_type_name]);
       return (auto_type_conflict(name, nonempty(confl_tdefs)));
-    ;
+    }
     return (auto_schema_conflict(name, schema_by_id(name))) if in(name, schema_names);
     return (auto_prot_conflict(name, prot_decl_by_type(name))) if in(name, protocol_types);
 
@@ -17,12 +17,12 @@ implicit syn_prg : SynPrg {
     undef_inputs = rand_sort(set(auto_def.pos_inputs) - [i.name : i <~ auto_def.inputs]);
     errs = errs & (undef_pos_input(i) : i <- undef_inputs);
 
-    if auto_def.def_output?:
+    if auto_def.def_output? {
       outputs = [o.name : o <~ auto_def.outputs];
       errs = (errs | undef_def_output(auto_def.def_output)) if not outputs(auto_def.def_output);
-    ;
+    }
 
-    let artifact = auto_def:
+    let artifact = auto_def {
       state_vars_ids = auto_def_state_vars_ids;
 
       errs = errs & (conflicting_auto_decls(o1, o2) : o1, o2 <- duplicates(auto_def.outputs, just($.name)));
@@ -30,12 +30,12 @@ implicit syn_prg : SynPrg {
       decls = auto_def.inputs & auto_def.state_vars & auto_def.nested_dbs & auto_def.consts & auto_def.rules;
       errs = errs & (conflicting_auto_decls(d1, d2) : d1, d2 <- duplicates(decls, auto_decl_key($, state_vars_ids)));
 
-      if errs == ():
+      if errs == () {
         decls_by_key = [value(k) -> d : d <~ decls, k = auto_decl_key(d, state_vars_ids), k :: Just[Atom]];
         errs = join((conflicts(r, decls_by_key) : r <- auto_def.rules, auto_decl_key(r, state_vars_ids) == nothing));
-      ;
+      }
 
-      if errs == ():
+      if errs == () {
         errs = join(join((
           (anchor_to_decl(input_decl_wf_errors(i), i)     : i <- auto_def.inputs),
           (anchor_to_decl(output_decl_wf_errors(o), o)    : o <- auto_def.outputs),
@@ -44,8 +44,8 @@ implicit syn_prg : SynPrg {
           (anchor_to_decl(const_decl_wf_errors(c), c)     : c <- auto_def.consts),
           (anchor_to_decl(rule_decl_wf_error(r), r)       : r <- auto_def.rules)
         )));
-      ;
-    ;
+      }
+    }
     return errs;
 
 
@@ -153,9 +153,8 @@ implicit syn_prg : SynPrg, artifact : ReactAutoDef {
   ExprWFError* rule_decl_wf_error(ForeachRuleDecl decl) {
     value_errs = auto_expr_wf_errors(decl.value);
     cond_errs = if decl.cond? then auto_expr_wf_errors(decl.cond) else ();
-    let impl_args = [], actual_arg_arity = 0:
+    let impl_args = [], actual_arg_arity = 0
       signal_errs = (not_a_signal(s) : s, unused_var <- decl.signals, not resolve_symbol(s, [])(signal_var(s))); ## BIT UGLY...
-    ;
     dupl_errs = (duplicate_tracked_signal(a) : a <- rand_sort(duplicates(left(unzip(decl.signals)))));
     state_vars_ids = auto_def_state_vars_ids;
     target_errs = (unknown_state_var(decl.name) if not decl.discrete and not state_vars_ids(decl.name));
@@ -174,9 +173,8 @@ implicit syn_prg : SynPrg, artifact : ReactAutoDef {
     auto_def = auto_defs_by_id[auto_symb];
     exp_num_of_pos_inputs = |auto_def.pos_inputs|;
     actual_num_of_pos_inputs = |decl.pos_args|;
-    if actual_num_of_pos_inputs != 0 and actual_num_of_pos_inputs != exp_num_of_pos_inputs:
+    if actual_num_of_pos_inputs != 0 and actual_num_of_pos_inputs != exp_num_of_pos_inputs
       return (wrong_num_of_pos_inputs(decl, exp_num_of_pos_inputs));
-    ;
 
     args_names, args_exprs = unzip(decl.args);
     args_name = args_names & auto_def.pos_inputs if actual_num_of_pos_inputs != 0;

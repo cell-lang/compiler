@@ -45,153 +45,111 @@ type CodeOutcome = fails, returns, breaks_loop, exits_block, falls_through;
 
 [+CodeOutcome] code_outcomes(Instr* instrs) {
   outcomes = [falls_through];
-  for instr <- instrs:
+  for instr <- instrs {
     assert in(falls_through, outcomes);
     outcomes = (outcomes - [falls_through]) & code_outcomes(instr);
     break if not in(falls_through, outcomes);
-  ;
+  }
   return nonempty(outcomes);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-[T] retrieve_from_nested_low_level_exprs(BoolExpr expr, (AnyTypeExpr -> [T]) retrieve) {
-  return [] if expr :: AtomicBoolExpr;
-  return match (expr)
-    is_symb(e?)               = retrieve(e),
-    is_int(e?)                = retrieve(e),
-    is_float(e?)              = retrieve(e),
-    is_ne_set(e?)             = retrieve(e),
-    is_ne_seq(e?)             = retrieve(e),
-    is_ne_map(e?)             = retrieve(e),
-    is_ne_bin_rel(e?)         = retrieve(e),
-    is_ne_tern_rel(e?)        = retrieve(e),
-    is_tagged_obj(e?)         = retrieve(e),
-    are_eq(e1?, e2?)          = retrieve(e1) & retrieve(e2),
-    is_lt()                   = retrieve(expr.expr1) & retrieve(expr.expr2),
-    is_le()                   = retrieve(expr.expr1) & retrieve(expr.expr2),
-    is_flt(e1?, e2?)          = retrieve(e1) & retrieve(e2),
-    is_fle(e1?, e2?)          = retrieve(e1) & retrieve(e2),
-    is_out_of_range()         = [],
-    is_blank(v?)              = retrieve(v),
-    is_null(v?)               = if v :: NullableVar ## NOT SURE ABOUT THIS ONE...
-                                  then retrieve(v)
-                                  else {assert v :: PendingInputVar; return [];},
-    has_elem()                = retrieve(expr.set) & retrieve(expr.elt),
-    has_field()               = retrieve(expr.record),
-    contains()                = retrieve(expr.coll) & seq_union((retrieve(e) : e <- expr.entry)),
-    table_contains()          = seq_union((retrieve(value(a)) : a <- expr.tuple, a != nothing)),
-    is_member()               = retrieve(expr.obj),
-    state_is_def()            = [],
-    neg(e?)                   = retrieve(e),
-    and(es?)                  = seq_union((retrieve(e) : e <- es)),
-    or(es?)                   = seq_union((retrieve(e) : e <- es)),
-    and_then(es?)             = seq_union((retrieve(e) : e <- es)),
-    or_else(es?)              = seq_union((retrieve(e) : e <- es));
+[MembVar] updated_memb_vars(CompiledUpdate update) {
+  return search_instrs(update.body, updated_memb_vars);
+
+  [MembVar] updated_memb_vars(Instr instr) =
+    set_var()   = [corresponding_memb_var(instr.var) if instr.var :: PendingStateVar],
+    _           = search_nested(instr, updated_memb_vars, []);
 }
 
 
-[] retrieve_from_nested_low_level_exprs(<Int, IntVar> expr, (AnyTypeExpr -> [T]) retrieve) = [];
+[ValueStoreId] updated_value_stores(CompiledUpdate update) {
+  return search_instrs(update.body, updated_value_stores);
 
-[T] retrieve_from_nested_low_level_exprs(IntConst expr, (AnyTypeExpr -> [T]) retrieve) = retrieve(expr.time_slot);
-
-[T] retrieve_from_nested_low_level_exprs(IntNatOp expr, (AnyTypeExpr -> [T]) retrieve) =
-  get_int_val(e?)       = retrieve(e),
-  // get_size(e?)          = retrieve(e),
-  minus(e?)             = retrieve(e),
-  add()                 = retrieve(expr.val1) & retrieve(expr.val2),
-  sub()                 = retrieve(expr.val1) & retrieve(expr.val2),
-  mult()                = retrieve(expr.val1) & retrieve(expr.val2),
-  div()                 = retrieve(expr.val1) & retrieve(expr.val2),
-  mod()                 = retrieve(expr.val1) & retrieve(expr.val2),
-  bitwise_and(e1?, e2?) = retrieve(e1) & retrieve(e2),
-  bitwise_or(e1?, e2?)  = retrieve(e1) & retrieve(e2),
-  bitwise_xor(e1?, e2?) = retrieve(e1) & retrieve(e2),
-  float_bits(e?)        = retrieve(e),
-  mantissa(e?)          = retrieve(e),
-  dec_exp(e?)           = retrieve(e),
-  ## MOVED TO Int32NatOp (WHICH IS NOT EVEN HERE. WHY?)
-  // lookup_value()        = retrieve(expr.value),
-  // lookup_value_ex()     = retrieve(expr.value),
-  // get_unknown_arg()     = [],
-  rand_nat(e?)          = retrieve(e),
-  unique_nat            = [],
-  ticks                 = [];
+  [ValueStoreId] updated_value_stores(Instr instr) =
+    init_value_store()              |
+    cleanup_value_store()           |
+    immediate_insert_or_add_ref()   = undefined,
+    lookup_or_queue_insert_value()  = [instr.store],
+    _                               = search_nested(instr, updated_value_stores, []);
+}
 
 
-[T] retrieve_from_nested_low_level_exprs(InlineObj, (AnyTypeExpr -> [T]) retrieve) = [];
+[TableVar] table_vars_with_insertions(CompiledUpdate update) {
+  return search_instrs(update.body, table_vars);
+
+  [TableVar] table_vars(Instr instr) =
+    init_table()              |
+    cleanup_table()           |
+    immediate_insert_tuple()  = undefined,
+    queue_insert_tuple()      = [instr.table_var],
+    column_insert_deferred()  = [instr.table_var],
+    _                         = search_nested(instr, table_vars, []);
+}
 
 
-[T] retrieve_from_nested_low_level_exprs(ObjVar v, (AnyTypeExpr -> [T]) retrieve) = [];
+[TableVar] table_vars_with_deletions(CompiledUpdate update) {
+  return search_instrs(update.body, table_vars);
+
+  [TableVar] table_vars(Instr instr) =
+    init_table()              |
+    cleanup_table()           |
+    immediate_insert_tuple()  = undefined,
+    queue_deletes()           = [instr.table_var],
+    column_insert_deferred()  = [instr.table_var if instr.forced],
+    _                         = search_nested(instr, table_vars, []);
+}
 
 
-[T] retrieve_from_nested_low_level_exprs(ObjNatOp expr, (AnyTypeExpr -> [T]) retrieve) =
-  at()                = retrieve(expr.seq) & retrieve(expr.idx),
-  lookup()            = retrieve(expr.rel) & retrieve(expr.key),
-  lookup_field()      = retrieve(expr.record),
-  get_tag(e?)         = retrieve(e),
-  get_inner_obj(e?)   = retrieve(e),
-  bool_obj(e?)        = retrieve(e),
-  int_obj(e?)         = retrieve(e),
-  get_curr_obj()      = [],
-  get_curr_arg()      = [],
-  rand_elem(e?)       = retrieve(e);
+## THE RETURNED TYPE IS ACTUALLY MORE SPECIFIC THAN THAT
+[UpdateId] invoked_mutators(CompiledUpdate update) {
+  return search_instrs(update.body, mutators);
 
-
-[T] retrieve_from_nested_low_level_exprs(FloatExpr expr, (AnyTypeExpr -> [T]) retrieve) =
-  float_lit()         = [],
-  neg_float(v?)       = retrieve(v),
-  add_floats(vs?)     = seq_union((retrieve(e) : e <- vs)),
-  sub_floats(vs?)     = seq_union((retrieve(e) : e <- vs)),
-  mult_floats(vs?)    = seq_union((retrieve(e) : e <- vs)),
-  div_floats(vs?)     = seq_union((retrieve(e) : e <- vs)),
-  exp_floats(vs?)     = seq_union((retrieve(e) : e <- vs)),
-  square_root(v?)     = retrieve(v),
-  int_to_float(v?)    = retrieve(v);
-
-
-[T] retrieve_from_nested_low_level_exprs(RefObjExpr expr, (AnyTypeExpr -> [T]) retrieve) =
-  mk_set_from_stream()        = [],
-  mk_set()                    = retrieve(expr.size),
-  mk_seq_from_stream()        = [],
-  mk_seq()                    = retrieve(expr.size),
-  build_const_int_seq()       = [],
-  mk_map_from_streams()       = [],
-  mk_map()                    = retrieve(expr.size),
-  mk_bin_rel_from_streams()   = [],
-  mk_bin_rel()                = retrieve(expr.size),
-  mk_tern_rel_from_streams()  = [],
-  mk_tern_rel()               = retrieve(expr.size),
-  mk_tagged_obj()             = retrieve(expr.tag) & retrieve(expr.obj),
-  get_seq_slice()             = retrieve(expr.seq) & retrieve(expr.idx_first) & retrieve(expr.len),
-  append_to_seq()             = retrieve(expr.seq) & retrieve(expr.new_elem),
-  update_seq_at()             = retrieve(expr.seq) & retrieve(expr.idx) & retrieve(expr.value),
-  join_seqs()                 = retrieve(expr.left) & retrieve(expr.right),
-  rev_seq()                   = retrieve(expr.seq),
-  parse_value()               = retrieve(expr.value),
-  print_value()               = retrieve(expr.value),
-  internal_sort()             = retrieve(expr.set),
-  copy_state()                = [],
-  copy_rel()                  = [],
-  copy_persistent_state()     = [],
-  lookup_surrogate()          = retrieve(expr.surrogate),
-  read_pending_var()          = [];
+  [UpdateId] mutators(Instr instr) =
+    try_update()  = [instr.update_id],
+    _             = search_nested(instr, mutators, []);
+}
 
 ////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
 
-[T] retrieve_from_nested_low_level_instrs(<BasicInstr, JumpInstr>, (Instr -> [T]) retrieve) = [];
-
-
-[T] retrieve_from_nested_low_level_instrs(CompInstr instr, (Instr -> [T]) retrieve) =
-  branch()            = retrieve_from_nested_low_level_instrs(instr.when_true & instr.when_false, retrieve),
-  repeat(is?)         = retrieve_from_nested_low_level_instrs(is, retrieve),
-  execute_block(is?)  = retrieve_from_nested_low_level_instrs(is, retrieve),
-  try_block()         = retrieve_from_nested_low_level_instrs(instr.body, retrieve),
-  switch_on_nat()     = retrieve_from_nested_low_level_instrs(join(instr.cases), retrieve),
-  symb_switch()       = union([retrieve_from_nested_low_level_instrs(right(c), retrieve) : c <- instr.cases]) &
-                        retrieve_from_nested_low_level_instrs(instr.else, retrieve);
+implicit block : StaticBlock {
+  [UpdateId, UpdateId] call_graph_transitive_closure {
+    shallow_graph = [id -> invoked_mutators(u) : id, u <- block.updates];
+    deep_graph = transitive_closure(shallow_graph);
+    return [s, t : s, ts <- deep_graph, t <- ts];
+  }
 
 
-[T] retrieve_from_nested_low_level_instrs(Instr* instrs, (Instr -> [T]) retrieve) = seq_union((retrieve(i) : i <- instrs));
+  [UpdateId, MembVar] updated_memb_vars {
+    directly_touched = [id -> updated_memb_vars(u) : id, u <- block.updates];
+    deep_call_map = call_graph_transitive_closure;
+    indirectly_touched = [s, v : s, t <- deep_call_map, v <- directly_touched(t)];
+    return [u, v : u, vs <- directly_touched, v <- vs | v <- indirectly_touched(u, ?)];
+  }
+
+
+  [UpdateId, ValueStoreId] updated_value_stores {
+    directly_touched = [id -> updated_value_stores(u) : id, u <- block.updates];
+    deep_call_map = call_graph_transitive_closure;
+    indirectly_touched = [s, v : s, t <- deep_call_map, v <- directly_touched(t)];
+    return [u, s : u, ss <- directly_touched, s <- ss | s <- indirectly_touched(u, ?)];
+  }
+
+
+  [UpdateId, TableVar] table_vars_with_insertions {
+    directly_touched = [id -> table_vars_with_insertions(u) : id, u <- block.updates];
+    deep_call_map = call_graph_transitive_closure;
+    indirectly_touched = [s, v : s, t <- deep_call_map, v <- directly_touched(t)];
+    return [u, v : u, vs <- directly_touched, v <- vs | v <- indirectly_touched(u, ?)];
+  }
+
+
+  [UpdateId, TableVar] table_vars_with_deletions {
+    directly_touched = [id -> table_vars_with_deletions(u) : id, u <- block.updates];
+    deep_call_map = call_graph_transitive_closure;
+    indirectly_touched = [s, v : s, t <- deep_call_map, v <- directly_touched(t)];
+    return [u, v : u, vs <- directly_touched, v <- vs | v <- indirectly_touched(u, ?)];
+  }
+}

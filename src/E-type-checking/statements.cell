@@ -2,11 +2,11 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
   [TypeCheckingError] typecheck(Statement* stmts, Type exp_type, [EnvVar -> Type] env) {
     curr_env = env;
-    for s <- stmts:
+    for s <- stmts {
       errs = typecheck(s, exp_type, curr_env);
       return errs if errs != [];
       curr_env = update_env(s, curr_env);
-    ;
+    }
     return [];
   }
 
@@ -58,10 +58,12 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
 
   [TypeCheckingError] typecheck_seq_update_stmt(StdVar seq_var, Expr idx, Expr value, [EnvVar -> Type] env) {
-    seq_var_errs = typecheck(seq_var, type_seq, env);
-    idx_errs = typecheck(idx, integer, env);
-    value_errs = typecheck(value, type_any, env);
-    return seq_var_errs & idx_errs & value_errs;
+    errs = typecheck(seq_var, type_seq, env);
+    return errs if errs != [];
+    errs = typecheck(idx, integer, env);
+    return errs if errs != [];
+    elt_type = if typed_vars(seq_var, *) then seq_elem_supertype(typed_vars(seq_var)) else type_any;
+    return typecheck(value, elt_type, env);
   }
 
 
@@ -85,14 +87,14 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     out_of_loop_vars = keys(env);
     entry_env = env;
     envs = (env);
-    for 2:
+    for 2 {
       errs = typecheck(body, exp_type, entry_env);
       return errs if errs != [];
       exit_env = select_by_key(update_env(body, entry_env), out_of_loop_vars);
       return [] if not (v, t <- exit_env : not is_subset(t, entry_env[v]));
       entry_env = exit_env;
       envs = (envs | exit_env);
-    ;
+    }
     return [loop_did_not_converge(2, bad_vars_history(envs))];
   }
 
@@ -111,28 +113,28 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
       return [] if errs_seq == [];
       return errs_seq if iter.idx_var? or nvars > 3;
 
-      if |iter.vars| == 1:
+      if |iter.vars| == 1 {
         errs_set = typecheck(iter.src_expr, type_set, env);
-        if errs_set != []:
+        if errs_set != [] {
           errs_any = typecheck(iter.src_expr, ne_union_type([type_seq, type_set]), env);
           return if errs_any != [] then errs_any else errs_seq & errs_set;
-        ;
-
-      elif |iter.vars| == 2:
+        }
+      }
+      else if |iter.vars| == 2 {
         errs_rel = typecheck(iter.src_expr, type_bin_rel, env);
-        if errs_rel != []:
+        if errs_rel != [] {
           errs_any = typecheck(iter.src_expr, ne_union_type([type_seq, type_bin_rel]), env);
           return if errs_any != [] then errs_any else errs_seq & errs_rel;
-        ;
-
-      else
+        }
+      }
+      else {
         assert |iter.vars| == 3;
         errs_rel = typecheck(iter.src_expr, type_tern_rel, env);
-        if errs_rel != []:
+        if errs_rel != [] {
           errs_any = typecheck(iter.src_expr, ne_union_type([type_seq, type_tern_rel]), env);
           return if errs_any != [] then errs_any else errs_seq & errs_rel;
-        ;
-      ;
+        }
+      }
 
       return [];
     }
@@ -158,18 +160,17 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     // type RelVarIter = rel_var_iter(vars: Maybe[StdVar]+, rel_var: AnyRelVar, args: Maybe[Expr]+);
     [TypeCheckingError] typecheck_iter(RelVarIter iter, [EnvVar -> Type] env) {
       sgns = relvar_signatures(iter.rel_var);
-      for a @ i <- iter.args:
-        if a != nothing:
+      for a @ i <- iter.args {
+        if a != nothing {
           expr = value(a);
           errs = typecheck(expr, type_any, env);
           return errs if errs != [];
           exp_type = union_superset([s(i) : s <- sgns]);
           actual_type = expr_type(expr, env);
-          if are_ptype_disjoint(actual_type, exp_type):
+          if are_ptype_disjoint(actual_type, exp_type)
             return [unexpected_actual_type(actual_type, exp_type, expr)];
-          ;
-        ;
-      ;
+        }
+      }
       return [];
     }
 
@@ -178,14 +179,14 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
       out_of_loop_vars = keys(env);
       entry_env = env & loop_vars;
       envs = (env);
-      for 2:
+      for 2 {
         errs = typecheck(body, exp_type, entry_env);
         return errs if errs != [];
         exit_env = select_by_key(update_env(body, entry_env), out_of_loop_vars);
         return [] if not (v, t <- exit_env : not is_subset(t, entry_env[v]));
         entry_env = exit_env & loop_vars;
         envs = (envs | exit_env);
-      ;
+      }
       return [loop_did_not_converge(2, bad_vars_history(envs))];
     }
   }
@@ -208,14 +209,14 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
     entry_env = env & loop_vars;
     envs = (env);
-    for 2:
+    for 2 {
       errs = typecheck(body, exp_type, entry_env);
       return errs if errs != [];
       exit_env = select_by_key(update_env(body, entry_env), out_of_loop_vars);
       return [] if not (v, t <- exit_env : not is_subset(t, entry_env[v]));
       entry_env = exit_env & loop_vars;
       envs = (envs | exit_env);
-    ;
+    }
 
     return [loop_did_not_converge(2, bad_vars_history(envs))];
   }
@@ -246,9 +247,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     db_type = this_db_symbol;
     sgns = update_signatures(db_type, name);
     agg_sgns = update_aggregate_signatures(db_type, name);
-    for s <- rand_sort(sgns) & rand_sort(agg_sgns):
+    for s <- rand_sort(sgns) & rand_sort(agg_sgns)
       return [] if all((is_subset(at, ft) : at, ft <- zip(args_types, s)));
-    ;
     return [no_disp_db_update(name, args_types, sgns)];
   }
 
@@ -266,9 +266,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     return errs if errs != [];
     args_types = (apply(a, expr_type($, env)) : a <- args);
     sgns = rel_var_signatures(cast_database(context), var);
-    for s <- rand_sort(sgns):
+    for s <- rand_sort(sgns)
       return [] if not (t @ i <~ args_types : t != nothing and are_ptype_disjoint(value(t), s(i)));
-    ;
     return [no_matching_relvar(var, args_types, sgns)];
   }
 
@@ -280,9 +279,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     database = cast_database(context);
     sgns = rel_var_signatures(database, var);
     agg_sgns = relvar_aggregated_signatures(database.name, var);
-    for s <- rand_sort(sgns) & rand_sort(agg_sgns):
+    for s <- rand_sort(sgns) & rand_sort(agg_sgns)
       return [] if not (t @ i <~ args_types : not is_subset(t, s(i)));
-    ;
     return [no_matching_relvar(var, (just(a) : a <- args_types), nonempty(sgns))];
   }
 

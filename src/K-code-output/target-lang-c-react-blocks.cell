@@ -14,13 +14,13 @@ implicit {
     db_vars_decl = (to_c_name(t) & " " & to_c_var_decl_name(v) & ";" : v, t <- rand_sort_pairs(block.nested_static_blocks));
     vars_decl = memb_vars_decl & auto_vars_decl & db_vars_decl;
 
-    if block.time_rules_count != 0:
+    if block.time_rules_count != 0 {
       size_str = printed(block.time_rules_count);
       vars_decl = vars_decl & (
         "int64 trigger_times_heap[" & size_str & "];",
         "int time_varying_cond_ids_heap[" & size_str & "];"
       );
-    ;
+    }
 
     decl = ({"struct " & name_str & " {"}) & indent_lines(vars_decl) & ("};");
 

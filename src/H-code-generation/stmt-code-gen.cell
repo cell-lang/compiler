@@ -13,9 +13,8 @@ implicit program           : Program,
 
   (Instr*, ObjExpr, VarGen) do_expr_opt_eval_code(DoExpr expr, AnyLowLevelRepr repr, [EnvVar -> Type] init_env, VarGen init_var_gen) {
     var, ret_var_gen = next_var(repr, init_var_gen);
-    let typed_vars = expr.typed_vars, exp_break_surrs = nothing, result_var = var:
+    let typed_vars = expr.typed_vars, exp_break_surrs = nothing, result_var = var
       code, unused_var_1, unused_var_2, unused_var_3 = stmts_opt_code(expr.body, init_env, ret_var_gen);
-    ;
     return ((execute_block(code) if code != ()), obj_expr(var), ret_var_gen);
   }
 }
@@ -41,13 +40,13 @@ implicit program           : Program,
     env = init_env;
     surrs = just(surrogates);
     break_surrs = [];
-    for s <- stmts:
+    for s <- stmts {
       fail if surrs == nothing;
       stmt_code, surrs, stmt_break_surrs, var_gen = stmt_opt_code(s, env, var_gen, surrogates = value(surrs));
       code = code & stmt_code;
       break_surrs = break_surrs & stmt_break_surrs;
       env = update_env(s, env);
-    ;
+    }
     return (code, surrs, break_surrs, var_gen);
   }
 
@@ -73,8 +72,12 @@ implicit program           : Program,
     try_update_stmt()     = try_update_stmt_opt_code(stmt.name, stmt.args, env, var_gen),
     set_memb_var_stmt()   = set_memb_var_stmt_opt_code(stmt.var, stmt.value, env, var_gen),
     delete_stmt()         = delete_stmt_opt_code(stmt.var, stmt.args, env, var_gen),
-    insert_stmt()         = insert_stmt_opt_code(stmt.var, stmt.args, env, var_gen),
-    update_stmt()         = update_stmt_opt_code(stmt.var, stmt.args, env, var_gen),
+    insert_stmt()         = if is_columnar_relvar(stmt.var)
+                              then columnar_relvar_insert_stmt_opt_code(stmt.var, stmt.args, false, env, var_gen)
+                              else insert_stmt_opt_code(stmt.var, stmt.args, env, var_gen),
+    update_stmt()         = if is_columnar_relvar(stmt.var)
+                              then columnar_relvar_insert_stmt_opt_code(stmt.var, stmt.args, true, env, var_gen)
+                              else update_stmt_opt_code(stmt.var, stmt.args, env, var_gen),
 
     set_input_ctrl_stmt()         = set_input_ctrl_stmt_opt_code(stmt.var, stmt.input, stmt.value, env, var_gen),
     clear_input_ctrl_stmt()       = clear_input_ctrl_stmt_opt_code(stmt.var, stmt.input, env, var_gen),
@@ -124,47 +127,90 @@ implicit program           : Program,
     code, args_aliases, var_gen = sparse_opt_eval_code(args, env, init_var_gen);
 
     args_surrs = ();
-    for a <- args_aliases:
-      if a != nothing:
+    for a <- args_aliases {
+      if a != nothing {
         surr, var_gen = next_int32_var(var_gen);
         args_surrs = (args_surrs | just(surr));
-      else
+      }
+      else {
         args_surrs = (args_surrs | nothing);
-      ;
-    ;
+      }
+    }
 
     fail if args_aliases == () or args_surrs == ();
 
     phys_rel_vars = overlapping_phys_rel_vars(rel_var, args_types);
     rel_auto = cast_database(context);
-    for v <- isort(phys_rel_vars):
-      table_code = delete_code(table_var(v), args_aliases, args_surrs, symmetric);
+    for v <- isort(phys_rel_vars) {
+      table_code = delete_code(table_var(v), args_aliases, args_surrs, args_types, symmetric);
       attrs = [a : a <- rel_auto.attr_map(v, ?)];
       attr_args_aliases = (args_aliases | nothing);
       attr_args_surrs = (args_surrs | nothing);
-      for a <- isort(attrs):
+      attr_args_types = (args_types | nothing);
+      for a <- isort(attrs) {
         assert arity(a) == arity(rel_var) + 1;
-        table_code = table_code & delete_code(table_var(a), attr_args_aliases, attr_args_surrs, symmetric);
-      ;
+        table_code = table_code & delete_code(table_var(a), attr_args_aliases, attr_args_surrs, attr_args_types, symmetric);
+      }
       code = code & table_code;
-    ;
+    }
 
     return (code, just(surrogates), [], init_var_gen);
 
 
-    Instr* delete_code(TableVar table_var, Maybe[ObjExpr]+ args_aliases, Maybe[Int32Var]+ args_surrs, Bool symmetric) {
-      code = (queue_deletes(table_var, nonempty(args_surrs), symmetric));
-      for a @ ri <- reverse(args_aliases):
-        if a != nothing:
-          i = nat(|args_aliases| - ri - 1);
-          store_id = table_col_store_id(table_var, i);
-          arg_surr = value_unsafe(args_surrs(i));
-          code = (
-            set_ivar32(arg_surr, lookup_value(store_id, value(a))),
-            do_if_not(is_eq(arg_surr, -1), code)
+    Instr* delete_code(TableVar table_var, Maybe[ObjExpr]+ args_aliases, Maybe[Int32Var]+ args_surrs, Maybe[Type]+ args_types, Bool symmetric) {
+      if is_columnar_relvar(logical_rel_var(original_rel_var(table_var))) {
+        assert not symmetric;
+        fail if |args_aliases| != 2;
+        arg0, arg1 = args_aliases;
+        if arg0 != nothing and arg1 != nothing {
+          column = column_info(table_var);
+
+          key_store_id = table_col_store_id(table_var, 0);
+          key_store_type = value_store_type(this_db_symbol, key_store_id);
+
+          key_arg_alias = value(arg0);
+          key_arg_surr = value_unsafe(args_surrs(0));
+          key_arg_type = value_unsafe(args_types(0));
+
+          has_key_check_expr = table_contains(table_var, (just(key_arg_surr), nothing), false);
+          lookup_expr = column_lookup(table_var, key_arg_surr, column.repr);
+          contains_tuple_check_expr = and_then((
+            neg(is_eq(key_arg_surr, -1)),
+            has_key_check_expr,
+            are_eq(value(arg1), lookup_expr)
+          ));
+
+          code = opt_do_if(
+            value_store_guard(key_store_type, key_arg_alias, key_arg_type),
+            ( set_ivar32(key_arg_surr, value_to_surr(key_store_id, value_store_encoded_expr(key_store_type, key_arg_alias))),
+              do_if(
+                contains_tuple_check_expr,
+                queue_deletes(table_var, (args_surrs(0), nothing), symmetric)
+              )
+            )
           );
-        ;
-      ;
+
+          return code;
+        }
+      }
+
+      code = (queue_deletes(table_var, nonempty(args_surrs), symmetric));
+      for a @ ri <- reverse(args_aliases) {
+        if a != nothing {
+          i = nat(|args_aliases| - ri - 1);
+          arg_alias = value(a);
+          arg_type = value_unsafe(args_types(i));
+          store_id = table_col_store_id(table_var, i);
+          store_type = value_store_type(this_db_symbol, store_id);
+          arg_surr = value_unsafe(args_surrs(i));
+          code = opt_do_if(
+            value_store_guard(store_type, arg_alias, arg_type),
+            ( set_ivar32(arg_surr, value_to_surr(store_id, value_store_encoded_expr(store_type, arg_alias))),
+              do_if_not(is_eq(arg_surr, -1), code)
+            )
+          );
+        }
+      }
       return code;
     }
   }
@@ -187,21 +233,22 @@ implicit program           : Program,
     // Selecting the candidate tables among those the logical relation is partitioned into
     candidate_tables = nonempty(overlapping_tables(rel_var, (just(t) : t <- args_types)));
 
-    if |candidate_tables| == 1:
+    if |candidate_tables| == 1 {
       // Easy case: there's only one table
       table_var = only(candidate_tables);
 
       pre_insert_code = ({
         store_id = table_col_store_id(table_var, i);
+        store_type = value_store_type(this_db_symbol, store_id);
         surr_var = surr_vars(i);
-        return lookup_or_queue_insert_value(surr_var, store_id, e);
+        return lookup_or_queue_insert_value(surr_var, store_id, value_store_encoded_expr(store_type, e));
       } : e @ i <- args_aliases);
 
       insertion_code = (queue_insert_tuple(table_var, surr_vars));
       code = args_eval_code & pre_insert_code & insertion_code;
 
       return (code, just(surrogates), [], init_var_gen);
-    ;
+    }
 
     // Choosing the dispatch arguments
     signatures = [table_signature(tv) : tv <- candidate_tables];
@@ -209,10 +256,11 @@ implicit program           : Program,
 
     cases = [{
       types = table_signature(tv);
-      code = (
-        lookup_or_queue_insert_value(surr_vars(i), table_col_store_id(tv, i), e)
-        : e @ i <- args_aliases
-      );
+      code = ({
+        store_id = table_col_store_id(tv, i);
+        store_type = value_store_type(this_db_symbol, store_id);
+        return lookup_or_queue_insert_value(surr_vars(i), store_id, value_store_encoded_expr(store_type, e));
+      } : e @ i <- args_aliases);
       code = (code | queue_insert_tuple(tv, surr_vars), exit_block);
       return (types, code);
     } : tv <- candidate_tables];
@@ -220,6 +268,72 @@ implicit program           : Program,
     code = (args_eval_code | execute_block(dynamic_dispatch_code(args_aliases, cases)));
 
     return (code, just(surrogates), [], init_var_gen);
+  }
+
+
+  StmtCompInfo columnar_relvar_insert_stmt_opt_code(RelVar rel_var, Expr+ args, Bool forced, [EnvVar -> Type] env, VarGen init_var_gen) {
+    fail if |args| != 2;
+    arg_0, arg_1 = args;
+
+    arg_0_type = expr_type(arg_0, env);
+    arg_1_type = expr_type(arg_1, env);
+
+    if arg_0_type == empty_type or arg_1_type == empty_type
+      return ((terminate(true)), just(surrogates), [], init_var_gen);
+
+    args_eval_code, args_aliases, var_gen = opt_eval_code(args, env, init_var_gen);
+    fail if |args_aliases| != 2;
+    arg_0_alias, arg_1_alias = args_aliases;
+
+    surr_var_0, var_gen = next_int32_var(var_gen);
+
+    // Selecting the candidate tables among those the logical relation is partitioned into
+    candidate_tables = nonempty(overlapping_tables(rel_var, (just(arg_0_type), just(arg_1_type))));
+
+    assert relvar_keys(rel_var) == [[0]];
+
+    if |candidate_tables| == 1 {
+      // Easy case: there's only one table
+      table_var = only(candidate_tables);
+
+      store_id = table_col_store_id(table_var, 0);
+      store_type = value_store_type(this_db_symbol, store_id);
+
+      enc_expr = value_store_encoded_expr(store_type, arg_0_alias);
+
+      col_repr = column_repr(table_signature(table_var)(1));
+
+      update_code = (
+        lookup_or_queue_insert_value(surr_var_0, store_id, enc_expr),
+        column_insert_deferred(table_var, surr_var_0, low_level_expr(col_repr, arg_1_alias), forced)
+      );
+
+      return (args_eval_code & update_code, just(surrogates), [], init_var_gen);
+    }
+    else {
+      // Choosing the dispatch arguments
+      signatures = [table_signature(tv) : tv <- candidate_tables];
+      disp_args = optimal_dispatch_args(signatures, typedefs);
+
+      cases = [{
+        store_id = table_col_store_id(tv, 0);
+        store_type = value_store_type(this_db_symbol, store_id);
+        enc_expr = value_store_encoded_expr(store_type, arg_0_alias);
+
+        col_repr = column_repr(table_signature(tv)(1));
+
+        code = (
+          lookup_or_queue_insert_value(surr_var_0, store_id, enc_expr),
+          column_insert_deferred(tv, surr_var_0, low_level_expr(col_repr, arg_1_alias), forced),
+          exit_block
+        );
+        return (table_signature(tv), code);
+      } : tv <- candidate_tables];
+
+      code = (args_eval_code | execute_block(dynamic_dispatch_code(args_aliases, cases)));
+
+      return (code, just(surrogates), [], init_var_gen);
+    }
   }
 
 
@@ -244,14 +358,15 @@ implicit program           : Program,
     keys = isort(relvar_keys(rel_var));
     deletes_args = ((maybe(v, k(i)) : v @ i <- surr_vars) : k <- keys);
 
-    if |candidate_tables| == 1:
+    if |candidate_tables| == 1 {
       // Easy case: there's only one table
       table_var = only(candidate_tables);
 
       pre_insert_code = ({
         store_id = table_col_store_id(table_var, i);
+        store_type = value_store_type(this_db_symbol, store_id);
         surr_var = surr_vars(i);
-        return lookup_or_queue_insert_value(surr_var, store_id, e);
+        return lookup_or_queue_insert_value(surr_var, store_id, value_store_encoded_expr(store_type, e));
       } : e @ i <- args_aliases);
 
       insertion_code = (
@@ -261,7 +376,7 @@ implicit program           : Program,
       code = args_eval_code & pre_insert_code & insertion_code;
 
       return (code, just(surrogates), [], init_var_gen);
-    ;
+    }
 
     // Choosing the dispatch arguments
     signatures = [table_signature(tv) : tv <- candidate_tables];
@@ -269,10 +384,11 @@ implicit program           : Program,
 
     cases = [{
       types = table_signature(tv);
-      code = (
-        lookup_or_queue_insert_value(surr_vars(i), table_col_store_id(tv, i), e)
-        : e @ i <- args_aliases
-      );
+      code = ({
+        store_id = table_col_store_id(tv, i);
+        store_type = value_store_type(this_db_symbol, store_id);
+        return lookup_or_queue_insert_value(surr_vars(i), store_id, value_store_encoded_expr(store_type, e));
+      } : e @ i <- args_aliases);
       code = code & (queue_deletes(tv, as, symmetric) : as <- deletes_args);
       code = (code | queue_insert_tuple(tv, surr_vars), exit_block);
       return (types, code);
@@ -329,14 +445,15 @@ implicit program           : Program,
   StmtCompInfo restore_state_ctrl_stmt_opt_code(StdVar res_var, LocAutoVar auto_var, Expr state, Maybe[Any] stmt_loc, [EnvVar -> Type] env, VarGen init_var_gen) {
     eval_code, surr, var_gen = opt_eval_code(state, env, init_var_gen);
 
-    if options.debug_mode:
+    if options.debug_mode {
       file, line = file_and_line(fetch(context), stmt_loc);
       msg = "Cannot set the state of a reactive automaton that has already been initialized: " & user_repr(auto_var);
       log_instr = log_runtime_failure(true, file, line, just(msg), ());
       err_code = (log_instr);
-    else
+    }
+    else {
       err_code = ();
-    ;
+    }
 
     check_instr = do_if_not(qual_bool_var(auto_var, is_new), (err_code | terminate(true)));
     set_state_instr = set_persistent_state(auto_var, surr, var_type(auto_var));
@@ -392,12 +509,13 @@ implicit program           : Program,
 
 
   StmtCompInfo fail_stmt_opt_code(FailStmt stmt, [EnvVar -> Type] env, VarGen var_gen) {
-    if options.debug_mode:
+    if options.debug_mode {
       vars = ((v, lookup(surrogates, v, v)) : v <- isort(stmt.env));
       code = (log_runtime_failure(false, stmt.file, stmt.line, nothing, vars));
-    else
+    }
+    else {
       code = ();
-    ;
+    }
     return ((code | terminate), nothing, [], var_gen);
   }
 
@@ -472,44 +590,85 @@ implicit program           : Program,
   }
 
 
-  // proc_call_stmt(res_var: StdVar?, proc_name: ProcSymbol, args: Expr*);
+  // proc_call_stmt(res_var: StdVar?, proc_name: ProcSymbol, args: Expr*, rel_auto_args: LocDBVar*, react_auto_args: LocAutoVar*);
   StmtCompInfo proc_call_stmt_opt_code(ProcCallStmt stmt, [EnvVar -> Type] env, VarGen init_var_gen) {
     code, args_surrs, var_gen = opt_eval_code(stmt.args, env, init_var_gen);
     call_instr = if stmt.res_var?
-      then call_proc(stmt.res_var, stmt.proc_name, args_surrs, ())
-      else call_proc(stmt.proc_name, args_surrs, ());
+      then call_proc(stmt.res_var, stmt.proc_name, args_surrs, (), stmt.rel_auto_args, stmt.react_auto_args)
+      else call_proc(stmt.proc_name, args_surrs, (), stmt.rel_auto_args, stmt.react_auto_args);
     return ((code | call_instr), just(surrogates), [], var_gen);
   }
 
 
   StmtCompInfo assignment_stmt_opt_code(StdVar+ vars, Expr value, [EnvVar -> Type] env, VarGen init_var_gen) {
-    type = expr_type(value, env);
-    return ((terminate), just(surrogates), [], init_var_gen) if type == empty_type;
+    value_type = expr_type(value, env);
+    return ((terminate), just(surrogates), [], init_var_gen) if value_type == empty_type;
 
-    repr = opt_repr(type);
-    code, surr, var_gen = opt_eval_code(value, env, init_var_gen);
+    rw_value = value;
+    if |vars| == 1 {
+      var = only(vars);
+      if typed_vars(var, *) {
+        var_type = typed_vars(var);
+        if is_subset(var_type, type_seq) {
+          decl_elt_type = seq_elem_supertype(var_type);
+          if decl_elt_type != empty_type {
+            if is_subset(decl_elt_type, integer) {
+              rw_value = match (value)
+                seq_comp()    |
+                range_comp()  = annotate(value, decl_elt_type),
+                _             = value;
+            }
+          }
+        }
+      }
+    }
 
-    if |vars| == 1:
+    repr = opt_repr(value_type);
+    code, surr, var_gen = opt_eval_code(rw_value, env, init_var_gen);
+
+    if |vars| == 1 {
       var = only(vars);
       ll_var = low_level_var(repr, var);
       code = store_result(code, surr, ll_var);
       surrs = if var != ll_var
         then update(surrogates, var, obj_expr(ll_var))
         else remove_key(surrogates, var);
-
-    else
+    }
+    else {
       assert repr == :object;
-      types = tuple_field_supertypes(type, |vars|);
+      types = tuple_field_supertypes(value_type, |vars|);
       ## REMOVE WHEN DONE
-      assert types == (restricted_seq_elem_supertype(type, singleton_type(i)) : i < |vars|);
+      assert types == (restricted_seq_elem_supertype(value_type, singleton_type(i)) : i < |vars|);
       reprs = (opt_repr(t) : t <- types);
       phys_vars = (low_level_var(reprs(i), v) : v @ i <- vars);
       code = code & (set_any_var(v, at(surr, i)) : v @ i <- phys_vars);
       surrs = remove_keys(surrogates, set(vars));
       surrs = surrs & [v -> obj_expr(pv) : v @ i <~ vars, pv = phys_vars(i), v != pv];
-    ;
+    }
 
     return (code, just(surrs), [], var_gen);
+
+
+    SeqCompExpr annotate(SeqCompExpr expr, NeType decl_elt_type) =
+      seq_comp(
+        expr:           expr.expr,
+        decl_elt_type:  decl_elt_type,
+        vars:           expr.vars,
+        idx_var:        expr.idx_var if expr.idx_var?,
+        src_expr:       expr.src_expr,
+        sel_expr:       expr.sel_expr if expr.sel_expr?
+      );
+
+
+    RangeCompExpr annotate(RangeCompExpr expr, NeType decl_elt_type) =
+      range_comp(
+        expr:           expr.expr,
+        decl_elt_type:  decl_elt_type,
+        var:            expr.var,
+        bound_expr:     expr.bound_expr,
+        inclusive:      expr.inclusive,
+        sel_expr:       expr.sel_expr if expr.sel_expr?
+      );
   }
 
 
@@ -521,7 +680,19 @@ implicit program           : Program,
 
 
   StmtCompInfo if_stmt_opt_code(IfStmt stmt, [EnvVar -> Type] env, VarGen init_var_gen) {
-    ## HERE WE COULD CHECK WHETHER ONE OF THE BRANCHES IS UNREACHABLE, AND JUST ELIMINATE IT
+    ## BUG BUG BUG: THERE'S SOMETHING WRONG WITH THE RETURNED LIST OF SURROGATES. INVESTIGATE
+    // cond_type = expr_type(stmt.cond, env);
+    // if cond_type == empty_type {
+    //   return ((terminate(true)), just(surrogates), [], init_var_gen);
+    // }
+    // else if is_subset(cond_type, type_true) {
+    //   return stmts_opt_code(stmt.body, env, init_var_gen);
+    // }
+    // else if is_subset(cond_type, type_false) {
+    //   return if stmt.else != ()
+    //     then stmts_opt_code(stmt.else, env, init_var_gen)
+    //     else ((), just(surrogates), [], init_var_gen);
+    // }
 
     cond_code, cond_surr, unused_var = opt_eval_code(stmt.cond, env, init_var_gen);
     then_env, else_env = refine_env(stmt.cond, env);
@@ -534,23 +705,23 @@ implicit program           : Program,
     // would have to reconcile the two resulting generators
     else_code, else_surrs, else_break_surrs, var_gen = stmts_opt_code(stmt.else, else_env, var_gen);
 
-    if then_surrs != nothing and else_surrs != nothing:
+    if then_surrs != nothing and else_surrs != nothing {
       // If both branches can fall through, we need to syncronize their lists of surrogates
       surr_vars = [v : v <- keys(env) & new_vars(stmt), v :: SurrExpr];
       surrs, then_sync_code, else_sync_code = reconcile(surr_vars, value(then_surrs), value(else_surrs));
       surrs = just(surrs);
       then_code = then_code & then_sync_code;
       else_code = else_code & else_sync_code;
-
-    elif then_surrs != nothing:
+    }
+    else if then_surrs != nothing {
       surrs = then_surrs;
-
-    elif else_surrs != nothing:
+    }
+    else if else_surrs != nothing {
       surrs = else_surrs;
-
-    else
+    }
+    else {
       surrs = nothing;
-    ;
+    }
 
     code = (cond_code | branch(bool_value(cond_surr), then_code, else_code));
     return (code, surrs, then_break_surrs & else_break_surrs, var_gen);
@@ -615,16 +786,19 @@ implicit program           : Program,
     return match (iter)
       coll_value_iter() = opt_code(iter, stmt.body, env, var_gen),
       rel_subset_iter() = unord_coll_iter_opt_code(iter.vars, iter.src_expr, iter.args, stmt.body, env, var_gen),
-      rel_var_iter()    = rel_var_iter_opt_code(iter, stmt.body, env, var_gen);
+      rel_var_iter()    = if is_columnar_relvar(iter.rel_var)
+                            then columnar_rel_var_iter_opt_code(iter, stmt.body, env, var_gen)
+                            else rel_var_iter_opt_code(iter, stmt.body, env, var_gen);
 
     // type CollValueIter  = coll_value_iter(vars: Maybe[StdVar]+, idx_var: StdVar?, src_expr: Expr);
     StmtCompInfo opt_code(CollValueIter iter, Statement+ body, [EnvVar -> Type] env, VarGen var_gen) {
-      if iter.idx_var? or is_subset(expr_type(iter.src_expr, env), type_seq):
+      if iter.idx_var? or is_subset(expr_type(iter.src_expr, env), type_seq) {
         return seq_iter_opt_code(iter, body, env, var_gen);
-      else
+      }
+      else {
         args = (nothing : v <- iter.vars);
         return unord_coll_iter_opt_code(iter.vars, iter.src_expr, args, body, env, var_gen);
-      ;
+      }
     }
   }
 
@@ -632,12 +806,11 @@ implicit program           : Program,
   StmtCompInfo seq_iter_opt_code(CollValueIter iter, Statement+ body, [EnvVar -> Type] env, VarGen init_var_gen) {
     // Calculating input sequence type, and returning early if the type is trivial
     seq_type = expr_type(iter.src_expr, env);
-    if seq_type == empty_type:
+    if seq_type == empty_type
       ## just(surrogates) OR nothing?
       return ((terminate), just(surrogates), [], init_var_gen);
-    elif is_subset(seq_type, empty_seq_type):
+    else if is_subset(seq_type, empty_seq_type)
       return ((), just(surrogates), [], init_var_gen);
-    ;
 
     // Type and representation of the elements of the input sequence
     elt_type = seq_elem_supertype(seq_type);
@@ -646,30 +819,31 @@ implicit program           : Program,
 
     // Evaluation of input expression
     entry_code, seq_surr, var_gen = opt_eval_code(iter.src_expr, env, init_var_gen);
-    if not seq_surr :: <LocVar, StdVar>:
+    if not seq_surr :: <LocVar, StdVar> {
       seq_var, var_gen = next_obj_var(var_gen);
       entry_code = (entry_code | set_var(seq_var, seq_surr));
       seq_surr = seq_var;
-    ;
+    }
 
     // Temporary buffer for source data
     src_array_var, var_gen = next_array_var(var_gen, elt_repr);
 
     vars = iter.vars;
-    if |vars| == 1:
+    if |vars| == 1 {
       // Simple case, no destructuring of the elements of the source sequence
       var = only(vars);
-      if var != nothing:
+      if var != nothing {
         var = value(var);
         it_var = low_level_var(elt_repr, var);
         local_surrs = [var -> obj_expr(it_var) if var != it_var];
-      else
+      }
+      else {
         it_var, var_gen = next_obj_var(var_gen);
         local_surrs = [];
-      ;
+      }
       body_code_setup = ();
-
-    else
+    }
+    else {
       // Elements of source sequence need to be destructured
       assert elt_repr == :object;
       vars_types = tuple_field_supertypes(elt_type, |vars|);
@@ -681,7 +855,7 @@ implicit program           : Program,
       local_surrs = [v -> obj_expr(pv) : i, v <- vars, pv = phys_vars(i), v != pv];
       it_var, var_gen = next_obj_var(var_gen);
       body_code_setup = (set_any_var(v, at(it_var, i)) : i, v <- sort_bin_rel_by_key(phys_vars, $a));
-    ;
+    }
 
     // Index variables
     count_var, var_gen = next_int32_var(var_gen);
@@ -727,21 +901,20 @@ implicit program           : Program,
 
     // Calculating input sequence type, and returning early if the type is trivial
     coll_type = expr_type(src_expr, env);
-    if coll_type == empty_type:
+    if coll_type == empty_type
       ## just(surrogates) OR nothing?
       return ((terminate), just(surrogates), [], init_var_gen);
-    elif is_subset(coll_type, empty_rel_type):
+    else if is_subset(coll_type, empty_rel_type)
       return ((), just(surrogates), [], init_var_gen);
-    ;
 
     // Evaluation of input expression
     entry_code, coll_surr, var_gen = opt_eval_code(src_expr, env, init_var_gen);
     ## IS THIS NEEDED AT ALL? WHY WAS IT HERE IN THE FIRST PLACE?
-    if not coll_surr :: <LocVar, StdVar>:
+    if not coll_surr :: <LocVar, StdVar> {
       coll_var, var_gen = next_obj_var(var_gen);
       entry_code = (entry_code | set_var(coll_var, coll_surr));
       coll_surr = coll_var;
-    ;
+    }
 
     // Evaluation of arguments
     args_eval_code, args_surrs, var_gen = sparse_opt_eval_code(args, env, var_gen);
@@ -753,27 +926,27 @@ implicit program           : Program,
     local_surrs = [];
     iter_vars_setup_code = ();
 
-    if |args| == 1:
+    if |args| == 1 {
       fail if |vars| != 1;
       elt_type = nonempty_type(set_elem_supertype(coll_type));
       elt_repr = opt_repr(elt_type);
       it_var, var_gen = next_set_it_var(var_gen);
       var = only(vars);
       loop_vars_env = [value(var) -> elt_type if var != nothing];
-      if var != nothing:
+      if var != nothing {
         var = value(var);
         elt_var = low_level_var(elt_repr, var);
         local_surrs = [var -> obj_expr(elt_var) if var != elt_var];
         iter_vars_setup_code = (set_any_var(elt_var, get_curr_obj(it_var)));
-      ;
-
-    elif |args| == 2:
+      }
+    }
+    else if |args| == 2 {
       args_types = (nonempty_type(t) : t <- bin_rel_args_supertypes(coll_type));
       args_reprs = (opt_repr(t) : t <- args_types);
       it_var, var_gen = next_bin_rel_it_var(var_gen);
       loop_vars_env = [value(v) -> args_types(i) : v @ i <~ vars, v != nothing];
-      for v @ i <- vars:
-        if v != nothing:
+      for v @ i <- vars {
+        if v != nothing {
           var = value(v);
           arg_idx = var_arg_idx_map(i);
           low_level_var = low_level_var(args_reprs(arg_idx), var);
@@ -781,17 +954,17 @@ implicit program           : Program,
           fail if not arg_idx :: <0..1>;
           instr = set_any_var(low_level_var, get_curr_arg(it_var, arg_idx));
           iter_vars_setup_code = (iter_vars_setup_code | instr);
-        ;
-      ;
-
-    else
+        }
+      }
+    }
+    else {
       fail if |args| != 3;
       args_types = (nonempty_type(t) : t <- tern_rel_args_supertypes(coll_type));
       args_reprs = (opt_repr(t) : t <- args_types);
       it_var, var_gen = next_tern_rel_it_var(var_gen);
       loop_vars_env = [value(v) -> args_types(i) : v @ i <~ vars, v != nothing];
-      for v @ i <- vars:
-        if v != nothing:
+      for v @ i <- vars {
+        if v != nothing {
           var = value(v);
           arg_idx = var_arg_idx_map(i);
           low_level_var = low_level_var(args_reprs(arg_idx), var);
@@ -799,9 +972,9 @@ implicit program           : Program,
           fail if not arg_idx :: <0..2>;
           instr = set_any_var(low_level_var, get_curr_arg(it_var, arg_idx));
           iter_vars_setup_code = (iter_vars_setup_code | instr);
-        ;
-      ;
-    ;
+        }
+      }
+    }
 
     // Environment the body runs in
     exit_env = update_env(body, env & loop_vars_env);
@@ -826,39 +999,169 @@ implicit program           : Program,
 
 
   // type RelVarIter = rel_var_iter(vars: Maybe[StdVar]+, rel_var: AnyRelVar, args: Maybe[Expr]+);
+  StmtCompInfo columnar_rel_var_iter_opt_code(RelVarIter iter, Statement+ body, [EnvVar -> Type] env, VarGen var_gen) {
+    fail if not iter.args :: (Maybe[Expr], Nothing);
+
+    arg_0 = iter.args(0);
+    if arg_0 == nothing {
+      fail if |iter.vars| != 2;
+      return full_column_iter_code(iter.vars, iter.rel_var, body, env, var_gen);
+    }
+    else {
+      key_arg = value(arg_0);
+      value_var = only_unsafe(iter.vars);
+      return one_value_iter_code(key_arg, value_var, iter.rel_var, body, env, var_gen);
+    }
+
+
+    StmtCompInfo one_value_iter_code(Expr key_arg, Maybe[StdVar] value_var, AnyRelVar rel_var, Statement+ body, [EnvVar -> Type] env, VarGen init_var_gen) {
+      key_arg_eval_code, key_arg_alias, var_gen = opt_eval_code(key_arg, env, init_var_gen);
+
+      key_arg_surr, var_gen = next_int32_var(var_gen);
+
+      // Selecting the candidate tables among those the logical relation is partitioned into
+      key_arg_type = expr_type(key_arg, env);
+      return ((terminate(true)), just(surrogates), [], init_var_gen) if key_arg_type == empty_type;
+      candidate_tables = overlapping_tables(rel_var, (just(key_arg_type), nothing));
+
+      // Iterating through all candidate tables
+      entry_code = ();
+      code = ();
+      surrs = surrogates;
+      for tv <- isort(candidate_tables) {
+        sign = table_signature(tv);
+        low_level_value_var = apply(value_var, low_level_var(low_level_repr(sign(1)), $));
+
+        store_id = table_col_store_id(tv, 0);
+        store_type = value_store_type(rel_auto_type(rel_var), unqualified(store_id));
+        store_id = substitute(store_id);
+
+        // Environment the body runs in
+        sgn = table_signature(tv);
+        loop_vars = [value(value_var) -> sgn(1) if value_var != nothing];
+        exit_env = update_env(body, env & loop_vars);
+        body_env = merge_envs(env, exit_env) & loop_vars;
+
+        local_surrs = [value(value_var) -> obj_expr(value_unsafe(low_level_value_var)) if value_var != nothing];
+
+        let surrogates = surrs {
+          // This is not a real loop body, since it's run at most once,
+          // but the machinery used for loops should work here as well
+          entry_code_fixes, body_code, surrs = loop_stable_code(body, local_surrs, body_env, var_gen);
+        }
+
+        if body_code != () {
+          entry_code = entry_code & entry_code_fixes;
+
+          code = (code |
+            set_ivar32(key_arg_surr, value_to_surr(store_id, value_store_encoded_expr(store_type, key_arg_alias))),
+            do_if_not(
+              is_eq(key_arg_surr, -1),
+              do_if(
+                table_contains(tv, (just(key_arg_surr), nothing), false),
+                ( set_any_var(
+                    value(low_level_value_var),
+                    column_lookup(substitute(tv), key_arg_surr, column_repr(sign(1)))
+                  ) if low_level_value_var != nothing
+                ) & body_code
+              )
+            )
+          );
+        }
+      }
+
+      return (code, just(surrs), [], init_var_gen);
+    }
+
+
+    StmtCompInfo full_column_iter_code((Maybe[StdVar], Maybe[StdVar]) vars, AnyRelVar rel_var, Statement+ body, [EnvVar -> Type] env, VarGen init_var_gen) {
+      var_0, var_1 = vars;
+
+      if var_0 != nothing {
+        surr_var_0 = shadow_surr_var(value(var_0));
+        var_gen = init_var_gen;
+      }
+      else {
+        surr_var_0, var_gen = next_int32_var(init_var_gen);
+      }
+
+      // Selecting the candidate tables among those the logical relation is partitioned into
+      // In this specific case, that means all of them
+      candidate_tables = overlapping_tables(rel_var, (nothing, nothing));
+
+      // Iterating through all candidate tables
+      entry_code = ();
+      code = ();
+      surrs = surrogates;
+      for tv <- isort(candidate_tables) {
+
+        sign = table_signature(tv);
+        vars_reprs = [value(v) -> low_level_repr(sign(i)) : v @ i <~ vars, v != nothing];
+        low_level_vars = [v -> low_level_var(r, v) : v, r <- vars_reprs];
+
+        store_id = table_col_store_id(tv, 0);
+        store_type = value_store_type(rel_auto_type(rel_var), unqualified(store_id));
+        store_id = substitute(store_id);
+
+        col_repr = column_repr(sign(1));
+        it_var, var_gen = next_column_it_var(init_var_gen, col_repr);
+
+        vars_setup_code = (
+          set_ivar32(surr_var_0, get_col_index(it_var)) if var_0 != nothing or var_1 != nothing,
+          ## WORKAROUND FOR A BUG IN VERSION 0.1 OF THE COMPILER
+          { llvar = low_level_vars(value(var_0));
+            return surr_to_decoded_value(llvar, store_id, store_type, surr_var_0);
+          } if var_0 != nothing,
+          ## WORKAROUND FOR A BUG IN VERSION 0.1 OF THE COMPILER
+          { llvar = low_level_vars(value(var_1));
+            return set_any_var(llvar, column_lookup(substitute(tv), surr_var_0, col_repr));
+          } if var_1 != nothing
+        );
+
+        // Environment the body runs in
+        sgn = table_signature(tv);
+        loop_vars = [value(v) -> sgn(i) : v @ i <~ vars, v != nothing];
+        exit_env = update_env(body, env & loop_vars);
+        body_env = merge_envs(env, exit_env) & loop_vars;
+
+        local_surrs = [v -> obj_expr(llv) : v, llv <- low_level_vars];
+
+        let surrogates = surrs
+          entry_code_fixes, body_code, surrs = loop_stable_code(body, local_surrs, body_env, var_gen);
+
+        if body_code != () {
+          entry_code = entry_code & entry_code_fixes; ## BUG: NOT SURE WHAT THIS IS FOR, AND WHETHER IT'S OK
+
+          loop_code = (break_if(is_out_of_range(it_var))) & vars_setup_code & body_code & (move_forward(it_var));
+          table_code = (
+            get_column_iter(it_var, substitute(tv)),
+            repeat(loop_code)
+          );
+
+          code = code & table_code;
+        }
+      }
+
+      return (code, just(surrs), [], init_var_gen);
+    }
+  }
+
+  // type RelVarIter = rel_var_iter(vars: Maybe[StdVar]+, rel_var: AnyRelVar, args: Maybe[Expr]+);
   StmtCompInfo rel_var_iter_opt_code(RelVarIter iter, Statement+ body, [EnvVar -> Type] env, VarGen init_var_gen) {
-    // args_perm = relvar_cols_perm(iter.rel_var);
-    // table_args = (iter.args(i) : i <- args_perm);
     table_args = iter.args;
-
-    // // ## INVALID ARGS SHOULD BE NULL...
-    // arg_to_var_before_perm = (i-1 : i <- partial_sums((bit(a == nothing) : a <- iter.args)));
-    // var_to_arg_after_perm = (i : a @ i <- table_args, a == nothing);
-    // vars_perm = (arg_to_var_before_perm(args_perm(var_to_arg_after_perm(i))) : unused_var @ i <- iter.vars); ## UGLY UGLY UGLY
-    // perm_vars = (iter.vars(vars_perm(i)) : unused_var @ i <- iter.vars); ## UGLY UGLY UGLY
-
-    // assert {
-    //   if all((a == nothing : a <- iter.args)):
-    //     return false if |iter.vars| != |iter.args|;
-    //     return perm_vars == (iter.vars(i) : i <- args_perm);
-    //   else
-    //     ## ADD SOME CHECK HERE TOO...
-    //     return true;
-    //   ;
-    // };
-
-    ## BAD BAD BAD: REVIEW THIS, I CAN'T UNDERSTAND IT
-    filtered_idxs = idxs_into_filtered_seq((a != nothing : a <- table_args));
-    unfiltered_idxs = (i : a @ i <- table_args, a != nothing);
-    blank_idxs = (i : a @ i <- table_args, a == nothing);
     set_args = values(table_args);
+
+    bound_args_idxs = (i : a @ i <- table_args, a != nothing);
+    free_args_idxs = (i : a @ i <- table_args, a == nothing);
+    arg_idx_bound_arg_idx = [i -> j : i @ j <~ bound_args_idxs];
 
     entry_code, args_aliases, var_gen = opt_eval_code(set_args, env, init_var_gen);
 
     surr_vars, var_gen = next_int32_vars(var_gen, |set_args|);
+    shadow_surr_vars, var_gen = next_int32_vars(var_gen, [i : v @ i <~ iter.vars, v != nothing]);
     it_var, var_gen = next_table_it_var(var_gen, |table_args|, symmetric(iter.rel_var));
 
-    surr_args = (apply(mi, surr_vars($)) : mi <- filtered_idxs);
+    surr_args = (apply(a, surr_vars(arg_idx_bound_arg_idx(i))) : a @ i <- table_args);
 
     symmetric = symmetric(iter.rel_var);
 
@@ -870,51 +1173,62 @@ implicit program           : Program,
     // Iterating through all candidate tables
     code = ();
     surrs = surrogates;
-    for tv <- isort(candidate_tables):
+    for tv <- isort(candidate_tables) {
       assert (a <~ surr_args : a == nothing);
-      lookup_exprs = (
-        lookup_surrogate(substitute(table_col_store_id(tv, i)), get_unknown_arg(it_var, j))
-        : i @ j <- blank_idxs
-      );
+
+      sign = table_signature(tv);
+      vars_reprs = [value(v) -> low_level_repr(sign(free_args_idxs(i))) : v @ i <~ iter.vars, v != nothing];
+      low_level_vars = [v -> low_level_var(r, v) : v, r <- vars_reprs];
+
+      vars_setup_code = join(({
+        shadow_surr_var = shadow_surr_vars(i);
+        store_id = table_col_store_id(tv, free_args_idxs(i));
+        store_type = value_store_type(rel_auto_type(iter.rel_var), unqualified(store_id));
+        store_id = substitute(store_id);
+        return (
+          set_ivar32(shadow_surr_var, get_unknown_arg(it_var, i)),
+          surr_to_decoded_value(low_level_vars(value(v)), store_id, store_type, shadow_surr_var)
+        );
+      } : v @ i <- iter.vars, v != nothing));
 
       // Environment the body runs in
-      args_types = table_signature(tv);
-      loop_vars_env = [value(v) -> args_types(i) : v @ i <~ iter.vars, v != nothing];
-      exit_env = update_env(body, env & loop_vars_env);
-      body_env = merge_envs(env, exit_env) & loop_vars_env;
+      sgn = table_signature(tv);
+      loop_vars = [value(v) -> sgn(free_args_idxs(i)) : v @ i <~ iter.vars, v != nothing];
+      exit_env = update_env(body, env & loop_vars);
+      body_env = merge_envs(env, exit_env) & loop_vars;
 
-      ## IGNORING LOW LEVEL REPRESENTATION FOR NOW. THIS OPTIMIZATION WILL BE PART OF RELEASE 0.4
-      // args_reprs = (opt_repr(t) : t <- args_types);
-      // low_level_vars = [
-      //   var -> low_level_var(args_reprs(i), var)
-      //   : v @ i <~ iter.vars, v != nothing, var = value(v)
-      // ];
-      // local_surrs = [v -> obj_expr(lv) : v, lv <- low_level_vars];
-      local_surrs = [];
+      local_surrs = [v -> obj_expr(llv) : v, llv <- low_level_vars];
 
-      let surrogates = surrs:
+      let surrogates = surrs
         entry_code_fixes, body_code, surrs = loop_stable_code(body, local_surrs, body_env, var_gen);
-      ;
-      entry_code = entry_code & entry_code_fixes;
 
-      vars_setup_code = (set_var(value(v), lookup_exprs(i)) : v @ i <- iter.vars, v != nothing);
-      loop_code = (break_if(is_out_of_range(it_var))) & vars_setup_code & body_code & (move_forward(it_var));
-      table_code = (
-        get_table_iter(it_var, substitute(tv), nonempty(surr_args)),
-        repeat(nonempty(loop_code))
-      );
+      if body_code != () {
+        entry_code = entry_code & entry_code_fixes;
 
-      for e @ i <- reverse(args_aliases):
-        store_id = table_col_store_id(tv, rat(unfiltered_idxs, i));
-        surr_var = rat(surr_vars, i);
+        loop_code = (break_if(is_out_of_range(it_var))) & vars_setup_code & body_code & (move_forward(it_var));
         table_code = (
-          set_ivar32(surr_var, lookup_value(store_id, e)),
-          do_if_not(is_eq(surr_var, -1), table_code)
+          get_table_iter(it_var, substitute(tv), nonempty(surr_args)),
+          repeat(nonempty(loop_code))
         );
-      ;
 
-      code = code & table_code;
-    ;
+        for e @ i <- reverse(args_aliases) {
+          idx = rat(bound_args_idxs, i);
+          arg_type = value_unsafe(args_types(idx));
+          store_id = table_col_store_id(tv, idx);
+          store_type = value_store_type(rel_auto_type(iter.rel_var), unqualified(store_id));
+          store_id = substitute(store_id);
+          surr_var = rat(surr_vars, i);
+          table_code = opt_do_if(
+            value_store_guard(store_type, e, arg_type),
+            ( set_ivar32(surr_var, value_to_surr(store_id, value_store_encoded_expr(store_type, e))),
+              do_if_not(is_eq(surr_var, -1), table_code)
+            )
+          );
+        }
+
+        code = code & table_code;
+      }
+    }
 
     return (entry_code & code, just(surrs), [], init_var_gen);
   }
@@ -932,10 +1246,10 @@ implicit program           : Program,
     // Syncronization code
     sync_code_1 = ();
     sync_code_2 = ();
-    for v <- isort(unsync_vars):
+    for v <- isort(unsync_vars) {
       sync_code_1 = (sync_code_1 | set_var(v, surrs1(v, !!))) if surrs1(v, *);
       sync_code_2 = (sync_code_2 | set_var(v, surrs2(v, !!))) if surrs2(v, *);
-    ;
+    }
 
     return (surrs, sync_code_1, sync_code_2);
   }
@@ -961,44 +1275,43 @@ implicit program           : Program,
     entry_surrs = surrogates;
     entry_code = ();
 
-    loop
+    loop {
       body_surrs = entry_surrs & local_surrs;
-      let surrogates = body_surrs, exp_break_surrs = just(body_surrs):
+      let surrogates = body_surrs, exp_break_surrs = just(body_surrs)
         body_code, exit_surrs, break_surrs, unused_var = stmts_opt_code(stmts, env, var_gen);
-      ;
 
       // Finding out what variables get out of sync after one iteraction of the loop
       out_of_sync_vars = [v : v, e <- entry_surrs, is_out_of_sync(v, e, exit_surrs, break_surrs)];
 
       // If no variable is out of sync, then we're done
-      if out_of_sync_vars == []:
+      if out_of_sync_vars == [] {
         return (entry_code, body_code, entry_surrs) if exit_surrs == nothing;
         exit_surrs = value(exit_surrs);
-        for v <- isort(surr_vars):
+        for v <- isort(surr_vars) {
           assert not entry_surrs(v, *) or (exit_surrs(v, *) and entry_surrs(v, !!) == exit_surrs(v, !!));
-          if not entry_surrs(v, *) and exit_surrs(v, *):
+          if not entry_surrs(v, *) and exit_surrs(v, *) {
             fail if not v :: StdVar;
             body_code = (body_code | set_var(v, exit_surrs(v, !!)));
-          ;
-        ;
+          }
+        }
         return (entry_code, body_code, entry_surrs);
-      ;
+      }
 
       // Removing the unsyncronized variables from the initial list of surrogates
       // by physically storing them into their corresponding variables
-      for v <- isort(out_of_sync_vars):
+      for v <- isort(out_of_sync_vars) {
         fail if not v :: StdVar;
         entry_code = (entry_code | set_var(v, entry_surrs(v, !!)));
-      ;
+      }
       entry_surrs = remove_keys(entry_surrs, out_of_sync_vars);
-    ;
+    }
 
 
     Bool is_out_of_sync(SurrExpr var, ObjExpr entry_surr, Maybe[[SurrExpr -> ObjExpr]] maybe_exit_surrs, [[SurrExpr -> ObjExpr]] break_surrs) {
-      if maybe_exit_surrs != nothing:
+      if maybe_exit_surrs != nothing {
         exit_surrs = value(maybe_exit_surrs);
         return true if not exit_surrs(var, *) or exit_surrs(var, !!) != entry_surr;
-      ;
+      }
       return (surrs <- break_surrs : not surrs(var, *) or surrs(var, !!) != entry_surr);
     }
   }

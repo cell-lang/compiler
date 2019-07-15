@@ -30,7 +30,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
     return reprs(arg_type, !!);
 
     [NeType -> AnyLowLevelRepr] reprs {
-      args_types = [t : f <- program.fndefs, unused_var, t <~ f.args];
+      args_types = [t : f <- program.fndefs, unused_var, t <~ f.args] &
+                   [t : a <- program.data_bases, m <- a.methods, t, unused_var <~ m.args];
       return [t -> opt_repr(replace_type_vars_with_type_any(t)) : t <- args_types];
     }
   }
@@ -40,11 +41,11 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
   ObjProcDef gen_proc_code(Procedure procedure) {
     res_var, var_gen = next_obj_var(blank_var_gen);
 
-    body = rand_sort([auto_pre_init(v, t) : v, t <- procedure.auto_vars]) &
-           rand_sort([init_db(v, info.links, info.type) : v, info <- procedure.db_vars]);
+    body = rand_sort([auto_pre_init(v, t) : v, t <- procedure.loc_react_auto_vars]) &
+           rand_sort([init_db(v, info.links, info.type) : v, info <- procedure.loc_rel_auto_vars]);
 
     // Evaluating the expression
-    if procedure.body != ():
+    if procedure.body != () {
       code, unused_var_1, unused_var_2, var_gen = stmts_opt_code(
         procedure.body,
         [a.var -> a.type : a <~ procedure.args],
@@ -57,10 +58,10 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
       );
 
       body = (body | execute_block(code)) if code != ();
-    ;
+    }
 
-    body = body & rand_sort([auto_cleanup(v, t) : v, t <- procedure.auto_vars]);
-    body = body & rand_sort([cleanup_db(v, info.type) : v, info <- procedure.db_vars]);
+    body = body & rand_sort([auto_cleanup(v, t) : v, t <- procedure.loc_react_auto_vars]);
+    body = body & rand_sort([cleanup_db(v, info.type) : v, info <- procedure.loc_rel_auto_vars]);
 
     debug_entry_instr = push_call_info(procedure.id, (a.var : a <- procedure.args));
 
@@ -70,16 +71,19 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
     proc_ret_type = if procedure.res_type != nothing then value(procedure.res_type) else symb_type(:void);
 
     return obj_proc_def(
-      name:           procedure.id,
-      args:           (a.var : a <- procedure.args),
-      cls_args:       (),
-      impl_args:      [],
-      ret_val_repr:   :object,
-      type:           fn_type((a.type : a <- procedure.args), (), proc_ret_type),
-      loc_auto_vars:  procedure.auto_vars,
-      loc_db_vars:    [v -> info.type : v, info <- procedure.db_vars],
-      body:           nonempty(body),
-      cached:         false
+      name:             procedure.id,
+      args:             (a.var : a <- procedure.args),
+      cls_args:         (),
+      impl_args:        [],
+      rel_auto_args:    procedure.rel_auto_args,
+      react_auto_args:  procedure.react_auto_args,
+      ret_val_repr:     :object,
+      // type:             fn_type((a.type : a <- procedure.args), (), proc_ret_type),
+      loc_vars_types:   [],
+      loc_auto_vars:    procedure.loc_react_auto_vars,
+      loc_db_vars:      [v -> info.type : v, info <- procedure.loc_rel_auto_vars],
+      body:             nonempty(body),
+      cached:           false
     );
   }
 
@@ -96,30 +100,36 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
 
     ret_val_repr = opt_repr(func.res_type);
 
-    let context = func, surrogates = args_surrs, typed_vars = []:
+    let context = func, surrogates = args_surrs, typed_vars = [] {
       body, ret_val_surr, unused_var_2 = match (func.expr)
         do_expr() = do_expr_opt_eval_code(func.expr, ret_val_repr, env, blank_var_gen),
         _         = opt_eval_code(func.expr, env, blank_var_gen);
-    ;
+    }
 
     ret_val_instr = ret_val(low_level_expr(ret_val_repr, ret_val_surr));
 
     // Adding push_call_info/pop_call_info debug mode instructions
-    if options.debug_mode:
+    if options.debug_mode
       body = (push_call_info(func.id, (obj_expr(v) : v <- args))) & body & (pop_call_info);
-    ;
+
+    loc_vars_types = match (func.expr)
+      do_expr() = func.expr.typed_vars,
+      _         = [];
 
     return obj_proc_def(
-      name:           func.id,
-      args:           args,
-      cls_args:       cls_args,
-      impl_args:      keys(func.impl_args),
-      ret_val_repr:   ret_val_repr,
-      type:           signature(func),
-      loc_auto_vars:  [],
-      loc_db_vars:    [],
-      body:           (body | ret_val_instr),
-      cached:         cached
+      name:             func.id,
+      args:             args,
+      cls_args:         cls_args,
+      impl_args:        keys(func.impl_args),
+      rel_auto_args:    (),
+      react_auto_args:  (),
+      ret_val_repr:     ret_val_repr,
+      type:             signature(func),
+      loc_vars_types:   loc_vars_types,
+      loc_auto_vars:    [],
+      loc_db_vars:      [],
+      body:             (body | ret_val_instr),
+      cached:           cached
     );
 
 
@@ -200,16 +210,19 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
     proc_type = fn_type(args_types, cls_args_types, ret_type);
 
     return obj_proc_def(
-      name:           family_id(id),
-      args:           args,
-      cls_args:       cls_args,
-      impl_args:      [], ## THIS IS WRONG, BUT IT SHOULDN'T MATTER FOR NOW
-      ret_val_repr:   aggr_sign.ret_value,
-      type:           proc_type,
-      loc_auto_vars:  [],
-      loc_db_vars:    [],
-      body:           code,
-      cached:         false
+      name:             family_id(id),
+      args:             args,
+      cls_args:         cls_args,
+      impl_args:        [], ## THIS IS WRONG, BUT IT SHOULDN'T MATTER FOR NOW
+      rel_auto_args:    (),
+      react_auto_args:  (),
+      ret_val_repr:     aggr_sign.ret_value,
+      type:             proc_type,
+      loc_vars_types:   [],
+      loc_auto_vars:    [],
+      loc_db_vars:      [],
+      body:             code,
+      cached:           false
     );
   }
 
@@ -243,16 +256,19 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
       surrs = [v -> obj_expr(args(i)) : v @ i <~ red_vars];
       body = proc_body(aggr_fn.final_value, repr, surrs & extra_surrs(aggr_fn), env & extra_env(aggr_fn));
       return obj_proc_def(
-        name:           final_value_yield(aggr_fn.id),
-        args:           args & extra_args(aggr_fn),
-        cls_args:       (),
-        impl_args:      [],
-        ret_val_repr:   repr,
-        type:           fn_type(args_types & extra_args_types(aggr_fn), (), aggr_fn.type),
-        loc_auto_vars:  [],
-        loc_db_vars:    [],
-        body:           body,
-        cached:         false
+        name:             final_value_yield(aggr_fn.id),
+        args:             args & extra_args(aggr_fn),
+        cls_args:         (),
+        impl_args:        [],
+        rel_auto_args:    (),
+        react_auto_args:  (),
+        ret_val_repr:     repr,
+        type:             fn_type(args_types & extra_args_types(aggr_fn), (), aggr_fn.type),
+        loc_vars_types:   [],
+        loc_auto_vars:    [],
+        loc_db_vars:      [],
+        body:             body,
+        cached:           false
       );
     }
 
@@ -262,16 +278,19 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
       repr = opt_repr(type);
       body = proc_body(aggr_fn.null_value, repr, extra_surrs(aggr_fn), extra_env(aggr_fn));
       return obj_proc_def(
-        name:           null_value(aggr_fn.id),
-        args:           extra_args(aggr_fn),
-        cls_args:       (),
-        impl_args:      [],
-        ret_val_repr:   repr,
-        type:           fn_type(extra_args_types(aggr_fn), (), type),
-        loc_auto_vars:  [],
-        loc_db_vars:    [],
-        body:           body,
-        cached:         false
+        name:             null_value(aggr_fn.id),
+        args:             extra_args(aggr_fn),
+        cls_args:         (),
+        impl_args:        [],
+        rel_auto_args:    (),
+        react_auto_args:  (),
+        ret_val_repr:     repr,
+        type:             fn_type(extra_args_types(aggr_fn), (), type),
+        loc_vars_types:   [],
+        loc_auto_vars:    [],
+        loc_db_vars:      [],
+        body:             body,
+        cached:           false
       );
     }
 
@@ -286,16 +305,19 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
       env = [aggr_fn.elt_var -> aggr_fn.elt_type];
       body = proc_body(info.init_value, var_repr, surrs & extra_surrs(aggr_fn), env & extra_env(aggr_fn));
       return obj_proc_def(
-        name:           red_var_init(aggr_fn.id, red_var),
-        args:           (arg) & extra_args(aggr_fn),
-        cls_args:       (),
-        impl_args:      [],
-        ret_val_repr:   var_repr,
-        type:           fn_type((aggr_fn.elt_type) & extra_args_types(aggr_fn), (), var_type),
-        loc_auto_vars:  [],
-        loc_db_vars:    [],
-        body:           body,
-        cached:         false
+        name:             red_var_init(aggr_fn.id, red_var),
+        args:             (arg) & extra_args(aggr_fn),
+        cls_args:         (),
+        impl_args:        [],
+        rel_auto_args:    (),
+        react_auto_args:  (),
+        ret_val_repr:     var_repr,
+        type:             fn_type((aggr_fn.elt_type) & extra_args_types(aggr_fn), (), var_type),
+        loc_vars_types:   [],
+        loc_auto_vars:    [],
+        loc_db_vars:      [],
+        body:             body,
+        cached:           false
       );
     }
 
@@ -309,26 +331,29 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
       env = [var1 -> var_type, var2 -> var_type];
       body = proc_body(aggr_expr, var_repr, surrs & extra_surrs(aggr_fn), env & extra_env(aggr_fn));
       return obj_proc_def(
-        name:           red_vars_merge(aggr_fn.id, red_var),
-        args:           args & extra_args(aggr_fn),
-        cls_args:       (),
-        impl_args:      [],
-        ret_val_repr:   var_repr,
-        type:           fn_type((var_type, var_type) & extra_args_types(aggr_fn), (), var_type),
-        loc_auto_vars:  [],
-        loc_db_vars:    [],
-        body:           body,
-        cached:         false
+        name:             red_vars_merge(aggr_fn.id, red_var),
+        args:             args & extra_args(aggr_fn),
+        cls_args:         (),
+        impl_args:        [],
+        rel_auto_args:    (),
+        react_auto_args:  (),
+        ret_val_repr:     var_repr,
+        type:             fn_type((var_type, var_type) & extra_args_types(aggr_fn), (), var_type),
+        loc_vars_types:   [],
+        loc_auto_vars:    [],
+        loc_db_vars:      [],
+        body:             body,
+        cached:           false
       );
     }
 
 
     Instr+ proc_body(Expr expr, AnyLowLevelRepr repr, [SurrExpr -> ObjExpr] surrs, [StdVar -> Type] env) {
-      let context = :null_context, surrogates = surrs, typed_vars = []:
+      let context = :null_context, surrogates = surrs, typed_vars = [] {
         body, surr, unused_var = match (expr)
           do_expr() = do_expr_opt_eval_code(expr, repr, env, blank_var_gen),
           _         = opt_eval_code(expr, env, blank_var_gen);
-      ;
+      }
       return (body | ret_val(low_level_expr(repr, surr)));
     }
   }
@@ -363,11 +388,11 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
     root_type_symbs = union([retrieve_type_symbs(t) : t <- runtime_checked_root_types]);
     type_symbs = root_type_symbs;
     new_type_symbs = type_symbs;
-    while new_type_symbs != []:
+    while new_type_symbs != [] {
       new_types = [expand_type_ref(ts, schema_and_typedefs) : ts <- new_type_symbs];
       new_type_symbs = union([retrieve_type_symbs(t) : t <- new_types]) - type_symbs;
       type_symbs = type_symbs & new_type_symbs;
-    ;
+    }
     nested_types = [type_ref(ts) : ts <- type_symbs];
     return runtime_checked_root_types & nested_types;
   }
@@ -377,14 +402,14 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
   [NeType -> MembTestPredId] memb_test_preds_map {
     entries = ();
     next_id = 0;
-    for type <- rand_sort(runtime_checked_types):
+    for type <- rand_sort(runtime_checked_types) {
       pred_name, next_id = match (type)
         type_ref(type_symbol(a?))         |
         type_ref(schema_type_symbol(a?))  = (memb_test(a), next_id),
         type_ref(par_type_symbol() ts?)   = pred_name(ts, next_id),
         _                                 = (memb_test(next_id), nat(next_id + 1));
       entries = (entries | [type -> pred_name]);
-    ;
+    }
     return merge(entries);
 
 
@@ -403,7 +428,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
 
 implicit typedefs : [TypeName -> NeType] {
   Instr+ dynamic_dispatch_code(ObjExpr+ disp_args, [+(NeType+, Instr+)] cases) {
-    if |disp_args| == 1:
+    if |disp_args| == 1 {
       disp_arg = only(disp_args);
       disp_arg_type = ne_union_superset([only_unsafe(left(c)) : c <- cases]);
 
@@ -415,8 +440,8 @@ implicit typedefs : [TypeName -> NeType] {
       } : ts, is <- isort(cases));
 
       return nonempty(single_ptrn_match_expr_opt_code(disp_arg, disp_arg_type, ptrn_cases));
-
-    else
+    }
+    else {
       disp_args_types = (ne_union_superset([ts(i) : c <- cases, ts = left(c)]) : i < |disp_args|);
 
       cases_code = ({
@@ -424,17 +449,17 @@ implicit typedefs : [TypeName -> NeType] {
         fail if not ptypes :: NePseudoType+;
         ptrns = (pseudotype_pattern(pt) : pt <- ptypes);
         code = is;
-        for p, t, s <- reverse(zip(ptrns, disp_args_types, disp_args)):
+        for p, t, s <- reverse(zip(ptrns, disp_args_types, disp_args)) {
           ## FOR THE LAST CASE, WE WOULDN'T EVEN NEED ANY CHECKS
           ## IT WOULD ALSO BE BETTER TO LEAVE THE MOST EXPENSIVE CASE
           ## TO CHECK LAST
           code = opt_ptrn_match_code(p, s, t, code, vars_reprs = []);
-        ;
+        }
         return code;
       } : ts, is <- isort(cases));
 
       return (join(cases_code) | terminate(true));
-    ;
+    }
   }
 }
 

@@ -59,21 +59,21 @@ TreapSetNode[T] merge(TreapSetNode[T] left, TreapSetNode[T] right) {
   return right if left == :treap_set_leaf;
   return left if right == :treap_set_leaf;
 
-  if left.priority < right.priority:
+  if left.priority < right.priority {
     new_right = merge(left.right, right);
     return treap_set_node(left.elem, left.priority, left.left, new_right);
-  else
+  }
+  else {
     new_left = merge(left, right.left);
     return treap_set_node(right.elem, right.priority, new_left, right.right);
-  ;
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
 TreapSetInnerNode[T] insert(TreapSetNode[T] root, T elem, (T T -> Bool) lower_than) {
-  if root == :treap_set_leaf:
+  if root == :treap_set_leaf
     return treap_set_node(elem, rand_treap_priority, :treap_set_leaf, :treap_set_leaf);
-  ;
 
   root_elem = root.elem;
 
@@ -81,26 +81,28 @@ TreapSetInnerNode[T] insert(TreapSetNode[T] root, T elem, (T T -> Bool) lower_th
 
   root_priority = root.priority;
 
-  if lower_than(elem, root_elem):
+  if lower_than(elem, root_elem) {
     new_left = insert(root.left, elem, lower_than);
-    if new_left.priority >= root_priority:
+    if new_left.priority >= root_priority {
       return treap_set_node(root_elem, root_priority, new_left, root.right);
-    else
+    }
+    else {
       assert new_left.elem == elem;
       new_right = treap_set_node(root_elem, root_priority, new_left.right, root.right);
       return treap_set_node(elem, new_left.priority, new_left.left, new_right);
-    ;
-
-  else
+    }
+  }
+  else {
     new_right = insert(root.right, elem, lower_than);
-    if new_right.priority >= root_priority:
+    if new_right.priority >= root_priority {
       return treap_set_node(root_elem, root_priority, root.left, new_right);
-    else
+    }
+    else {
       assert new_right.elem == elem;
       new_left = treap_set_node(root_elem, root_priority, root.left, new_right.left);
       return treap_set_node(elem, new_right.priority, new_left, new_right.right);
-    ;
-  ;
+    }
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -110,13 +112,14 @@ TreapSetNode[T] remove(TreapSetNode[T] treap, T elem, (T T -> Bool) lower_than) 
 
   return merge(treap.left, treap.right) if elem == treap.elem;
 
-  if lower_than(elem, treap.elem):
+  if lower_than(elem, treap.elem) {
     new_left = remove(treap.left, elem, lower_than);
     return treap_set_node(treap.elem, treap.priority, new_left, treap.right);
-  else
+  }
+  else {
     new_right = remove(treap.right, elem, lower_than);
     return treap_set_node(treap.elem, treap.priority, treap.left, new_right);
-  ;
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -166,54 +169,55 @@ TreapMapNode[KT, VT] merge(TreapMapNode[KT, VT] left, TreapMapNode[KT, VT] right
   return right if left == :treap_map_leaf;
   return left if right == :treap_map_leaf;
 
-  if left.priority < right.priority:
+  if left.priority < right.priority {
     new_right = merge(left.right, right);
     return treap_map_node(left.key, left.value, left.priority, left.left, new_right);
-  else
+  }
+  else {
     new_left = merge(left, right.left);
     return treap_map_node(right.key, right.value, right.priority, new_left, right.right);
-  ;
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
 TreapMapInnerNode[KT, VT] insert(TreapMapNode[KT, VT] root, KT key, VT value, (KT KT -> Bool) lower_than) {
-  if root == :treap_map_leaf:
+  if root == :treap_map_leaf
     return treap_map_node(key, value, rand_treap_priority, :treap_map_leaf, :treap_map_leaf);
-  ;
 
   root_key = root.key;
   root_value = root.value;
   root_priority = root.priority;
 
-  if key == root_key:
-    if value == root_value:
+  if key == root_key {
+    if value == root_value
       return root;
     else
       return treap_map_node(key, value, root_priority, root.left, root.right);
-    ;
-  ;
+  }
 
-  if lower_than(key, root_key):
+  if lower_than(key, root_key) {
     new_left = insert(root.left, key, value, lower_than);
-    if new_left.priority >= root_priority:
+    if new_left.priority >= root_priority {
       return treap_map_node(root_key, root_value, root_priority, new_left, root.right);
-    else
+    }
+    else {
       assert new_left.key == key and new_left.value == value;
       new_right = treap_map_node(root_key, root_value, root_priority, new_left.right, root.right);
       return treap_map_node(key, value, new_left.priority, new_left.left, new_right);
-    ;
-
-  else
+    }
+  }
+  else {
     new_right = insert(root.right, key, value, lower_than);
-    if new_right.priority >= root_priority:
+    if new_right.priority >= root_priority {
       return treap_map_node(root_key, root_value, root_priority, root.left, new_right);
-    else
+    }
+    else {
       assert new_right.key == key and new_right.value == value;
       new_left = treap_map_node(root_key, root_value, root_priority, root.left, new_right.left);
       return treap_map_node(key, value, new_right.priority, new_left, new_right.right);
-    ;
-  ;
+    }
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -223,13 +227,14 @@ TreapMapNode[KT, VT] remove(TreapMapNode[KT, VT] treap, KT key, (KT KT -> Bool) 
 
   return merge(treap.left, treap.right) if key == treap.key;
 
-  if lower_than(key, treap.key):
+  if lower_than(key, treap.key) {
     new_left = remove(treap.left, key, lower_than);
     return treap_map_node(treap.key, treap.value, treap.priority, new_left, treap.right);
-  else
+  }
+  else {
     new_right = remove(treap.right, key, lower_than);
     return treap_map_node(treap.key, treap.value, treap.priority, treap.left, new_right);
-  ;
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////

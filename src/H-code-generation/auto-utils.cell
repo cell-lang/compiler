@@ -46,15 +46,15 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
 
 
   Instr+ default_safe_eval_code(Expr expr, <SignalVar, LocVar> target_var, VarGen var_gen) {
-    let context = automaton, typed_vars = [], surrogates = []:
+    let context = automaton, typed_vars = [], surrogates = [] {
       eval_code, expr_surr, unused_var = opt_eval_code(expr, react_auto_env, var_gen);
       eval_code = (eval_code | set_var(target_var, expr_surr));
-    ;
+    }
     vars_to_safeguard = vars_that_may_be_null(expr);
-    if vars_to_safeguard != []:
+    if vars_to_safeguard != [] {
       cond = and((is_not_null(v) : v <- rand_sort(vars_to_safeguard)));
       eval_code = (branch(cond, eval_code, (make_var_undef(target_var))));
-    ;
+    }
     return eval_code;
   }
 }
@@ -75,13 +75,14 @@ Nat* trigger_times_table(CyclicTimeExpr time_expr) {
   return () if trigger_times == ();
   interval_lengths = (nz_nat(t - if i == 0 then 0 else trigger_times(i-1)) : t @ i <- trigger_times);
   count = |trigger_times|;
-  if mod(count, 2) != 0:
+  if mod(count, 2) != 0 {
     head_seq = interval_lengths;
     tail_elem = nat(time_expr.nanosecs - last(trigger_times));
-  else
+  }
+  else {
     head_seq = tail(interval_lengths);
     tail_elem = nat(time_expr.nanosecs - last(trigger_times) + head(interval_lengths));
-  ;
+  }
   return (head_seq | tail_elem);
 }
 
@@ -95,11 +96,10 @@ IntConst time_slot_length(CyclicTimeExpr time_expr, AutoSymbol auto_name, Atom e
   assert trigger_times != ();
   fail if trigger_times == ();
   count = |trigger_times|;
-  if mod(count, 2) != 0:
+  if mod(count, 2) != 0
     final_time_slot_expr = mod_op(time_slot_expr, count + 1);
   else
     final_time_slot_expr = mod_op(sub(time_slot_expr, 1), count);
-  ;
   return time_slot_length(auto_name, expr_id, final_time_slot_expr);
 }
 

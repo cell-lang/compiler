@@ -23,25 +23,27 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg], actual_ar
     errs = iter_clause_wf_errors(vars, def_vars);
     return errs if errs != ();
 
-    if src_expr :: IdChain:
+    if src_expr :: IdChain {
       symbols = destructure_id_chain(src_expr);
       resols = resolve_by_priority_as_expr_or_rel_var(symbols, |vars|, def_vars);
-      if |resols| == 1:
+      if |resols| == 1 {
         resol = only(resols);
-        if resol :: AnyRelVar:
+        if resol :: AnyRelVar {
           relvar_arity = relvar_arity(resol);
           return (wrong_iter_arity(vars, [relvar_arity]) if |vars| != relvar_arity);
-        ;
-      elif resols == []:
+        }
+      }
+      else if resols == [] {
         ## BAD BAD BAD: USING A FIXED MAXIMUM ARITY
         // Now passing and empty set of defined vars, so we avoid unary or binary pseudocalls
         valid_arities = set((nat(a+1) : a < 20, resolve_by_priority_as_expr_or_rel_var(symbols, nz_nat(a+1), []) != []));
         return (wrong_rel_arity(src_expr, just(symbols), valid_arities)) if valid_arities != [];
-      else
+      }
+      else {
         assert |resols| > 1;
         return (ambiguous_expr(src_expr, resols));
-      ;
-    ;
+      }
+    }
 
     return expr_wf_errors(src_expr, def_vars);
   }
@@ -72,13 +74,13 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg], actual_ar
     resol = only(resols);
 
     // Now checking one particular case: target identify a relvar
-    if resol :: AnyRelVar:
+    if resol :: AnyRelVar {
       relvar_arity = relvar_arity(resol);
       exp_clause_arity = nz_nat(count(args, $ == nothing));
       return if |args| != relvar_arity
         then (invalid_rel_var_arity(last(target), |args|, relvar_arity)) ## BAD BAD RETURNING THE WRONG ERRORS
         else ();
-    ;
+    }
 
     // Since we are here, target can only be a normal (relation-valued) expression
     return ();
@@ -98,10 +100,10 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg], actual_ar
   ExprWFError* and_clause_wf_errors(SynClause+ clauses, [DefVar] def_vars) {
     errs = ();
     curr_vars = def_vars;
-    for c <- clauses:
+    for c <- clauses {
       errs = errs & clause_wf_errors(c, curr_vars);
       curr_vars = curr_vars & syn_new_vars(c);
-    ;
+    }
     return errs;
   }
 
@@ -126,11 +128,11 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg], actual_ar
 
   ExprWFError* ptrn_tuple_wf_errors(SynPtrn+ ptrns, [DefVar] def_vars) {
     curr_vars = def_vars;
-    for p <- ptrns:
+    for p <- ptrns {
       errs = ptrn_wf_errors(p, curr_vars);
       return errs if errs != ();
       curr_vars = curr_vars & syn_new_vars(p);
-    ;
+    }
     return ();
   }
 
@@ -141,9 +143,8 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg], actual_ar
     return errs if errs != ();
     new_vars = (syn_new_vars(p) : p <- ptrns);
     vs0 = new_vars(0);
-    for vs <- new_vars:
+    for vs <- new_vars
       return (diff_var_sets_in_ptrn_union(ptrns)) if vs != vs0;
-    ;
     return ();
     ## CHECK THAT THE PATTERNS DO NOT OVERLAP?
   }

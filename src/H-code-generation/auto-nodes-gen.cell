@@ -48,15 +48,15 @@ implicit program : Program, automaton : Automaton {
     curr_level = 0;
     curr_level_ids = ();
     res = ();
-    for n @ i <- nodes:
-      if n.level != curr_level:
+    for n @ i <- nodes {
+      if n.level != curr_level {
         assert n.level == curr_level + 1;
         res = (res | set(curr_level_ids));
         curr_level = curr_level + 1;
         curr_level_ids = ();
-      ;
+      }
       curr_level_ids = (curr_level_ids | n.id);
-    ;
+    }
     res = (res | set(curr_level_ids)) if nodes != ();
     return res;
   }
@@ -194,30 +194,29 @@ implicit program : Program, automaton : Automaton {
     core_id = get_inner_id(node_id);
     var_id = signal_var(core_id);
 
-    if automaton.nested_dbs(nested_db_var(core_id), *):
+    if automaton.nested_dbs(nested_db_var(core_id), *) {
       msg = nested_msg_sends[core_id];
       output_dep_nodes = lookup(nested_db_vars_trigger_down_nodes_map, node_id, []);
       ## WHAT DOES THIS ASSERTION DO?
       assert not (o, ns <- output_dep_nodes : not disjoint(ns, [std_block_node_id(id) : id <- state_vars_ids]));
       return nested_db_node(node_id, msg, output_dep_nodes, level);
-    ;
+    }
 
     dep_nodes = lookup(trigger_down_nodes_map, node_id, []);
     assert disjoint(dep_nodes, [std_block_node_id(id) : id <- state_vars_ids]);
 
-    if automaton.rules(var_id, *):
+    if automaton.rules(var_id, *)
       return derived(node_id, automaton.rules[var_id], dep_nodes, level);
-    ;
 
-    if automaton.time_rules(var_id, *):
+    if automaton.time_rules(var_id, *) {
       time_cond = automaton.time_rules[var_id];
       return match (time_cond)
         boolean_time_rule()   = time_varying_node(node_id, time_cond.expr, time_cond.time_expr, :boolean, dep_nodes, level),
         unchanged_time_rule() = time_varying_node(node_id, time_cond.expr, time_cond.time_expr, :unchanged, dep_nodes, level),
         since_time_rule()     = discrete_time_varying_node(node_id, time_cond.signals, time_cond.time_expr, time_cond.starts_at_time_0, dep_nodes, level);
-    ;
+    }
 
-    if automaton.state(var_id, *):
+    if automaton.state(var_id, *) {
       return state(
         node_id,
         lookup(state_vars_and_discrete_signals_update_values, core_id, ()),
@@ -225,11 +224,10 @@ implicit program : Program, automaton : Automaton {
         dep_nodes,
         level
       );
-    ;
+    }
 
-    if in(core_id, discrete_signals_ids):
+    if in(core_id, discrete_signals_ids)
       return derived_discrete(node_id, state_vars_and_discrete_signals_update_values[core_id], dep_nodes, level);
-    ;
 
     fail;
   }

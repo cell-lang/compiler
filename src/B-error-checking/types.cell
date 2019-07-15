@@ -133,9 +133,8 @@ TypeWFError* type_wf_errors(SynType type, (<SynTypeRef, SynTypeVar> -> TypeWFErr
 
   TypeWFError* record_type_wf_errors(SynRecordField+ fields, (<SynTypeRef, SynTypeVar> -> TypeWFError*) wf_errors) {
     errs = ();
-    for f1 @ i1 <- fields ; f2 <- drop(fields, i1+1):
+    for f1 @ i1 <- fields ; f2 <- drop(fields, i1+1)
       errs = (errs | dupl_record_field(f1, f2)) if f1.label == f2.label;
-    ;
     return errs & join((type_wf_errors(f.type, wf_errors) : f <- fields));
   }
 

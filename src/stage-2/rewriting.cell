@@ -127,9 +127,11 @@ Statement rewrite_stmt(Statement stmt, (Expr -> Expr) rw_expr, (Statement -> Sta
     insert_stmt()           = insert_stmt(stmt.var, (rw_expr(a) : a <- stmt.args)),
     update_stmt()           = update_stmt(stmt.var, (rw_expr(a) : a <- stmt.args)),
     proc_call_stmt()        = proc_call_stmt(
-                                res_var:    stmt.res_var if stmt.res_var?,
-                                proc_name:  stmt.proc_name,
-                                args:       (rw_expr(e) : e <- stmt.args)
+                                res_var:          stmt.res_var if stmt.res_var?,
+                                proc_name:        stmt.proc_name,
+                                args:             (rw_expr(e) : e <- stmt.args),
+                                rel_auto_args:    stmt.rel_auto_args,
+                                react_auto_args:  stmt.react_auto_args
                               ),
     return_stmt(e?)         = return_stmt(rw_expr(e)),
     break_stmt              |

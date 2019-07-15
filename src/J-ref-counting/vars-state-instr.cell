@@ -30,20 +30,21 @@ VarsState exit_vars_state_only(NodeInfo info, VarsState entry_vars_state, [TrkVa
 
 
 (VarsState, Instr*, Instr*) set_var_exit_var_state(WriteObjVar var, ObjExpr val, VarsState entry_vars_state, [TrkVar] live_vars_after_instr) {
-  if var :: TrkObjVar and val :: StdObjVar:
+  if var :: TrkObjVar and val :: StdObjVar {
     state, pre_instrs = make_var_copy(entry_vars_state, var, val);
     return (state, pre_instrs, ());
-  ;
+  }
 
   maybe_src_var = get_src_var(val);
-  if maybe_src_var != nothing:
+  if maybe_src_var != nothing {
     return set_owned_var(entry_vars_state, var, value(maybe_src_var), live_vars_after_instr);
-  else
+  }
+  else {
     // If there's no "source" variable for the returned object, then it's an inline object
     ## AM I SURE ABOUT THIS?
     state, pre_instrs = set_var_inline(entry_vars_state, var);
     return (state, pre_instrs, ());
-  ;
+  }
 }
 
 
@@ -53,14 +54,15 @@ VarsState exit_vars_state_only(NodeInfo info, VarsState entry_vars_state, [TrkVa
   ## AM I SURE ABOUT THIS?
   state, pre_instrs = release_var(entry_vars_state, var);
   post_instrs = ();
-  if maybe_src_var != nothing:
-    if value :: StdObjVar:
+  if maybe_src_var != nothing {
+    if value :: StdObjVar {
       state, pre_instrs_2 = swallow_var(state, value, live_vars_after_instr);
       pre_instrs = pre_instrs & pre_instrs_2;
-    else
+    }
+    else {
       post_instrs = (add_ref(var));
-    ;
-  ;
+    }
+  }
   return (state, pre_instrs, post_instrs);
 }
 
@@ -87,7 +89,7 @@ VarsState exit_vars_state_only(NodeInfo info, VarsState entry_vars_state, [TrkVa
   no_op                 = (entry_vars_state, ()),
   call_proc()           = if instr.var? then set_rc_var(entry_vars_state, instr.var) else (entry_vars_state, ()),
   call_cls()            = set_rc_var(entry_vars_state, instr.var),
-  queue_update()        = (entry_vars_state, ()),
+  queue_node_update()   = (entry_vars_state, ()),
   insert_timer()        = (entry_vars_state, ()),
   clear_timer()         = (entry_vars_state, ()),
   auto_pre_init()       = (entry_vars_state, ()),

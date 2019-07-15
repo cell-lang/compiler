@@ -189,12 +189,13 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
       ## OR IS IT ALREADY CHECKED DURING TYPECHECKING?
       arity_is_ok = non_nested_function_exists(precall.symbol, exp_arity);
       fn_id = fn_family_id(precall.symbol, exp_arity);
-      if arity_is_ok:
+      if arity_is_ok {
         args_arities = arg_arities(fn_id);
         fn_ptr_ok = all((a == 0 : a <- args_arities));
-      else
+      }
+      else {
         fn_ptr_ok = false;
-      ;
+      }
 
       const_ok = non_nested_function_exists(precall.symbol, 0);
       const_id = fn_family_id(precall.symbol, 0);
@@ -211,12 +212,13 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
       ## BUG BUG BUG: HERE I MUST ALSO CHECK THAT IT HAS NO IMPLICIT ARGUMENTS.
       ## OR IS IT ALREADY CHECKED DURING TYPECHECKING?
       arity_is_ok = nested_function_exists(precall.symbol, exp_arity);
-      if arity_is_ok:
+      if arity_is_ok {
         args_arities = local_fn_arity_args_arities(precall.symbol, exp_arity, !!);
         fn_ptr_ok = all((a == 0 : a <- args_arities));
-      else
+      }
+      else {
         fn_ptr_ok = false;
-      ;
+      }
       fn_id = nested_fn_id(precall.parent_id, fn_family_id(precall.symbol, exp_arity));
 
       const_ok = nested_function_exists(precall.symbol, 0);
@@ -261,24 +263,22 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
 
   Maybe[AutoMethodCall] try_resolve_as_expr(PreAutoCall precall) {
     auto_type = if precall.var? then auto_var_type(precall.var) else self_auto_type;
-    if methods_by_automaton(bare_id(auto_type), *):
+    if methods_by_automaton(bare_id(auto_type), *) {
       methods = methods_by_automaton[bare_id(auto_type)];
-      if (m <- methods : m.name == bare_id(precall.method) and m.args == ()):
+      if (m <- methods : m.name == bare_id(precall.method) and m.args == ())
         return just(auto_method_call(var: precall.var if precall.var?, name: precall.method, args: ()));
-      ;
-    ;
+    }
     return nothing;
   }
 
 
   Maybe[DBMethodCall] try_resolve_as_expr(PreDBCall precall) {
     db_type = if precall.var? then syn_db_var_type(precall.var) else self_db_type;
-    if methods_by_db(bare_id(db_type), *):
+    if methods_by_db(bare_id(db_type), *) {
       methods = methods_by_db[bare_id(db_type)];
-      if (m <- methods : m.name == bare_id(precall.method) and m.args == ()):
+      if (m <- methods : m.name == bare_id(precall.method) and m.args == ())
         return just(db_method_call(var: precall.var if precall.var?, name: precall.method, args: ()));
-      ;
-    ;
+    }
     return nothing;
   }
 
@@ -288,9 +288,8 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
   [<SymbChainExpr, ClsVar, AnyAutoVar, AnyDBVar, AnyRelVar, PreCall>]
   resolve_symbol_chain(Atom+ symbols, [Var] def_vars) {
     resols = resolve_symbol(head(symbols), def_vars);
-    for s <- tail(symbols):
+    for s <- tail(symbols)
       resols = [value(nr) : r <- resols, nr = try_resolve_accessor(r, s), nr != nothing];
-    ;
     return resols;
 
 
@@ -315,33 +314,30 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
         nested_auto_var() = nested_auto_vars[target];
       interface = auto_interfaces[auto_type];
       visible_fields = keys(interface.outputs);
-      if target :: LocAutoVar:
+      if target :: LocAutoVar
         visible_fields = visible_fields & keys(interface.inputs) & interface.state_vars & interface.rule_vars;
-      ;
-      if visible_fields(field):
+      if visible_fields(field)
         return just(qual_signal_var(target, signal_var(field)));
-      elif method_ids_by_automaton_id[bare_id(auto_type)](field):
+      else if method_ids_by_automaton_id[bare_id(auto_type)](field)
         return just(pre_auto_method_call(target, method_symbol(field)));
       else
         return nothing;
-      ;
     }
 
 
     Maybe[<QualMembVar, QualRelVar, QualDBVar, PreCall>] try_resolve_accessor(AnyDBVar target, Atom field) {
       target_type = syn_db_var_type(target);
       interface = db_interfaces[target_type];
-      if in(field, interface.memb_vars):
+      if in(field, interface.memb_vars)
         return just(qual_memb_var(target, memb_var(field)));
-      elif interface.rel_vars(field, *):
+      else if interface.rel_vars(field, *)
         return just(qual_rel_var(target, rel_var(field)));
-      elif interface.nested_dbs(field, *):
+      else if interface.nested_dbs(field, *)
         return just(qual_db_var(target, nested_db_var(field)));
-      elif method_ids_by_db_id[bare_id(target_type)](field):
+      else if method_ids_by_db_id[bare_id(target_type)](field)
         return just(pre_db_method_call(target, method_symbol(field)));
       else
         return nothing;
-      ;
     }
   }
 
@@ -370,10 +366,20 @@ implicit syn_prg : SynPrg {
   [] resolve_symbol(<null_artifact>, Atom symbol) = [];
 
 
-  [<LocAutoVar, LocDBVar>] resolve_symbol(SynProcDef artifact, Atom symbol) = [
-    if automaton_is_static(v.type) then loc_db_var(symbol) else loc_auto_var(symbol)
-    : v <~ artifact.auto_or_db_vars, v.var == symbol
-  ];
+  [<LocAutoVar, LocDBVar>] resolve_symbol(SynProcDef artifact, Atom symbol) {
+    loc_auto_vars = [
+      if automaton_is_static(v.type) then loc_db_var(symbol) else loc_auto_var(symbol)
+      : v <~ artifact.auto_or_db_vars, v.var == symbol
+    ];
+    auto_args = union([
+      match (info)
+        value_arg           = [],
+        rel_auto_arg(s?)    = [loc_db_var(symbol) if artifact.args(i).var == symbol],
+        react_auto_arg(s?)  = [loc_auto_var(symbol) if artifact.args(i).var == symbol]
+      : info @ i <~ proc_args_info(artifact.name)
+    ]);
+    return loc_auto_vars & auto_args;
+  }
 
 
   [<SignalVar, NestedAutoVar, NestedDBVar, QualSignalVar>] resolve_symbol(ReactAutoDef artifact, Atom symbol) {
@@ -383,14 +389,14 @@ implicit syn_prg : SynPrg {
       nested_db_var(symbol) if internals.nested_dbs(symbol, *)
     ];
 
-    if internals.nested_autos(symbol, *):
+    if internals.nested_autos(symbol, *) {
       auto_type = auto_symbol(internals.nested_autos[symbol]);
       interface = auto_interfaces[auto_type];
       ## BUG BUG BUG: I THINK THERE'S A BUG HERE, WITH signal_var(symbol)
       ## INSTEAD OF qual_signal_var(nested_auto_var(symbol), signal_var(symbol))
       resol = if interface.default_output == nothing then nested_auto_var(symbol) else signal_var(symbol);
       resols = resols & [resol];
-    ;
+    }
 
     return resols;
   }
@@ -433,9 +439,8 @@ implicit syn_prg : SynPrg {
   [<SignalVar, NestedAutoVar, NestedDBVar, QualSignalVar, PreCall>] resolve_symbol(AutoMethodDef artifact, Atom symbol) {
     auto_def = auto_defs_by_id[auto_symbol(artifact.target)];
     resols = resolve_symbol(auto_def, symbol);
-    if method_ids_by_automaton_id[artifact.target](symbol):
+    if method_ids_by_automaton_id[artifact.target](symbol)
       resols = resols & [pre_auto_method_call(method_symbol(symbol))];
-    ;
     return resols;
   }
 

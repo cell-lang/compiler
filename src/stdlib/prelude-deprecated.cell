@@ -46,18 +46,16 @@ Bool is_eq(T x, Maybe[T] maybe) = maybe == :just(x);
 
 Bool all(Maybe[A]+ maybes, B+ values, (A B -> Bool) p) {
   assert |maybes| == |values|;
-  for m @ i <- maybes:
+  for m @ i <- maybes
     return false if m != nothing and not p(value(m), values(i));
-  ;
   return true;
 }
 
 
 Bool any(Maybe[A]+ maybes, B+ values, (A B -> Bool) p) {
   assert |maybes| == |values|;
-  for m @ i <- maybes:
+  for m @ i <- maybes
     return true if m != nothing and p(value(m), values(i));
-  ;
   return false;
 }
 
@@ -92,6 +90,17 @@ T+        nonempty(T* seq)            = if seq != () then seq else undefined;
 [+T]      nonempty([T] set)           = if set != [] then set else undefined;
 [+K -> V] nonempty_map([K -> V] map)  = if map != [] then map else undefined;
 [+A, B]   nonempty_rel([A, B] rel)    = if rel != [] then rel else undefined;
+
+[+T] insert([T] s, T e) = [x : x <- s | x <- [e]];
+[T]  remove([T] s, T e) = [x : x <- s, x != e];
+
+[+A -> B] put([A -> B] map, A key, B value) {
+  new_map = [k -> v : k, v <- map | k, v <- [key -> value], k != key or v == value];
+  fail if new_map == [];
+  return new_map;
+}
+
+[A -> B] drop([A -> B] map, A key) = [k -> v : k, v <- map, k != key];
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -147,16 +156,14 @@ T last(T+ s) = s(|s|-1);
 Bool is_valid_idx(Seq seq, Int idx) = idx >= 0 and idx < |seq|;
 
 Bool in(Any e, Seq s) {
-  for x <- s:
+  for x <- s
     return true if x == e;
-  ;
   return false;
 }
 
 Nat index_first(Any e, Seq s) {
-  for x @ i <- s:
+  for x @ i <- s
     return i if x == e;
-  ;
   fail;
 }
 
@@ -164,9 +171,8 @@ Nat index_only(Any* s, Any e) = only_unsafe(indexes(s, $ == e));
 
 Nat* indexes(X* xs, (X -> Bool) p) {
   idxs = ();
-  for x @ i <- xs:
+  for x @ i <- xs
     idxs = (idxs | i) if p(x);
-  ;
   return idxs;
 }
 
@@ -182,12 +188,12 @@ T** split(T* seq, T sep) {
   len = |seq|;
   subseqs = ();
   start = 0;
-  for x @ i <- seq:
-    if x == sep:
+  for x @ i <- seq {
+    if x == sep {
       subseqs = subseqs & (subseq(seq, start, i-start));
       start = i + 1;
-    ;
-  ;
+    }
+  }
   subseqs = subseqs & (subseq(seq, start, len-start)) if start < len;
   return subseqs;
 }
@@ -195,15 +201,13 @@ T** split(T* seq, T sep) {
 
 Maybe[Nat] left_search(Seq seq, Seq subseq) {
   last_idx = |seq| - |subseq|;
-  for i < max(0, last_idx+1):
+  for i < max(0, last_idx+1)
     return just(i) if subseq_matches(seq, subseq, i);
-  ;
   return nothing;
 
   Bool subseq_matches(Seq seq, Seq subseq, Nat offset) {
-    for i < |subseq|:
+    for i < |subseq|
       return false if seq(offset+i) != subseq(i);
-    ;
     return true;
   }
 }
@@ -218,15 +222,16 @@ Bool* bit_map(Int* idxs, Nat len) = (in(i, idxs) : i < len); ## BAD: HORRIBLY IN
 
   idxs = ();
   idx = 0;
-  for b <- bs:
-    if b:
+  for b <- bs {
+    if b {
       idxs = (idxs | idx);
       idx = nat(idx + 1);
-    else
+    }
+    else {
       idxs = (idxs | :none);
-    ;
+    }
     // idxs = idxs & (if b then just(|idxs|) else :none);
-  ;
+  }
   return merge(([j -> i] : i @ j <- idxs, i != :none));
 }
 
@@ -234,9 +239,8 @@ Nat count(T* xs, (T -> Bool) p) = nat(sum((bit(p(x)) : x <- xs)));
 
 Nat count_pairs([A, B] r, (A B -> Bool) p) {
   count = 0;
-  for a, b <- isort(r):
+  for a, b <- isort(r)
     count = count + 1 if p(a, b);
-  ;
   return nat(count);
 }
 
@@ -249,9 +253,8 @@ Bool in(Any x, Set s) = s(x);
   return [] if sets == [];
   ss  = rand_sort(sets);
   int = ss(0);
-  for i = 1..|ss|:
+  for i = 1..|ss|
     int = intersection(int, ss(i));
-  ;
   return int;
 }
 
@@ -337,26 +340,25 @@ Bool is_key(Any key, [Any -> Any] map) = map(key, *);
 ## IMPLEMENT A seq_to_multiset FUNCTION AND SEE IF IT CAN BE USED TO IMPLEMENT dupl_elements efficiently
 [T] duplicates(T* s) {
   r = [];
-  for e1 @ i1 <- s ; e2 @ i2 <- s:
+  for e1 @ i1 <- s ; e2 @ i2 <- s
     r = r & [e1, e2] if e1 == e2 and i1 != i2;
-  ;
   return r;
 }
 
 (V, V)* duplicates(V* objs, (V -> Maybe[K]) key_fn) {
   keys = (key_fn(o) : o <- objs);
   dupls = ();
-  for k1 @ i1 <- keys:
-    if k1 != nothing:
-      for i2 = i1+1 .. |objs|:
+  for k1 @ i1 <- keys {
+    if k1 != nothing {
+      for i2 = i1+1 .. |objs| {
         k2 = keys(i2);
-        if k2 != nothing and k1 == k2:
+        if k2 != nothing and k1 == k2 {
           dupls = (dupls | (objs(i1), objs(i2)));
           break;
-        ;
-      ;
-    ;
-  ;
+        }
+      }
+    }
+  }
   return dupls;
 }
 
@@ -387,16 +389,17 @@ Int to_int(Nat* digits) {
   res = 0;
   neg = false;
 
-  for ch @ i <- digits:
-    if ch == ascii_minus and i == 0:
+  for ch @ i <- digits {
+    if ch == ascii_minus and i == 0 {
       neg = true;
       assert |digits| > 1;
-    else
+    }
+    else {
       code = ch - ascii_0;
       assert code >= 0 and code <= 9;
       res = 10 * res + code;
-    ;
-  ;
+    }
+  }
 
   return if neg then -res else res;
 }
@@ -441,12 +444,12 @@ String* split(String str) {
   len = length(str);
   frags = ();
   start = 0;
-  for ch @ i <- chars(str):
-    if is_space(ch):
+  for ch @ i <- chars(str) {
+    if is_space(ch) {
       frags = (frags | substr(str, start, i-start)) if start != i;
       start = i + 1;
-    ;
-  ;
+    }
+  }
   frags = (frags | substr(str, start, len-start)) if start < len;
   return frags;
 }
@@ -492,9 +495,8 @@ T reduce([+T] xs, (T T -> T) f) = reduce(nonempty(rand_sort(xs)), f);
 
 T reduce(T+ xs, (T T -> T) f) {
   rx = head(xs);
-  for i = 1..|xs|:
+  for i = 1..|xs|
     rx = f(rx, xs(i));
-  ;
   return rx;
 }
 
@@ -502,9 +504,8 @@ T reduce(T+ xs, (T T -> T) f) {
 (T, T)* unique_seq_pairs(T* seq) {
   len = |seq|;
   ps = ();
-  for i1 < len; i2 = i1+1..len:
+  for i1 < len; i2 = i1+1..len
     ps = (ps | (seq(i1), seq(i2)));
-  ;
   return ps;
 }
 
@@ -566,10 +567,10 @@ T* array_map([Nat -> T] map) = if map == [] then () else (map[i] : i <= max(none
 Nat* partial_sums(Nat* xs) {
   sum = 0;
   sums = ();
-  for x <- xs:
+  for x <- xs {
     sum = nat(sum + x);
     sums = (sums | sum);
-  ;
+  }
   return sums;
 }
 
@@ -578,10 +579,10 @@ Nat* partial_sums(Nat* xs) {
 
 T max_by(T+ xs, (T T -> Bool) lt) {
   res = xs(0);
-  for i = 1 .. |xs|:
+  for i = 1 .. |xs| {
     x = xs(i);
     res = x if lt(res, x);
-  ;
+  }
   return res;
 }
 
@@ -601,9 +602,8 @@ T fold(T+ seq, (T T -> T) f) = foldl(seq, f);
 ## THIS IS NOT A FOLD, IT'S A REDUCE
 T foldl(T+ seq, (T T -> T) f) {
   res = seq(0);
-  for i = 1..|seq|:
+  for i = 1..|seq|
     res = f(res, seq(i));
-  ;
   return res;
 }
 
@@ -611,9 +611,8 @@ T foldl(T+ seq, (T T -> T) f) {
 T foldr(T+ seq, (T T -> T) f) {
   rev_seq = reverse(seq);
   res = rev_seq(0);
-  for i = 1..|seq|:
+  for i = 1..|seq|
     res = f(rev_seq(i), res);
-  ;
   return res;
 }
 
@@ -624,9 +623,8 @@ A fold(A a, [B] bs, (A B -> A) f) = foldl(a, isort(bs), f);
 
 A foldl(A a, B* bs, (A B -> A) f) {
   res = a;
-  for b <- bs:
+  for b <- bs
     res = f(res, b);
-  ;
   return res;
 }
 
@@ -661,10 +659,10 @@ A foldl(A a, B* bs, (A B -> A) f) {
 (B*, A) apply_seed(Nat count, A init_seed, (A -> (B, A)) f) {
   seed = init_seed;
   res_seq = ();
-  for i < count:
+  for i < count {
     res, seed = f(seed);
     res_seq = (res_seq | res);
-  ;
+  }
   return (res_seq, seed);
 }
 
@@ -673,9 +671,8 @@ A foldl(A a, B* bs, (A B -> A) f) {
 
 Int pow(Int b, Nat e) {
   res = 1;
-  for e:
+  for e
     res = b * res;
-  ;
   return res;
 }
 
@@ -705,10 +702,10 @@ T+ values_ord_by_idx([+Nat -> T] xs) = (xs(i, !!) : i <- ord_idxs(xs));
 
 Nat first_unused_idx([Nat -> Any] xs) {
   idx = 0;
-  loop
+  loop {
     return idx if not xs(idx, *);
     idx = nat(idx + 1);
-  ;
+  }
 }
 
 

@@ -14,26 +14,29 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
     output_var = lvar(0);
 
     inst_instr = mk_tagged_obj(output_var, tag_var, value_var);
-    if opt_tags != []:
+    if opt_tags != [] {
       cases = [
         ([object(t)], (call_proc(output_var, :tag_rec_conv(t), (value_var), ())))
         : t <- opt_tags
       ];
       inst_instr = symb_switch(fn_arg(0), cases, (inst_instr));
-    ;
+    }
     body = (inst_instr, ret_val(output_var));
 
     return obj_proc_def(
-      name:           :any_tag_obj_conv,
-      args:           (tag_var, value_var),
-      cls_args:       (),
-      impl_args:      [],
-      ret_val_repr:   :object,
-      type:           fn_type((atom_type, type_any), (), type_any),
-      loc_auto_vars:  [],
-      loc_db_vars:    [],
-      body:           body,
-      cached:         false
+      name:             :any_tag_obj_conv,
+      args:             (tag_var, value_var),
+      cls_args:         (),
+      impl_args:        [],
+      rel_auto_args:    (),
+      react_auto_args:  (),
+      ret_val_repr:     :object,
+      type:             fn_type((atom_type, type_any), (), type_any),
+      loc_vars_types:   [],
+      loc_auto_vars:    [],
+      loc_db_vars:      [],
+      body:             body,
+      cached:           false
     );
   }
 
@@ -57,16 +60,19 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
     body = (body | mk_tagged_obj(output_var, object(tag), input_var), ret_val(output_var));
 
     return obj_proc_def(
-      name:           :tag_rec_conv(tag),
-      args:           (fn_arg(0)),
-      cls_args:       (),
-      impl_args:      [],
-      ret_val_repr:   :object,
-      type:           fn_type((type_any), (), type_any),
-      loc_auto_vars:  [],
-      loc_db_vars:    [],
-      body:           body,
-      cached:         false
+      name:             :tag_rec_conv(tag),
+      args:             (fn_arg(0)),
+      cls_args:         (),
+      impl_args:        [],
+      rel_auto_args:    (),
+      react_auto_args:  (),
+      ret_val_repr:     :object,
+      type:             fn_type((type_any), (), type_any),
+      loc_vars_types:   [],
+      loc_auto_vars:    [],
+      loc_db_vars:      [],
+      body:             body,
+      cached:           false
     );
   }
 }
@@ -77,16 +83,19 @@ ObjProcDef repr_conv_fn(Symbol tag, OptRecRepr repr, Nat repr_idx) {
   code, surr, unused_var = opt_repr_conv_code(fn_arg(0), tag, repr, repr_idx, blank_var_gen);
 
   return obj_proc_def(
-    name:           :tag_rec_repr_conv(tag, repr_idx),
-    args:           (fn_arg(0)),
-    cls_args:       (),
-    impl_args:      [],
-    ret_val_repr:   opt_tag_rec_repr(tag, repr_idx),
-    type:           fn_type((type_any), (), type_any),
-    loc_auto_vars:  [],
-    loc_db_vars:    [],
-    body:           (code | ret_val(surr)),
-    cached:         false
+    name:             :tag_rec_repr_conv(tag, repr_idx),
+    args:             (fn_arg(0)),
+    cls_args:         (),
+    impl_args:        [],
+    rel_auto_args:    (),
+    react_auto_args:  (),
+    ret_val_repr:     opt_tag_rec_repr(tag, repr_idx),
+    type:             fn_type((type_any), (), type_any),
+    loc_vars_types:   [],
+    loc_auto_vars:    [],
+    loc_db_vars:      [],
+    body:             (code | ret_val(surr)),
+    cached:           false
   );
 }
 
@@ -94,12 +103,12 @@ ObjProcDef repr_conv_fn(Symbol tag, OptRecRepr repr, Nat repr_idx) {
 (Instr*, ObjExpr, VarGen) opt_repr_conv_code(ObjExpr input_rec, Symbol tag, OptRecRepr repr, Nat repr_idx, VarGen init_var_gen) {
   var, var_gen = next_opt_tag_rec_var(init_var_gen, tag, repr_idx);
   code = (inst_opt_tag_rec(var, tag, repr_idx));
-  for label, field @ i <- isort(untag(repr)):
+  for label, field @ i <- isort(untag(repr)) {
     field_surr = lookup_field(input_rec, object(label));
     instr = write_rec_field(var, label, low_level_expr(field.repr, field_surr), field.optional);
     instr = do_if(has_field(input_rec, object(label)), instr) if field.optional;
     code = (code | instr);
-  ;
+  }
   code = (code | finish_init(var));
   return (code, var, var_gen);
 }

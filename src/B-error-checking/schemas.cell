@@ -1,5 +1,5 @@
 implicit syn_prg : SynPrg {
-  [WFError] schemas_wf_errors([SchemaDef] schemas, [BasicTypeSymbol -> [+Nat]] type_arity_map) {
+  [WFError] schemas_wf_errors([SchemaDef] schemas, [BasicTypeSymbol -> [+Nat]] type_arity_map, Bool allow_nested_rel_autos) {
     errs = [duplicate_schema_defs(rand_sort(dbs)) : id, dbs <- group_by(schemas, $.name), |dbs| > 1];
     return errs if errs != [];
 
@@ -11,9 +11,8 @@ implicit syn_prg : SynPrg {
     ];
     return errs if errs != [];
 
-    let type_arity_map = type_arity_map:
-      errs = [db_def_errors(d, es) : d <- schemas, es = schema_wf_errors(d), es != ()];
-    ;
+    let type_arity_map = type_arity_map
+      errs = [db_def_errors(d, es) : d <- schemas, es = schema_wf_errors(d, allow_nested_rel_autos), es != ()];
     return errs;
 
 
@@ -23,26 +22,29 @@ implicit syn_prg : SynPrg {
 
 
 implicit syn_prg : SynPrg, type_arity_map : [BasicTypeSymbol -> [+Nat]] {
-  ExprWFError* schema_wf_errors(SchemaDef db_def) {
+  ExprWFError* schema_wf_errors(SchemaDef db_def, Bool allow_nested_rel_autos) {
     confl_type_name = type_symbol(db_def.name);
-    if type_arity_map(confl_type_name, *):
+    if type_arity_map(confl_type_name, *) {
       confl_tdefs = rand_sort([td : td <- syn_tdefs | td <- syn_par_tdefs, td.name == confl_type_name]);
       return (schema_def_duplicates_type(db_def, nonempty(confl_tdefs)));
-    ;
+    }
 
     state_vars   = (d : d <- db_def.decls, d :: StateVarDecl);
     rel_vars     = (d : d <- db_def.decls, d :: RelVarsDecl);
     nested_dbs   = (d : d <- db_def.decls, d :: NestedDBDecl);
     foreign_keys = (d : d <- db_def.decls, d :: ForeignKeyDecl);
 
+    if not allow_nested_rel_autos and nested_dbs != ()
+      return (nested_dbs_are_not_supported_anymore(d) : d <- nested_dbs);
+
     // Starting with state variables and nested automata, whose names cannot be overloaded
     non_overloadable_decls = sort(state_vars & nested_dbs, _print_($a.name) < _print_($b.name));
     errs = join((schema_decl_wf_errors(d) : d <- non_overloadable_decls));
-    for i < |non_overloadable_decls| - 1:
+    for i < |non_overloadable_decls| - 1 {
       d1 = non_overloadable_decls(i);
       d2 = non_overloadable_decls(i+1);
       errs = (errs | duplicate_schema_decl(d1, d2)) if d1.name == d2.name;
-    ;
+    }
     return errs if errs != ();
 
     // Checking individual relation declarations
@@ -73,16 +75,15 @@ implicit syn_prg : SynPrg, type_arity_map : [BasicTypeSymbol -> [+Nat]] {
     info = db_interfaces(db_symbol(name), !!);
     rels = (key.targets | (key.src_rel, key.src_args));
     errs = ();
-    for r, as <- rels:
-      if not info.rel_vars(r, *):
+    for r, as <- rels {
+      if not info.rel_vars(r, *)
         errs = (errs | undef_rel_var(key, r));
-      elif |as| != info.rel_vars(r):
+      else if |as| != info.rel_vars(r)
         errs = (errs | invalid_foreign_key_relvar_arity(key, r));
-      ;
-      if not (a <~ as : a != nothing):
+
+      if not (a <~ as : a != nothing)
         errs = (errs | empty_args_list(key, r));
-      ;
-    ;
+    }
     return errs if errs != ();
 
     // Checking that there are no duplicate or undefined arguments
@@ -98,9 +99,8 @@ implicit syn_prg : SynPrg, type_arity_map : [BasicTypeSymbol -> [+Nat]] {
 
   ExprWFError* schema_decl_wf_errors(StateVarDecl decl) {
     type_errs = plain_type_wf_errors(decl.type, type_arity_map);
-    let artifact = :null_artifact, impl_args = [], actual_arg_arity = 0:
+    let artifact = :null_artifact, impl_args = [], actual_arg_arity = 0
       expr_errs = expr_wf_errors(decl.init_value, []);
-    ;
     return type_errs & expr_errs;
   }
 
@@ -136,20 +136,16 @@ implicit syn_prg : SynPrg, type_arity_map : [BasicTypeSymbol -> [+Nat]] {
               if non_overloadable_decls_by_name(decl.name, *));
 
     attributes = sort(decl.attributes, _print_($a.name) < _print_($b.name));
-    for arv @ i <- attributes:
-      if arv.name == decl.name:
+    for arv @ i <- attributes {
+      if arv.name == decl.name
         errs = (errs | duplicate_schema_decl(decl, arv));
-      ;
-      if non_overloadable_decls_by_name(arv.name, *):
+      if non_overloadable_decls_by_name(arv.name, *)
         errs = (errs | duplicate_schema_decl(arv, non_overloadable_decls_by_name[arv.name]));
-      ;
-      if i > 0 and attributes(i-1).name == arv.name:
+      if i > 0 and attributes(i-1).name == arv.name
         errs = (errs | duplicate_schema_decl(arv, attributes(i-1)));
-      ;
-      if arity == 2 and arv.cardinality.multiple and arv.unique:
+      if arity == 2 and arv.cardinality.multiple and arv.unique
         errs = (errs | invalid_ternary_multiple_unique(arv));
-      ;
-    ;
+    }
 
     return errs;
 
@@ -206,33 +202,32 @@ implicit syn_prg : SynPrg, type_arity_map : [BasicTypeSymbol -> [+Nat]] {
     sgns = ((desugar_plain_type(t) : t <- v.col_types) : v <- ord_relvars);
     attrs = ((a.name : a <- v.attributes) : v <- ord_relvars);
     errs = ();
-    let typedefs = typedefs:
-      for r1 @ i1 <- ord_relvars; i2 = i1+1 .. |ord_relvars|:
+    let typedefs = typedefs {
+      for r1 @ i1 <- ord_relvars; i2 = i1+1 .. |ord_relvars| {
         r2 = ord_relvars(i2);
         are_disjoint = are_ptype_disjoint(sgns(i1), sgns(i2));
-        if not are_disjoint:
-          if arity == 1:
+        if not are_disjoint {
+          if arity == 1 {
             type1 = only_unsafe(sgns(i1));
             type2 = only_unsafe(sgns(i2));
-            if not is_neat_subset(type1, type2) and not is_neat_subset(type2, type1):
+            if not is_neat_subset(type1, type2) and not is_neat_subset(type2, type1)
               errs = (errs | incomp_relvar_decls([r1, r2], []));
-            ;
-          else
+          }
+          else {
             errs = (errs | incomp_relvar_decls([r1, r2], []));
-          ;
-        ;
+          }
+        }
 
-        for a1 @ j1 <- r1.attributes; j2 = j1 .. |r2.attributes|:
+        for a1 @ j1 <- r1.attributes; j2 = j1 .. |r2.attributes| {
           a2 = r2.attributes(j2);
-          if a1.name == a2.name:
+          if a1.name == a2.name {
             ## FIX THE BUG IN THE COMPILER AND REPLACE THE {...} WITH (...)
-            if not are_disjoint or {a1.cardinality != a2.cardinality} or {a1.unique != a2.unique}:
+            if not are_disjoint or {a1.cardinality != a2.cardinality} or {a1.unique != a2.unique}
               errs = (errs | incomp_relvar_decls([], [(r1, j1), (r2, j2)]));
-            ;
-          ;
-        ;
-      ;
-    ;
+          }
+        }
+      }
+    }
     return errs;
 
 

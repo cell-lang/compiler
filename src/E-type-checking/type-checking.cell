@@ -6,7 +6,8 @@ type EnvVar   = StdVar, FnArg, ImplArg, SignalVar;
 
 
 implicit program : Program, typedefs : [TypeName -> NeType] {
-  [<Function, AggrFunct, Database, Method, Update, Handler, Automaton, Procedure> -> [+TypeCheckingError]] typechecking_errors {
+  [<Function, AggrFunct, Database, Method, Update, Handler, Automaton, ReactMethod, Procedure> ->
+    [+TypeCheckingError]] typechecking_errors {
     fn_errs = [fd -> es : fd <- program.fndefs, es = typecheck_function(fd), es != []];
     aggr_fn_errs = [af -> es : af <- program.aggr_fn_defs, es = typecheck_aggr_funct(af), es != []];
     proc_errs = [proc -> es : proc <- program.proc_defs, es = typecheck_procedure(proc), es != []];
@@ -19,22 +20,21 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
   [TypeCheckingError] typecheck_function(Function func) {
     args = func.args;
     obj_vars = [v -> t : v, t <~ args] & [v -> t : v, t <- func.impl_args];
-    let context=func, typed_vars = []:
+    let context=func, typed_vars = []
       errs = typecheck(func.expr, func.res_type, obj_vars);
-    ;
     return errs;
   }
 
 
   [TypeCheckingError] typecheck_procedure(Procedure proc) {
-    if proc.id == proc_symbol(:main):
+    if proc.id == proc_symbol(:main) {
       arg_type = only_unsafe(proc.args).type;
       return [invalid_main_arg_type(arg_type)] if not is_subset(type_seq(type_string), arg_type);
-      if proc.res_type != nothing:
+      if proc.res_type != nothing {
         ret_type = value(proc.res_type);
         return [invalid_main_ret_type(ret_type)] if not is_subset(ret_type, integer);
-      ;
-    ;
+      }
+    }
     env = [a.var -> a.type : a <~ proc.args];
     ret_type = if proc.res_type != nothing then value(proc.res_type) else empty_type;
     return typecheck(proc.body, ret_type, env, context=proc, typed_vars=[]);
@@ -44,7 +44,7 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
   [TypeCheckingError] typecheck_aggr_funct(AggrFunct aggr_fn) {
     base_env = [v -> t : v, t <~ aggr_fn.extra_args];
     res_env = base_env & [v -> info.type : v, info <- aggr_fn.red_vars];
-    let context=:null_context, typed_vars = []:
+    let context=:null_context, typed_vars = [] {
       errs = typecheck(aggr_fn.null_value, aggr_fn.type, res_env) &
              typecheck(aggr_fn.final_value, aggr_fn.type, res_env) &
              union([{
@@ -55,7 +55,7 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
                return typecheck(info.init_value, var_type, init_env) &
                       typecheck(merge_expr, var_type, merge_env);
              } : v, info <- aggr_fn.red_vars]);
-    ;
+    }
     return errs;
   }
 }
@@ -149,9 +149,12 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     return errs if errs != [];
 
     rv_sgns = relvar_signatures(rel_var);
-    assert not (s <- rv_sgns : |s| != |args|); ## THIS SHOULD NOT BE AN ASSERTION, BUT A REGULAR WELL-FORMEDNESS CHECK
+    assert not (s <- rv_sgns : |s| != |args|);
 
-    return [];
+    args_types = (apply(a, expr_type($, env)) : a <- args);
+
+    candidate_sgns = [s : s <- rv_sgns, signature_overlaps_partial_signature(s, args_types)];
+    return [no_matching_relvar(rel_var, args_types, rv_sgns) if candidate_sgns == []];
   }
 
 

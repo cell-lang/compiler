@@ -484,10 +484,10 @@ Bool is_pattern_any(Pattern ptrn) =
 [Var] stmts_extern_vars(Statement* stmts) {
   def_vs = [];
   ext_vs = [];
-  for s <- stmts:
+  for s <- stmts {
     ext_vs = ext_vs & (stmt_extern_vars(s) - def_vs);
     def_vs = def_vs & new_vars(s);
-  ;
+  }
   return ext_vs;
 }
 
@@ -549,10 +549,10 @@ type StmtOutcome = fails, returns, breaks, falls_through;
 
 [+StmtOutcome] outcomes(Statement* stmts) {
   os = [:falls_through];
-  for s <- stmts:
+  for s <- stmts {
     os = (os - [:falls_through]) & outcomes(s);
     break if not in(:falls_through, os);
-  ;
+  }
   return nonempty(os);
 }
 
@@ -622,6 +622,10 @@ Bool may_fall_through(Statement* stmts) = in(:falls_through, outcomes(stmts));
   cat:         2,
   rev:         1,
   isort:       1,
+  insert:      2,
+  remove:      2,
+  put:         3,
+  drop:        2,
   tag:         1,
   untag:       1,
   parse:       1,

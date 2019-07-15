@@ -11,6 +11,7 @@ type WFError            = dupl_typedef((AnyTypedef, AnyTypedef)),
                           auto_def_errors(auto_def: ReactAutoDef, errors: ExprWFError+),
                           auto_method_def_errors(meth_def: AutoMethodDef, errors: FnDefWFError+),
                           db_def_errors(schema: SchemaDef, errors: ExprWFError+),
+                          using_block_invalid_auto_errs(block: UsingBlock),
                           db_method_def_errors(schema: SchemaDef, method: DBMethodDef, errors: FnDefWFError+),
                           update_def_errs(schema: SchemaDef, update: UpdateDef, errors: UpdateDefWFError+),
                           handler_def_errs(handler: HandlerDef, errors: UpdateDefWFError+),
@@ -104,6 +105,7 @@ type ExprSpecWFError    = already_def_var(Var),
                           return_in_let_body(<SynReturnStmt, return_stmt>),
                           vars_redef(anchor: Any, vars: [+Var]),
                           undef_update_var(stmt: SynSeqUpdateStmt, var: StdVar),
+                          not_an_explicitly_typed_loc_var(stmt: SynSeqUpdateStmt, var: StdVar),
                           wrong_proc_arity(stmt: SynProcCallStmt, exp_arity: Nat),
                           uncaught_ret_val(SynProcCallStmt),
                           proc_has_no_ret_val(SynProcCallStmt),
@@ -137,6 +139,7 @@ type ExprSpecWFError    = already_def_var(Var),
                           db_has_no_handlers(db_type: Atom),
                           not_a_nested_db_var(var: Atom, schema_def: SchemaDef),
                           unknown_nested_db_var(var: Atom, schema_def: SchemaDef),
+                          nested_dbs_are_not_supported_anymore(decl: NestedDBDecl),
                           unknown_update(name: Atom, db_type: Atom),
                           invalid_update_arity(name: Atom, arity: Nat, arities: [+Nat]),
                           not_a_memb_var(var: Atom, schema_def: SchemaDef),
@@ -145,8 +148,11 @@ type ExprSpecWFError    = already_def_var(Var),
                           not_a_rel_var(var: Atom, schema_def: SchemaDef),
                           unknown_rel_var(var: Atom, schema_def: SchemaDef),
                           non_relvar_aggr_fns_iter(cls: SynIterClause),
+                          actual_argument_not_an_auto_var(expr: SynExpr, proc: ProcSymbol, idx: Nat, type: <DBSymbol, AutoSymbol>),
+                          cannot_set_state_of_auto_arg(var: Symbol),
 
                           undef_auto_var(var: Atom, is_data_var: Bool),
+
 
                           anchored_errors(errors: ExprWFError+, anchor: Any),
 
@@ -194,6 +200,7 @@ WFError auto_inheritance_cycle([+Atom] as)                      = auto_inheritan
 WFError auto_def_errors(ReactAutoDef d, ExprWFError+ es)        = auto_def_errors(auto_def: d, errors: es);
 WFError auto_method_def_errors(AutoMethodDef m, FnDefWFError+ es) = auto_method_def_errors(meth_def: m, errors: es);
 WFError db_def_errors(SchemaDef s, ExprWFError+ es)            = db_def_errors(schema: s, errors: es);
+WFError using_block_invalid_auto_errs(UsingBlock b)             = using_block_invalid_auto_errs(block: b);
 WFError db_method_def_errors(SchemaDef s, DBMethodDef m, FnDefWFError+ es)  = db_method_def_errors(schema: s, method: m, errors: es);
 WFError update_def_errs(SchemaDef s, UpdateDef u, UpdateDefWFError+ es) = update_def_errs(schema: s, update: u, errors: es);
 WFError handler_def_errs(HandlerDef h, UpdateDefWFError+ es)    = handler_def_errs(handler: h, errors: es);
@@ -323,6 +330,7 @@ ExprSpecWFError wrong_return(<SynReturnStmt, return_stmt> s)    = :wrong_return(
 ExprSpecWFError return_in_let_body(<SynReturnStmt, return_stmt> s)  = :return_in_let_body(s);
 ExprSpecWFError vars_redef(Any a, [+Var] vs)                    = vars_redef(anchor: a, vars: vs);
 ExprSpecWFError undef_update_var(SynSeqUpdateStmt s, StdVar v)  = undef_update_var(stmt: s, var: v);
+ExprSpecWFError not_an_explicitly_typed_loc_var(SynSeqUpdateStmt s, StdVar v) = not_an_explicitly_typed_loc_var(stmt: s, var: v);
 ExprSpecWFError wrong_proc_arity(SynProcCallStmt s, Nat a)      = wrong_proc_arity(stmt: s, exp_arity: a);
 ExprSpecWFError uncaught_ret_val(SynProcCallStmt s)             = :uncaught_ret_val(s);
 ExprSpecWFError proc_has_no_ret_val(SynProcCallStmt s)          = :proc_has_no_ret_val(s);
@@ -357,6 +365,7 @@ ExprSpecWFError wrong_auto_arg_type(Atom v, Atom av, Atom a, Atom e)  = wrong_au
 ExprSpecWFError db_has_no_handlers(Atom t)                        = db_has_no_handlers(db_type: t);
 ExprSpecWFError not_a_nested_db_var(Atom v, SchemaDef d)          = not_a_nested_db_var(var: v, schema_def: d);
 ExprSpecWFError unknown_nested_db_var(Atom v, SchemaDef d)        = unknown_nested_db_var(var: v, schema_def: d);
+ExprSpecWFError nested_dbs_are_not_supported_anymore(NestedDBDecl d) = nested_dbs_are_not_supported_anymore(decl: d);
 ExprSpecWFError unknown_update(Atom n, Atom t)                    = unknown_update(name: n, db_type: t);
 ExprSpecWFError invalid_update_arity(Atom n, Nat a, [+Nat] as)    = invalid_update_arity(name: n, arity: a, arities: as);
 ExprSpecWFError not_a_memb_var(Atom v, SchemaDef d)               = not_a_memb_var(var: v, schema_def: d);
@@ -365,7 +374,9 @@ ExprSpecWFError invalid_rel_var_arity(Atom v, NzNat a, NzNat ra)  = invalid_rel_
 ExprSpecWFError not_a_rel_var(Atom v, SchemaDef d)                = not_a_rel_var(var: v, schema_def: d);
 ExprSpecWFError unknown_rel_var(Atom v, SchemaDef d)              = unknown_rel_var(var: v, schema_def: d);
 ExprSpecWFError non_relvar_aggr_fns_iter(SynIterClause c)         = non_relvar_aggr_fns_iter(cls: c);
-
+ExprSpecWFError cannot_set_state_of_auto_arg(Symbol v)            = cannot_set_state_of_auto_arg(var: v);
+ExprSpecWFError actual_argument_not_an_auto_var(SynExpr e, ProcSymbol p, Nat i, <DBSymbol, AutoSymbol> t) =
+  actual_argument_not_an_auto_var(expr: e, proc: p, idx: i, type: t);
 ExprSpecWFError undef_auto_var(Atom v, Bool b)                    = undef_auto_var(var: v, is_data_var: b);
 
 ExprSpecWFError anchored_errors(ExprWFError+ es, Any a)           = anchored_errors(errors: es, anchor: a);
@@ -443,6 +454,7 @@ Any* anchor_objs(ExprSpecWFError err) =
   return_in_let_body(s?)                  = (s),
   vars_redef()                            = (err.anchor),
   undef_update_var()                      = (err.stmt),
+  not_an_explicitly_typed_loc_var()       = (err.stmt),
   wrong_proc_arity()                      = (err.stmt),
   uncaught_ret_val(s?)                    = (s),
   proc_has_no_ret_val(s?)                 = (s),
@@ -476,6 +488,7 @@ Any* anchor_objs(ExprSpecWFError err) =
   db_has_no_handlers()                    = (),
   not_a_nested_db_var()                   = (),
   unknown_nested_db_var()                 = (),
+  nested_dbs_are_not_supported_anymore()  = (err.decl),
   unknown_update()                        = (),
   invalid_update_arity()                  = (),
   not_a_memb_var()                        = (),
@@ -484,6 +497,8 @@ Any* anchor_objs(ExprSpecWFError err) =
   not_a_rel_var()                         = (),
   unknown_rel_var()                       = (),
   non_relvar_aggr_fns_iter()              = (err.cls),
+  cannot_set_state_of_auto_arg()          = (),
+  actual_argument_not_an_auto_var()       = (),
 
   undef_auto_var()                        = (),
 
@@ -563,6 +578,7 @@ String* create_error_msg(WFError err) =
   auto_def_errors()                   = auto_def_err_msg(err.auto_def, err.errors),
   auto_method_def_errors()            = auto_method_def_err_msg(err.meth_def, err.errors),
   db_def_errors()                     = db_def_err_msg(err.schema, err.errors),
+  using_block_invalid_auto_errs()     = using_block_invalid_auto_err_msg(err.block),
   db_method_def_errors()              = db_method_def_err_msg(err.schema, err.method, err.errors),
   update_def_errs()                   = update_def_err_msg(err.schema, err.update, err.errors),
   handler_def_errs()                  = handler_def_err_msg(err.handler, err.errors),
@@ -574,6 +590,12 @@ String* create_error_msg(WFError err) =
   dupl_auto_defs()                    = dupl_auto_defs_err_msg(err.defs),
   typevar_decl_errs()                 = typevar_decl_err_msg(err.decl, err.errors),
   aggr_fn_decl_errs()                 = aggr_fn_decl_err_msg(err.decl, err.errors);
+
+
+String* using_block_invalid_auto_err_msg(UsingBlock block) = (
+    "Using block references a schema that does not exists: " & user_repr(db_symbol(block.target)),
+    source_code_loc_str(block)
+  );
 
 
 String* aggr_fn_decl_err_msg(AggrFunctDecl decl, AggrFnWFError+ errors) =
@@ -713,11 +735,11 @@ String* create_error_msg(ExprWFError err) {
   msg = basic_err_msg(err);
   locs = (artifact_source_code_location(a) : a <- anchor_objs(err));
   locs = (value(l) : l <- locs, l != nothing);
-  if locs != ():
+  if locs != () {
     start_lines = append((printed(left(left(l))) : l <- locs), " ");
     loc_str = "line" & {if |locs| > 1 then "s" else ""} & " " & start_lines;
     msg = (l & if i == 0 then " (" & loc_str & ")" else "" : l @ i <- msg);
-  ;
+  }
   return msg;
 }
 
@@ -774,12 +796,13 @@ String* basic_err_msg(AutoSpecWFError err) =
 
 
 String* incomp_relvar_decls_basic_err_msg([RelVarsDecl] relvars, [(RelVarsDecl, Nat)] attr_relvars) {
-  if relvars != []:
+  if relvars != [] {
     name = an_elem(relvars).name;
-  else
+  }
+  else {
     parent_relvar, idx = an_elem(nonempty(attr_relvars));
     name = parent_relvar.attributes(idx).name;
-  ;
+  }
   return ("Overloaded relation variable declarations are incompatible: " & _print_(name));
 }
 
@@ -825,12 +848,13 @@ String* basic_err_msg(ExprSpecWFError err) =
                                   );
                                 },
   wrong_rel_arity()           = { msg = "Wrong number of arguments";
-                                  if err.rel_path != nothing:
+                                  if err.rel_path != nothing {
                                     symbols = value(err.rel_path);
                                     msg = msg & ": " & append((_print_(s) : s <- symbols), ".") & "(..), a";
-                                  else
+                                  }
+                                  else {
                                     msg = msg & ". A";
-                                  ;
+                                  }
                                   arities = append((printed(a) : a <- rand_sort(err.actual_arities)), ", ");
                                   return (msg & "ctual arity: " & arities);
                                 },
@@ -839,11 +863,10 @@ String* basic_err_msg(ExprSpecWFError err) =
   wrong_pseudocall_arity()    = ("Too many arguments for set/map membership test or map lookup"),
   unknown_function()          = ("Unknown function: " & user_repr(fn_symbol(err.expr.name))),
   unknown_function_or_method() = { symbs = destructure_id_chain(err.expr.target);
-                                  if |symbs| == 1:
+                                  if |symbs| == 1
                                     return ("Unknown function or method: " & user_repr(fn_symbol(only(symbs))));
                                   else
                                     return ("Unknown method: " & user_repr(method_symbol(last(symbs))));
-                                  ;
                                 },
   unknown_aggr_funct()        = ("Undefined aggregate function: " & printed(err.expr.fn_name)),
   invalid_aggr_funct_arity()  = ( "Invalid aggregate function arity: " & printed(err.expr.fn_name) &
@@ -870,6 +893,7 @@ String* basic_err_msg(ExprSpecWFError err) =
   return_in_let_body()        = ("Return statements are not allowed inside the body of a let statement"),
   vars_redef()                = ("Variable is already defined: " & user_repr(v) : v <- rand_sort(err.vars)),
   undef_update_var()          = ("Variable is not defined: " & user_repr(err.var)),
+  not_an_explicitly_typed_loc_var() = ("Only explicitly typed local variables can be updated imperatively. Variable: " & user_repr(err.var)),
   wrong_proc_arity()          = ("Wrong number of arguments: " & user_repr(err.stmt.proc_name) & ", expected arity: " & printed(err.exp_arity)),
   uncaught_ret_val(p?)        = ("Return value cannot be ignored: " & user_repr(p.proc_name)),
   proc_has_no_ret_val(p?)     = ("Procedure has no return value: " & user_repr(p.proc_name)),
@@ -906,17 +930,17 @@ String* basic_err_msg(ExprSpecWFError err) =
 
   undef_static_auto_var()     = ( if err.is_auto_var
                                     then _print_(err.var) & " is a reactive automaton, not a static one"
-                                  elif err.is_obj_var
+                                  else if err.is_obj_var
                                     then "Not an automaton variable: " & _print_(err.var)
                                   else
                                     "Unknown automaton variable: " & _print_(err.var)
                                 ),
   wrong_auto_var_arity()      = ( if err.expected == 0
-                                      then "Automaton variable " & _print_(err.var) & " does not expect arguments"
-                                    elif err.actual == 0
-                                      then "Automaton variable " & _print_(err.var) & " requires " & printed(err.expected) & " arguments"
-                                    else
-                                      "Automaton variable " & _print_(err.var) & " requires " & printed(err.expected) & " arguments"
+                                    then "Automaton variable " & _print_(err.var) & " does not expect arguments"
+                                  else if err.actual == 0
+                                    then "Automaton variable " & _print_(err.var) & " requires " & printed(err.expected) & " arguments"
+                                  else
+                                    "Automaton variable " & _print_(err.var) & " requires " & printed(err.expected) & " arguments"
                                 ),
   wrong_auto_arg_type()       = ( "Wrong automaton type, argument " & _print_(err.arg_var) & " of automaton variable " & _print_(err.var),
                                   "  Expected type: " & upper_camel_case(err.expected),
@@ -925,6 +949,7 @@ String* basic_err_msg(ExprSpecWFError err) =
   db_has_no_handlers()        = ("Automaton " & user_repr(db_symbol(err.db_type)) & " has no message handlers"),
   not_a_nested_db_var()       = ("Not a nested automaton: " & _print_(err.var)),
   unknown_nested_db_var()     = ("Unknown automaton variable: " & _print_(err.var)),
+  nested_dbs_are_not_supported_anymore() = ("Nested relational automata are not supported anymore. Nested automaton: " & user_repr(nested_db_var(err.decl.name))),
   unknown_update()            = ("Unknown update: " & _print_(err.name)),
   invalid_update_arity()      = ( "Wrong number of arguments: " & printed(err.arity) &
                                   ", actual arity: " & append((printed(a) : a <- rand_sort(err.arities)), ", ")
@@ -938,6 +963,8 @@ String* basic_err_msg(ExprSpecWFError err) =
   not_a_rel_var()             = ("Not a relational variable: " & _print_(err.var)),
   unknown_rel_var()           = ("Unknown relational variable: " & _print_(err.var)),
   non_relvar_aggr_fns_iter()  = non_relvar_aggr_fns_iter_err_msg(err.cls),
+  cannot_set_state_of_auto_arg()    = cannot_set_state_of_auto_arg_err_msg(err.var),
+  actual_argument_not_an_auto_var() = actual_argument_not_an_auto_var_err_msg(err.expr, err.proc, err.idx, err.type),
 
   undef_auto_var()            = ( if err.is_data_var
                                     then _print_(err.var) & " is not an automaton variable"
@@ -950,6 +977,18 @@ String* basic_err_msg(ExprSpecWFError err) =
   annotated_syn_stmt_error()  = basic_err_msg(err.error);
 
 
+String* cannot_set_state_of_auto_arg_err_msg(Symbol var) = (
+  "It is not yet possible to directly set the state of an automaton instance such as " & _print_(var),
+  "that has been passed as an argument to the current procedure. The write instruction",
+  "can at the moment be used only with locally defined automaton instances"
+);
+
+
+String* actual_argument_not_an_auto_var_err_msg(SynExpr expr, ProcSymbol proc, Nat idx, <DBSymbol, AutoSymbol> type) = (
+  "Argument " & _print_(idx+1) & " of " & user_repr(proc) & "(..) must be an automaton variable of type " & user_repr(type)
+);
+
+
 String* non_relvar_aggr_fns_iter_err_msg(SynIterClause cls) {
   target = match (cls.src)
     const_or_var(s?)  = (s),
@@ -960,22 +999,22 @@ String* non_relvar_aggr_fns_iter_err_msg(SynIterClause cls) {
                         },
     _                 = ();
   msg = ("Aggregate functions can only be used with mutable relation variables, not ordinary relations");
-  if target != ():
+  if target != () {
     target_name = append((_print_(s) : s <- target), ".");
     msg = (msg | target_name & " doesn't seem to be a mutable relation variable");
-  ;
+  }
   return msg;
 }
 
 
 String* not_an_object_err_msg(SynExpr expr, [<SymbChainExpr, ClsVar, AnyAutoVar, AnyDBVar, AnyRelVar, FnFamilyId, PreCall>] resols) {
-  if expr :: ConstOrVar:
+  if expr :: ConstOrVar {
     token = _print_(untag(expr));
     return (
       "Undefined variable or constant: " & token,
       "There might be a function, closure, method or relation with the same name"
     );
-  ;
+  }
 
   return ("Expression resolves to something other than a value");
 }
@@ -993,10 +1032,10 @@ String* conflicting_auto_decls_err_msg(AnyAutoDecl decl1, AnyAutoDecl decl2) {
     descr = auto_decl_descr(decl);
     descr = descr & " " & _print_(decl.name) if decl.name?;
     maybe_loc = artifact_source_code_location(decl);
-    if maybe_loc != nothing:
+    if maybe_loc != nothing {
       start_line = left(left(value(maybe_loc)));
       descr = descr & " (line " & printed(start_line) & ")";
-    ;
+    }
     return descr;
   }
 }
@@ -1035,17 +1074,16 @@ String* create_error_msg(AggrFnSpecWFError err) =
 ////////////////////////////////////////////////////////////////////////////////
 
 Maybe[((NzNat, NzNat), (NzNat, NzNat))] artifact_source_code_location(Any obj) {
-  if obj != nothing:
+  if obj != nothing {
     maybe_data = fetch(obj);
-    if maybe_data != nothing:
+    if maybe_data != nothing {
       data = value(maybe_data);
-      if data :: ((NzNat, NzNat), (NzNat, NzNat)):
+      if data :: ((NzNat, NzNat), (NzNat, NzNat))
         return just(data);
       else
         print data;
-      ;
-    ;
-  ;
+    }
+  }
   return nothing;
 }
 

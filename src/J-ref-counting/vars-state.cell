@@ -145,37 +145,38 @@ Bool var_group_is_live(VarsState state, TrkObjVar var, [TrkVar] live_vars) {
   new_vars_status = remove_key(vars_status, var);
 
   copies = [v : v, ov <- vars_status, ov == copy_of(var)];
-  if copies != []:
+  if copies != [] {
     // Either owner or dependent variable with no copies
     a_copy = an_elem(copies);
 
-    if var :: TrkObjVar:
+    if var :: TrkObjVar {
       // Tranferring the status of the original variable to the copy
       new_copy_status = vars_status[var];
-    else
+    }
+    else {
       // assert var :: <ImplArg, SignalVar>; ## TO DO (PROBABLY): ADD QualMembVar AND MembObjVar
-      if not var :: <ImplArg, SignalVar>:
+      if not var :: <ImplArg, SignalVar> {
         print "Internal error in release_var(), vars-state.ar:160";
         print var;
-      ;
+      }
       // Since implicit parameters are not tracked, we just give the copy
       // the status of owner, since untracked variables own their reference
       ## IS THAT ALWAYS TRUE?
       new_copy_status = owner;
-    ;
+    }
 
     // Replacing all references to the variable with references
     // to the copy and updating the status of the copy
     new_vars_status = [
-      v -> if   v == a_copy             then new_copy_status
-           elif s == copy_of(var)       then copy_of(a_copy)
-           elif s == dependent_on(var)  then dependent_on(a_copy)
-                                        else s
+      v -> if v == a_copy             then new_copy_status      else
+           if s == copy_of(var)       then copy_of(a_copy)      else
+           if s == dependent_on(var)  then dependent_on(a_copy) else
+                                           s
       : v, s <- new_vars_status
     ];
     new_it_vars_map = [iv -> if ov == var then a_copy else ov : iv, ov <- it_vars_map];
-
-  else
+  }
+  else {
     // Here the variables has no copies, so there mustn't be any iterators on it left,
     // either because the variable is itself not a copy, and therefore has no iterators
     // in the first place, or because the reference is not going to survive
@@ -184,20 +185,20 @@ Bool var_group_is_live(VarsState state, TrkObjVar var, [TrkVar] live_vars) {
     // var_status = vars_status[var];
     var_status = lookup(vars_status, var, owner); ## THIS IS A TEMPORARY HACK USED TO ACCOMODATE IMPLICIT PARAMETERS BEFORE copy_of() IS ACTUALLY IMPLEMENTED
 
-    if var_status == owner:
+    if var_status == owner {
       // Owner variable with no copies
       // Add-refing all children and making them owners and then releasing the variable
       new_vars_status = [v -> if s == dependent_on(var) then owner else s : v, s <- new_vars_status];
       code = rand_sort([add_ref(v) : v, s <- vars_status, s == dependent_on(var)]) & (release(var));
-
-    elif is_dependent(var_status):
+    }
+    else if is_dependent(var_status) {
       // Dependent variable that has no copies. No release is needed.
       // Replacing all references to it with references to its parent.
       new_vars_status = [v -> if s == dependent_on(var) then var_status else s : v, s <- new_vars_status];
-    ;
+    }
 
     // Nothing to do if the variable is inline or if it is a copy
-  ;
+  }
 
   new_state = vars_state(new_vars_status, new_it_vars_map);
   return (new_state, code);
@@ -205,12 +206,13 @@ Bool var_group_is_live(VarsState state, TrkObjVar var, [TrkVar] live_vars) {
 
 
 (VarsState, Instr*) reset_var(VarsState state, TrkObjVar var, VarStatus new_status) {
-  if is_tracked(state, var):
+  if is_tracked(state, var) {
     interm_state, instrs = release_var(state, var);
-  else
+  }
+  else {
     interm_state = state;
     instrs = ();
-  ;
+  }
   interm_vars_status = vars_status(interm_state);
   final_vars_status = update(interm_vars_status, var, new_status);
   return (vars_state(final_vars_status, it_vars_map(interm_state)), instrs);
@@ -229,10 +231,10 @@ Instr* gen_state_switch_code(VarsState start_state, VarsState target_state) {
 
   tmp_state = start_state;
   vars_rem_code = ();
-  for v <- rand_sort(vars_to_remove):
+  for v <- rand_sort(vars_to_remove) {
     tmp_state, var_rem_code = release_var(tmp_state, v);
     vars_rem_code = vars_rem_code & var_rem_code;
-  ;
+  }
 
   add_ref_code = (status_change_code(var_status(tmp_state, v), var_status(target_state, v), v) : v <- rand_sort(target_vars));
 
@@ -316,7 +318,7 @@ VarStatus reconcile(VarStatus status1, VarStatus status2) =
 
   assert not root_var :: TrkObjVar or var_status(state, root_var) == owner;
 
-  if is_root_var_or_copy:
+  if is_root_var_or_copy
     // If <var> is either <root_var> or a copy of it, we consume its reference if it has one,
     // or we add-ref it if it is an external (untracked) variable
     code = (add_ref(var) if not root_var :: TrkObjVar);
@@ -324,7 +326,6 @@ VarStatus reconcile(VarStatus status1, VarStatus status2) =
     // Since in this case <var> generally points to just a subset of <root_var>,
     // we add-ref the subobject and release, if need be, the root object
     code = (add_ref(var), release(root_var) if root_var :: TrkObjVar);
-  ;
 
   assert code == (add_ref(var) if not is_root_var_or_copy or not root_var :: TrkObjVar, release(root_var) if not is_root_var_or_copy and root_var :: TrkObjVar);
 

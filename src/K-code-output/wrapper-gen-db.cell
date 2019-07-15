@@ -71,12 +71,13 @@ implicit block_name : DBSymbol, db_var_chain : NestedDBVar*, root_block_name : D
   //////////////////////////////////////////////////////////////////////////////
 
   (T, T) flip_pair_if((T, T) pair, Bool cond) {
-    if cond:
+    if cond {
       a, b = pair;
       return (b, a);
-    else
+    }
+    else {
       return pair;
-    ;
+    }
   }
 
 
@@ -105,7 +106,7 @@ implicit block_name : DBSymbol, db_var_chain : NestedDBVar*, root_block_name : D
       "}"
     );
 
-    if maybe_key_col != nothing:
+    if maybe_key_col != nothing {
       key_col = value(maybe_key_col);
       assert key_col == 0;
       non_key_col = match (key_col) 0 = 1, 1 = 0;
@@ -122,7 +123,7 @@ implicit block_name : DBSymbol, db_var_chain : NestedDBVar*, root_block_name : D
           rel_name & ", " & vs_names & ", " & ctor_fns(key_col) & "(in_arg), out_arg);",
         "}"
       );
-    ;
+    }
 
     decls = (decls | "  std::vector<std::tuple<" & append(ret_types, ", ") & "> > get_" & base_name & "();");
     impls = impls & (
@@ -195,10 +196,10 @@ implicit block_name : DBSymbol, db_var_chain : NestedDBVar*, root_block_name : D
 
     Maybe[Nat] maybe_key_col(Table table) {
       keys = table.keys;
-      if |keys| == 1:
+      if |keys| == 1 {
         key = only(keys);
         return just(only(key)) if |key| == 1;
-      ;
+      }
       return nothing;
     }
   }
@@ -206,12 +207,13 @@ implicit block_name : DBSymbol, db_var_chain : NestedDBVar*, root_block_name : D
   //////////////////////////////////////////////////////////////////////////////
 
   (String*, String*) db_method_wrapper(MethodId method_id, CompiledMethod method) {
-    if not method_id.id?:
+    if not method_id.id? {
       base_name = external_name(method_id.symbol);
       return method_wrapper(method_id, method, block_name, base_name, db_class_name);
-    else
+    }
+    else {
       return ((), ());
-    ;
+    }
   }
 
   //////////////////////////////////////////////////////////////////////////////
@@ -245,11 +247,11 @@ implicit block_name : DBSymbol, db_var_chain : NestedDBVar*, root_block_name : D
 
 implicit typedefs : [TypeName -> NeType] {
   (String*, String*, String*) static_auto_wrapper(StaticBlock root_block, [DBSymbol -> StaticBlock] blocks) {
-    let block_name = root_block.name, db_var_chain = (), root_block_name = root_block.name:
+    let block_name = root_block.name, db_var_chain = (), root_block_name = root_block.name {
       accessors_decls, accessors_impls = static_auto_accessors(root_block, blocks);
       class_name = db_class_name;
       cast_ptr = "(" & to_c_name(root_block.name) & " *) ptr";
-    ;
+    }
 
     db_name = to_c_name(root_block.name);
     has_any_updates = root_block.msg_memb_pred != nothing;
@@ -321,7 +323,7 @@ implicit typedefs : [TypeName -> NeType] {
       "}"
     );
 
-    if has_any_updates:
+    if has_any_updates {
       class_impl = class_impl & (
         "",
         "void " & class_name & "::execute(const char *buffer) {",
@@ -338,7 +340,7 @@ implicit typedefs : [TypeName -> NeType] {
         "    throw 0LL;",
         "}"
       );
-    ;
+    }
 
     class_impl = class_impl & accessors_impls;
 

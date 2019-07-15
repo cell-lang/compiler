@@ -30,11 +30,11 @@ implicit program           : Program,
     var_gen = init_var_gen;
     code = ();
     surrs = ();
-    for e <- exprs:
+    for e <- exprs {
       expr_code, surr, var_gen = opt_eval_info(e, var_gen);
       code = code & expr_code;
       surrs = (surrs | surr);
-    ;
+    }
     return (code, nonempty(surrs), var_gen);
   }
 
@@ -47,7 +47,10 @@ implicit program           : Program,
 
 
   (Instr*, ObjExpr, VarGen) opt_eval_info(LeafObj expr, VarGen var_gen) {
-    return ((), expr, var_gen);
+    ll_expr = match (expr)
+      object(<+>)       = expr,
+      object(<*..*> n?) = int_obj(n);
+    return ((), ll_expr, var_gen);
   }
 
 
@@ -99,7 +102,9 @@ implicit program           : Program,
     rel_memb_test()     = rel_memb_test_opt_eval_info(expr.rel, expr.args, var_gen),
     rel_lookup()        = rel_lookup_opt_eval_info(expr, var_gen),
     relvar_memb_test()  = relvar_memb_test_opt_eval_info(expr.rel_var, expr.args, var_gen),
-    relvar_lookup()     = relvar_lookup_opt_eval_info(expr.rel_var, expr.args, var_gen),
+    relvar_lookup()     = if is_columnar_relvar(expr.rel_var)
+                            then columnar_relvar_lookup_opt_eval_info(expr.rel_var, expr.args, var_gen)
+                            else relvar_lookup_opt_eval_info(expr.rel_var, expr.args, var_gen),
     and_expr()          = and_expr_opt_eval_info(expr.left, expr.right, var_gen),
     or_expr()           = or_expr_opt_eval_info(expr.left, expr.right, var_gen),
     not_expr(e?)        = not_expr_opt_eval_info(e, var_gen),
@@ -123,8 +128,9 @@ implicit program           : Program,
 
 
   (Instr*, ObjExpr, VarGen) rel_var_size_expr_opt_eval_info(AnyRelVar rel_var, Maybe[Expr]+ args, VarGen init_var_gen) {
-    filtered_idxs = nonempty(idxs_into_filtered_seq((a != nothing : a <- args)));
-    unfiltered_idxs = (i : a @ i <- args, a != nothing);
+    bound_args_idxs = (i : a @ i <- args, a != nothing);
+    free_args_idxs = (i : a @ i <- args, a == nothing);
+    arg_idx_bound_arg_idx = [i -> j : i @ j <~ bound_args_idxs];
 
     set_args = (value(a) : a <- args, a != nothing);
     eval_code, args_aliases, var_gen = opt_eval_info(set_args, init_var_gen);
@@ -133,7 +139,7 @@ implicit program           : Program,
     surr_vars, var_gen = next_int32_vars(ret_var_gen, |set_args|);
     it_var, var_gen = next_table_it_var(var_gen, |args|, symmetric(rel_var));
 
-    surr_args = (apply(mi, surr_vars($)) : mi <- filtered_idxs);
+    surr_args = (apply(a, surr_vars(arg_idx_bound_arg_idx(i))) : a @ i <- args);
 
     // Selecting the candidate tables among those the logical relation is partitioned into
     args_types = (apply(a, subexpr_type) : a <- args);
@@ -142,21 +148,28 @@ implicit program           : Program,
 
     symmetric = symmetric(rel_var);
 
-    code = eval_code;
-    for t @ i <- isort(candidate_tables):
+    code = (eval_code | set_ivar32(res_var, 0));
+    for t @ i <- isort(candidate_tables) {
       count_expr = get_count(substitute(t), surr_args, symmetric);
       count_expr = add32(res_var, count_expr) if i > 0;
       table_code = (set_ivar32(res_var, count_expr));
-      for e @ j <- reverse(args_aliases):
-        store_id = substitute(table_col_store_id(t, rat(unfiltered_idxs, j)));
+      for e @ j <- reverse(args_aliases) {
+        idx = rat(bound_args_idxs, j);
+        arg_type = value_unsafe(args_types(idx));
+        store_id = table_col_store_id(t, idx);
+        store_type = value_store_type(rel_auto_type(rel_var), unqualified(store_id));
+        store_id = substitute(store_id);
         surr_var = rat(surr_vars, j);
-        table_code = (
-          set_ivar32(surr_var, lookup_value(store_id, e)),
-          branch(neg(are_eq(int_obj(surr_var), int_obj(-1))), table_code, (set_ivar32(res_var, 0) if i == 0))
+        assert |candidate_tables| > 1 or value_store_guard(store_type, e, arg_type) == true;
+        table_code = opt_do_if(
+          value_store_guard(store_type, e, arg_type),
+          ( set_ivar32(surr_var, value_to_surr(store_id, value_store_encoded_expr(store_type, e))),
+            do_if_not(are_eq(int_obj(surr_var), int_obj(-1)), table_code)
+          )
         );
-      ;
+      }
       code = code & table_code;
-    ;
+    }
 
     return (code, int_obj(res_var), ret_var_gen);
   }
@@ -164,17 +177,17 @@ implicit program           : Program,
 
   // relvar_memb_test(rel_var: AnyRelVar, args: Maybe[Expr]+);
   (Instr*, ObjExpr, VarGen) relvar_memb_test_opt_eval_info(AnyRelVar rel_var, Maybe[Expr]+ args, VarGen init_var_gen) {
-    filtered_idxs = nonempty(idxs_into_filtered_seq((a != nothing : a <- args)));
-    unfiltered_idxs = (i : a @ i <- args, a != nothing);
+    bound_args = (value(a) : a <- args, a != nothing);
+    bound_args_idxs = (i : a @ i <- args, a != nothing);
+    arg_idx_bound_arg_idx = [i -> j : i @ j <~ bound_args_idxs];
 
-    set_args = (value(a) : a <- args, a != nothing);
-    eval_code, args_aliases, var_gen = opt_eval_info(set_args, init_var_gen);
+    eval_code, args_aliases, var_gen = opt_eval_info(bound_args, init_var_gen);
 
     res_var, ret_var_gen = next_bool_var(init_var_gen);
-    surr_vars, var_gen = next_int32_vars(ret_var_gen, |set_args|);
+    surr_vars, var_gen = next_int32_vars(ret_var_gen, |bound_args|);
     it_var, var_gen = next_table_it_var(var_gen, |args|, symmetric(rel_var));
 
-    surr_args = (apply(mi, surr_vars($)) : mi <- filtered_idxs);
+    surr_args = (apply(a, surr_vars(arg_idx_bound_arg_idx(i))) : a @ i <- args);
 
     symmetric = symmetric(rel_var);
 
@@ -184,30 +197,28 @@ implicit program           : Program,
     candidate_tables = overlapping_tables(rel_var, args_types);
 
     code = (eval_code | set_bvar(res_var, false));
-    for tv @ i <- isort(candidate_tables):
+    for tv @ i <- isort(candidate_tables) {
       subst_table_var = substitute(tv);
-      if (a <~ args : a == nothing):
-        table_code = (
-          get_table_iter(it_var, subst_table_var, surr_args),
-          set_bvar(res_var, neg(is_out_of_range(it_var)))
-        );
-      else
-        surr_args = (just(v) : v <- nonempty(surr_vars));
-        table_code = (set_bvar(res_var, table_contains(subst_table_var, surr_args, symmetric)));
-      ;
+      table_code = (set_bvar(res_var, table_contains(subst_table_var, surr_args, symmetric)));
 
-      for e @ j <- reverse(args_aliases):
-        store_id = substitute(table_col_store_id(tv, rat(unfiltered_idxs, j)));
+      for e @ j <- reverse(args_aliases) {
+        idx = rat(bound_args_idxs, j);
+        arg_type = value_unsafe(args_types(idx));
+        store_id = table_col_store_id(tv, idx);
+        store_type = value_store_type(rel_auto_type(rel_var), unqualified(store_id));
+        store_id = substitute(store_id);
         surr_var = rat(surr_vars, j);
-        table_code = (
-          set_ivar32(surr_var, lookup_value(store_id, e)),
-          do_if_not(are_eq(int_obj(surr_var), int_obj(-1)), table_code)
+        table_code = opt_do_if(
+          value_store_guard(store_type, e, arg_type),
+          ( set_ivar32(surr_var, value_to_surr(store_id, value_store_encoded_expr(store_type, e))),
+            do_if_not(are_eq(int_obj(surr_var), int_obj(-1)), table_code)
+          )
         );
-      ;
+      }
 
-      table_code = (do_if_not(res_var, table_code)) if i == 0;
+      table_code = (do_if_not(res_var, table_code)) if i != 0;
       code = code & table_code;
-    ;
+    }
 
     return (code, bool_obj(res_var), ret_var_gen);
   }
@@ -228,72 +239,172 @@ implicit program           : Program,
     // not contain the argument that is being looked up
     is_unique = (k <- relvar_keys(rel_var) : not k(target_idx));
 
-    res_var, ret_var_gen = next_obj_var(init_var_gen);
+    res_surr_var, var_gen = next_int32_var(init_var_gen);
+
+    res_repr = opt_repr(types(expr_id));
+    res_var, ret_var_gen = next_var(res_repr, init_var_gen);
 
     // Evaluation of arguments
     args_eval_code, args_aliases, var_gen = opt_eval_info(ord_args, ret_var_gen);
 
-    surr_vars, var_gen = next_int32_vars(var_gen, |args|);
-    surr_vars_map = [i -> surr_vars(j) : i @ j <~ args_idxs];
-    it_var, var_gen = next_table_it_var(var_gen, arity, symmetric(rel_var));
+    def_surr_vars, var_gen = next_int32_vars(var_gen, |args|);
+    def_surr_vars_map = [i -> def_surr_vars(j) : i @ j <~ args_idxs];
 
     // Selecting the candidate tables among those the logical relation is partitioned into
     args_types = [i -> subexpr_type(e) : i, e <- args];
     return ((), :invalid_var, init_var_gen) if not args_types :: [Nat -> NeType];
     candidate_tables = overlapping_tables(rel_var, maybe_seq(args_types, arity));
 
-    // If all the lookups fail, then we throw an exception
-    code = (terminate);
-
     // Iterating through all the candidate tables
-    for tv <- isort(candidate_tables):
-      // Looking up all arguments
-      args_lookup_code = join(({
-        store_id = substitute(table_col_store_id(tv, args_idxs(i)));
-        surr_var = surr_vars(i);
-        return (
-          set_ivar32(surr_var, lookup_value(store_id, e)),
-          check(neg(is_eq(surr_var, -1)))
-        );
-      } : e @ i <- args_aliases));
+    lookup_code = join(({
+      surr_vars = def_surr_vars;
+      surr_vars_map = def_surr_vars_map;
+      if maybe_args :: (Just[ExprRef], Nothing) {
+        arg1 = expand_subexpr(value(maybe_args(0)));
+        if arg1 :: StdVar {
+          surr_var = shadow_surr_var(arg1);
+          surr_vars = (surr_var);
+          surr_vars_map = [0 -> surr_var];
+        }
+      }
 
-      res_store_id = substitute(table_col_store_id(tv, target_idx));
-
-      lookup_code = (
-        get_table_iter(it_var, substitute(tv), maybe_seq(surr_vars_map, arity)),
-        branch(
-          neg(is_out_of_range(it_var)),
-          ( lookup_surrogate(res_var, res_store_id, get_unknown_arg(it_var, 0)),
-            move_forward(it_var) if not is_unique,
-            do_if_not(is_out_of_range(it_var), terminate) if not is_unique
-          ),
-          // If the lookup on this table fails we keep going, unless this is the last table left
-          code
-        )
+      res_store_id = table_col_store_id(tv, target_idx);
+      res_store_type = value_store_type(rel_auto_type(rel_var), unqualified(res_store_id));
+      res_store_id = substitute(res_store_id);
+      code = (
+        set_ivar32(res_surr_var, table_lookup(substitute(tv), maybe_seq(surr_vars_map, arity), symmetric(rel_var))),
+        do_if_not(is_eq(res_surr_var, -1), (
+          surr_to_decoded_value(res_var, res_store_id, res_store_type, res_surr_var),
+          exit_block
+        ))
       );
 
-      code = args_lookup_code & lookup_code;
-    ;
+      for ri < |args_aliases| {
+        i = |args_aliases| - ri - 1;
+        arg_alias = args_aliases(i);
 
-    return (args_eval_code & code, res_var, ret_var_gen);
+        arg_type = subexpr_type(ord_args(i));
+
+        store_id = table_col_store_id(tv, args_idxs(i));
+        store_type = value_store_type(rel_auto_type(rel_var), unqualified(store_id));
+        store_id = substitute(store_id);
+        surr_var = surr_vars(i);
+
+        code = opt_do_if(
+          value_store_guard(store_type, arg_alias, arg_type),
+          ( set_ivar32(surr_var, value_to_surr(store_id, value_store_encoded_expr(store_type, arg_alias))),
+            do_if_not(is_eq(surr_var, -1), code)
+          )
+        );
+      }
+
+      return code;
+    } : tv <- isort(candidate_tables)));
+
+    return ((args_eval_code | execute_block((lookup_code | terminate))), obj_expr(res_var), ret_var_gen);
   }
 
 
+  // relvar_lookup(rel_var: AnyRelVar, args: Maybe[Expr]+)
+  (Instr*, ObjExpr, VarGen) columnar_relvar_lookup_opt_eval_info(AnyRelVar rel_var, Maybe[Expr]+ maybe_args, VarGen init_var_gen) {
+    fail if not maybe_args :: (Just[ExprRef], Nothing);
+
+    arg = value(maybe_args(0));
+    arg_type = subexpr_type(arg);
+    return ((), :invalid_var, init_var_gen) if arg_type == empty_type;
+
+    res_type = types(expr_id);
+    res_repr = opt_repr(res_type);
+
+    res_var, ret_var_gen = next_var(res_repr, init_var_gen);
+
+    // Evaluation of arguments
+    arg_eval_code, arg_alias, var_gen = opt_eval_info(arg, ret_var_gen);
+
+    // Argument surrogate
+    exp_arg = expand_subexpr(arg);
+    if exp_arg :: StdVar
+      arg_surr_var = shadow_surr_var(exp_arg);
+    else
+      arg_surr_var, var_gen = next_int32_var(var_gen);
+
+    // Selecting the candidate tables among those the logical relation is partitioned into
+    candidate_tables = overlapping_tables(rel_var, (just(arg_type), nothing));
+
+    ## TEST IT WITH POLYMORPHIC TABLES AND WITH CLOSURES
+
+    if |candidate_tables| == 1 {
+      table = only(candidate_tables);
+      arg_store_id = table_col_store_id(table, 0);
+      arg_store_type = value_store_type(rel_auto_type(rel_var), unqualified(arg_store_id));
+      arg_store_id = substitute(arg_store_id);
+
+      col_repr = column_repr(table_signature(table)(1));
+
+      code = (
+        arg_eval_code |
+        set_ivar32(arg_surr_var, value_to_surr(arg_store_id, value_store_encoded_expr(arg_store_type, arg_alias))),
+        check(neg(is_eq(arg_surr_var, -1))),
+        set_any_var(res_var, column_lookup(substitute(table), arg_surr_var, col_repr))
+      );
+
+      return (code, obj_expr(res_var), ret_var_gen);
+    }
+    else {
+      cases = [{
+        arg_store_id = table_col_store_id(tv, 0);
+        arg_store_type = value_store_type(rel_auto_type(rel_var), unqualified(arg_store_id));
+        arg_store_id = substitute(arg_store_id);
+
+        sign = table_signature(tv);
+        col_repr = column_repr(sign(1));
+
+        enc_expr = value_store_encoded_expr(arg_store_type, arg_alias);
+
+        code = (
+          set_ivar32(arg_surr_var, value_to_surr(arg_store_id, enc_expr)),
+          check(neg(is_eq(arg_surr_var, -1))),
+          set_any_var(res_var, column_lookup(substitute(tv), arg_surr_var, col_repr))
+        );
+
+        return ((sign(0)), code);
+      } : tv <- candidate_tables];
+
+      code = arg_eval_code & dynamic_dispatch_code((arg_alias), cases);
+      return (code, obj_expr(res_var), ret_var_gen);
+    }
+  }
+
+
+  // type FnCallExpr = fn_call(fn_id: FnFamilyId, args: Expr*, ...);
   // db_method_call(var: AnyDBVar?, name: MethodSymbol, args: Expr*)
   (Instr*, ObjExpr, VarGen) db_method_call_opt_eval_info(DBMethodCall expr, VarGen init_var_gen) {
-    res_var, ret_var_gen = next_obj_var(init_var_gen);
-    args_eval_code, args_surrs, var_gen = opt_eval_info(expr.args, ret_var_gen);
+    // Actual arguments' types
+    args_types = (subexpr_type(a) : a <- expr.args);
 
-    invoke_method_instr = invoke_db_method(
+    // Low-level signature of the target method
+    rel_auto_id = if expr.var? then var_type(expr.var) else this_db_symbol;
+    method_id, low_level_sign = low_level_sign(rel_auto_id, expr.name, args_types);
+
+    // Result variable and returned variable generator
+    res_var, ret_var_gen = next_var(low_level_sign.ret_value, init_var_gen);
+
+    // Evaluation of the arguments
+    args_eval_code, args_surrs, unused_var = opt_eval_info(expr.args, ret_var_gen);
+
+    // Low-level actual arguments
+    low_level_args = (low_level_expr(low_level_sign.args(i), s) : s @ i <- args_surrs);
+
+    // Evaluation code for the call only
+    method_call_instr = invoke_db_method(
       res_var:    res_var,
       db_var:     expr.var if expr.var?,
       type:       if expr.var? then var_type(expr.var) else this_db_symbol,
-      method_id:  method_id(expr.name, |expr.args|),
-      args:       args_surrs
+      method_id:  method_id,
+      args:       low_level_args
     );
 
-    code = (args_eval_code | invoke_method_instr);
-    return (code, res_var, ret_var_gen);
+    return ((args_eval_code | method_call_instr), obj_expr(res_var), ret_var_gen);
   }
 
 
@@ -317,17 +428,17 @@ implicit program           : Program,
     // For each of the physical representations we've to deal with, we'll set
     // aside a temporary variable to be used to store the result of <expr.expr>
     tmp_vars_by_repr = [];
-    for r <- isort(values(red_vars_reprs)):
+    for r <- isort(values(red_vars_reprs)) {
       tmp_var, var_gen = next_var(r, var_gen);
       tmp_vars_by_repr = tmp_vars_by_repr & [r -> tmp_var];
-    ;
+    }
 
     // For each reduction variables, we reserve an accumulator
     red_vars_accs = [];
-    for v <- ord_red_vars:
+    for v <- ord_red_vars {
       phys_var, var_gen = next_var(red_vars_reprs(v), var_gen);
       red_vars_accs = red_vars_accs & [v -> phys_var];
-    ;
+    }
 
     input_repr = opt_repr(aggr_fn.elt_type);
     input_var, var_gen = next_var(input_repr, var_gen);
@@ -463,7 +574,7 @@ implicit program           : Program,
     res_var, var_gen = next_var(repr, init_var_gen);
     ret_var_gen = var_gen;
 
-    if |expr.exprs| == 1:
+    if |expr.exprs| == 1 {
       match_expr = only(expr.exprs);
       match_expr_type = subexpr_type(match_expr);
       match_expr_code, match_expr_surr, var_gen = opt_eval_info(match_expr, var_gen);
@@ -481,8 +592,8 @@ implicit program           : Program,
 
       match_code = single_ptrn_match_expr_opt_code(match_expr_surr, match_expr_type, cases);
       return (match_expr_code & match_code, obj_expr(res_var), ret_var_gen);
-
-    else
+    }
+    else {
       exprs_types = (subexpr_type(e) : e <- expr.exprs);
       exprs_eval_code, exprs_surrs, var_gen = opt_eval_info(expr.exprs, var_gen);
 
@@ -492,16 +603,15 @@ implicit program           : Program,
           surrs = surrogates & [v -> obj_expr(pv) : v, pv <- vars_reprs];
           code, surr, unused_var = opt_eval_info(c.expr, var_gen, surrogates = surrs);
           code = (store_result(code, surr, res_var) | exit_block);
-          for p, t, s <- reverse(zip(c.ptrns, exprs_types, exprs_surrs)):
+          for p, t, s <- reverse(zip(c.ptrns, exprs_types, exprs_surrs))
             code = opt_ptrn_match_code(p, s, t, code, vars_reprs = vars_reprs);
-          ;
           return code;
         } : c <- expr.cases
       );
 
       code = (exprs_eval_code | execute_block((join(cases_code) | terminate)));
       return (code, obj_expr(res_var), ret_var_gen);
-    ;
+    }
   }
 
 
@@ -520,23 +630,24 @@ implicit program           : Program,
     // Evaluation of all subexpressions
     code, rel_surr, var_gen = opt_eval_info(expr.rel, ret_var_gen);
     args_surrs = [];
-    for a @ i <- expr.args:
-      if a != nothing:
+    for a @ i <- expr.args {
+      if a != nothing {
         arg_code, arg_surr, var_gen = opt_eval_info(value(a), var_gen);
         code = code & arg_code;
         args_surrs = args_surrs & [i -> arg_surr];
-      ;
-    ;
+      }
+    }
     assert |args_surrs| == arity - 1;
 
-    if arity == 1:
+    if arity == 1 {
       code = (code | check(is_eq(get_size(rel_surr), 1)), set_any_var(res_var, rand_elem(rel_surr)));
-
-    elif arity == 2:
+    }
+    else if arity == 2 {
       arg_surr = only(values(args_surrs));
-      if target_idx == 1:
+      if target_idx == 1 {
         code = (code | set_any_var(res_var, lookup(rel_surr, arg_surr)));
-      else
+      }
+      else {
         it_var, var_gen = next_bin_rel_it_var(var_gen);
         code = (code |
           get_iter(it_var, rel_surr, (nothing, just(arg_surr))),
@@ -545,9 +656,9 @@ implicit program           : Program,
           move_forward(it_var),
           check(is_out_of_range(it_var))
         );
-      ;
-
-    else
+      }
+    }
+    else {
       assert arity == 3;
       it_var, var_gen = next_tern_rel_it_var(var_gen);
       code = (code |
@@ -557,7 +668,7 @@ implicit program           : Program,
         move_forward(it_var),
         check(is_out_of_range(it_var))
       );
-    ;
+    }
 
     return (code, obj_expr(res_var), ret_var_gen);
   }
@@ -571,34 +682,18 @@ implicit program           : Program,
     code, rel_surr, var_gen = opt_eval_info(rel, ret_var_gen);
 
     args_surrs = ();
-    for a <- args:
-      if a != nothing:
+    for a <- args {
+      if a != nothing {
         arg_code, arg_surr, var_gen = opt_eval_info(value(a), var_gen);
         code = code & arg_code;
         args_surrs = (args_surrs | just(arg_surr));
-      else
+      }
+      else {
         args_surrs = (args_surrs | nothing);
-      ;
-    ;
+      }
+    }
 
-    if not (a <~ args_surrs : a == nothing): ## THIS SHOULD NARROW DOWN THE TYPE OF args_surrs
-      search_instr = set_bvar(res_var, contains(rel_surr, nonempty((value_unsafe(a) : a <- args_surrs))));
-      code = (code | search_instr);
-
-    else
-      if |args_surrs| == 2:
-        it_var, var_gen = next_bin_rel_it_var(var_gen);
-        get_iter_instr = get_iter(it_var, rel_surr, args_surrs);
-
-      else
-        fail if |args_surrs| != 3;
-        it_var, var_gen = next_tern_rel_it_var(var_gen);
-        get_iter_instr = get_iter(it_var, rel_surr, args_surrs);
-      ;
-
-      code = (code | get_iter_instr, set_bvar(res_var, neg(is_out_of_range(it_var))));
-    ;
-
+    code = (code | set_bvar(res_var, rel_obj_contains(rel_surr, nonempty(args_surrs))));
     return (code, obj_expr(res_var), ret_var_gen);
   }
 
@@ -606,11 +701,11 @@ implicit program           : Program,
   (Instr*, ObjExpr, VarGen) seq_tail_expr_opt_eval_info(Expr seq, Expr+ tail, VarGen init_var_gen) {
     res_var, ret_var_gen = next_obj_var(init_var_gen);
     code, seq_surr, var_gen = opt_eval_info(seq, ret_var_gen);
-    for e @ i <- tail:
+    for e @ i <- tail {
       elt_code, elt_surr, unused_var = opt_eval_info(e, var_gen);
       src_seq = if i == 0 then seq_surr else res_var;
       code = (code & elt_code | append_to_seq(res_var, src_seq, elt_surr));
-    ;
+    }
     return (code, res_var, ret_var_gen);
   }
 
@@ -626,27 +721,33 @@ implicit program           : Program,
   (Instr*, ObjExpr, VarGen) accessor_opt_eval_info(Expr expr, SymbObj field, VarGen init_var_gen) {
     code, surr, var_gen = opt_eval_info(expr, init_var_gen);
     target_type = subexpr_type(expr);
-    maybe_repr = nothing;
-    if is_subset(target_type, tag_obj_type(atom_type, type_any)):
+    maybe_field_repr = nothing;
+    if is_subset(target_type, tag_obj_type(atom_type, type_any)) {
       tag_type = tag_supertype(target_type);
-      if is_symb_singl_type(tag_type):
+      if is_symb_singl_type(tag_type) {
         tag_obj = only_symb(tag_type);
         tag = untag(tag_obj);
         tag_type = symb_type(tag_obj);
         opt_types = if optimized_tagged_records_types(tag, *)
           then optimized_tagged_records_types(tag, !!)
           else ();
-        for t @ i <- opt_types:
-          if is_subset(target_type, tag_obj_type(tag_type, t)):
+        for t @ i <- opt_types {
+          if is_subset(target_type, tag_obj_type(tag_type, t)) {
             surr = cast_opt_tag_rec(tag, i, surr) if not surr :: OptTagRecVar;
             fields_reprs = untag(optimized_tagged_records(tag, !!)(i));
-            maybe_repr = just(fields_reprs(untag(field), !!).repr);
+            maybe_field_repr = just(fields_reprs(untag(field), !!).repr);
             break;
-          ;
-        ;
-      ;
-    ;
-    return (code, lookup_field(surr, field, maybe_repr), var_gen);
+          }
+        }
+      }
+    }
+
+    type = types(expr_id);
+    repr = if type != empty_type then low_level_repr(type) else :object;
+    res_var, var_gen = next_var(repr, var_gen);
+    code = (code | set_any_var(res_var, lookup_field(surr, field, maybe_field_repr)));
+
+    return (code, obj_expr(res_var), var_gen);
   }
 
 
@@ -666,30 +767,29 @@ implicit program           : Program,
 
   (Instr*, ObjExpr, VarGen) tag_obj_expr_opt_eval_info(TagObjExpr expr, VarGen init_var_gen) {
     tag_type = subexpr_type(expr.tag);
-    if is_symb_singl_type(tag_type):
+    if is_symb_singl_type(tag_type) {
       // The tag is a known symbol
       tag = untag(only_symb(tag_type));
       may_need_conv = false;
-      if optimized_tagged_records(tag, *):
+      if optimized_tagged_records(tag, *) {
         // There's at least one optimized representation for values with such tag
         reprs = optimized_tagged_records(tag, !!);
         obj_expr = expr.obj;
         obj_type = subexpr_type(obj_expr);
-        for repr @ repr_idx <- reprs:
+        for repr @ repr_idx <- reprs {
           repr_type = low_level_repr_type(repr);
-          if is_subset(obj_type, repr_type):
+          if is_subset(obj_type, repr_type)
             // The tagged value has an optimized representation
             // assert not may_need_conv; ## SEE COMMENT BELOW
             return opt_rec_eval_info(tag, obj_expr, repr, repr_idx, init_var_gen);
-          elif not are_ptype_disjoint(obj_type, repr_type):
+          else if not are_ptype_disjoint(obj_type, repr_type)
             ## THIS DOESN'T MAKE MUCH SENSE. obj_type AND repr_type ARE NEVER
             ## GOING TO BE PTYPE DISJOINT, BECAUSE THEY ARE BOTH RECORDS
             ## WE NEED A BETTER CHECK, FOR EXAMPLE WE COULD SEE IF
             ## THEIR SET OF FIELDS ARE COMPATIBLE
             may_need_conv = true;
-          ;
-        ;
-      ;
+        }
+      }
       // The tagged value may or may not have an optimized representation
       code, value_surr, var_gen = opt_eval_info(expr.obj, init_var_gen);
       var, var_gen = next_obj_var(var_gen);
@@ -698,8 +798,8 @@ implicit program           : Program,
         else mk_tagged_obj(var, object(tag), value_surr);
       code = (code | creation_instr);
       return (code, var, var_gen);
-
-    else
+    }
+    else {
       // The symbol is not known at compile time
       tag_code, tag_surr, var_gen = opt_eval_info(expr.tag, init_var_gen);
       value_code, value_surr, var_gen = opt_eval_info(expr.obj, var_gen);
@@ -707,21 +807,21 @@ implicit program           : Program,
       ## HERE WE COULD CHECK IF THE TARGET OBJECT NEEDS TO BE OPTIMIZED
       code = (tag_code & value_code | call_proc(var, :any_tag_obj_conv, (tag_surr, value_surr), ()));
       return (code, var, var_gen);
-    ;
+    }
 
 
     (Instr*, ObjExpr, VarGen) opt_rec_eval_info(Symbol tag, Expr rec_expr_ref, OptRecRepr repr, Nat repr_idx, VarGen init_var_gen) {
       rec_expr = expand_subexpr(rec_expr_ref);
-      if rec_expr :: MapExpr:
+      if rec_expr :: MapExpr {
         // The expression that defines the tagged value is a map expression
         fields = isort(untag(rec_expr));
         keys_types = (subexpr_type(f.key) : f <- fields);
-        if not (t <~ keys_types : not is_symb_singl_type(t)):
+        if not (t <~ keys_types : not is_symb_singl_type(t)) {
           // Every key in the map expression is a known symbol
           labels = (untag(only_symb(t)) : t <- keys_types);
           return direct_opt_rec_eval_info(tag, labels, rec_expr, repr, repr_idx, init_var_gen);
-        ;
-      ;
+        }
+      }
 
       // Generic creation: evaluating the record expression first, then
       // passing it on to the representation-specific conversion function
@@ -739,28 +839,29 @@ implicit program           : Program,
       conds = ();
       code = (inst_opt_tag_rec(var, tag, repr_idx));
       var_gen = init_var_gen;
-      for f @ i <- isort(untag(rec_expr)):
+      for f @ i <- isort(untag(rec_expr)) {
         label = labels(i);
         field = low_level_fields(label, !!);
 
-        if f.cond?:
+        if f.cond? {
           cond_code, cond_surr, var_gen = opt_eval_info(f.cond, var_gen);
           code = code & cond_code;
           maybe_cond = just(bool_value(cond_surr));
-        else
+        }
+        else {
           maybe_cond = nothing;
-        ;
+        }
 
         field_code, surr, var_gen = opt_eval_info(f.value, var_gen);
         set_field_instr = write_rec_field(var, label, low_level_expr(field.repr, surr), field.optional);
         field_code = (field_code | set_field_instr);
-        if maybe_cond != nothing:
+        if maybe_cond != nothing {
           cond_surr = value(maybe_cond);
           field_code = (do_if(value(maybe_cond), field_code));
-        ;
+        }
 
         code = code & field_code;
-      ;
+      }
       code = (code | finish_init(var));
 
       return (code, var, var_gen);
@@ -776,11 +877,10 @@ implicit program           : Program,
 
     // Calculating source type, and returning early if the type is trivial
     src_type = subexpr_type(expr.src_expr);
-    if src_type == empty_type:
+    if src_type == empty_type
       return ((terminate), :invalid_var, init_var_gen);
-    elif is_subset(src_type, empty_seq_type):
+    else if is_subset(src_type, empty_seq_type)
       return ((), empty_seq, init_var_gen);
-    ;
 
     // Types of elements of source and destination sequences
     src_elt_type = seq_elem_supertype(src_type);
@@ -789,15 +889,15 @@ implicit program           : Program,
 
     // Low-level representation of elements of source and destination sequences
     src_repr = opt_repr(src_elt_type);
-    elt_repr = opt_repr(elt_type);
+    elt_repr = low_level_elt_repr(if expr.decl_elt_type? then expr.decl_elt_type else elt_type);
 
     // Evaluation of source expression
     eval_code, src_surr, var_gen = opt_eval_info(expr.src_expr, var_gen);
-    if not src_surr :: <LocVar, StdVar>:
+    if not src_surr :: <LocVar, StdVar> {
       src_var, var_gen = next_obj_var(var_gen);
       eval_code = (eval_code | set_var(src_var, src_surr));
       src_surr = src_var;
-    ;
+    }
 
     // Temporary buffer for source data
     src_array_var, var_gen = next_array_var(var_gen, src_repr);
@@ -807,17 +907,17 @@ implicit program           : Program,
     array_var, var_gen = next_array_var(var_gen, elt_repr);
     eval_code = (eval_code |
       set_ivar32(array_size_var, get_size(src_surr)),
-      alloc_array(array_var, array_size_var)
+      array_alloc(array_var, array_size_var)
     );
 
     vars = expr.vars;
-    if |vars| == 1:
+    if |vars| == 1 {
       var = only(vars);
       it_var = low_level_var(src_repr, var);
       surrs = surrogates & [var -> obj_expr(it_var) if var != it_var];
       body_code = ();
-
-    else
+    }
+    else {
       assert src_repr == :object;
       vars_types = tuple_field_supertypes(src_elt_type, |vars|);
       ## REMOVE WHEN DONE
@@ -827,14 +927,14 @@ implicit program           : Program,
       surrs = surrogates & [v -> obj_expr(pv) : v @ i <~ vars, pv = phys_vars(i), v != pv];
       it_var, var_gen = next_obj_var(var_gen);
       body_code = (set_any_var(v, at(it_var, i)) : v @ i <- phys_vars);
-    ;
+    }
 
     // Index variables
     hidden_idx_var, var_gen = next_int32_var(var_gen);
     surrs = surrs & [expr.idx_var -> int_obj(hidden_idx_var)] if expr.idx_var?;
 
     // Finalizing loop body
-    if expr.sel_expr?:
+    if expr.sel_expr? {
       // Generating and initializing the write cursor
       next_free_slot_idx_var, var_gen = next_int32_var(var_gen);
       loop_init_code = (set_ivar32(next_free_slot_idx_var, 0));
@@ -846,15 +946,15 @@ implicit program           : Program,
       elt_eval_code, elt_surr, var_gen = opt_eval_info(expr.expr, var_gen, surrogates = surrs);
 
       // Loop body
-      write_array_instr = write_array(array_var, next_free_slot_idx_var, elt_surr);
+      write_array_instr = array_write(array_var, next_free_slot_idx_var, elt_surr);
       incr_idx_instr = increment(next_free_slot_idx_var);
       cond_code = (elt_eval_code | write_array_instr, incr_idx_instr);
       body_code = (body_code & cond_eval_code | do_if(bool_value(cond_surr), cond_code));
 
       // Sequence creation
       mk_seq_instr = mk_seq(res_var, array_var, next_free_slot_idx_var);
-
-    else
+    }
+    else {
       // Nothing to initialize
       loop_init_code = ();
 
@@ -862,11 +962,11 @@ implicit program           : Program,
       elt_eval_code, elt_surr, var_gen = opt_eval_info(expr.expr, var_gen, surrogates = surrs);
 
       // Loop body
-      body_code = (body_code & elt_eval_code | write_array(array_var, hidden_idx_var, elt_surr));
+      body_code = (body_code & elt_eval_code | array_write(array_var, hidden_idx_var, elt_surr));
 
       // Sequence creation
-      mk_seq_instr = mk_seq(res_var, array_var);
-    ;
+      mk_seq_instr = mk_seq(res_var, array_var, array_size_var);
+    }
 
     // Mapping source to destination arrays
     map_instr = foreach(
@@ -892,26 +992,45 @@ implicit program           : Program,
 
     // Code that evaluates the bounds and initializes the loop variable
     code, bound_surr, var_gen = opt_eval_info(expr.bound_expr, var_gen);
-    if not bound_surr :: <Var, int_obj(<IntVar, Int32Var>)>:
+    if not bound_surr :: <Var, int_obj(<IntVar, upcast_int32(Int32Var)>)> {
       bound_var, var_gen = next_int_var(var_gen);
       code = store_result(code, bound_surr, bound_var);
       bound_surr = bound_var;
-    else
+    }
+    else {
       bound_surr = get_int_val(bound_surr);
-    ;
+    }
 
-    // Types and low-level representation of the elements of the output sequence
-    elt_type = subexpr_type(expr.expr);
-    fail if elt_type == empty_type;
-    elt_repr = opt_repr(elt_type);
+    // Type and low-level representation of the elements of the output sequence
+    elt_type = nonempty_type(subexpr_type(expr.expr));
+    elt_repr = low_level_elt_repr(if expr.decl_elt_type? then expr.decl_elt_type else elt_type);
 
     // Allocation of destination array
     array_var, var_gen = next_array_var(var_gen, elt_repr);
     size_expr = if expr.inclusive then add(bound_surr, 1) else bound_surr;
-    code = (code | alloc_array(array_var, cast_int32(size_expr)));
+    if not is_subset(subexpr_type(expr.bound_expr), type_nat) {
+      if size_expr :: IntVar {
+        instr = do_if(is_lt(size_expr, 0), set_ivar(size_expr, 0));
+      }
+      else if size_expr :: <upcast_int32(Int32Var)> {
+        size_var = match (size_expr) upcast_int32(v?) = v;
+        instr = do_if(is_lt(size_expr, 0), set_ivar32(size_var, 0));
+      }
+      else {
+        size_var, var_gen = next_int_var(var_gen);
+        instr = branch(
+          is_ge(size_expr, 0),
+          (set_ivar(size_var, size_expr)),
+          (set_ivar(size_var, 0))
+        );
+        size_expr = size_var;
+      }
+      code = (code | instr);
+    }
+    code = (code | array_alloc(array_var, cast_int32(size_expr)));
 
-    let surrogates = surrogates & [expr.var -> obj_expr(idx_var)]:
-      if expr.sel_expr?:
+    let surrogates = surrogates & [expr.var -> obj_expr(idx_var)] {
+      if expr.sel_expr? {
         // Creating and initializing the target cursor
         target_idx_var, var_gen = next_int32_var(var_gen);
         code = (code | set_ivar32(target_idx_var, 0));
@@ -923,26 +1042,28 @@ implicit program           : Program,
         eval_code, elt_surr, unused_var = opt_eval_info(expr.expr, var_gen);
 
         // Conditional array write
-        write_instr = write_array(array_var, target_idx_var, elt_surr);
+        write_instr = array_write(array_var, target_idx_var, elt_surr);
         cond_write_instr = do_if(bool_value(cond_surr), (eval_code | write_instr, increment(target_idx_var)));
 
         // Body code and sequence creation instruction
         body_code = (cond_eval_code | cond_write_instr);
         mk_seq_instr = mk_seq(res_var, array_var, target_idx_var);
-
-      else
+      }
+      else {
         // Evaluating the expression that yields a new element
         eval_code, elt_surr, unused_var = opt_eval_info(expr.expr, var_gen);
 
         // Body code and sequence creation instruction
-        write_instr = write_array(array_var, idx_var, elt_surr);
+        write_instr = array_write(array_var, idx_var, elt_surr);
         body_code = (eval_code | write_instr);
-        mk_seq_instr = mk_seq(res_var, array_var);
-      ;
-    ;
+        mk_seq_instr = mk_seq(res_var, array_var, cast_int32(size_expr));
+      }
+    }
 
     // Final body code
-    break_cond = if expr.inclusive then is_gt(idx_var, bound_surr) else is_ge(idx_var, bound_surr);
+    break_cond = if expr.inclusive
+      then is_gt(upcast_int32(idx_var), bound_surr)
+      else is_ge(upcast_int32(idx_var), bound_surr);
     body_code = ((break_if(break_cond)) & body_code | increment(idx_var));
 
     // Final code
@@ -978,13 +1099,13 @@ implicit program           : Program,
 
   (Instr*, ObjExpr, VarGen) and_expr_opt_eval_info(Expr left, Expr right, VarGen init_var_gen) {
     right_eval_code, right_surr, var_gen = opt_eval_info(right, init_var_gen);
-    if right_eval_code == ():
+    if right_eval_code == () {
       // Special case: the right expression is an inline one
       assert var_gen == init_var_gen;
       left_eval_code, left_surr, var_gen = opt_eval_info(left, var_gen);
       bool_expr = and_then(bool_value(left_surr), bool_value(right_surr));
       return (left_eval_code, bool_obj(bool_expr), var_gen);
-    ;
+    }
 
     // No special case, we need to store the result in a boolean variable
     res_var, ret_var_gen = next_bool_var(init_var_gen);
@@ -999,13 +1120,13 @@ implicit program           : Program,
 
   (Instr*, ObjExpr, VarGen) or_expr_opt_eval_info(Expr left, Expr right, VarGen init_var_gen) {
     right_eval_code, right_surr, var_gen = opt_eval_info(right, init_var_gen);
-    if right_eval_code == ():
+    if right_eval_code == () {
       // Special case: the right expression is an inline one
       assert var_gen == init_var_gen;
       left_eval_code, left_surr, var_gen = opt_eval_info(left, var_gen);
       bool_expr = or_else(bool_value(left_surr), bool_value(right_surr));
       return (left_eval_code, bool_obj(bool_expr), var_gen);
-    ;
+    }
 
     // No special case, we need to store the result in a boolean variable
     res_var, ret_var_gen = next_bool_var(init_var_gen);
@@ -1032,26 +1153,31 @@ implicit program           : Program,
     arg_eval_code, arg_surr, var_gen = opt_eval_info(arg, var_gen);
     code = target_eval_code & arg_eval_code;
 
-    if is_subset(target_type, type_seq):
-      expr_surr = at(target_surr, get_int_val(arg_surr));
-
-    elif is_subset(target_type, type_set):
-      expr_surr = bool_obj(has_elem(target_surr, arg_surr));
-
-    elif is_subset(target_type, type_bin_rel):
+    if is_subset(target_type, type_seq) {
+      type = types(expr_id);
+      return ((terminate), :invalid_var, init_var_gen) if type == empty_type;
+      repr = opt_repr(type);
+      res_var, var_gen = next_var(repr, var_gen);
+      code = (code | set_any_var(res_var, at(target_surr, get_int_val(arg_surr))));
+      expr_surr = obj_expr(res_var);
+    }
+    else if is_subset(target_type, type_set) {
+      expr_surr = bool_obj(rel_obj_contains(target_surr, (just(arg_surr))));
+    }
+    else if is_subset(target_type, type_bin_rel) {
       type = types(expr_id);
       return ((terminate), :invalid_var, init_var_gen) if type == empty_type;
       repr = opt_repr(type);
       res_var, var_gen = next_var(repr, var_gen);
       code = (code | set_any_var(res_var, lookup(target_surr, arg_surr)));
       expr_surr = obj_expr(res_var);
-
-    else
+    }
+    else {
       assert is_subset(target_type, atom_type);
       expr_surr, var_gen = next_obj_var(var_gen);
       ## HERE WE COULD CHECK IF THE TARGET OBJECT NEEDS TO BE OPTIMIZED
       code = (code | call_proc(expr_surr, :any_tag_obj_conv, (target_surr, arg_surr), ()));
-    ;
+    }
 
     return (code, expr_surr, var_gen);
   }
@@ -1086,80 +1212,83 @@ implicit program           : Program,
     ret_var_gen = var_gen;
 
     // Dealing with the important special case of sequences of literal integers
-    if is_subset(elts_type, integer) and not (e <~ elts : is_cond_expr(e)):
-      if not (t <- elts_types : t == empty_type or not is_singleton(t)):
+    if is_subset(elts_type, integer) and not (e <~ elts : is_cond_expr(e)) {
+      if not (t <- elts_types : t == empty_type or not is_singleton(t)) {
         int_seq = (only_integer(t) : t <- ord_elts_types);
-        if int_seqs_ids(int_seq, *):
+        if int_seqs_ids(int_seq, *) {
           seq_id = int_seqs_ids(int_seq, !!);
           code = (build_const_int_seq(seq_var, seq_id));
           return (code, seq_var, ret_var_gen);
-        ;
-      ;
-    ;
+        }
+      }
+    }
 
     conds = (e.cond : e <- elts, is_cond_expr(e));
-    if conds == ():
+    if conds == () {
       // Easy case, no conditional inclusions
-      code = (alloc_array(elts_var, int32(|elts|)));
-      for e @ i <- elts:
+      code = (array_alloc(elts_var, int32(|elts|)));
+      for e @ i <- elts {
         fail if is_cond_expr(e); ## ANY BETTER WAY TO DO THIS?
         fail if not i :: Int32;
         elt_eval_code, elt_surr, unused_var = opt_eval_info(e, var_gen);
-        code = code & (elt_eval_code | write_array(elts_var, i, elt_surr));
-      ;
-      return ((code | mk_seq(seq_var, elts_var)), seq_var, ret_var_gen);
-    ;
+        code = code & (elt_eval_code | array_write(elts_var, i, elt_surr));
+      }
+      return ((code | mk_seq(seq_var, elts_var, int32(|elts|))), seq_var, ret_var_gen);
+    }
 
     // Evaluating conditions and final array size
     min_size = int32(|elts| - |conds|);
-    conds_code, cond_vars, size_idx_var, var_gen = conds_eval_info(conds, min_size, var_gen);
+    conds_code, cond_vars, size_var, var_gen = conds_eval_info(conds, min_size, var_gen);
+    idx_var, var_gen = next_int32_var(var_gen);
 
     // Allocation of destination array
-    code = (alloc_array(elts_var, size_idx_var));
+    code = (array_alloc(elts_var, size_var));
 
     // Computation of all array elements
     cond_expr_idx = 0;
-    for e @ i <- elts:
+    for e @ i <- elts {
       fail if not i :: Int32; ## ANY BETTER WAY TO DO THIS?
       is_last = i == |elts| - 1;
-      if is_cond_expr(e): // Conditional inclusion expression
+      if is_cond_expr(e) { // Conditional inclusion expression
         elt_code, elt_surr, unused_var = opt_eval_info(e.expr, var_gen);
-        if cond_expr_idx == 0:
+        if cond_expr_idx == 0 {
           // If it's the first conditional expression, we statically know the
           // destination array index. After that we need to use the cursor
           // variable, unless this is the last element in the sequence
           cond = cond_vars(cond_expr_idx);
-          elt_code = (elt_code | write_array(elts_var, i, elt_surr));
-          if not is_last:
-            elt_code = (elt_code | set_ivar32(size_idx_var, int32(i+1)));
-            elt_instr = branch(cond, elt_code, (set_ivar32(size_idx_var, i)));
-          else
+          elt_code = (elt_code | array_write(elts_var, i, elt_surr));
+          if not is_last {
+            elt_code = (elt_code | set_ivar32(idx_var, int32(i+1)));
+            elt_instr = branch(cond, elt_code, (set_ivar32(idx_var, i)));
+          }
+          else {
             elt_instr = do_if(cond, elt_code);
-          ;
-        else
-          elt_code = (elt_code | write_array(elts_var, size_idx_var, elt_surr));
-          elt_code = (elt_code | increment(size_idx_var)) if not is_last;
+          }
+        }
+        else {
+          elt_code = (elt_code | array_write(elts_var, idx_var, elt_surr));
+          elt_code = (elt_code | increment(idx_var)) if not is_last;
           elt_instr = do_if(cond_vars(cond_expr_idx), elt_code);
-        ;
+        }
         code = (code | elt_instr);
         cond_expr_idx = cond_expr_idx + 1;
-
-      else // Non-conditional expression
+      }
+      else { // Non-conditional expression
         elt_eval_code, elt_surr, unused_var = opt_eval_info(e, var_gen);
         // Until we reach the first conditional element we statically know the
         // destination array index. After that we need to use the cursor variable
         write_code = if cond_expr_idx == 0
-          then (write_array(elts_var, i, elt_surr))
-          else (write_array(elts_var, size_idx_var, elt_surr), increment(size_idx_var) if not is_last);
+          then (array_write(elts_var, i, elt_surr))
+          else (array_write(elts_var, idx_var, elt_surr), increment(idx_var) if not is_last);
         code = code & elt_eval_code & write_code;
-      ;
-    ;
+      }
+    }
 
     // Creation of the wrapping sequence object
-    code = (code | mk_seq(seq_var, elts_var));
+    code = (code | mk_seq(seq_var, elts_var, size_var));
 
     // Checking for the empty sequence/set case, if all expression are conditional
-    code = (branch(is_eq(size_idx_var, 0), (set_var(seq_var, empty_seq)), code)) if min_size == 0;
+    code = (branch(is_eq(size_var, 0), (set_var(seq_var, empty_seq)), code)) if min_size == 0;
 
     return (conds_code & code, seq_var, ret_var_gen);
   }
@@ -1183,37 +1312,38 @@ implicit program           : Program,
 
     // Allocation of destination array
     size_expr = if cond_exprs == () then min_size else size_idx_var;
-    code = (alloc_array(elts_var, size_expr));
+    code = (array_alloc(elts_var, size_expr));
 
     // Non-conditional elements
-    for e @ i <- exprs:
+    for e @ i <- exprs {
       eval_code, surr, unused_var = opt_eval_info(e, var_gen);
-      code = (code & eval_code | write_array(elts_var, int32(i), surr));
-    ;
+      code = (code & eval_code | array_write(elts_var, int32(i), surr));
+    }
 
-    if |cond_exprs| == 1:
+    if |cond_exprs| == 1 {
       // Just one conditional element, no need to have an index variable
       elt_code, surr, unused_var = opt_eval_info(only(cond_exprs).expr, var_gen);
-      elt_code = (elt_code | write_array(elts_var, min_size, surr));
+      elt_code = (elt_code | array_write(elts_var, min_size, surr));
       code = (code | do_if(cond_vars(0), elt_code));
-
-    elif |cond_exprs| > 1:
+    }
+    else if |cond_exprs| > 1 {
       // More than one conditional element, we need to keep track of the next array slot
-      for e @ i <- cond_exprs:
+      for e @ i <- cond_exprs {
         cond = cond_vars(i);
         elt_code, surr, unused_var = opt_eval_info(e.expr, var_gen);
-        elt_code = (elt_code | write_array(elts_var, if i == 0 then min_size else size_idx_var, surr));
+        elt_code = (elt_code | array_write(elts_var, if i == 0 then min_size else size_idx_var, surr));
         is_last = i == |cond_exprs| - 1;
-        if i == 0:
+        if i == 0 {
           elt_code = (elt_code | set_ivar32(size_idx_var, int32(min_size + 1)));
           elt_instr = branch(cond, elt_code, (set_ivar32(size_idx_var, min_size)));
-        else
+        }
+        else {
           elt_code = (elt_code | increment(size_idx_var)) if not is_last;
           elt_instr = do_if(cond, elt_code);
-        ;
+        }
         code = (code | elt_instr);
-      ;
-    ;
+      }
+    }
 
     // Creation of the set object
     code = (code | mk_set(set_obj_var, elts_var));
@@ -1228,16 +1358,15 @@ implicit program           : Program,
   (Instr*, ObjExpr, VarGen) map_expr_opt_eval_info([+(key: Expr, value: Expr, cond: Expr?)] entries, VarGen var_gen) {
     // Checking if the expression is actually a record,
     // and if so building a record object instead
-    if not (e <- entries : e.cond?):
+    if not (e <- entries : e.cond?) {
       ord_entries = isort(entries);
       keys_types = (subexpr_type(e.key) : e <- ord_entries);
-      if not (t <~ keys_types : not is_symb_singl_type(t)):
+      if not (t <~ keys_types : not is_symb_singl_type(t)) {
         labels = (only_symb(t) : t <- keys_types);
-        if duplicates(labels) == []:
+        if duplicates(labels) == []
           return record_opt_eval_info(labels, (e.value : e <- ord_entries), var_gen);
-        ;
-      ;
-    ;
+      }
+    }
 
     // Separating conditional entries from unconditional ones
     uncond_entries = isort([(e.key, e.value) : e <- entries, not e.cond?]);
@@ -1269,36 +1398,36 @@ implicit program           : Program,
 
     // Allocation of destination arrays
     size_expr = if cond_entries == () then min_size else size_idx_var;
-    code = (alloc_array(col1_var, size_expr), alloc_array(col2_var, size_expr));
+    code = (array_alloc(col1_var, size_expr), array_alloc(col2_var, size_expr));
 
     // Non-conditional elements
-    for a1, a2 @ i <- uncond_entries:
+    for a1, a2 @ i <- uncond_entries
       code = code & write_entry_code(a1, a2, col1_var, col2_var, int32(i), var_gen);
-    ;
 
-    if |cond_entries| == 1:
+    if |cond_entries| == 1 {
       // Just one conditional entry, no need to have an index variable
       arg1, arg2, unused_var = only(cond_entries);
       entry_code = write_entry_code(arg1, arg2, col1_var, col2_var, min_size, var_gen);
       code = (code | do_if(cond_vars(0), entry_code));
-
-    elif |cond_entries| > 1:
+    }
+    else if |cond_entries| > 1 {
       // More than one conditional element, we need to keep track of the next array slot
-      for a1, a2, unused_var @ i <- cond_entries:
+      for a1, a2, unused_var @ i <- cond_entries {
         cond = cond_vars(i);
         idx = if i == 0 then min_size else size_idx_var;
         entry_code = write_entry_code(a1, a2, col1_var, col2_var, idx, var_gen);
         is_last = i == |cond_entries| - 1;
-        if i == 0:
+        if i == 0 {
           entry_code = (entry_code | set_ivar32(size_idx_var, int32(min_size+1)));
           entry_instr = branch(cond, entry_code, (set_ivar32(size_idx_var, min_size)));
-        else
+        }
+        else {
           entry_code = (entry_code | increment(size_idx_var)) if not is_last;
           entry_instr = do_if(cond, entry_code);
-        ;
+        }
         code = (code | entry_instr);
-      ;
-    ;
+      }
+    }
 
     // Creation of the map object
     code = (code | mk_rel(rel_obj_var, col1_var, col2_var, is_map));
@@ -1311,9 +1440,9 @@ implicit program           : Program,
 
     Instr* write_entry_code(Expr arg1, Expr arg2, ArrayVar col1, ArrayVar col2, Int32Expr idx, VarGen var_gen) {
       eval_code, surr, unused_var = opt_eval_info(arg1, var_gen);
-      arg1_code = (eval_code | write_array(col1, idx, surr));
+      arg1_code = (eval_code | array_write(col1, idx, surr));
       eval_code, surr, unused_var = opt_eval_info(arg2, var_gen);
-      arg2_code = (eval_code | write_array(col2, idx, surr));
+      arg2_code = (eval_code | array_write(col2, idx, surr));
       return arg1_code & arg2_code;
     }
   }
@@ -1337,36 +1466,36 @@ implicit program           : Program,
 
     // Allocation of destination arrays
     size_expr = if cond_entries == () then min_size else size_idx_var;
-    code = (alloc_array(v, size_expr) : v <- (col1_var, col2_var, col3_var));
+    code = (array_alloc(v, size_expr) : v <- (col1_var, col2_var, col3_var));
 
     // Non-conditional elements
-    for e @ i <- uncond_entries:
+    for e @ i <- uncond_entries
       code = code & write_entry_code(e.args, col1_var, col2_var, col3_var, int32(i), var_gen);
-    ;
 
-    if |cond_entries| == 1:
+    if |cond_entries| == 1 {
       // Just one conditional entry, no need to have an index variable
       entry = only(cond_entries);
       entry_code = write_entry_code(entry.args, col1_var, col2_var, col3_var, min_size, var_gen);
       code = (code | do_if(cond_vars(0), entry_code));
-
-    elif |cond_entries| > 1:
+    }
+    else if |cond_entries| > 1 {
       // More than one conditional element, we need to keep track of the next array slot
-      for e @ i <- cond_entries:
+      for e @ i <- cond_entries {
         cond = cond_vars(i);
         idx = if i == 0 then min_size else size_idx_var;
         entry_code = write_entry_code(e.args, col1_var, col2_var, col3_var, idx, var_gen);
         is_last = i == |cond_entries| - 1;
-        if i == 0:
+        if i == 0 {
           entry_code = (entry_code | set_ivar32(size_idx_var, int32(min_size+1)));
           entry_instr = branch(cond, entry_code, (set_ivar32(size_idx_var, min_size)));
-        else
+        }
+        else {
           entry_code = (entry_code | increment(size_idx_var)) if not is_last;
           entry_instr = do_if(cond, entry_code);
-        ;
+        }
         code = (code | entry_instr);
-      ;
-    ;
+      }
+    }
 
     // Creation of the map object
     code = (code | mk_rel(rel_obj_var, col1_var, col2_var, col3_var));
@@ -1380,11 +1509,11 @@ implicit program           : Program,
     Instr* write_entry_code((Expr, Expr, Expr) args, ArrayVar col1, ArrayVar col2, ArrayVar col3, Int32Expr idx, VarGen var_gen) {
       arg1, arg2, arg3 = args;
       eval_code, surr, unused_var = opt_eval_info(arg1, var_gen);
-      arg1_code = (eval_code | write_array(col1, idx, surr));
+      arg1_code = (eval_code | array_write(col1, idx, surr));
       eval_code, surr, unused_var = opt_eval_info(arg2, var_gen);
-      arg2_code = (eval_code | write_array(col2, idx, surr));
+      arg2_code = (eval_code | array_write(col2, idx, surr));
       eval_code, surr, unused_var = opt_eval_info(arg3, var_gen);
-      arg3_code = (eval_code | write_array(col3, idx, surr));
+      arg3_code = (eval_code | array_write(col3, idx, surr));
       return arg1_code & arg2_code & arg3_code;
     }
   }
@@ -1457,6 +1586,10 @@ implicit program           : Program,
       cat     |
       rev     |
       isort   |
+      insert  |
+      remove  |
+      put     |
+      drop    |
       parse   |
       print   = { res_var, var_gen = next_obj_var(init_var_gen);
                   instr = eval_instr(name, args, res_var);
@@ -1470,6 +1603,10 @@ implicit program           : Program,
       cat           = join_seqs(res_var, args(0), args(1)),
       rev           = rev_seq(res_var, args(0)),
       isort         = internal_sort(res_var, args(0)),
+      insert        = insert_elt(res_var, args(0), args(1)),
+      remove        = remove_elt(res_var, args(0), args(1)),
+      put           = set_key_value(res_var, args(0), args(1), args(2)),
+      drop          = drop_key(res_var, args(0), args(1)),
       parse         = parse_value(res_var, args(0)),
       print         = print_value(res_var, args(0));
 
@@ -1556,19 +1693,20 @@ implicit program           : Program,
     var_gen = init_var_gen;
     cond_vars = ();
     code = ();
-    for c @ i <- conds:
+    for c @ i <- conds {
       eval_code, surr_expr, var_gen = opt_eval_info(c, var_gen);
-      if not surr_expr :: <bool_obj(BoolVar)>:
+      if not surr_expr :: <bool_obj(BoolVar)> {
         surr_var, var_gen = next_bool_var(var_gen);
         eval_code = store_result(eval_code, surr_expr, surr_var);
-      else
+      }
+      else {
         surr_var = untag(surr_expr);
-      ;
+      }
       code = code & eval_code;
       cond_vars = (cond_vars | surr_var);
-    ;
+    }
 
-    // Integer variable for both size and cursor
+    // Integer variable that stores the resulting size
     size_var, var_gen = next_int32_var(var_gen);
 
     // Computation of final array size
@@ -1612,9 +1750,8 @@ implicit program           : Program,
     new_env = args_env & capt_env;
 
     new_ctx = lambda_ctx(subst_map, cls_subst_map);
-    let context = new_ctx, surrogates = [], typed_vars = []:
+    let context = new_ctx, surrogates = [], typed_vars = []
       eval_code, surr, unused_var = opt_eval_code(expr, new_env, blank_var_gen);
-    ;
     body = (eval_code | ret_val(surr));
 
     return lambda_expr(cls_def(arity, body), capt_context(context), capt_vars, capt_cls_vars);
@@ -1641,9 +1778,9 @@ ObjExpr eval_var(Var var, [StdVar -> CaptVar] var_subst_map, [SurrExpr -> ObjExp
   // all when a closure is encountered
   assert not var_subst_map(var, *) or not surrogates(var, *);
 
-  surr = if   var_subst_map(var, *) then var_subst_map[var]
-         elif surrogates(var, *)    then surrogates[var]
-                                    else var;
+  surr = if var_subst_map(var, *) then var_subst_map[var] else
+         if surrogates(var, *)    then surrogates[var]    else
+                                       var;
   return surr;
 }
 

@@ -3,9 +3,10 @@ type TaggedRecordType = tag_obj_type(tag_type: SymbType, obj_type: RecordType);
 
 implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptions {
   [Symbol -> OptRecRepr+] optimized_tagged_records {
+    types = values(program.typedefs) & [h.type : a <- program.data_bases, h <- a.handlers];
     tag_recs = [
       untag(untag(tr.tag_type)), tr.obj_type
-      : unused_var, t <- program.typedefs, tr <- tagged_records(t, options.max_opt_fields_in_opt_rec)
+      : t <- types, tr <- tagged_records(t, options.max_opt_fields_in_opt_rec)
     ];
     recs_by_tag = group_by_left_arg(tag_recs);
     return [s -> isort(rs) : s, ts <- recs_by_tag, rs = optimized_reprs(ts), rs != []];
@@ -64,24 +65,20 @@ implicit typedefs : [TypeName -> NeType] {
     opt_labels_2 = labels2 - req_labels_2;
 
     // Mandatory fields in the subtype can be either mandatory or optional in the supertype
-    for l <- isort(req_labels_1):
+    for l <- isort(req_labels_1)
       return false if not labels2(l);
-    ;
 
     // Optional fields that in the subtype must be optional in the supertype too
-    for l <- isort(opt_labels_1):
+    for l <- isort(opt_labels_1)
       return false if not opt_labels_2(l);
-    ;
 
     // Mandatory fields in the supertype must be mandatory in the subtype too
-    for l <- isort(req_labels_2):
+    for l <- isort(req_labels_2)
       return false if not labels1(l);
-    ;
 
     // Checking the types of all fields of the subtype
-    for l <- isort(labels1):
+    for l <- isort(labels1)
       return false if not is_subset(fields1(l, !!).repr, fields2(l, !!).repr);
-    ;
 
     return true;
   }
@@ -98,9 +95,8 @@ implicit typedefs : [TypeName -> NeType] {
 
     return false if not subset(req_labels_2, labels1) or not subset(req_labels_1, labels2);
 
-    for l <- isort(req_labels_1 & req_labels_2):
+    for l <- isort(req_labels_1 & req_labels_2)
       return false if not overlap(fields1(l, !!).repr, fields2(l, !!).repr);
-    ;
 
     return true;
   }

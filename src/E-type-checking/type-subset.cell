@@ -60,10 +60,10 @@ implicit typedefs : [TypeName -> NeType], inst_type_vars : Bool {
     untested_hypotheses = subtype_conds(starting_conds);
     type_var_conds      = type_var_inst_conds(starting_conds);
 
-    loop
+    loop {
       new_untested_hypotheses = [];
 
-      for hypothetical_subtype, hypothetical_supertype <- rand_sort(untested_hypotheses):
+      for hypothetical_subtype, hypothetical_supertype <- rand_sort(untested_hypotheses) {
         // Trying all the untested supertypes and merging all conditions
         new_conds = shallow_subset_conds(expand_type_ref(hypothetical_subtype, typedefs), hypothetical_supertype);
 
@@ -81,7 +81,7 @@ implicit typedefs : [TypeName -> NeType], inst_type_vars : Bool {
 
         // Adding the new conditions about type variables to the previous ones
         type_var_conds = all_conds([type_var_conds, new_var_conds]);
-      ;
+      }
 
       // Removing the hypotheses that have already been tested
       new_untested_hypotheses = new_untested_hypotheses - tested_hypotheses;
@@ -92,7 +92,7 @@ implicit typedefs : [TypeName -> NeType], inst_type_vars : Bool {
       // Generating the next round of candidate supertypes to test
       tested_hypotheses = tested_hypotheses & untested_hypotheses;
       untested_hypotheses = new_untested_hypotheses;
-    ;
+    }
   }
 
 
@@ -101,15 +101,17 @@ implicit typedefs : [TypeName -> NeType], inst_type_vars : Bool {
     return not_a_subset if supertype == empty_type;
 
     // if not is_param_type(subtype) or not inst_type_vars:
-    if not inst_type_vars:
+    if not inst_type_vars {
       is_subtype = match (supertype)
         union_type(ts?) = (t <- ts : t == subtype),
         _               = subtype == supertype;
       return [] if is_subtype;
-    ;
+    }
 
     return match (supertype)
-      type_var()    = if inst_type_vars then subset_when(supertype, subtype) elif subtype == supertype then [] else not_a_subset,
+      type_var()    = if inst_type_vars       then subset_when(supertype, subtype) else
+                      if subtype == supertype then []                              else
+                                                   not_a_subset,
       type_ref()    = type_ref_supertype_shallow_subset_conds(subtype, supertype),
       union_type()  = union_supertype_shallow_subset_conds(subtype, supertype),
       _             = generic_supertype_shallow_subset_conds(subtype, supertype);
@@ -120,11 +122,10 @@ implicit typedefs : [TypeName -> NeType], inst_type_vars : Bool {
     type_var()  |
     type_ref()  = generic_supertype_shallow_subset_conds(subtype, supertype),
     _           = { type_symb = type_symb(supertype);
-                    if type_symb != :builtin_type_symbol(:any): ## BAD BAD BAD: THIS IS A REALLY HORRIBLE HACK
+                    if type_symb != :builtin_type_symbol(:any) ## BAD BAD BAD: THIS IS A REALLY HORRIBLE HACK
                       return shallow_subset_conds(subtype, expand_type_ref(type_symb, typedefs));
                     else
                       return [];
-                    ;
                   };
 
 
@@ -165,12 +166,12 @@ implicit typedefs : [TypeName -> NeType], inst_type_vars : Bool {
   //////////////////////////////////////////////////////////////////////////////
 
   SubsetCond type_symbs_shallow_subset_conds(TypeSymbol subtype, TypeSymbol supertype) {
-    if subtype :: ParTypeSymbol and supertype :: ParTypeSymbol:
+    if subtype :: ParTypeSymbol and supertype :: ParTypeSymbol {
       ## ONE OF THE TWO CHECKS HERE IS REDUNDANT, AS THE GENERIC LOGIC SHOULD BE
       ## ABLE TO HANDLE THE CASE WHERE ONLY ONE OF THE TWO TYPE SYMBOLS IS PARAMETRIC
-      if (t <~ subtype.params : is_param_type(t)) or (t <~ supertype.params : is_param_type(t)):
+      if (t <~ subtype.params : is_param_type(t)) or (t <~ supertype.params : is_param_type(t))
         return subset_if(subtype, type_ref(supertype));
-    ; ;
+    }
     return if subtype != supertype then subset_if(subtype, type_ref(supertype)) else [];
   }
 
@@ -181,12 +182,12 @@ implicit typedefs : [TypeName -> NeType], inst_type_vars : Bool {
     // in type variables instantiation mode, we can finish here if the
     // subtype and the supertype are identical, or if the supertype
     // is a union and one of its elements is identical to the subtype
-    if not is_param_type(subtype) or not inst_type_vars:
+    if not is_param_type(subtype) or not inst_type_vars {
       is_subtype = match (supertype)
         union_type(ts?) = (t <- ts : t == subtype),
         _               = subtype == supertype;
       return [] if is_subtype;
-    ;
+    }
 
     return match (supertype)
       type_ref(ts?)    = type_symbs_shallow_subset_conds(type_symb(subtype), ts),
@@ -372,7 +373,7 @@ Bool is_integer_subset(IntType subtype, IntType supertype) =
 
 //     // Type vars only match themselves or type any
 //     // _,                    type_var()          = if inst_type_vars then subset_when(t2, t1) else if t1 == t2 then {} else not_a_subset end end,
-//     _,                    type_var()          = if inst_type_vars then subset_when(t2, t1) elif t1 == t2 then [] else not_a_subset,
+//     _,                    type_var()          = if inst_type_vars then subset_when(t2, t1) else if t1 == t2 then [] else not_a_subset,
 
 //     type_var(),           _                   = if is_type_any(t2) then [] else not_a_subset,
 

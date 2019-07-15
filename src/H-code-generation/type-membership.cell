@@ -4,13 +4,13 @@ implicit typedefs : [TypeName -> NeType] {
     exp_type = match (type)
       type_ref(ts?) = expand_type_ref(ts, typedefs),
       _             = type;
-    let memb_test_preds = memb_test_preds, next_var_gen = var_gen:
+    let memb_test_preds = memb_test_preds, next_var_gen = var_gen
       code = gen_type_checking_code(exp_type, fn_arg(0), res_var);
-    ;
     return bool_proc_def(memb_test_preds[type], 1, nonempty(code & (ret_val(res_var))));
   }
 }
 
+////////////////////////////////////////////////////////////////////////////////
 
 implicit typedefs : [TypeName -> NeType], memb_test_preds : [NeType -> MembTestPredId], next_var_gen : VarGen {
   Instr+ gen_type_checking_code(Type type, AtomicExpr obj, BoolVar res_var) {
@@ -95,7 +95,7 @@ implicit typedefs : [TypeName -> NeType], memb_test_preds : [NeType -> MembTestP
     obj_var, var_gen = next_obj_var(next_var_gen);
     it_var, var_gen = next_bin_rel_it_var(var_gen);
 
-    let next_var_gen = var_gen:
+    let next_var_gen = var_gen {
       code = (
         block_failure_if_not(is_ne_map(obj), res_var),
         get_iter(it_var, obj, (nothing, nothing)),
@@ -116,7 +116,7 @@ implicit typedefs : [TypeName -> NeType], memb_test_preds : [NeType -> MembTestP
         ),
         set_bvar(res_var, true)
       );
-    ;
+    }
 
     return (execute_block(code));
   }
@@ -129,16 +129,16 @@ implicit typedefs : [TypeName -> NeType], memb_test_preds : [NeType -> MembTestP
     arg1_var, var_gen = next_obj_var(var_gen);
     it_var,   var_gen = next_bin_rel_it_var(var_gen);
 
-    let next_var_gen = var_gen:
+    let next_var_gen = var_gen {
       entry_check_code = ();
-      for t0, t1 @ i <- rand_sort(signatures):
+      for t0, t1 @ i <- rand_sort(signatures) {
         check_attempt_code = (
           gen_type_checking_code(t0, arg0_var, res_var) |
           do_if(res_var, gen_type_checking_code(t1, arg1_var, res_var))
         );
         check_attempt_code = (do_if_not(res_var, check_attempt_code)) if i > 0;
         entry_check_code = entry_check_code & check_attempt_code;
-      ;
+      }
 
       code = (
         block_failure_if_not(is_ne_bin_rel(obj), res_var),
@@ -156,7 +156,7 @@ implicit typedefs : [TypeName -> NeType], memb_test_preds : [NeType -> MembTestP
         ),
         set_bvar(res_var, true)
       );
-    ;
+    }
 
     return (execute_block(code));
   }
@@ -170,9 +170,9 @@ implicit typedefs : [TypeName -> NeType], memb_test_preds : [NeType -> MembTestP
     arg2_var, var_gen = next_obj_var(var_gen);
     it_var,   var_gen = next_tern_rel_it_var(var_gen);
 
-    let next_var_gen = var_gen:
+    let next_var_gen = var_gen {
       entry_check_code = ();
-      for t0, t1, t2 @ i <- rand_sort(signatures):
+      for t0, t1, t2 @ i <- rand_sort(signatures) {
         check_attempt_code = (
           gen_type_checking_code(t0, arg0_var, res_var) |
           do_if(res_var, (
@@ -182,7 +182,7 @@ implicit typedefs : [TypeName -> NeType], memb_test_preds : [NeType -> MembTestP
         );
         check_attempt_code = (do_if_not(res_var, check_attempt_code)) if i > 0;
         entry_check_code = entry_check_code & check_attempt_code;
-      ;
+      }
 
       code = (
         block_failure_if_not(is_ne_tern_rel(obj), res_var),
@@ -201,7 +201,7 @@ implicit typedefs : [TypeName -> NeType], memb_test_preds : [NeType -> MembTestP
         ),
         set_bvar(res_var, true)
       );
-    ;
+    }
 
     return (execute_block(code));
   }
@@ -216,7 +216,7 @@ implicit typedefs : [TypeName -> NeType], memb_test_preds : [NeType -> MembTestP
 
     mandatory_fields_count = |[l : l, f <- fs, not f.optional]|; ## BAD BAD BAD: REALLY UGLY WAY TO DO A COUNT
 
-    let next_var_gen = var_gen:
+    let next_var_gen = var_gen {
       code_cases = [
         ( [l],
           ( gen_type_checking_code(f.type, value_var, tmp_bvar) |
@@ -224,7 +224,7 @@ implicit typedefs : [TypeName -> NeType], memb_test_preds : [NeType -> MembTestP
           )
         ) : l, f <- fs
       ];
-    ;
+    }
 
     return (
       execute_block((
@@ -260,25 +260,28 @@ implicit typedefs : [TypeName -> NeType], memb_test_preds : [NeType -> MembTestP
       get_iter(it_var, obj)
     );
 
-    let next_var_gen = var_gen:
-      for t @ i <- ts:
+    let next_var_gen = var_gen {
+      for t @ i <- ts {
         code = code &
                 (get_curr_obj(elem_var, it_var)) &
                 gen_type_checking_code(t, elem_var, res_var) &
                 ( exit_block_if_not(res_var),
                   maybe_op(move_forward(it_var), i != len - 1)
                 );
-      ;
-    ;
+      }
+    }
 
     return (execute_block((code | set_bvar(res_var, true))));
   }
 
 
-  Instr+ gen_tag_obj_type_checking_code(TagType tag_type, Type obj_type, AtomicExpr obj, BoolVar res_var) {
-    obj_var, var_gen = next_obj_var(next_var_gen);
+  Instr+ gen_tag_obj_type_checking_code(TagType tag_type, NeType obj_type, AtomicExpr obj, BoolVar res_var) {
+    if is_subset(obj_type, integer)
+      return opt_tagged_int_type_checking_code(tag_type, obj_type, obj, res_var);
 
-    let next_var_gen = var_gen:
+    // Generic processing
+    obj_var, var_gen = next_obj_var(next_var_gen);
+    let next_var_gen = var_gen {
       code = ( block_failure_if_not(is_tagged_obj(obj), res_var),
                 set_var(obj_var, get_tag(obj))
               ) &
@@ -287,8 +290,7 @@ implicit typedefs : [TypeName -> NeType], memb_test_preds : [NeType -> MembTestP
                 set_var(obj_var, get_inner_obj(obj))
               ) &
               gen_type_checking_code(obj_type, obj_var, res_var);
-    ;
-
+    }
     return (execute_block(nonempty(code)));
   }
 
@@ -296,10 +298,29 @@ implicit typedefs : [TypeName -> NeType], memb_test_preds : [NeType -> MembTestP
   Instr+ gen_union_type_checking_code([+Type] ts, AtomicExpr obj, BoolVar res_var) {
     ## PERFORMANCE COULD BE IMPROVED HERE USING A SWITCH/CASE
     code = ();
-    for t <- rand_sort(ts):
+    for t <- rand_sort(ts)
       code = code & gen_type_checking_code(t, obj, res_var) & (exit_block_if(res_var));
-    ;
     return (execute_block(nonempty(code)));
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////
+
+  Instr+ opt_tagged_int_type_checking_code(TagType tag_type, NeType obj_type, AtomicExpr obj, BoolVar res_var) {
+    tagged_int_test = match (tag_type)
+      symb_type(s?) = and_then(is_tagged_obj(obj), is_int(get_inner_obj(obj)), are_eq(get_tag(obj), s)),
+      atom_type     = and_then(is_tagged_obj(obj), is_int(get_inner_obj(obj)));
+    exp_obj_type = expand_int_type(obj_type, typedefs);
+    int_subset_test = int_type_checking_expr(exp_obj_type, get_int_val(get_inner_obj(obj)));
+    return (set_bvar(res_var, and_then(tagged_int_test, int_subset_test)));
+
+
+    BoolExpr int_type_checking_expr(AnyIntType type, IntExpr expr) =
+      integer         = true,
+      low_ints()      = is_le(expr, type.max),
+      high_ints()     = is_ge(expr, type.min),
+      int_range()     = and((is_ge(expr, type.min), is_le(expr, max(type)))),
+      union_type(ts?) = or((int_type_checking_expr(t, expr) : t <- isort(ts)));
   }
 }
 

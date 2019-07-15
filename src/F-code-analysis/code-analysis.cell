@@ -33,17 +33,22 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Database,
   [AnalysisError] analyse(Statement* stmts, [EnvVar -> Type] env) {
     curr_reqrs = [];
     curr_env = env;
-    for s <- stmts:
+    for s <- stmts {
       errs = match (s)
         insert_stmt()     |
         delete_stmt()     |
-        assignment_stmt() = analyse(s, curr_reqrs, curr_env),
+        assignment_stmt() |
+        if_stmt()         |
+        loop_stmt()       |
+        foreach_stmt()    |
+        for_stmt()        |
+        let_stmt()        = analyse(s, curr_reqrs, curr_env),
         _                 = [];
 
       return errs if errs != [];
       curr_reqrs = update_insert_requirement(s, curr_reqrs, curr_env);
       curr_env = update_env(s, curr_env);
-    ;
+    }
     prob_stmts = [s : unused_var_1, unused_var_2, s <- curr_reqrs];
     return [
       possible_foreign_key_violation(s, nonempty([v : v, unused_var <- curr_reqrs(?, ?, s)]))
@@ -52,40 +57,73 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Database,
   }
 
 
+  [AnalysisError] analyse(IfStmt stmt, [RelVar, Expr+, InsertStmt] reqrs, [EnvVar -> Type] env) {
+    then_env, else_env = refine_env(stmt.cond, env);
+    return analyse(stmt.body, then_env) & analyse(stmt.else, else_env);
+  }
+
+
+  [AnalysisError] analyse(LoopStmt stmt, [RelVar, Expr+, InsertStmt] reqrs, [EnvVar -> Type] env) {
+    body = match (stmt) loop_stmt(ss?) = ss;
+    reentry_env = update_env(body, env);
+    return analyse(body, env) & analyse(body, reentry_env);
+  }
+
+
+  [AnalysisError] analyse(ForeachStmt stmt, [RelVar, Expr+, InsertStmt] reqrs, [EnvVar -> Type] env) {
+    loop_vars = loop_vars(stmt.iter, env);
+    env_0 = env & loop_vars;
+    env_1 = update_env(stmt.body, env_0);
+    return analyse(stmt.body, env_0) & analyse(stmt.body, env_1);
+  }
+
+
+  [AnalysisError] analyse(ForStmt stmt, [RelVar, Expr+, InsertStmt] reqrs, [EnvVar -> Type] env) {
+    env_0 = env & [stmt.var -> type_nat if stmt.var?];
+    env_1 = update_env(stmt.body, env_0);
+    return analyse(stmt.body, env_0) & analyse(stmt.body, env_1);
+  }
+
+
+  [AnalysisError] analyse(LetStmt stmt, [RelVar, Expr+, InsertStmt] reqrs, [EnvVar -> Type] env) {
+    env_delta = [v -> expr_type(e, env) : v, e <- stmt.asgnms];
+    new_env = update(env, env_delta);
+    return analyse(stmt.body, new_env);
+  }
+
+
   [AnalysisError] analyse(InsertStmt stmt, [RelVar, Expr+, InsertStmt] reqrs, [EnvVar -> Type] env) {
     args_types = (expr_type(a, env) : a <- stmt.args);
     return [] if not args_types :: NeType+;
     phys_rel_vars = physical_rel_vars(stmt.var, args_types);
-    for v <- isort(phys_rel_vars):
-      if is_one_to_one_attribute(context.name, v):
+    for v <- isort(phys_rel_vars) {
+      if is_one_to_one_attribute(context.name, v) {
         key_args = take(stmt.args, |stmt.args| - 1);
         log_rel_var = logical_rel_var(v);
-        if not reqrs(log_rel_var, key_args, *):
+        if not reqrs(log_rel_var, key_args, *) {
           master = logical_rel_var(master_rel_var(context.name, v));
           bad_args = reqrs(log_rel_var, *, *);
           return [out_of_place_one_to_one_attr_insertion(stmt, master, bad_args)];
-        ;
-      ;
-    ;
+        }
+      }
+    }
 
     req_inserts = required_insertions(context.name, stmt.var, args_types);
     return [invalid_polymorphic_insertion(stmt, req_inserts) if |req_inserts| != 1];
   }
 
 
-  // type DeleteStmt = delete_stmt(var: RelVar, args: Maybe[Expr]+);
   [AnalysisError] analyse(DeleteStmt stmt, [RelVar, Expr+, InsertStmt] reqrs, [EnvVar -> Type] env) {
     args_types = (apply(a, expr_type($, env)) : a <- stmt.args);
     return [] if not args_types :: Maybe[NeType]+;
     phys_rel_vars = overlapping_phys_rel_vars(stmt.var, args_types);
-    for v <- isort(phys_rel_vars):
-      if is_one_to_one_attribute(context.name, v):
+    for v <- isort(phys_rel_vars) {
+      if is_one_to_one_attribute(context.name, v) {
         master = master_rel_var(context.name, v);
-        if context.attr_map(master, v):
+        if context.attr_map(master, v)
           return [deleting_one_to_one_attribute(stmt, logical_rel_var(master))];
-        ;
-      ;
-    ;
+      }
+    }
     return [];
   }
 
@@ -113,15 +151,14 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Database,
       req_ins_rel_vars = only(required_insertions(rel_auto.name, stmt.var, args_types));
       rel_var = stmt.var;
       arity = |stmt.args|;
-      if req_ins_rel_vars != []:
+      if req_ins_rel_vars != []
         new_reqrs = [v, as, s : v, as, s <- reqrs | v, as, s <- [v, stmt.args, stmt : v <- req_ins_rel_vars]];
       else
         new_reqrs = reqrs;
-      ;
-      if arity > 1:
+      if arity > 1 {
         key_args = take(stmt.args, arity - 1);
         new_reqrs = [v, as, s : v, as, s <- new_reqrs, v != rel_var or as != key_args] if new_reqrs(rel_var, key_args, *);
-      ;
+      }
       return new_reqrs;
     }
 
@@ -162,10 +199,10 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Database,
     [RelVar, Expr+, InsertStmt] update_reqrs(Statement+ stmts, [RelVar, Expr+, InsertStmt] reqrs, [EnvVar -> Type] env) {
       curr_reqrs = [];
       curr_env = env;
-      for s <- stmts:
+      for s <- stmts {
         curr_reqrs = update_insert_requirement(s, curr_reqrs, curr_env);
         curr_env = update_env(s, curr_env);
-      ;
+      }
       // The body of the statement must have already been checked, so no insert requirement
       // that comes up in the body of the statement (as opposed to coming from the parent
       // block(s) of code) can remain unsatisfied at this point

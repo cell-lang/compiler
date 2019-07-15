@@ -40,8 +40,24 @@ Nat arity(UpdateId id) =
   update_id()   = id.arity;
 
 NzNat arity(Table tbl) = nz_nat(|tbl.col_types|);
+NzNat arity(Column column) = 2;
 
 ////////////////////////////////////////////////////////////////////////////////
 
 PhysRelVar original_rel_var(TableVar var) =
   table_var(v?) = v;
+
+////////////////////////////////////////////////////////////////////////////////
+
+[[+Nat]] keys(Table table) = table.keys;
+[[+Nat]] keys(Column column) = [[0]];
+
+////////////////////////////////////////////////////////////////////////////////
+
+True  is_atomic_expr(AtomicExpr) = true;
+False is_atomic_expr(RefObjExpr) = false;
+
+////////////////////////////////////////////////////////////////////////////////
+
+MembVar corresponding_memb_var(PendingStateVar) =
+  pending_state_var(s?) = memb_var(s);

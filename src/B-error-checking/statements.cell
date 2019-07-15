@@ -5,14 +5,17 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg], actual_ar
       nested_fn_def()     = syn_type_vars(artifact.fndef),
       _                   = [];
     errs = ();
-    for v, t @ i <- typed_vars:
+    for v, t @ i <- typed_vars {
       is_already_def = any((left(typed_vars(j)) == v : j < i)) or already_def(v, ext_vars);
       errs = (errs | vars_redef(typed_vars(i), [var(v)])) if is_already_def;
       errs = errs & param_type_wf_errors(t, def_type_vars);
-    ;
-    let allow_proc_calls=allow_proc_calls, has_return_value=has_ret_val, stmt_stack=():
-      errs = errs & stmts_wf_errors(stmts, ext_vars, []);
-    ;
+    }
+    return errs if errs != ();
+    typed_loc_vars = [v : v, unused_var <~ typed_vars];
+    let typed_loc_vars = typed_loc_vars, allow_proc_calls = allow_proc_calls {
+      let has_return_value = has_ret_val, stmt_stack = ()
+        errs = errs & stmts_wf_errors(stmts, ext_vars, []);
+    }
     return if errs != () then errs else (missing_ret_stmt(stmts) if has_ret_val and syn_may_fall_through(stmts));
   }
 }
@@ -22,6 +25,7 @@ implicit {
   syn_prg           : SynPrg,
   artifact          : Artifact,
   impl_args         : [ImplArg],
+  typed_loc_vars    : [Atom],
   actual_arg_arity  : Nat,
   allow_proc_calls  : Bool,
   has_return_value  : Bool,
@@ -30,14 +34,14 @@ implicit {
 
   ExprWFError* stmts_wf_errors(SynStmt+ stmts, [DefVar] ro_vars, [StdVar] rw_vars) {
     curr_rw_vars = rw_vars;
-    for s @ i <- stmts:
+    for s @ i <- stmts {
       errs = stmt_wf_errors(s, ro_vars, curr_rw_vars);
       return errs if errs != ();
       new_vars = syn_new_vars(s);
       fail if not new_vars :: [StdVar]; ## BAD BAD BAD: FIX THIS
       curr_rw_vars = curr_rw_vars & new_vars;
       return (unreachable_stmt(stmts(i+1))) if not syn_may_fall_through(s) and i + 1 < |stmts|;
-    ;
+    }
     return ();
   }
 
@@ -65,7 +69,7 @@ implicit {
       print_stmt(e?)          = expr_wf_errors(e, all_vars),
       seq_update_stmt()       = expr_wf_errors(stmt.idx, all_vars) & expr_wf_errors(stmt.value, all_vars),
       return_stmt             = (),
-      proc_call_stmt()        = join((expr_wf_errors(e, all_vars) : e <- stmt.args)),
+      proc_call_stmt()        = (),
 
       send_msg_stmt()         = expr_wf_errors(stmt.msg, all_vars),
       try_update_stmt()       = join((expr_wf_errors(e, all_vars) : e <- stmt.args)),
@@ -102,24 +106,23 @@ implicit {
     ExprWFError* for_stmt_wf_errors(SynForStmt stmt, [DefVar] ro_vars, [StdVar] rw_vars, [DefVar] all_vars) {
       iter_errs = ();
       new_vars = [];
-      for it <- stmt.loops:
+      for it <- stmt.loops {
         iter_errs = iter_errs & iter_wf_errors(it, new_vars & all_vars);
         new_vars = new_vars & syn_new_vars(it);
-      ;
+      }
       assert disjoint(new_vars, all_vars);
-      let stmt_stack = (stmt_stack | :loop):
+      let stmt_stack = (stmt_stack | :loop)
         body_errs = stmts_wf_errors(stmt.body, ro_vars & new_vars, rw_vars - new_vars);
-      ;
       return iter_errs & body_errs;
     }
 
 
     ExprWFError* insert_stmt_wf_errors((var: Symbol, args: SynExpr+, iter: SynCollIter?)+ entries, [DefVar] vars) =
       join(({
-        if e.iter?:
+        if e.iter? {
           errs = iter_wf_errors(e.iter, vars);
           return errs if errs != ();
-        ;
+        }
         args_vars = vars & if e.iter? then syn_new_vars(e.iter) else [];
         return join((expr_wf_errors(a, args_vars) : a <- e.args));
       } : e <- entries));
@@ -128,31 +131,30 @@ implicit {
     ExprWFError* insert_with_attrs_stmt_wf_errors(SynInsertWithAttrsStmt stmt, [DefVar] vars) {
       errs = join((expr_wf_errors(a, vars) : a <- stmt.args));
       return errs if errs != ();
-      for a <- stmt.attrs:
-        if a.iter?:
+      for a <- stmt.attrs {
+        if a.iter? {
           errs = iter_wf_errors(a.iter, vars);
           return errs if errs != ();
-        ;
+        }
         attr_vars = vars & if a.iter? then syn_new_vars(a.iter) else [];
         errs = expr_wf_errors(a.value, attr_vars);
         errs = errs & expr_wf_errors(a.cond, attr_vars) if a.cond?;
         return errs if errs != ();
-      ;
+      }
       return ();
     }
 
 
     // type SynCollIter = coll_value_iter(vars: Maybe[StdVar]+, idx_var: StdVar?, src_expr: SynExpr);
     ExprWFError* iter_wf_errors(SynCollIter iter, [DefVar] vars) {
-      if not iter.idx_var? and iter.src_expr :: IdChain:
+      if not iter.idx_var? and iter.src_expr :: IdChain {
         symbs = destructure_id_chain(iter.src_expr);
         resols = resolve_by_priority_as_expr_or_rel_var(symbs, |iter.vars|, vars);
-        if |resols| == 1:
+        if |resols| == 1
           return ();
-        elif |resols| > 1:
+        else if |resols| > 1
           return (ambiguous_expr(iter.src_expr, resols));
-        ;
-      ;
+      }
       return expr_wf_errors(iter.src_expr, vars);
     }
 
@@ -164,22 +166,23 @@ implicit {
 
       target = iter.target;
       resols = resolve_by_priority_as_expr_or_rel_var(target, |iter.args|, vars);
-      if |resols| == 1:
+      if |resols| == 1 {
         resol = only(resols);
-        if resol :: AnyRelVar:
+        if resol :: AnyRelVar {
           exp_arity = relvar_arity(resol);
           return (invalid_rel_var_arity(last(target), |iter.args|, exp_arity) if |iter.args| != exp_arity);
-        else
+        }
+        else {
           return ();
-        ;
-      elif |resols| > 1:
+        }
+      }
+      else if |resols| > 1 {
         // Building a "fake" expression to feed to ambiguous_expr()
         expr = const_or_var(head(target));
-        for i = 1 .. |target|:
+        for i = 1 .. |target|
           expr = syn_accessor(expr, target(i));
-        ;
         return (ambiguous_expr(expr, resols));
-      ;
+      }
       return join((expr_wf_errors(value(a), vars) : a <- iter.args, a != nothing));
     }
 
@@ -242,14 +245,16 @@ implicit {
   ExprWFError* send_msg_stmt_local_wf_errors(Atom var, SynExpr msg, [DefVar] ro_vars, [StdVar] rw_vars) {
     // <var> must identify a nested database, which must have at least one message handler
     interface = db_interfaces[db_symbol(curr_db_def.name)];
-    if interface.nested_dbs(var, *):
+    if interface.nested_dbs(var, *) {
       nested_db_name = interface.nested_dbs[var];
       return (db_has_no_handlers(nested_db_name) if not handlers_by_db(nested_db_name, *));
-    elif interface.memb_vars(var) or interface.rel_vars(var, *):
+    }
+    else if interface.memb_vars(var) or interface.rel_vars(var, *) {
       return (not_a_nested_db_var(var, curr_db_def));
-    else
+    }
+    else {
       return (unknown_nested_db_var(var, curr_db_def));
-    ;
+    }
   }
 
 
@@ -269,23 +274,22 @@ implicit {
   ExprWFError* set_memb_var_stmt_local_wf_errors(Atom var, SynExpr value, [DefVar] ro_vars, [StdVar] rw_vars) {
     // <var> must be a scalar member variable of the target database
     interface = db_interfaces[db_symbol(curr_db_def.name)];
-    if interface.memb_vars(var):
+    if interface.memb_vars(var)
       return ();
-    elif interface.rel_vars(var, *) or interface.nested_dbs(var, *):
+    else if interface.rel_vars(var, *) or interface.nested_dbs(var, *)
       return (not_a_memb_var(var, curr_db_def));
     else
       return (unknown_memb_var(var, curr_db_def));
-    ;
   }
 
 
   ExprWFError* insert_with_attrs_stmt_local_wf_errors(SynInsertWithAttrsStmt stmt) {
     errs = delete_or_insert_stmt_local_wf_errors(stmt.relvar, |stmt.args|);
     return errs if errs != ();
-    for a <- stmt.attrs:
+    for a <- stmt.attrs {
       errs = delete_or_insert_stmt_local_wf_errors(a.name, nz_nat(1 + |stmt.args|));
       return errs if errs != ();
-    ;
+    }
     return ();
   }
 
@@ -293,14 +297,16 @@ implicit {
   ExprWFError* delete_or_insert_stmt_local_wf_errors(Atom var, NzNat arity) {
     // <var> must be a relational variable of the specified arity in the target database
     interface = db_interfaces[db_symbol(curr_db_def.name)];
-    if interface.rel_vars(var, *):
+    if interface.rel_vars(var, *) {
       relvar_arity = interface.rel_vars[var];
       return (invalid_rel_var_arity(var, arity, relvar_arity) if arity != relvar_arity);
-    elif interface.memb_vars(var) or interface.nested_dbs(var, *):
+    }
+    else if interface.memb_vars(var) or interface.nested_dbs(var, *) {
       return (not_a_rel_var(var, curr_db_def));
-    else
+    }
+    else {
       return (unknown_rel_var(var, curr_db_def));
-    ;
+    }
   }
 
 
@@ -322,7 +328,7 @@ implicit {
   ExprWFError* for_stmt_local_wf_errors(SynForStmt stmt, [DefVar] ro_vars, [StdVar] rw_vars) {
     errs = ();
     new_vars = [];
-    for it <- stmt.loops:
+    for it <- stmt.loops {
       dupl_vars = match (it)
         coll_value_iter() = duplicates(values(it.vars) & (it.idx_var if it.idx_var?)),
         filtered_iter()   = [var(v) : v <- duplicates(values(it.vars))],
@@ -336,7 +342,7 @@ implicit {
         coll_value_iter() |
         range_iter()      = ();
       new_vars = new_vars & it_vars;
-    ;
+    }
     return errs;
 
 
@@ -352,20 +358,20 @@ implicit {
     ## AND THAT THERE ARE NOT MUTUAL DEPENDENCIES
     exprs_errs = join((expr_wf_errors(e, ro_vars & rw_vars) : unused_var, e <- stmt.asgnms));
     new_impl_args = impl_args & [left(a) : a <~ stmt.asgnms];
-    let impl_args = new_impl_args, stmt_stack = (stmt_stack | :let):
+    let impl_args = new_impl_args, stmt_stack = (stmt_stack | :let)
       body_errs = stmts_wf_errors(stmt.body, ro_vars, rw_vars);
-    ;
     return exprs_errs & body_errs;
   }
 
 
   ExprWFError* seq_update_stmt_local_wf_errors(SynSeqUpdateStmt stmt, [DefVar] ro_vars, [StdVar] rw_vars) {
     var = stmt.obj;
-    // The variable whose content is update must already exist.
+    // The variable whose content is updated must already exist.
     // Does it have to be a read/write one, or can it be a read-only one too?
     // It has to be a standard variable, so no searching through implicit parameters
     var_errs = (undef_update_var(stmt, var) if not in(var, ro_vars) and not in(var, rw_vars));
-    return var_errs;
+    return var_errs if var_errs != ();
+    return (not_an_explicitly_typed_loc_var(stmt, var) if not typed_loc_vars(bare_id(var)));
   }
 
 
@@ -374,17 +380,30 @@ implicit {
     var_errs = (ro_vars_asgnm([stmt.res_var]) if stmt.res_var? and already_def(stmt.res_var, ro_vars));
 
     proc_name = stmt.proc_name;
-    if not builtin_procs_map(proc_name, *):
-      if not proc_defs_by_id(proc_name, *):
+    if not builtin_procs_map(proc_name, *) {
+      if not proc_defs_by_id(proc_name, *) {
         return (var_errs | undef_proc(stmt));
-      else
+      }
+      else {
         proc_def = proc_defs_by_id[proc_name];
         arity = |proc_def.args|;
         has_ret_val = proc_def.res_type != nothing;
-      ;
-    else
+        if arity == |stmt.args| {
+          args_info = proc_args_info(proc_name);
+          args_errs = join((
+            match (args_info(i))
+              value_arg           = expr_wf_errors(e, ro_vars & rw_vars),
+              rel_auto_arg(id?)   = rel_auto_arg_errs(e, id, i, proc_name, ro_vars, rw_vars),
+              react_auto_arg(id?) = react_auto_arg_errs(e, id, i, proc_name, ro_vars, rw_vars)
+            : e @ i <- stmt.args
+          ));
+          return args_errs if args_errs != ();
+        }
+      }
+    }
+    else {
       arity, has_ret_val = builtin_procs_map[proc_name];
-    ;
+    }
 
     proc_errs = (
       wrong_proc_arity(stmt, arity) if |stmt.args| != arity,
@@ -393,6 +412,24 @@ implicit {
     );
 
     return var_errs & proc_errs;
+
+
+    ExprWFError* rel_auto_arg_errs(SynExpr expr, Symbol rel_auto_type, Nat idx, ProcSymbol proc, [DefVar] ro_vars, [StdVar] rw_vars) {
+      if not expr :: ConstOrVar
+        return (actual_argument_not_an_auto_var(expr, proc, idx, db_symbol(rel_auto_type)));
+      var_symb = match (expr) const_or_var(s?) = s;
+      if not loc_db_vars(loc_db_var(var_symb), *) {
+        is_auto_var = loc_auto_vars(loc_auto_var(var_symb), *);
+        is_obj_var = ro_vars(var(var_symb)) or rw_vars(var(var_symb));
+        return (undef_static_auto_var(var_symb, is_auto_var, is_obj_var));
+      }
+      return ();
+    }
+
+
+    ExprWFError* react_auto_arg_errs(SynExpr expr, Symbol rel_auto_type, Nat idx, ProcSymbol proc, [DefVar] ro_vars, [StdVar] rw_vars) {
+      fail;
+    }
   }
 
 
@@ -422,9 +459,12 @@ implicit {
 
   ExprWFError* restore_state_ctrl_stmt_local_wf_errors(Atom res_var_id, Atom auto_var_id, [DefVar] ro_vars, [StdVar] rw_vars) {
     errs = auto_var_errors(auto_var_id, ro_vars, rw_vars);
+    return errs if errs != ();
     res_var_already_def = already_def(res_var_id, ro_vars) or is_already_def_as_auto_or_db_var(res_var_id);
-    errs = (errs | ro_vars_asgnm([var(res_var_id)])) if res_var_already_def;
-    return errs;
+    return (
+      ro_vars_asgnm([var(res_var_id)]) if res_var_already_def,
+      cannot_set_state_of_auto_arg(auto_var_id) if in(auto_var_id, proc_auto_args)
+    );
   }
 
   //////////////////////////////////////////////////////////////////////////////

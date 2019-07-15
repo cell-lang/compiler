@@ -62,13 +62,12 @@ Bool is_subset(PseudoType subset, PseudoType superset) = not (bpt <- basic_pseud
 
 Bool are_disjoint(PseudoType pseudotype, BasicPseudoType basic_pseudotype) {
   pts = basic_pseudotypes(pseudotype);
-  if basic_pseudotype == :symbols:
+  if basic_pseudotype == :symbols
     return not pts(:symbols) and not (pt <- pts, symbol() ?= pt : true); ## BAD BAD BAD
-  elif basic_pseudotype == :tag_objs:
+  else if basic_pseudotype == :tag_objs
     return not pts(:tag_objs) and not (pt <- pts, tag_obj() ?= pt : true); ## BAD BAD BAD
   else
     return not is_subset(basic_pseudotype, pseudotype);
-  ;
 }
 
 Bool are_disjoint(PseudoType pt1, PseudoType pt2) = not (bpt1 <- basic_pseudotypes(pt1) : not are_disjoint(pt2, bpt1));

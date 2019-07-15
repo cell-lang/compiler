@@ -23,16 +23,15 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
 
     assert {
       inputs_count = |automaton.inputs|;
-      for n @ i <- nodes:
+      for n @ i <- nodes {
         is_input = match (n)
           input()  = true,
           _        = false;
-        if i < inputs_count:
+        if i < inputs_count
           return false if n.level != 0 or not is_input;
         else
           return false if n.level == 0 or is_input;
-        ;
-      ;
+      }
       return true;
     };
 
@@ -94,12 +93,11 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
 
   //////////////////////////////////////////////////////////////////////////////
 
-  ## COMPILATION OF METHODS FOR BOTH TYPES OF AUTOMATA IS ALMOST IDENTICAL, CAN WE SHARE SOME CODE HERE?
-  [MethodId -> CompiledMethod] compiled_methods([Method] methods) {
+  [MethodId -> CompiledMethod] compiled_methods([ReactMethod] methods) {
     return merge([compiled(ms) : unused_var, ms <- group_by(methods, ($.name, |$.args|))]);
 
 
-    [MethodId -> CompiledMethod] compiled([+Method] methods) {
+    [MethodId -> CompiledMethod] compiled([+ReactMethod] methods) {
       a_method = an_elem(methods);
       name = a_method.name;
       arity = |a_method.args|;
@@ -120,7 +118,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
     }
 
 
-    CompiledMethod compiled(Method method) =
+    CompiledMethod compiled(ReactMethod method) =
       compiled_method(
         (v : unused_var, v <- method.args),
         (t : t, unused_var <- method.args),
@@ -130,11 +128,10 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
       );
 
 
-    Instr* gen_code(Method method) {
+    Instr* gen_code(ReactMethod method) {
       args_env = [if a != nothing then value(a) else fn_arg(i) -> t : t, a @ i <~ method.args];
-      let context = automaton, typed_vars = [], surrogates = []:
+      let context = automaton, typed_vars = [], surrogates = []
         eval_code, surr, unused_var = opt_eval_code(method.expr, args_env & react_auto_env, blank_var_gen);
-      ;
       return (eval_code | ret_val(surr));
     }
   }
@@ -185,20 +182,20 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
 
     first_pass_finish_code = (set_bvar(is_new, false));
 
-    for id <- rand_sort(continuous_inputs_ids):
+    for id <- rand_sort(continuous_inputs_ids) {
       instr = do_if(
         is_null(signal_var(id)),
         ## HERE I SHOULD DO AN init_memb_var() INSTEAD, I THINK
         (reset_memb_var(signal_var(id), :blank), clear_input(automaton.name, id))
       );
       first_pass_finish_code = (first_pass_finish_code | instr);
-    ;
+    }
 
-    if discrete_inputs_ids != []:
-      if item(levels_sizes, 0) > 2:
+    if discrete_inputs_ids != [] {
+      if item(levels_sizes, 0) > 2 {
         counter_var = ivar(0); ## ivar(0) IS ALREADY USED ELSEWHERE
         first_pass_finish_code = (first_pass_finish_code | set_ivar(counter_var, 0));
-        for id <- rand_sort(discrete_inputs_ids):
+        for id <- rand_sort(discrete_inputs_ids) {
           first_pass_finish_code = (first_pass_finish_code |
             do_if_not(
               up_to_date_var(std_block_node_id(id)),
@@ -206,10 +203,10 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
                 set_ivar(counter_var, add(counter_var, 1))
               )
             ));
-        ;
+        }
         first_pass_finish_code = (first_pass_finish_code | set_ivar(update_count_var(0), counter_var));
-      ;
-    ;
+      }
+    }
 
     first_pass_finish_code = (first_pass_finish_code | auto_apply(automaton.name));
 
@@ -241,7 +238,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
                   set_ivar(a_free_int_var, time_varying_cond_ids_heap_var(0)),
                   switch_on_nat(
                     a_free_int_var,
-                    ( (queue_update(time_varying_nodes_by_idx[i]))
+                    ( (queue_node_update(time_varying_nodes_by_idx[i]))
                       : i < nz_nat(|time_varying_nodes_by_idx|)
                     )
                   ),
@@ -291,7 +288,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
       : id <- nodes_ids
     );
 
-    if node_count > 2:
+    if node_count > 2 {
       switch_expr = sub(nodes_to_update_var(level_idx, node_idx_var), level_offset);
       code = (
         set_ivar(node_idx_var, 0),
@@ -303,10 +300,10 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
         )),
         set_ivar(update_count_var, 0)
       );
-
-    else
+    }
+    else {
       code = (do_if_not(up_to_date_var(nodes_ids(i)), nodes_code(i)) : i < node_count);
-    ;
+    }
 
     code = (do_if(is_eq(curr_time_var, update_time), code)) if level_idx == 0 and is_time_sensitive and code != ();
 
@@ -321,9 +318,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
 
     input_conds = rand_sort([neg(or(is_null(v), is_blank(v))) : v <- inputs]);
     state_vars_conds = rand_sort([neg(or(is_null(v), is_blank(v))) : v <- state_vars]);
-    let context = automaton:
+    let context = automaton
       nested_autos_conds = rand_sort([state_is_def(v, var_type(v)) : v <- nested_autos]);
-    ;
 
     conds = state_vars_conds & input_conds & nested_autos_conds;
     return (set_bvar(bvar(0), if conds != () then and_then(conds) else true), ret_val(bvar(0)));
@@ -343,7 +339,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
     keys_var, var_gen = next_vector_var(var_gen, count);
     values_var, var_gen = next_vector_var(var_gen, count);
 
-    let context = automaton:
+    let context = automaton {
       code = join(({
         set_label_instr = set_var(evar(keys_var.id, i), object(bare_id(v)));
         value_var = evar(values_var.id, i);
@@ -354,7 +350,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
         return (set_label_instr, set_value_instr);
 
       } : v @ i <- rand_sort(inputs) & rand_sort(state_vars) & rand_sort(nested_autos) & rand_sort(nested_dbs)));
-    ;
+    }
 
     return (code | mk_map(res_var, keys_var, values_var, count), ret_val(res_var));
   }
@@ -412,7 +408,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
 ////////////////////////////////////////////////////////////////////////////////
 
 implicit typedefs : [TypeName -> NeType] {
-  Instr* gen_dispatch_auto_method_body(AutoSymbol auto_type, Method+ methods) {
+  Instr* gen_dispatch_auto_method_body(AutoSymbol auto_type, ReactMethod+ methods) {
     assert |methods| > 1;                     // There must be more than one method
     assert |[m.name : m <~ methods]| == 1;    // All methods must have the same name
     assert |[|m.args| : m <~ methods]| == 1;  // All methods have the same arity

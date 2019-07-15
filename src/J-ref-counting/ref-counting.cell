@@ -87,23 +87,22 @@ Instr+ add_ref_counting(Instr+ instrs) {
     before_info = zip(live_vars_before_map, entry_vars_states);
     uninit_vars = ([v : v <- lvs, not is_initialized(vs, v)] : lvs, vs <- before_info);
     is_ok = none((vs != [] : vs <- uninit_vars));
-    if not is_ok:
+    if not is_ok {
       print "***********************************************";
       print uninit_vars;
-      for vs @ i <- uninit_vars:
-        if vs != []:
+      for vs @ i <- uninit_vars {
+        if vs != [] {
           print "* * * * * * * * * * *";
           print vs;
           print live_vars_before_map(i);
           print entry_vars_states(i);
-        ;
-      ;
-    ;
+        }
+      }
+    }
     return is_ok;
   };
-  let flow_map=flow_map, live_vars_after_map=live_vars_after_map, entry_vars_states=entry_vars_states:
+  let flow_map=flow_map, live_vars_after_map=live_vars_after_map, entry_vars_states=entry_vars_states
     rc_nodes = (add_ref_counting(n, i) : n @ i <- leaf_nodes);
-  ;
   return ref_count_closures(nonempty(reconstruct(code_tree, rc_nodes)));
 }
 
@@ -137,39 +136,40 @@ VarsState* entry_vars_states(NodeInfo* leaf_nodes, Nat** flow_map, [TrkVar]* liv
   fwd_nodes_map = ([n : n <- ns, n < i] : ns @ i <- rev_flow_map);
 
   entry_states = (blank_vars_state);
-  for i = 1..len:
+  for i = 1..len {
     fwd_nodes = fwd_nodes_map(i);
     fwd_states = [exit_vars_state_only(leaf_nodes(n), entry_states(n), live_vars_after_map(n)) : n <- fwd_nodes];
     entry_states = (entry_states | reconcile(fwd_states));
-  ;
+  }
 
   exit_states = (exit_vars_state_only(leaf_nodes(i), entry_state, live_vars_after_map(i)) : entry_state @ i <- entry_states);
 
   updated_map = len * (true);
-  while any(updated_map):
+  while any(updated_map) {
     new_entry_states = (blank_vars_state);
     new_exit_states = (exit_states(0));
     new_updated_map = (false);
-    for i = 1..len:
+    for i = 1..len {
       nodes = rev_flow_map(i);
-      if (n <- nodes : if n < i then new_updated_map(n) else updated_map(n)):
+      if (n <- nodes : if n < i then new_updated_map(n) else updated_map(n)) {
         states = [if n < i then new_exit_states(n) else exit_states(n) : n <- nodes];
         new_entry_state = reconcile(states);
         new_exit_state = exit_vars_state_only(leaf_nodes(i), new_entry_state, live_vars_after_map(i));
         updated = new_entry_state != entry_states(i);
-      else
+      }
+      else {
         new_entry_state = entry_states(i);
         new_exit_state = exit_states(i);
         updated = false;
-      ;
+      }
       new_entry_states = (new_entry_states | new_entry_state);
       new_exit_states = (new_exit_states | new_exit_state);
       new_updated_map = (new_updated_map | updated);
-    ;
+    }
     entry_states = new_entry_states;
     exit_states = new_exit_states;
     updated_map = new_updated_map;
-  ;
+  }
 
   return entry_states;
 }

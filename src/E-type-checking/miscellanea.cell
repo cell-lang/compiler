@@ -16,9 +16,8 @@ implicit typedefs : [TypeName -> NeType] {
 
     assert |arg_types_1| == |arg_types_2|;
 
-    for i < |arg_types_1|:
+    for i < |arg_types_1|
       return false if not is_subset(arg_types_2(i), replace_type_vars_with_type_any(arg_types_1(i)));
-    ;
     // return is_subset(cls_call_type(t1, arg_types_2), ret_type_2);
     return is_subset(ret_type_1, ret_type_2);
   }
@@ -38,9 +37,8 @@ implicit typedefs : [TypeName -> NeType] {
 
   Bool are_ptype_disjoint(NeType+ ts1, NeType+ ts2) {
     assert |ts1| == |ts2|;
-    for t @ i <- ts1:
+    for t @ i <- ts1
       return true if are_ptype_disjoint(t, ts2(i));
-    ;
     return false;
   }
 
@@ -130,9 +128,8 @@ implicit typedefs : [TypeName -> NeType] {
 implicit typedefs : [TypeName -> NeType] {
   Bool has_reached_fixpoint([TypeVar -> Type] curr_insts, [TypeVar -> Type] new_insts) {
     return false if not subset(keys(new_insts), keys(curr_insts));
-    for v <- rand_sort(keys(new_insts)):
+    for v <- rand_sort(keys(new_insts))
       return false if not is_subset(new_insts[v], curr_insts[v]);
-    ;
     return true;
   }
 }
@@ -169,17 +166,19 @@ NeType state_type(Database db) {
   rel_vars = [bare_id(v) -> {
     sgns = rel_var_signatures(db, v);
     arity = only([|s| : s <- sgns]);
-    if arity == 1:
+    if arity == 1 {
       assert sgns :: [+(NeType)];
       elem_type = ne_union_superset([only_unsafe(s) : s <- sgns]);
       return type_set(elem_type);
-    elif arity == 2:
+    }
+    else if arity == 2 {
       fail if not sgns :: [+(NeType, NeType)];
       return type_bin_rel(sgns, false);
-    else
+    }
+    else {
       fail if not sgns :: [+(NeType, NeType, NeType)];
       return type_tern_rel(sgns, false);
-    ;
+    }
   } : v <- [logical_rel_var(v) : v, unused_var <- db.rel_vars]];
 
   fields = [object(f) -> (type: t, optional: false) : f, t <- state_vars | f, t <- nested_dbs | f, t <- rel_vars];
@@ -217,11 +216,10 @@ implicit program : Program {
 implicit typedefs : [TypeName -> NeType] {
   (Type, Type) branch_types_after_check(Type actual_type, NeType checked_type) {
     intersection = intersection_superset(actual_type, checked_type, depth=0);
-    if get_type_vars(checked_type) == []:
+    if get_type_vars(checked_type) == []
       intersection = checked_type if not is_subset(intersection, checked_type);
     else
       intersection = actual_type if not is_subset(intersection, actual_type);
-    ;
     return (intersection, actual_type);
   }
 }
@@ -325,10 +323,10 @@ implicit typedefs : [TypeName -> NeType], depth : Nat {
         return [(at0, at1) if at0 != empty_type and at0 != empty_type];
       } : s1 <- sgns1, s2 <- sgns2
     ]);
-    if is_map and |sgns| == 1:
+    if is_map and |sgns| == 1 {
       key_type, value_type = only(sgns);
       return ne_map_type(key_type, value_type);
-    ;
+    }
     return if sgns != [] then ne_bin_rel_type(sgns) else empty_type;
   }
 

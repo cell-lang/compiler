@@ -1,7 +1,7 @@
 LowLevelRepr+ atomic_low_level_reprs = (:bool, :int, :float);
 
-LowLevelEltRepr* atomic_low_level_elt_reprs = (:bool, :int, :float);
-// LowLevelEltRepr* atomic_low_level_elt_reprs = (:bool, :int8, :int16, :int32, :int, :symbol, :float);
+// LowLevelEltRepr* atomic_low_level_elt_reprs = (:bool, :int, :float);
+LowLevelEltRepr+ atomic_low_level_elt_reprs = (:bool, :int8, :nat8, :int16, :int32, :int, :float);
 
 
 NeType low_level_repr_type(LowLevelRepr) =
@@ -14,16 +14,16 @@ NeType low_level_repr_type(LowLevelRepr) =
 
 NeType low_level_repr_type(SmallIntRepr) =
   int8    = type_int8,
+  nat8    = type_byte,
   int16   = type_int16,
   int32   = type_int32;
-  // nat8    = type_byte,
   // nat16   = type_nat16,
   // nat32   = type_nat32,
 
 
-LowLevelRepr low_level_repr(BoolExpr)  = :bool;
-LowLevelRepr low_level_repr(IntExpr)   = :int;
-LowLevelRepr low_level_repr(FloatExpr) = :float;
+LowLevelRepr low_level_repr(BoolExpr)                         = :bool;
+LowLevelRepr low_level_repr(<IntExpr, Int32Var, Int32NatOp>)  = :int;
+LowLevelRepr low_level_repr(FloatExpr)                        = :float;
 
 LowLevelRepr low_level_repr(<InlineObj, StdObjVar, ObjNatOp>) = :object;
 
@@ -110,10 +110,11 @@ AnyTypeExpr low_level_expr(LowLevelRepr repr, ObjExpr expr) =
   object    = expr;
 
 
-AnyTypeExpr low_level_expr(SmallIntRepr repr, ObjExpr expr) = undefined;
-  // int8    =
-  // int16   =
-  // int32   =
+AnyTypeExpr low_level_expr(SmallIntRepr repr, ObjExpr expr) =
+  int8    = get_int_val(expr),
+  nat8    = get_int_val(expr),
+  int16   = get_int_val(expr),
+  int32   = get_int_val(expr);
 
 
 ObjExpr low_level_expr(OptTagRecRepr repr, ObjExpr expr) =
@@ -122,18 +123,15 @@ ObjExpr low_level_expr(OptTagRecRepr repr, ObjExpr expr) =
 
 implicit typedefs : [TypeName -> NeType] {
   LowLevelRepr low_level_repr(NeType type) {
-    for r <- atomic_low_level_reprs:
+    for r <- atomic_low_level_reprs
       return r if is_subset(type, low_level_repr_type(r));
-    ;
-
     return :object;
   }
 
 
   LowLevelEltRepr low_level_elt_repr(NeType type) {
-    for r <- atomic_low_level_elt_reprs:
+    for r <- atomic_low_level_elt_reprs
       return r if is_subset(type, low_level_repr_type(r));
-    ;
     return :object;
   }
 }
@@ -141,20 +139,19 @@ implicit typedefs : [TypeName -> NeType] {
 
 implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptions {
   AnyLowLevelRepr opt_repr(NeType type) {
-    for r <- atomic_low_level_reprs:
+    for r <- atomic_low_level_reprs
       return r if is_subset_wrapper_1(type, low_level_repr_type(r));
-    ;
 
     res = try_mono_tag_type(type);
-    if res != nothing:
+    if res != nothing {
       tag, obj_type = value(res);
-      if optimized_tagged_records(tag, *):
-        for r @ i <- optimized_tagged_records(tag, !!):
+      if optimized_tagged_records(tag, *) {
+        for r @ i <- optimized_tagged_records(tag, !!) {
           rec_type = low_level_repr_type(r);
           return opt_tag_rec_repr(tag, i) if is_subset_wrapper_2(obj_type, rec_type);
-        ;
-      ;
-    ;
+        }
+      }
+    }
 
     return :object;
 
@@ -178,17 +175,16 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
     Maybe[(Symbol, NeType)] try_mono_tag_type(NeType+ types) {
       only_tag = nothing;
       obj_types = ();
-      for t <- types:
+      for t <- types {
         res = try_mono_tag_type(t);
         return nothing if res == nothing;
         tag, obj_type = value(res);
-        if only_tag == nothing:
+        if only_tag == nothing
           only_tag = just(tag);
-        elif only_tag != just(tag):
+        else if only_tag != just(tag)
           return nothing;
-        ;
         obj_types = (obj_types | obj_type);
-      ;
+      }
       return just((value_unsafe(only_tag), ne_union_superset(nonempty(set(obj_types)))));
     }
   }
@@ -208,9 +204,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
 
 
   (FnId, LowLevelSign) low_level_sign(FnFamilyId fn_id, Type* args_types) {
-    for id, s, ts <- signatures_info_by_family_id(fn_id, !!):
+    for id, s, ts <- signatures_info_by_family_id(fn_id, !!)
       return (id, s) if not (t @ i <~ args_types : not is_subset(t, ts(i)));
-    ;
     return (fn_id, aggr_sign_by_fn_family_id(fn_id, !!));
 
 
@@ -226,6 +221,36 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
 
     [FnFamilyId, (FnId, LowLevelSign, NeType*)] signature_info =
       [family_id(fn.id), (fn.id, low_level_sign(fn), (t : unused_var, t <- fn.args)) : fn <- program.fndefs];
+  }
+
+
+  LowLevelSign low_level_sign(Method method) =
+    low_level_sign(
+      args:       (opt_repr(t) : t, unused_var <- method.args),
+      ret_value:  opt_repr(method.ret_type)
+    );
+
+
+  (MethodId, LowLevelSign) low_level_sign(DBSymbol rel_auto_id, MethodSymbol symbol, Type* args_types) {
+    family_id = method_id(symbol, |args_types|);
+    methods = signatures_map(rel_auto_id, !!)(family_id);
+    for id, s, ts <- isort(methods)
+      return (id, s) if not (t @ i <~ args_types : not is_subset(t, ts(i)));
+    return (family_id, aggr_signatures_map(rel_auto_id, !!)(family_id));
+
+
+    [DBSymbol -> [MethodFamilyId -> LowLevelSign]] aggr_signatures_map = [
+      auto_id -> [id -> aggr_sign([m(1) : m <- ms]) : id, ms <- auto_map]
+      : auto_id, auto_map <- signatures_map
+    ];
+
+
+    [DBSymbol -> [MethodFamilyId -> [+(MethodId, LowLevelSign, NeType*)]]] signatures_map = [
+      a.name -> [
+        fid -> [(m.id, low_level_sign(m), (t : t, unused_var <- m.args)) : m <- ms]
+        : fid, ms <- group_by(a.methods, family_id($.id))
+      ] : a <- program.data_bases
+    ];
   }
 }
 

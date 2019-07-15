@@ -20,9 +20,8 @@ implicit typedefs : [TypeName -> NeType], vars_reprs : [StdVar -> AnyLocVar] {
     exprs = (at(expr, i) : i < |ptrns|);
 
     code = eval_code;
-    for p, t, e <- reverse(zip(ptrns, types, exprs)):
+    for p, t, e <- reverse(zip(ptrns, types, exprs))
       code = opt_ptrn_match_code(p, e, t, code);
-    ;
 
     is_seq = is_subset(type, type_seq);
     is_right_size_if_seq = is_subset(intersection_superset(type, :seqs), type_tuple(|ptrns|));
@@ -41,17 +40,17 @@ implicit typedefs : [TypeName -> NeType], vars_reprs : [StdVar -> AnyLocVar] {
 
     conds = (is_tagged_obj(expr) if not is_subset(type, type_tagged_obj));
 
-    if tag_type == atom_type:
+    if tag_type == atom_type {
       obj_type = untagged_objs_supertype(type);
-
-    else
+    }
+    else {
       tag = untag(tag_type);
       obj_type = restricted_untagged_objs_supertype(type, untag(tag));
 
       restr_type = intersection_superset(type, :tag_objs);
       needs_tag_check = not is_subset(restr_type, tag_obj_type(tag_type, type_any));
       conds = (conds | are_eq(get_tag(expr), tag)) if needs_tag_check;
-    ;
+    }
 
     code = match (tag_ptrn)
       ptrn_symbol   |
@@ -66,10 +65,10 @@ implicit typedefs : [TypeName -> NeType], vars_reprs : [StdVar -> AnyLocVar] {
 
 
   Instr* opt_ptrn_union_match_code([+Pattern] ptrns, ObjExpr expr, Type type, Instr* eval_code) {
-    if only([pattern_vars(p) : p <- ptrns]) == []:
+    if only([pattern_vars(p) : p <- ptrns]) == [] {
       fallthrough_type = fold(type, ptrns, type_minus_pattern);
       return (eval_code | terminate(true)) if fallthrough_type == empty_type;
-    ;
+    }
 
     ord_ptrns = isort(ptrns);
     maybe_conds = (ptrn_maybe_expr(p, expr, type) : p <- ord_ptrns);
@@ -101,9 +100,8 @@ implicit typedefs : [TypeName -> NeType], vars_reprs : [StdVar -> AnyLocVar] {
       return cond if cond == nothing;
       cond = value(cond);
 
-      if not is_subset(type, type_tagged_obj):
+      if not is_subset(type, type_tagged_obj)
         cond = and_then(is_tagged_obj(expr), cond);
-      ;
 
       return just(cond);
     }
@@ -116,13 +114,12 @@ implicit typedefs : [TypeName -> NeType], vars_reprs : [StdVar -> AnyLocVar] {
       return cond if cond == nothing;
       cond = value(cond);
 
-      if not is_subset(type, tag_obj_type(symb_type(tag), type_any)):
+      if not is_subset(type, tag_obj_type(symb_type(tag), type_any)) {
         cond = and_then(are_eq(get_tag(expr), tag), cond);
 
-        if not is_subset(type, type_tagged_obj):
+        if not is_subset(type, type_tagged_obj)
           cond = and_then(is_tagged_obj(expr), cond);
-        ;
-      ;
+      }
 
       return just(cond);
     }
@@ -178,24 +175,24 @@ implicit typedefs : [TypeName -> NeType] {
     code_by_types = group_by_right_arg(code_by_type);
     ord_code_by_types = sort_bin_rel(code_by_types, |$a| > |$c|);
 
-    if is_complete and |ord_code_by_types| > 1:
+    if is_complete and |ord_code_by_types| > 1 {
       types, code = ord_code_by_types(0);
       ord_code_by_types = drop(ord_code_by_types, 1);
       code = opt_execute_block(code);
       ## TODO: REMOVE THIS ONCE THE CODE HAS BEEN TESTED
-      if keys(code_by_type) != ptrn_match_types:
+      if keys(code_by_type) != ptrn_match_types {
         check_instr = do_if_not(or([membership_check_expr(t, expr) : t <- types]), terminate(true));
         code = (check_instr) & opt_execute_block(code);
-      ;
-
-    else
+      }
+    }
+    else {
       code = (terminate(is_complete));
-    ;
+    }
 
-    for ts, c <- ord_code_by_types:
+    for ts, c <- ord_code_by_types {
       branch_code = opt_execute_block(c);
       code = (branch(or([membership_check_expr(t, expr) : t <- ts]), branch_code, code));
-    ;
+    }
 
     return code;
 
@@ -222,18 +219,18 @@ implicit typedefs : [TypeName -> NeType] {
       else_code = (terminate(is_complete));
 
       destr_cases = ();
-      for p, is, rs @ i <- cases:
+      for p, is, rs @ i <- cases {
         ptrns_by_ptype = split_by_ptype(p);
-        if ptrns_by_ptype(:symbols, *):
+        if ptrns_by_ptype(:symbols, *) {
           else_code = (opt_ptrn_match_code(p, expr, type, is, vars_reprs = rs) | terminate(true));
           break;
-        ;
+        }
         destr_case = [
           if s != :symbols then untag(s) else undefined -> (rp, is, rs)
           : s, rp <- nonempty_map(split_by_ptype(p))
         ];
         destr_cases = (destr_cases | destr_case);
-      ;
+      }
 
       return else_code if destr_cases == ();
 
@@ -258,15 +255,15 @@ implicit typedefs : [TypeName -> NeType] {
       is_complete = false;
       types = (type);
       curr_type = type;
-      for p, unused_var_1, unused_var_2 @ i <- cases:
+      for p, unused_var_1, unused_var_2 @ i <- cases {
         curr_type = type_minus_pattern(curr_type, p);
         types = (types | curr_type);
-        if curr_type == empty_type:
+        if curr_type == empty_type {
           return tag_objs_ptrns_opt_code(expr, type, nonempty(take(cases, i+1))) if i != |cases| - 1;
           is_complete = true;
           break;
-        ;
-      ;
+        }
+      }
 
       split_ptrns = (split_by_tag_ptype(p) : p, unused_var_1, unused_var_2 <- cases);
       tag_ptypes = nonempty([pt : c <~ split_ptrns, pt, unused_var <- c]);
@@ -288,18 +285,18 @@ implicit typedefs : [TypeName -> NeType] {
           case_type = tag_obj_type(symb_type(tag), restricted_untagged_objs_supertype(type, tag));
           tag_is_complete = not may_fall_through(case_type, (p : p, unused_var_1, unused_var_2 <- restr_cases));
 
-          if tag_is_complete:
+          if tag_is_complete {
             last_case = rat(restr_cases, 0);
             last_case_ptrn, last_case_code, last_case_reprs = last_case;
-            if pattern_vars(last_case_ptrn) == []:
+            if pattern_vars(last_case_ptrn) == [] {
               assert last_case_reprs == [];
 
               checked_cases = take(restr_cases, |restr_cases| - 1);
               checked_cases_code = (opt_ptrn_match_code(p, expr, case_type, is, vars_reprs = rs) : p, is, rs <- checked_cases);
               ## HERE IT WOULD BE BETTER IF WE COULD INSERT A CHECK FOR THE LAST CASE
               return join(checked_cases_code) & last_case_code;
-            ;
-          ;
+            }
+          }
 
           cases_code = (opt_ptrn_match_code(p, expr, case_type, is, vars_reprs = rs) : p, is, rs <- restr_cases);
           return (join(cases_code) | terminate(tag_is_complete));
@@ -309,7 +306,7 @@ implicit typedefs : [TypeName -> NeType] {
       code_by_tags = [([object(s) : s <- ss], c) : ss, c <- group_by_right_arg(code_by_tag)];
       assert code_by_tags == [([object(s) : s <- ss], nonempty(is)) : is, ss <- reverse_map(code_by_tag)]; ## REMOVED AFTER IT HAS BEEN TESTED THOROUGHLY
 
-      if tag_ptypes(:symbols):
+      if tag_ptypes(:symbols) {
         // Cases that match values tagged with any symbol
         default_cases = ({
           unused_var, eval_code, reprs = cases(i);
@@ -325,22 +322,22 @@ implicit typedefs : [TypeName -> NeType] {
 
         last_case_ptrn, last_case_code, last_case_reprs = rat(default_cases, 0);
 
-        if default_is_complete and pattern_vars(last_case_ptrn) == []:
+        if default_is_complete and pattern_vars(last_case_ptrn) == [] {
           assert last_case_reprs == [];
 
           default_cases = take(default_cases, |default_cases| - 1);
           default_cases_code = (opt_ptrn_match_code(p, expr, type, is, vars_reprs = rs) : p, is, rs <- default_cases);
           ## HERE IT WOULD BE BETTER IF WE COULD INSERT A CHECK FOR THE LAST CASE
           default_code = join(default_cases_code) & last_case_code;
-
-        else
+        }
+        else {
           default_cases_code = (opt_ptrn_match_code(p, expr, type, is, vars_reprs = rs) : p, is, rs <- default_cases);
           default_code = (join(default_cases_code) | terminate(default_is_complete));
-        ;
-
-      else
+        }
+      }
+      else {
         default_code = (terminate(is_complete));
-      ;
+      }
 
       return opt_symb_switch(get_tag(expr), code_by_tags, default_code);
     }

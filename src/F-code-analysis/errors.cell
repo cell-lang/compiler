@@ -32,16 +32,16 @@ String* create_annotated_error_msg(AnalysisError error, Any anchor) {
   err_msg = create_error_msg(error);
   return ("Internal compiler error") if err_msg == ();
   maybe_data = fetch(anchor);
-  if maybe_data != nothing:
+  if maybe_data != nothing {
     data = value(maybe_data);
-    if data :: ((NzNat, NzNat), (NzNat, NzNat)):
+    if data :: ((NzNat, NzNat), (NzNat, NzNat)) {
       start_pos, end_pos = data;
       start_line = left(start_pos);
       end_line = left(end_pos);
       line_info = "Line" & if start_line == end_line then " " & printed(start_line) else "s " & printed(start_line) & "-" & printed(end_line);
       return (if i == 0 then line_info & ": " & l else l : l @ i <- err_msg);
-    ;
-  ;
+    }
+  }
   extra_line = "CANNOT DETERMINE LOCATION OF OFFENDING CODE";
   extra_line = extra_line & ": " & printed(value(maybe_data)) if maybe_data != nothing;
   return (err_msg | extra_line);

@@ -44,17 +44,18 @@ ParError mismatched_parenthesis(AnnotatedToken l, AnnotatedToken r)  = mismatche
 
 Maybe[ParError] parentheses_error(AnnotatedToken* tokens) {
   par_stack = empty_stack;
-  for at <- tokens:
+  for at <- tokens {
     t = at.token;
-    if t == left_parenthesis or t == left_bracket or t == left_brace:
+    if t == left_parenthesis or t == left_bracket or t == left_brace {
       par_stack = push(par_stack, at);
-    elif t == right_parenthesis or t == right_bracket or t == right_brace:
+    }
+    else if t == right_parenthesis or t == right_bracket or t == right_brace {
       return just(parenthesis_not_opened(at)) if par_stack == empty_stack;
       last_par = peek(par_stack);
       ## SHOULD FIND A WAY TO MAKE THIS SYNTACTLY PALATABLE
       return just(mismatched_parenthesis(last_par, at)) if match (last_par.token, t) left(pt1?), right(pt2?) = pt1 != pt2;
       par_stack = pop(par_stack);
-    ;
-  ;
+    }
+  }
   return if par_stack != empty_stack then just(parenthesis_not_closed(peek(par_stack))) else nothing;
 }

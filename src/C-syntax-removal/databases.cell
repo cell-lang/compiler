@@ -7,7 +7,7 @@ implicit syn_prg : SynPrg, artifact : SchemaDef {
       ) : v <- db_state_vars
     ];
 
-    methods  = [desugar_db_method(m) : m <- lookup(methods_by_db, artifact.name, [])];
+    // methods  = [desugar_db_method(m) : m <- lookup(methods_by_db, artifact.name, [])];
     updates  = [desugar_update(u)    : u <- lookup(updates_by_db, artifact.name, [])];
     handlers = [desugar_handler(h)   : h <- lookup(handlers_by_db, artifact.name, [])];
 
@@ -24,7 +24,7 @@ implicit syn_prg : SynPrg, artifact : SchemaDef {
       attr_map:     attr_map,
       foreign_keys: impl_fkeys & expl_fkeys,
       nested_dbs:   db_vars_types,
-      methods:      methods,
+      methods:      desugared_rel_auto_methods(lookup(methods_by_db, artifact.name, [])),
       updates:      updates,
       handlers:     handlers
     );
@@ -49,13 +49,25 @@ implicit syn_prg : SynPrg, artifact : SchemaDef {
   }
 
 
-  Method desugar_db_method(DBMethodDef method_def) {
+  [Method] desugared_rel_auto_methods([DBMethodDef] methods) =
+    union([
+      [desugared_rel_auto_method(m, maybe(i, |ms| > 1)) : m @ i <~ isort(ms)]
+      : unused_var, ms <- group_by(methods, ($.name, |$.args|))
+    ]);
+
+
+  Method desugared_rel_auto_method(DBMethodDef method_def, Maybe[Nat] unique_id) {
     args = ((desugar_plain_type(t), just(var(n))) : t, n <- method_def.args);
     ret_type = desugar_plain_type(method_def.ret_type);
     arg_vars = [var(n) : _, n <~ method_def.args];
     method_artifact = using_block_method_def(artifact.name, method_def);
     expr = desugar_expr(method_def.expr, arg_vars, artifact = method_artifact, impl_args = []);
-    method = method(method_symbol(method_def.name), args, ret_type, expr);
+    method_id = method_id(
+      symbol: method_symbol(method_def.name),
+      arity:  |args|,
+      id:     value(unique_id) if unique_id != nothing
+    );
+    method = method(method_id, args, ret_type, expr);
     return transfer(method, method_def);
   }
 
@@ -131,12 +143,11 @@ implicit syn_prg : SynPrg {
 
     [Symbol] polymorphic_rel_vars([RelVarsDecl2] flat_decls) {
       names = ();
-      for d <- isort(flat_decls):
+      for d <- isort(flat_decls) {
         names = (names | d.name);
-        for a <- d.attributes:
+        for a <- d.attributes
           names = (names | a.name);
-        ;
-      ;
+      }
       return duplicates(names);
     }
   }
@@ -171,7 +182,7 @@ implicit syn_prg : SynPrg {
       rem_type = neat_difference(arg_type, keys(subtree), typedefs = typedefs);
       all_attrs = inherited_attrs & decl.attributes;
       complete_decls = flatten_hierarchy(subtree, root_type_to_decl, all_attrs);
-      if rem_type != empty_type:
+      if rem_type != empty_type {
         complete_decl = relvars_decl(
           name:       decl.name,
           col_types:  (rem_type),
@@ -180,7 +191,7 @@ implicit syn_prg : SynPrg {
           attributes: all_attrs
         );
         complete_decls = complete_decls & [complete_decl];
-      ;
+      }
       return complete_decls;
     }
   }
@@ -194,13 +205,13 @@ implicit syn_prg : SynPrg {
     attrs_map = ();
 
     // Iterating through the declarations to generate the explicit desugared relations
-    for d <- isort(decls):
+    for d <- isort(decls) {
       // Chosing a physical relation id for the root relation
       root_rel_var = phys_rel_var(d.name);
-      if poly_rel_vars(d.name):
+      if poly_rel_vars(d.name) {
         uid, ctrs = claim_next(ctrs, d.name);
         root_rel_var = split_rel_var(root_rel_var, uid);
-      ;
+      }
 
       // Root relation information
       root_arity = |d.col_types|;
@@ -212,13 +223,13 @@ implicit syn_prg : SynPrg {
       rel_vars = (rel_vars | (root_rel_var, root_info));
 
       // Now turning attributes into explicit relations
-      for a <- d.attributes:
+      for a <- d.attributes {
         // Choosing a physical relation id for the attribute relation
         attr_rel_var = phys_rel_var(a.name);
-        if poly_rel_vars(a.name):
+        if poly_rel_vars(a.name) {
           uid, ctrs = claim_next(ctrs, a.name);
           attr_rel_var = split_rel_var(attr_rel_var, uid);
-        ;
+        }
 
         // Attribute relation information
         attr_args_types = (root_args_types | a.type);
@@ -239,15 +250,15 @@ implicit syn_prg : SynPrg {
         foreign_keys = (foreign_keys | attr_to_root_key);
 
         // Making the key bidirectional for required attributes
-        if a.cardinality.required:
+        if a.cardinality.required {
           root_to_attr_key = foreign_key(root_rel_var, root_args, [attr_rel_var], attr_args);
           foreign_keys = (foreign_keys | root_to_attr_key);
-        ;
+        }
 
         // Adding the new attribute to the list
         attrs_map = (attrs_map | (root_rel_var, attr_rel_var));
-      ;
-    ;
+      }
+    }
 
     return ([v -> info : v, info <~ rel_vars], set(foreign_keys), [e, a : e, a <~ attrs_map]);
   }

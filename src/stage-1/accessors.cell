@@ -164,6 +164,9 @@ implicit syn_prg : SynPrg {
   [Atom] schema_names = [d.name : d <- schema_defs];
 
 
+  [Atom] react_autos_names = [d.name : d <- react_auto_defs];
+
+
   SchemaDef schema_by_id(Atom id) {
     return schemas_by_id[id];
 
@@ -181,6 +184,37 @@ implicit syn_prg : SynPrg {
 
 
   [ProcSymbol -> SynProcDef] proc_defs_by_id = [p.name -> p : p <- syn_proc_defs];
+
+
+  [Symbol] proc_auto_args(ProcSymbol proc_id) {
+    args = proc_defs_by_id(proc_id, !!).args;
+    args_info = proc_args_info(proc_id);
+    return [a.var : a @ i <~ args, args_info(i) != :value_arg];
+  }
+
+
+  ProcArgInfo* proc_args_info(ProcSymbol proc_id) {
+    return if builtin_procs_map(proc_id, *)
+      then (:value_arg : i < left(builtin_procs_map(proc_id, !!)))
+      else signatures(proc_id, !!);
+
+
+    [ProcSymbol -> ProcArgInfo*] signatures = [
+      p.name -> (arg_info(a.type) : a <- p.args) : p <- syn_proc_defs
+    ];
+
+
+    ProcArgInfo arg_info(SynType type) {
+      if type :: <type_ref(type_symbol(<+>))> {
+        symb = match (type) type_ref(type_symbol(s?)) = s;
+        if in(symb, schema_names)
+          return :rel_auto_arg(symb);
+        else if in(symb, react_autos_names)
+          return :react_auto_arg(symb);
+      }
+      return :value_arg;
+    }
+  }
 
 
   [Atom -> [+AutoMethodDef]] methods_by_automaton =
@@ -231,15 +265,15 @@ implicit syn_prg : SynPrg {
 
 
   Bool automaton_is_static(Atom id) =
-    if   db_defs_by_id(db_symbol(id), *)      then true
-    elif auto_defs_by_id(auto_symbol(id), *)  then false
-    else                                           undefined;
+    if db_defs_by_id(db_symbol(id), *)      then true       else
+    if auto_defs_by_id(auto_symbol(id), *)  then false      else
+                                                 undefined;
 
 
   Bool automaton_is_reactive(Atom id) =
-    if   auto_defs_by_id(auto_symbol(id), *) then true
-    elif db_defs_by_id(db_symbol(id), *)     then false
-    else                                          undefined;
+    if auto_defs_by_id(auto_symbol(id), *) then true       else
+    if db_defs_by_id(db_symbol(id), *)     then false      else
+                                                undefined;
 
 
   [AutoSymbol -> AutoInterface] auto_interfaces = [id -> interface_info(a) : id, a <- auto_defs_by_id];
@@ -250,8 +284,8 @@ implicit syn_prg : SynPrg {
 
   [AutoSymbol -> (memb_vars: [Atom], nested_autos: [Atom -> Atom], nested_dbs: [Atom -> Atom])] auto_internals {
     res = ();
-    for a <- rand_sort(values(auto_defs_by_id)):
-      let artifact = a:
+    for a <- rand_sort(values(auto_defs_by_id)) {
+      let artifact = a {
         info = (
           memb_vars:    [bare_id(v) : v <- auto_memb_vars],
           nested_autos: [na.name -> na.auto_name : na <- nested_auto_decls],
@@ -260,8 +294,8 @@ implicit syn_prg : SynPrg {
           nested_dbs:   [db.name -> db.type : db <~ a.nested_dbs]
         );
         res = (res | [auto_symbol(a.name) -> info]);
-      ;
-    ;
+      }
+    }
     return merge(res);
   }
 
@@ -269,12 +303,12 @@ implicit syn_prg : SynPrg {
   [AutoSymbol -> AutoSymbol*] automata_ancestors {
     resolved = [auto_symbol(a.name) -> () : a <- react_auto_defs, not a.parent?];
     remaining = [a : a <- react_auto_defs, a.parent?];
-    loop
+    loop {
       newly_resolved = [auto_symbol(a.name) -> (p) & resolved[p] : a <- remaining, p = auto_symbol(a.parent), resolved(p, *)];
       break if newly_resolved == [];
       remaining = [a : a <- remaining, p = auto_symbol(a.parent), not resolved(p, *)];
       resolved = resolved & newly_resolved;
-    ;
+    }
     assert remaining == [];
     return resolved;
   }
@@ -446,6 +480,9 @@ implicit syn_prg : SynPrg, artifact : Artifact {
     match (artifact)
       syn_proc_def()  = [ loc_auto_var(v.var) -> auto_symbol(v.type)
                           : v <~ artifact.auto_or_db_vars, automaton_is_reactive(v.type)
+                        ] & [
+                          loc_auto_var(artifact.args(i).var) -> auto_symbol(t)
+                          : a @ i <~ proc_args_info(artifact.name), react_auto_arg(t?) ?= a
                         ],
       _               = [];
 
@@ -454,8 +491,16 @@ implicit syn_prg : SynPrg, artifact : Artifact {
     match (artifact)
       syn_proc_def()  = [ loc_db_var(v.var) -> db_symbol(v.type)
                           : v <~ artifact.auto_or_db_vars, automaton_is_static(v.type)
+                        ] & [
+                          loc_db_var(artifact.args(i).var) -> db_symbol(t)
+                          : a @ i <~ proc_args_info(artifact.name), rel_auto_arg(t?) ?= a
                         ],
       _               = [];
+
+
+  [Symbol] proc_auto_args =
+    match (artifact)
+      syn_proc_def()  = proc_auto_args(artifact.name);
 
 
   [NestedAutoVar -> AutoSymbol] nested_auto_vars =
@@ -490,11 +535,11 @@ implicit syn_prg : SynPrg, artifact : Artifact {
 
     db_vars = loc_db_vars & nested_db_vars & linked_db_vars;
     last_round = db_vars;
-    while last_round != []:
+    while last_round != [] {
       new_round = merge([nested_db_vars(v, t) & linked_db_vars(v, t) : v, t <- last_round]);
       db_vars = db_vars & new_round;
       last_round = new_round;
-    ;
+    }
     return db_vars;
 
 

@@ -104,32 +104,32 @@ implicit syn_prg : SynPrg, artifact : ReactAutoDef {
 
     // If the list of discrete signals is not given explicitly, we search
     // the parameter list and the condition for discrete signals
-    if msg_send_decl.signals != ():
+    if msg_send_decl.signals != () {
       signals_state = [signal_var(a) -> true : a <~ msg_send_decl.signals];
-    else
+    }
+    else {
       signals = auto_expr_extern_vars(message) & auto_expr_extern_vars(cond_expr);
       signals_state = [s -> true : s <- signals, s :: AnySignalVar, signal_is_discrete(s)];
-    ;
+    }
 
 
     // If no signals have been specified, either implicitly or explicitly,
     // the action is triggered by the condition becoming true
-    if signals_state == []:
+    if signals_state == []
       cond = on_becoming_true_cond(cond_expr);
     else
       cond = react_cond(cond_expr, signals_state);
-    ;
 
     return [nested_db_var(msg_send_decl.target) -> msg_send_rule(message, cond)];
   }
 
 
-  Method desugar_method(AutoMethodDef method_def) {
+  ReactMethod desugar_method(AutoMethodDef method_def) {
     args = ((desugar_plain_type(t), just(v)) : t, v <- method_def.args);
     ret_type = desugar_plain_type(method_def.ret_type);
     arg_vars = [v : _, v <~ method_def.args];
     expr = desugar_expr(method_def.expr, arg_vars, artifact = method_def, impl_args = []);
-    method = method(method_symbol(method_def.name), args, ret_type, expr);
+    method = react_method(method_symbol(method_def.name), args, ret_type, expr);
     return transfer(method, method_def);
   }
 
@@ -145,16 +145,16 @@ implicit syn_prg : SynPrg, artifact : ReactAutoDef {
 
     // If a plain rule does not contain any discrete signals, then it defines a continuous intermediate signal
     // Otherwise, it's either a discrete rule or a state variable update
-    if discrete_signals == []:
+    if discrete_signals == [] {
       return ([target -> expr], [], []);
-    else
+    }
+    else {
       cond = react_cond(object(true), [v -> true : v <- discrete_signals]);
-      if rule.discrete:
+      if rule.discrete
         return ([], [], [target -> discrete_rule(expr, cond)]);
       else
         return ([], [target -> state_var_update(expr, cond)], []);
-      ;
-    ;
+    }
   }
 
 

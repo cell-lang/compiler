@@ -227,15 +227,15 @@ String* create_error_msg(TypeCheckingError err) =
                                           "  Expected type: " & user_repr(err.exp_type)
                                         ),
   lookup_key_may_overlap_but_is_not_subset() = {
-    if err.target :: Var:
-      if err.arg :: Var:
+    if err.target :: Var {
+      if err.arg :: Var
         vars_str = "variables " & user_repr(err.target) & " and " & user_repr(err.arg);
       else
         vars_str = "variables " & user_repr(err.target);
-      ;
-    else
+    }
+    else {
       vars_str = "all variables involved";
-    ;
+    }
     idx_str = if err.arg_idx == 0 then "first" else "second";
     return (
       "Possibly invalid map or binary relation lookup operation",
@@ -350,9 +350,8 @@ String* create_error_msg(TypeCheckingError err) =
 
   no_suitable_prot_method_found()     = {
     method_repr = user_repr(err.method_name, |err.args_types|);
-    if err.constraints == [] and err.signatures == []:
+    if err.constraints == [] and err.signatures == []
       return ("No protocol method found: " & method_repr);
-    ;
     exp_sgn = append((user_repr(t) : t <- err.args_types), ", ") & " -> " & user_repr(err.ret_type);
 
     msg_header = (
@@ -412,21 +411,21 @@ String* no_matching_relvar_err_msg(AnyRelVar name, Maybe[Type]+ args_types, [+Ne
 
 String* invalid_args_types_err_msg(FnFamilyId fn_name, FnType signature, [+(Nat, Expr, Type)] invalid_params) {
   errs = ();
-  for i, e, t <- rand_sort(invalid_params):
+  for i, e, t <- rand_sort(invalid_params) {
     errs = (errs | "  Invalid argument " & printed(i) & " type in function call: " & user_repr(fn_name) &
                    "(...). Expected type: " & user_repr(signature.args(i)));
-  ;
+  }
   return errs;
 }
 
 
 String* loop_did_not_converge_err_msg(NzNat iteractions, [+EnvVar -> Type+] history) {
   msg = ();
-  for v, ts @ i <- isort(history):
+  for v, ts @ i <- isort(history) {
     msg = (msg | "") if i > 0;
     msg = (msg | "Cannot infer type of variable updated inside a loop: " & user_repr(v));
     msg = msg & ("  " & user_repr(t) : t <- ts);
-  ;
+  }
   return msg;
 }
 
@@ -436,16 +435,16 @@ String* create_annotated_error_msg(TypeCheckingError error, Any anchor) {
   err_msg = create_error_msg(error);
   return ("Internal compiler error") if err_msg == ();
   maybe_data = fetch(anchor);
-  if maybe_data != nothing:
+  if maybe_data != nothing {
     data = value(maybe_data);
-    if data :: ((NzNat, NzNat), (NzNat, NzNat)):
+    if data :: ((NzNat, NzNat), (NzNat, NzNat)) {
       start_pos, end_pos = data;
       start_line = left(start_pos);
       end_line = left(end_pos);
       line_info = "Line" & if start_line == end_line then " " & printed(start_line) else "s " & printed(start_line) & "-" & printed(end_line);
       return (if i == 0 then line_info & ": " & l else l : l @ i <- err_msg);
-    ;
-  ;
+    }
+  }
   extra_line = "CANNOT DETERMINE LOCATION OF OFFENDING CODE";
   extra_line = extra_line & ": " & printed(value(maybe_data)) if maybe_data != nothing;
   return (err_msg | extra_line);

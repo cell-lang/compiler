@@ -93,10 +93,10 @@ ParserResult parse_all(ParsingRule rule, AnnotatedToken+ tokens, [Atom -> Parsin
   // Let's first try to run the quick and dirty parser, which does not keep track of errors
   matching_atomic_rules = (matching_atomic_rule(t.token) : t <- tokens);
   fast_res = fast_parse(rule, 0, tokens=tokens, rec_rules=rec_rules, tokens_count=|tokens|, matching_atomic_rules=matching_atomic_rules);
-  if fast_res != :no_match:
+  if fast_res != :no_match {
     rule_match, nodes_consumed = fast_res;
     return success(parser_match(rule_match, nodes_consumed)) if nodes_consumed == |tokens|;
-  ;
+  }
 
   // Parsing has failed, now let's parse again using the slow,
   // error-preserving parser to find out exactly where the error was
@@ -107,16 +107,15 @@ ParserResult parse_all(ParsingRule rule, AnnotatedToken+ tokens, [Atom -> Parsin
   assert nodes_consumed <= |tokens|;
   // return res if nodes_consumed == |tokens|;
   assert nodes_consumed != |tokens|; // If fast parsing failed, accurate parsing must fail too
-  if mtc.failure? and index_of_last_matched_token(mtc.failure, tokens) > nodes_consumed:
+  if mtc.failure? and index_of_last_matched_token(mtc.failure, tokens) > nodes_consumed
     err = mtc.failure;
   else
     err = unexpected_token(tokens(nodes_consumed));
-  ;
   return failure(err);
 }
 
 
-// String rule_desc(ParsingRule r):
+// String rule_desc(ParsingRule r) =
 //   empty_rule          = printed(r),
 //   atomic_rule()       = printed(r),
 //   optional_rule(sr?)  = "optional_rule(" & rule_desc(sr) & ")",
@@ -158,32 +157,33 @@ ParserResult parse_rule_seq(ParsingRule+ rs, AnnotatedToken+ tokens, Nat offset,
   matches = ();
   maybe_furthest_err = nothing;
   delta = 0;
-  for r @ i <- rs:
+  for r @ i <- rs {
     res = parse(r, tokens, nat(offset+delta), rec_rules);
-    if is_failure(res):
-      if maybe_furthest_err != nothing:
+    if is_failure(res) {
+      if maybe_furthest_err != nothing {
         err = get_error(res);
         furthest_err = value(maybe_furthest_err);
         err_idx = index_of_last_matched_token(err, tokens);
         furthest_err_idx = index_of_last_matched_token(furthest_err, tokens);
         return failure(furthest_err) if furthest_err_idx > err_idx;
-      ;
+      }
       return res;
-    ;
+    }
     res = get_result(res);
     matches = matches & (res.rule_match);
-    if res.failure?:
-      if maybe_furthest_err == nothing:
+    if res.failure? {
+      if maybe_furthest_err == nothing {
         is_furthest = true;
-      else
+      }
+      else {
         curr_furthest_idx = index_of_last_matched_token(value(maybe_furthest_err), tokens);
         new_furthest_idx = index_of_last_matched_token(res.failure, tokens);
         is_furthest = new_furthest_idx > curr_furthest_idx;
-      ;
+      }
       maybe_furthest_err = just(res.failure) if is_furthest;
-    ;
+    }
     delta = nat(delta + res.nodes_consumed);
-  ;
+  }
   return success(parser_match(rule_seq_match(nonempty(matches)), delta, maybe_furthest_err));
 }
 
@@ -194,17 +194,17 @@ ParserResult parse_rep_rule(ParsingRule rep_rule, Nat min_count, ParsingRule sep
   delta = 0;
   parse_res = :uninitialized; ## BUG: THIS IS HERE ONLY BECAUSE THE COMPILER WOULD OTHERWISE COMPLAIN ABOUT THE VARIABLE parse_res BEING UNDEFINED IN THE LAST LINE
   maybe_furthest_err = nothing;
-  loop
+  loop {
     // Matching the separator, if this is not the first match
     sep_nodes = 0;
-    if matches != ():
+    if matches != () {
       parse_res = parse(separator, tokens, nat(offset+delta), rec_rules);
       break if is_failure(parse_res);
       res = get_result(parse_res);
       matches = matches & (res.rule_match) if save_sep;
       sep_nodes = res.nodes_consumed;
       maybe_furthest_err = choose_error(maybe_furthest_err, res.failure, tokens) if res.failure?;
-    ;
+    }
     // Matching the main rule
     parse_res = parse(rep_rule, tokens, nat(offset+delta+sep_nodes), rec_rules);
     break if is_failure(parse_res);
@@ -213,7 +213,7 @@ ParserResult parse_rep_rule(ParsingRule rep_rule, Nat min_count, ParsingRule sep
     num_of_matches = num_of_matches + 1;
     delta = nat(delta + sep_nodes + res.nodes_consumed);
     maybe_furthest_err = choose_error(maybe_furthest_err, res.failure, tokens) if res.failure?;
-  ;
+  }
   fail if parse_res == :uninitialized; ## BUG: SEE COMMENT ABOVE
 
   stop_err = get_error(parse_res);
@@ -228,24 +228,24 @@ ParserResult parse_rep_rule(ParsingRule rep_rule, Nat min_count, ParsingRule sep
 ParserResult parse_rule_choice(RuleAltern+ cs, AnnotatedToken+ tokens, Nat offset, [Atom -> ParsingRule] rec_rules) {
   errs = ();
   maybe_furthest_err = nothing;
-  for c <- cs:
+  for c <- cs {
     res = parse(c.rule, tokens, offset, rec_rules);
-    if is_success(res):
+    if is_success(res) {
       res = get_result(res);
       mtc = if c.name? then rule_choice_match(c.name, res.rule_match) else res.rule_match;
       maybe_furthest_err = choose_error(maybe_furthest_err, res.failure, tokens) if res.failure?;
       return success(parser_match(mtc, res.nodes_consumed, maybe_furthest_err));
-    else
+    }
+    else {
       err = get_error(res);
       errs = errs & (err);
       maybe_furthest_err = choose_error(maybe_furthest_err, err, tokens);
-    ;
-  ;
+    }
+  }
   ## BAD: I WOULD NEED A max_by(xs, p) FUNCTION HERE
   idx = 0;
-  for e @ i <- errs:
+  for e @ i <- errs
     idx = i if index_of_last_matched_token(e, tokens) > index_of_last_matched_token(errs(idx), tokens);
-  ;
   ## BAD: LOSES ERROR INFORMATION HERE
   sc = cs(idx);
   res_err = if sc.name? then all_choices_failed(sc.name, errs(idx)) else errs(idx);
@@ -255,11 +255,10 @@ ParserResult parse_rule_choice(RuleAltern+ cs, AnnotatedToken+ tokens, Nat offse
 
 ParserResult parse_rule_neg(ParsingRule r, AnnotatedToken+ tokens, Nat offset, [Atom -> ParsingRule] rec_rules) {
   res = parse(r, tokens, offset, rec_rules);
-  if is_failure(res):
+  if is_failure(res)
     return success(parser_match(null_match, 0));
   else
     return failure(neg_rule_match(r, get_result(res), offset));
-  ;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -320,13 +319,13 @@ implicit tokens : AnnotatedToken+, rec_rules : [Atom -> ParsingRule], tokens_cou
   FastParserRes fast_parse_rule_seq(ParsingRule+ rs, Nat offset) {
     matches = ();
     delta = 0;
-    for r @ i <- rs:
+    for r @ i <- rs {
       res = fast_parse(r, nat(offset+delta));
       return :no_match if res == :no_match;
       rule_match, nodes_consumed = res;
       matches = (matches | rule_match);
       delta = nat(delta + nodes_consumed);
-    ;
+    }
     return (rule_seq_match(nonempty(matches)), delta);
   }
 
@@ -335,16 +334,16 @@ implicit tokens : AnnotatedToken+, rec_rules : [Atom -> ParsingRule], tokens_cou
     matches = ();
     num_of_matches = 0;
     delta = 0;
-    loop
+    loop {
       // Matching the separator, if this is not the first match
       sep_nodes = 0;
-      if matches != ():
+      if matches != () {
         res = fast_parse(separator, nat(offset+delta));
         break if res == :no_match;
         rule_match, nodes_consumed = res;
         matches = (matches | rule_match) if save_sep;
         sep_nodes = nodes_consumed;
-      ;
+      }
       // Matching the main rule
       res = fast_parse(rep_rule, nat(offset+delta+sep_nodes));
       break if res == :no_match;
@@ -352,7 +351,7 @@ implicit tokens : AnnotatedToken+, rec_rules : [Atom -> ParsingRule], tokens_cou
       matches = (matches | rule_match);
       num_of_matches = num_of_matches + 1;
       delta = nat(delta + sep_nodes + nodes_consumed);
-    ;
+    }
 
     return :no_match if num_of_matches < min_count;
     return (rep_rule_match(matches), delta);
@@ -361,24 +360,23 @@ implicit tokens : AnnotatedToken+, rec_rules : [Atom -> ParsingRule], tokens_cou
 
   FastParserRes fast_parse_rule_choice(RuleAltern+ cs, Nat offset) {
     errs = ();
-    for c <- cs:
+    for c <- cs {
       res = fast_parse(c.rule, offset);
-      if res != :no_match:
+      if res != :no_match {
         rule_match, nodes_consumed = res;
         mtc = if c.name? then rule_choice_match(c.name, rule_match) else rule_match;
         return (mtc, nodes_consumed);
-      ;
-    ;
+      }
+    }
     return :no_match;
   }
 
 
   FastParserRes fast_parse_rule_neg(ParsingRule r, Nat offset) {
     res = fast_parse(r, offset);
-    if res == :no_match:
+    if res == :no_match
       return (null_match, 0);
     else
       return :no_match;
-    ;
   }
 }

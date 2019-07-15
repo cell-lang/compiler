@@ -153,12 +153,13 @@ implicit block : ReactBlock, typedefs : [TypeName -> NeType] {
   //////////////////////////////////////////////////////////////////////////////
 
   (String*, String*) auto_method_wrapper(MethodId method_id, CompiledMethod method) {
-    if not method_id.id?:
+    if not method_id.id? {
       base_name = sentence_case(bare_id(method_id.symbol));
       return method_wrapper(method_id, method, block.name, base_name, auto_class_name);
-    else
+    }
+    else {
       return ((), ());
-    ;
+    }
   }
 
   //////////////////////////////////////////////////////////////////////////////
@@ -201,14 +202,14 @@ implicit block : ReactBlock, typedefs : [TypeName -> NeType] {
 
     input_enum_decl = if inputs == ()
         then ()
-      elif sum((length(i) : i <- inputs)) <= 80
+      else if sum((length(i) : i <- inputs)) <= 80
         then ("  enum Input {" & append(inputs, ", ") & "};")
       else
         ("  enum Input {") & ("    " & i & "," : i <- inputs) & ("  };");
 
     output_enum_decl = if outputs == ()
         then ()
-      elif sum((length(o) : o <- inputs)) <= 80
+      else if sum((length(o) : o <- inputs)) <= 80
         then ("  enum Output {" & append(outputs, ", ") & "};")
       else
         ("  enum Output {") & ("    " & o & "," : o <- outputs) & ("  };");
@@ -288,7 +289,7 @@ implicit block : ReactBlock, typedefs : [TypeName -> NeType] {
       "}"
     );
 
-    if is_time_sensitive:
+    if is_time_sensitive {
       class_impl = class_impl & (
         "",
         "void " & auto_class_name & "::set_elapsed_millisecs(unsigned long long time) {",
@@ -301,15 +302,15 @@ implicit block : ReactBlock, typedefs : [TypeName -> NeType] {
         "  set_elapsed_millisecs(1000 * time);",
         "}"
       );
-    ;
+    }
 
-    if inputs != ():
+    if inputs != () {
       class_impl = class_impl & (
         "",
         "void " & auto_class_name & "_internal_set_input(void *ptr, " & auto_class_name & "::Input input, OBJ obj) {",
         "  switch (input) {"
       );
-      for input @ j <- inputs:
+      for input @ j <- inputs {
         class_impl = class_impl & (
           "" if j > 0,
           "    case " & auto_class_name & "::" & input & ":",
@@ -319,7 +320,7 @@ implicit block : ReactBlock, typedefs : [TypeName -> NeType] {
           "      }",
           "      break;"
         );
-      ;
+      }
       class_impl = (class_impl |
         "  }",
         "  release(obj);",
@@ -330,9 +331,9 @@ implicit block : ReactBlock, typedefs : [TypeName -> NeType] {
         "  " & auto_class_name & "_internal_set_input(ptr, input, " & constructor_function(:generic) & "(value));",
         "}"
       );
-    ;
+    }
 
-    if outputs != ():
+    if outputs != () {
       class_impl = class_impl & (
         "",
         "unsigned int " & auto_class_name & "::changed_outputs_count() {",
@@ -350,20 +351,20 @@ implicit block : ReactBlock, typedefs : [TypeName -> NeType] {
         "  OBJ obj;",
         "  switch (output) {"
       );
-      for output @ i <- outputs:
+      for output @ i <- outputs {
         class_impl = class_impl & (
           "" if i > 0,
           "    case " & output & ":",
           "      obj = " & auto_struct_ptr & "->" & output_vars_names(i) & ";",
           "      break;"
         );
-      ;
+      }
       class_impl = class_impl & (
         "  }",
         "  export_literal_as_c_string(obj, buffer, size);",
         "}"
       );
-    ;
+    }
 
     class_impl = class_impl & input_setters_impl & output_getters_impl & methods_wrappers_impls;
 
@@ -404,7 +405,7 @@ implicit typedefs : [TypeName -> NeType] {
     );
 
     conds = (to_c_fn_name(p) & "(obj" & printed(i) & ")" : i, p <- mono_args);
-    if poly_args != ():
+    if poly_args != () {
       poly_conds = ((to_c_fn_name(ps(i)) & "(obj" & printed(i) & ")" : i <- poly_args) : ps <- rand_sort(memb_preds));
       anded_conds = ({
           c = append(cs, " && ");
@@ -415,14 +416,14 @@ implicit typedefs : [TypeName -> NeType] {
       poly_cond = append(anded_conds, " || ");
       poly_cond = "(" & poly_cond & ")" if |anded_conds| > 1;
       conds = (conds | poly_cond);
-    ;
+    }
     cond = append(conds, " && ");
     cond = "(" & cond & ")" if |conds| > 1;
 
-    if cond != "":
+    if cond != "" {
       release_stmts = ("    release(obj" & printed(i) & ");" : i < arity);
       impl = impl & ({"  if (!" & cond & ") {"}) & release_stmts & ("    throw 0LL;", "  }");
-    ;
+    }
 
     impl = impl & (
       "  memset(&env, 0, sizeof(ENV));",

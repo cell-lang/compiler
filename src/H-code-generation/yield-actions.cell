@@ -66,7 +66,9 @@ implicit program           : Program,
     yield_value_action()    = yield_value_action_opt_code(action, var_gen),
     set_yield_action()      = set_yield_action_opt_code(action, var_gen),
     rel_yield_action()      = rel_yield_action_opt_code(action, var_gen),
-    relvar_yield_action()   = relvar_yield_action_opt_code(action, var_gen),
+    relvar_yield_action()   = if is_columnar_relvar(action.relvar)
+                                then columnar_relvar_yield_action_opt_code(action, var_gen)
+                                else relvar_yield_action_opt_code(action, var_gen),
     seq_yield_action()      = seq_yield_action_opt_code(action, var_gen),
     match_yield_action()    = match_yield_action_opt_code(action, var_gen),
     let_yield_action()      = let_yield_action_opt_code(action, var_gen),
@@ -75,23 +77,134 @@ implicit program           : Program,
 
 
   // relvar_yield_action(vars: StdVar+, relvar: AnyRelVar, args: Maybe[Expr]+, next: YieldAction)
+  Instr* columnar_relvar_yield_action_opt_code(RelVarYieldAction action, VarGen var_gen) {
+    fail if not action.args :: (Maybe[ExprRef], Nothing);
+
+    arg0 = action.args(0);
+    if arg0 == nothing {
+      fail if |action.vars| != 2;
+      var_0, var_1 = action.vars;
+      return full_column_iter_code(var_0, var_1, action.relvar, action.next, var_gen);
+    }
+    else {
+      key_arg = value(arg0);
+      value_var = only_unsafe(action.vars);
+      return one_value_iter_code(key_arg, value_var, action.relvar, action.next, var_gen);
+    }
+
+
+    Instr* one_value_iter_code(Expr key_arg, StdVar value_var, AnyRelVar relvar, YieldAction next_action, VarGen init_var_gen) {
+      key_arg_eval_code, key_arg_alias, var_gen = opt_eval_info(key_arg, init_var_gen);
+
+      key_arg_surr, var_gen = next_int32_var(var_gen);
+
+      // Selecting the candidate tables among those the logical relation is partitioned into
+      key_arg_type = subexpr_type(key_arg);
+      return (terminate(true)) if key_arg_type == empty_type;
+      candidate_tables = overlapping_tables(relvar, (just(key_arg_type), nothing));
+
+      cases = [{
+        sign = table_signature(tv);
+        value_repr = low_level_repr(sign(1));
+        ll_value_var = low_level_var(value_repr, value_var);
+
+        store_id = table_col_store_id(tv, 0);
+        store_type = value_store_type(rel_auto_type(relvar), unqualified(store_id));
+        store_id = substitute(store_id);
+
+        next_action_surrs = surrogates & [value_var -> obj_expr(ll_value_var)];
+        action_code = yield_action_opt_code(next_action, var_gen, surrogates = next_action_surrs);
+
+        code = (
+          set_ivar32(key_arg_surr, value_to_surr(store_id, value_store_encoded_expr(store_type, key_arg_alias))),
+          do_if_not(
+            is_eq(key_arg_surr, -1),
+            do_if(
+              table_contains(tv, (just(key_arg_surr), nothing), false),
+              ( set_any_var(
+                  ll_value_var,
+                  column_lookup(substitute(tv), key_arg_surr, column_repr(sign(1)))
+                )
+              ) & action_code
+            )
+          )
+        );
+
+        return ((sign(0)), code);
+      } : tv <- candidate_tables];
+
+      iter_code = if |cases| != 1
+        then (execute_block(dynamic_dispatch_code((key_arg_alias), cases)))
+        else right(only(cases));
+
+      return key_arg_eval_code & iter_code;
+    }
+
+
+    Instr* full_column_iter_code(StdVar var_0, StdVar var_1, AnyRelVar relvar, YieldAction next_action, VarGen init_var_gen) {
+      surr_var_0 = shadow_surr_var(var_0);
+
+      // Selecting the candidate tables among those the logical relation is partitioned into
+      // In this specific case, that means all of them
+      candidate_tables = overlapping_tables(relvar, (nothing, nothing));
+
+      code = ();
+
+      // Iterating through all candidate tables
+      for tv <- isort(candidate_tables) {
+        sign = table_signature(tv);
+        repr_0 = low_level_repr(sign(0));
+        repr_1 = low_level_repr(sign(1));
+        ll_var_0 = low_level_var(repr_0, var_0);
+        ll_var_1 = low_level_var(repr_1, var_1);
+
+        store_id = table_col_store_id(tv, 0);
+        store_type = value_store_type(rel_auto_type(relvar), unqualified(store_id));
+        store_id = substitute(store_id);
+
+        col_repr = column_repr(sign(1));
+        it_var, var_gen = next_column_it_var(init_var_gen, col_repr);
+
+        vars_setup_code = (
+          set_ivar32(surr_var_0, get_col_index(it_var)),
+          surr_to_decoded_value(ll_var_0, store_id, store_type, surr_var_0),
+          set_any_var(ll_var_1, column_lookup(substitute(tv), surr_var_0, col_repr))
+        );
+
+        next_action_surrs = surrogates & [var_0 -> obj_expr(ll_var_0), var_1 -> obj_expr(ll_var_1)];
+        action_code = yield_action_opt_code(next_action, var_gen, surrogates = next_action_surrs);
+
+        loop_code = (break_if(is_out_of_range(it_var))) & vars_setup_code & action_code & (move_forward(it_var));
+
+        table_code = (
+          get_column_iter(it_var, substitute(tv)),
+          repeat(nonempty(loop_code))
+        );
+
+        code = code & table_code;
+      }
+
+      return code;
+    }
+  }
+
+
+  // relvar_yield_action(vars: StdVar+, relvar: AnyRelVar, args: Maybe[Expr]+, next: YieldAction)
   Instr* relvar_yield_action_opt_code(RelVarYieldAction action, VarGen init_var_gen) {
     args = action.args;
-
-    ## BAD: I DON'T LIKE THIS, REFACTOR IT USING [Nat -> Expr] INSTEAD OF Maybe[Expr]
-    filtered_idxs = idxs_into_filtered_seq((a != nothing : a <- args));
-    unfiltered_idxs = (i : a @ i <- args, a != nothing);
-    blank_idxs = (i : a @ i <- args, a == nothing);
     set_args = values(args);
+
+    bound_args_idxs = (i : a @ i <- args, a != nothing);
+    free_args_idxs = (i : a @ i <- args, a == nothing);
+    arg_idx_bound_arg_idx = [i -> j : i @ j <~ bound_args_idxs];
 
     args_eval_code, args_aliases, var_gen = opt_eval_info(set_args, init_var_gen);
 
     surr_vars, var_gen = next_int32_vars(var_gen, |set_args|);
+    shadow_surr_vars, var_gen = next_int32_vars(var_gen, |action.vars|);
     it_var, var_gen = next_table_it_var(var_gen, |args|, symmetric(action.relvar));
 
-    surr_args = (apply(mi, surr_vars($)) : mi <- filtered_idxs);
-
-    action_code = yield_action_opt_code(action.next, var_gen);
+    surr_args = (apply(a, surr_vars(arg_idx_bound_arg_idx(i))) : a @ i <- args);
 
     symmetric = symmetric(action.relvar);
 
@@ -103,30 +216,50 @@ implicit program           : Program,
     code = args_eval_code;
 
     // Iterating through all candidate tables
-    for tv <- isort(candidate_tables):
+    for tv <- isort(candidate_tables) {
       assert (a <~ surr_args : a == nothing);
-      lookup_exprs = (
-        lookup_surrogate(substitute(table_col_store_id(tv, i)), get_unknown_arg(it_var, j))
-        : i @ j <- blank_idxs
-      );
-      vars_setup_code = (set_var(v, lookup_exprs(i)) : v @ i <- action.vars);
+
+      sign = table_signature(tv);
+      vars_types = (sign(free_args_idxs(i)) : i < |action.vars|);
+      low_level_vars = (low_level_var(low_level_repr(vars_types(i)), v) : v @ i <- action.vars);
+
+      vars_setup_code = join(({
+        shadow_surr_var = shadow_surr_vars(i);
+        store_id = table_col_store_id(tv, free_args_idxs(i));
+        store_type = value_store_type(rel_auto_type(action.relvar), unqualified(store_id));
+        store_id = substitute(store_id);
+        return (
+          set_ivar32(shadow_surr_var, get_unknown_arg(it_var, i)),
+          surr_to_decoded_value(v, store_id, store_type, shadow_surr_var)
+        );
+      } : v @ i <- low_level_vars));
+
+      next_action_surrs = surrogates & [v -> obj_expr(low_level_vars(i)) : v @ i <~ action.vars];
+      action_code = yield_action_opt_code(action.next, var_gen, surrogates = next_action_surrs);
+
       loop_code = (break_if(is_out_of_range(it_var))) & vars_setup_code & action_code & (move_forward(it_var));
       table_code = (
         get_table_iter(it_var, substitute(tv), nonempty(surr_args)),
         repeat(nonempty(loop_code))
       );
 
-      for e @ i <- reverse(args_aliases):
-        store_id = table_col_store_id(tv, rat(unfiltered_idxs, i));
+      for e @ i <- reverse(args_aliases) {
+        idx = rat(bound_args_idxs, i);
+        arg_type = value_unsafe(args_types(idx));
+        store_id = table_col_store_id(tv, idx);
+        store_type = value_store_type(rel_auto_type(action.relvar), unqualified(store_id));
+        store_id = substitute(store_id);
         surr_var = rat(surr_vars, i);
-        table_code = (
-          set_ivar32(surr_var, lookup_value(store_id, e)),
-          do_if_not(is_eq(surr_var, -1), table_code)
+        table_code = opt_do_if(
+          value_store_guard(store_type, e, arg_type),
+          ( set_ivar32(surr_var, value_to_surr(store_id, value_store_encoded_expr(store_type, e))),
+            do_if_not(is_eq(surr_var, -1), table_code)
+          )
         );
-      ;
+      }
 
       code = code & table_code;
-    ;
+    }
 
     return code;
   }
@@ -137,23 +270,25 @@ implicit program           : Program,
     args_surrs : Maybe[ObjExpr]*;
 
     code, src_surr, var_gen = opt_eval_info(action.src_rel, init_var_gen);
-    if |action.args| == 2:
+    if |action.args| == 2 {
       it_var, var_gen = next_bin_rel_it_var(var_gen);
-    else
+    }
+    else {
       assert |action.args| == 3;
       it_var, var_gen = next_tern_rel_it_var(var_gen);
-    ;
+    }
 
     args_surrs = ();
-    for a <- action.args:
-      if a != nothing:
+    for a <- action.args {
+      if a != nothing {
         arg_code, arg_surr, var_gen = opt_eval_info(value(a), var_gen);
         code = code & arg_code;
         args_surrs = (args_surrs | just(arg_surr));
-      else
+      }
+      else {
         args_surrs = (args_surrs | nothing);
-      ;
-    ;
+      }
+    }
     code = (code | get_any_rel_iter(it_var, src_surr, args_surrs));
 
     body = (break_if(is_out_of_range(it_var)));
@@ -199,11 +334,10 @@ implicit program           : Program,
   Instr* seq_yield_action_opt_code(SeqYieldAction action, VarGen init_var_gen) {
     // Calculating source type, and returning early if the type is trivial
     src_type = subexpr_type(action.src_seq);
-    if src_type == empty_type:
+    if src_type == empty_type
       return (terminate);
-    elif is_subset(src_type, empty_seq_type):
+    else if is_subset(src_type, empty_seq_type)
       return ();
-    ;
 
     // Types of elements of source and destination sequences
     src_elt_type = seq_elem_supertype(src_type);
@@ -216,11 +350,11 @@ implicit program           : Program,
 
     // Evaluation of source expression
     eval_code, src_surr, var_gen = opt_eval_info(action.src_seq, init_var_gen);
-    if not src_surr :: <LocVar, StdVar>:
+    if not src_surr :: <LocVar, StdVar> {
       src_var, var_gen = next_obj_var(var_gen);
       eval_code = (eval_code | set_var(src_var, src_surr));
       src_surr = src_var;
-    ;
+    }
 
     // Temporary buffer for source data
     src_array_var, var_gen = next_array_var(var_gen, src_repr);
@@ -232,20 +366,21 @@ implicit program           : Program,
     vars = action.vars;
     body = ();
 
-    if |vars| == 1:
+    if |vars| == 1 {
       var = only(vars); ## CHECK IF THIS IS ALWAYS VERIFIED...
-      if var != nothing:
+      if var != nothing {
         var = value(var);
         it_var = low_level_var(src_repr, var);
         surrs = surrogates & [var -> obj_expr(it_var) if it_var != var];
-      else
+      }
+      else {
         ## THIS IS UNNECESSARY, BECAUSE THE VALUE IS NOT BEING USED,
         ## BUT SINCE IT'S SUCH A MARGINAL USE CASE...
         it_var, var_gen = next_obj_var(var_gen);
         surrs = surrogates;
-      ;
-
-    else
+      }
+    }
+    else {
       assert src_repr == :object;
       vars_types = tuple_field_supertypes(src_elt_type, |vars|);
       ## REMOVE WHEN DONE
@@ -253,15 +388,15 @@ implicit program           : Program,
       reprs = (opt_repr(t) : t <- vars_types);
       it_var, var_gen = next_obj_var(var_gen);
       surrs = surrogates;
-      for mv @ i <- vars:
-        if mv != nothing:
+      for mv @ i <- vars {
+        if mv != nothing {
           v = value(mv);
           phys_var = low_level_var(reprs(i), v);
           surrs = surrs & [v -> obj_expr(phys_var) if v != phys_var];
           body = (body | set_any_var(phys_var, at(it_var, i)));
-        ;
-      ;
-    ;
+        }
+      }
+    }
 
     // Index variables
     hidden_idx_var, var_gen = next_int32_var(var_gen);
@@ -294,10 +429,10 @@ implicit program           : Program,
     vars_reprs = [v -> low_level_var(opt_repr(t), v) : v, t <- ptrn_env];
     surrs = surrogates & [v -> obj_expr(pv) : v, pv <- vars_reprs];
 
-    let surrogates = surrs, vars_reprs = vars_reprs:
+    let surrogates = surrs, vars_reprs = vars_reprs {
       nested_code = yield_action_opt_code(action.next, var_gen);
       code = opt_ptrn_match_code(action.ptrn, expr_surr, expr_type, nested_code);
-    ;
+    }
 
     return eval_code & code;
   }

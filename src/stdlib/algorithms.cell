@@ -21,18 +21,18 @@ T* mergesort(T* seq, (T T -> Bool) lt) {
   len = |seq|;
   return seq if len <= 1;
   ss = ((x) : x <- seq);
-  while len > 1:
+  while len > 1 {
     nss = ();
     idx = 0;
     ## BAD BAD BAD DOESN'T WORK WELL WITH A ROPE
-    while len > idx+1:
+    while len > idx+1 {
       nss = (merge(ss(idx), ss(idx+1), lt)) & nss;
       idx = idx + 2;
-    ;
+    }
     assert idx == |ss| or idx == |ss| - 1;
     ss  = if len > idx then (ss(idx)) & nss else nss;
     len = |ss|; ## SHOULD BE len = (len + 1) / 2;
-  ;
+  }
   return ss(0);
 
 
@@ -42,15 +42,16 @@ T* mergesort(T* seq, (T T -> Bool) lt) {
     rs = ();
     i1 = 0;
     i2 = 0;
-    while i1 < l1 or i2 < l2:
-      if i1 == l1 or (i2 < l2 and lt(seq2(i2), seq1(i1))):
+    while i1 < l1 or i2 < l2 {
+      if i1 == l1 or (i2 < l2 and lt(seq2(i2), seq1(i1))) {
         rs = (seq2(i2)) & rs;
         i2 = i2 + 1;
-      else
+      }
+      else {
         rs = (seq1(i1)) & rs;
         i1 = i1 + 1;
-      ;
-    ;
+      }
+    }
     assert i1 <= l1 and i2 <= l2;
     return reverse(rs);
   }
@@ -67,11 +68,11 @@ T* mergesort(T* seq, (T T -> Bool) lt) {
 
   curr_map = [n -> lookup(map, n, []) : n <- keys(map) & union(values(map))];
 
-  loop
+  loop {
     new_map = [n -> rs & union([curr_map[r] : r <- rs]) : n, rs <- curr_map];
     break if new_map == curr_map;
     curr_map = new_map;
-  ;
+  }
 
   return [n -> curr_map[n] : n <- keys(map)];
 }
@@ -84,14 +85,14 @@ Nat** reverse_adj_list(Nat** adj_list) {
   rev_edges = sort(rev_edges, lower);
   rev_adj_list = ();
   idx = 0;
-  for i < |adj_list|:
+  for i < |adj_list| {
     ts = ();
-    while idx < |rev_edges| and left(rev_edges(idx)) == i:
+    while idx < |rev_edges| and left(rev_edges(idx)) == i {
       ts = (ts | right(rev_edges(idx)));
       idx = idx + 1;
-    ;
+    }
     rev_adj_list = (rev_adj_list | ts);
-  ;
+  }
   return rev_adj_list;
 
 
@@ -112,13 +113,13 @@ Nat** reverse_adj_list(Nat** adj_list) {
   done_nodes = [n : n <- all_nodes, not edges(n, *) or edges[n] == []];
   layers = (nonempty(done_nodes));
   rem_edges = [s -> ts : s, ts <- edges, ts != []];
-  while rem_edges != []:
+  while rem_edges != [] {
     cleaned_edges = [s -> ts - done_nodes : s, ts <- rem_edges];
     new_layer = nonempty([s : s, ts <- cleaned_edges, ts == []]);
     layers = (layers | new_layer);
     done_nodes = done_nodes & new_layer;
     rem_edges = [s -> ts : s, ts <- cleaned_edges, ts != []];
-  ;
+  }
   return layers;
 }
 
@@ -128,21 +129,20 @@ Nat** reverse_adj_list(Nat** adj_list) {
 [+[+T]] equiv_groups([+T] xs, (T T -> Bool) eq) {
   groups = ();
   rem_xs = rand_sort(xs);
-  while rem_xs != ():
+  while rem_xs != () {
     head = head(rem_xs);
     group = (head);
     rest = ();
-    for i = 1..|rem_xs|:
+    for i = 1..|rem_xs| {
       x = rem_xs(i);
-      if eq(head, x):
+      if eq(head, x)
         group = (group | x);
       else
         rest = (rest | x);
-      ;
-    ;
+    }
     groups = (groups | group);
     rem_xs = rest;
-  ;
+  }
   return set(nonempty((set(nonempty(g)) : g <- groups)));
 }
 
@@ -151,9 +151,8 @@ Nat** reverse_adj_list(Nat** adj_list) {
 
 Nat* count_vector(Nat* seq, Nat min_size) {
   res = count_vector(seq);
-  while |res| < min_size:
+  while |res| < min_size
     res = (res | 0);
-  ;
   return res;
 }
 
@@ -161,14 +160,13 @@ Nat* count_vector(Nat* seq, Nat min_size) {
 Nat* count_vector(Nat* seq) {
   res = count_vector_impl(seq);
 
-  for c @ v <- res:
+  for c @ v <- res {
     c2 = 0;
-    for n <- seq:
+    for n <- seq
       c2 = c2 + 1 if n == v;
-    ;
     ## TODO: FIX ASSERT ERROR *******************************************
     assert c == c2;
-  ;
+  }
   assert if seq == () then res == () else sum(res) == |seq|;
   return res;
 
@@ -180,14 +178,13 @@ Nat* count_vector(Nat* seq) {
     max = rat(seq, 0);
     counters = ();
     cursor = 0;
-    for val <= max:
+    for val <= max {
       new_cursor = cursor;
-      while new_cursor < len and sorted_seq(new_cursor) == val:
+      while new_cursor < len and sorted_seq(new_cursor) == val
         new_cursor = new_cursor + 1;
-      ;
       counters = (counters | nat(new_cursor-cursor));
       cursor = new_cursor;
-    ;
+    }
     return counters;
   }
 }
@@ -198,7 +195,7 @@ Nat* count_vector(Nat* seq) {
 Nat++ ordered_combinations(NzNat m, NzNat n) =
   if m == 1
     then ((i) : i < n)
-  elif m == n
+  else if m == n
     then ((i : i < n))
   else
     nonempty(
@@ -216,15 +213,16 @@ Maybe[Nat]* idxs_into_filtered_seq(Bool* sels) {
   idxs : Maybe[Nat]*;
   idxs = ();
   curr_idx = 0;
-  for sel <- sels:
-    if sel:
+  for sel <- sels {
+    if sel {
       idx = just(curr_idx);
       curr_idx = nat(curr_idx + 1);
-    else
+    }
+    else {
       idx = nothing;
-    ;
+    }
     idxs = (idxs | idx);
-  ;
+  }
   return idxs;
 }
 
@@ -240,7 +238,7 @@ Maybe[Nat]* idxs_into_filtered_seq(Bool* sels) {
   Nat+ insert_at(Nat* ns, Nat m, Nat i) = (
       if j < i
         then ns(j)
-      elif j == i
+      else if j == i
         then m
       else
         ns(j-1)
@@ -278,20 +276,20 @@ Nat* reverse_perm(Nat* p) = array_map(reverse(merge(([i -> n] : n @ i <- p))));
   taken : [Int];
 
   ord_sets = isort(sets);
-  loop
+  loop {
     taken = [];
     merged_sets = ();
-    for s @ i <- ord_sets:
-      if not taken(i):
+    for s @ i <- ord_sets {
+      if not taken(i) {
         intersecting = (i+j+1 : os @ j <- drop(ord_sets, i+1), not taken(j) and not disjoint(s, os));
         merged_set = s & union([ord_sets(j) : j <~ intersecting]);
         merged_sets = (merged_sets | merged_set);
         taken = taken & set(intersecting);
-      ;
-    ;
+      }
+    }
     break if ord_sets == merged_sets;
     ord_sets = merged_sets;
-  ;
+  }
   return set(ord_sets);
 }
 
@@ -300,12 +298,12 @@ Nat* reverse_perm(Nat* p) = array_map(reverse(merge(([i -> n] : n @ i <- p))));
 
 [[+T]] split_sets_by_pred([[+T]] sets, (T -> Bool) p) {
   split_sets = ();
-  for s <- isort(sets):
+  for s <- isort(sets) {
     in = [e : e <- s, p(e)];
     out = s - in;
     split_sets = (split_sets | in)  if in != [];
     split_sets = (split_sets | out) if out != [];
-  ;
+  }
   return set(split_sets);
 }
 
@@ -316,15 +314,15 @@ Nat* reverse_perm(Nat* p) = array_map(reverse(merge(([i -> n] : n @ i <- p))));
   return aggregate(isort(elts), aggr);
 
   [+T] aggregate(T+ elts, (T T -> Maybe[T]) aggr) {
-    for e @ i <- elts:
-      for j = i+1 .. |elts|:
+    for e @ i <- elts {
+      for j = i+1 .. |elts| {
         aggr_elt = aggr(e, elts(j));
-        if aggr_elt != nothing:
+        if aggr_elt != nothing {
           new_elts = ((x : x @ k <- elts, k != i and k != j) | value(aggr_elt));
           return aggregate(new_elts, aggr);
-        ;
-      ;
-    ;
+        }
+      }
+    }
     return set(elts);
   }
 }

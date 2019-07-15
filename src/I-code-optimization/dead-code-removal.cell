@@ -1,15 +1,30 @@
+CompiledPrg remove_dead_code(CompiledPrg prg) =
+  compiled_prg(
+    typedefs:       prg.typedefs,
+    opt_reprs:      prg.opt_reprs,
+    bool_procs:     prg.bool_procs,
+    procs:          [remove_dead_code(pd) : pd <- prg.procs],
+    react_blocks:   [remove_dead_code(b)  : b  <- prg.react_blocks],
+    static_blocks:  [remove_dead_code(b)  : b <- prg.static_blocks],
+    int_seqs:       prg.int_seqs
+  );
+
+
 ObjProcDef remove_dead_code(ObjProcDef pd) =
   obj_proc_def(
-    name:           pd.name,
-    args:           pd.args,
-    cls_args:       pd.cls_args,
-    impl_args:      pd.impl_args,
-    ret_val_repr:   pd.ret_val_repr,
-    type:           pd.type,
-    loc_auto_vars:  pd.loc_auto_vars,
-    loc_db_vars:    pd.loc_db_vars,
-    body:           nonempty(remove_dead_code(pd.body)),
-    cached:         pd.cached
+    name:             pd.name,
+    args:             pd.args,
+    cls_args:         pd.cls_args,
+    impl_args:        pd.impl_args,
+    rel_auto_args:    pd.rel_auto_args,
+    react_auto_args:  pd.react_auto_args,
+    ret_val_repr:     pd.ret_val_repr,
+    type:             pd.type if pd.type?,
+    loc_vars_types:   pd.loc_vars_types,
+    loc_auto_vars:    pd.loc_auto_vars,
+    loc_db_vars:      pd.loc_db_vars,
+    body:             nonempty(remove_dead_code(pd.body)),
+    cached:           pd.cached
   );
 
 
@@ -41,22 +56,37 @@ ReactBlock remove_dead_code(ReactBlock block) =
 
 StaticBlock remove_dead_code(StaticBlock block) =
   static_block(
-    name:                     block.name,
-    links:                    block.links,
-    state_vars:               block.state_vars,
-    nested_blocks:            block.nested_blocks,
-    value_stores:             block.value_stores,
-    tables:                   block.tables,
-    foreign_keys:             block.foreign_keys,
-    init_code:                remove_dead_code(block.init_code),
-    cleanup_code:             remove_dead_code(block.cleanup_code),
-    copy_state_code:          remove_dead_code(block.copy_state_code),
-    set_state_code:           remove_dead_code(block.set_state_code),
-    foreign_keys_check_code:  remove_dead_code(block.foreign_keys_check_code),
-    methods:                  [id -> remove_dead_code(m) : id, m <- block.methods],
-    accessors:                [id -> remove_dead_code(m) : id, m <- block.accessors],
-    updates:                  [id -> compiled_update(u.args_vars, remove_dead_code(u.body)) : id, u <- block.updates],
-    msg_memb_pred:            block.msg_memb_pred
+    name:                         block.name,
+    links:                        block.links,
+    state_vars:                   block.state_vars,
+    nested_blocks:                block.nested_blocks,
+    value_stores:                 block.value_stores,
+    tables:                       block.tables,
+    insert_checked_foreign_keys:  block.insert_checked_foreign_keys,
+    delete_checked_foreign_keys:  block.delete_checked_foreign_keys,
+    init_code:                    remove_dead_code(block.init_code),
+    cleanup_code:                 remove_dead_code(block.cleanup_code),
+    copy_state_code:              remove_dead_code(block.copy_state_code),
+    set_state_code:               remove_dead_code(block.set_state_code),
+    memb_var_check_exprs:         block.memb_var_check_exprs,
+    rel_vars_load_code:           block.rel_vars_load_code,
+    foreign_keys_check_code:      remove_dead_code(block.foreign_keys_check_code),
+    methods:                      [id -> remove_dead_code(m) : id, m <- block.methods],
+    accessors:                    [id -> remove_dead_code(m) : id, m <- block.accessors],
+    updates:                      [id -> compiled_update(u.args_vars, remove_dead_code(u.body)) : id, u <- block.updates],
+    msg_memb_pred:                block.msg_memb_pred
+  );
+
+
+OptCompMethod remove_dead_code(OptCompMethod method) =
+  opt_comp_method(
+    args:             method.args,
+    args_types:       method.args_types,
+    args_memb_preds:  method.args_memb_preds,
+    loc_vars_types:   method.loc_vars_types,
+    ret_type:         method.ret_type,
+    ret_val_repr:     method.ret_val_repr,
+    body:             remove_dead_code(method.body)
   );
 
 
@@ -73,11 +103,11 @@ CompiledMethod remove_dead_code(CompiledMethod method) =
 
 Instr* remove_dead_code(Instr* code) {
   opt_code = ();
-  for instr <- code:
+  for instr <- code {
     opt_instr = remove_dead_code(instr);
     opt_code = opt_code & opt_instr;
     break if not in(falls_through, code_outcomes(opt_instr));
-  ;
+  }
   return opt_code;
 }
 

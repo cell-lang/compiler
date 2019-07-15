@@ -16,7 +16,7 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
   //////////////////////////////////////////////////////////////////////////////
 
   Database permutate_rel_vars(Database rel_auto) {
-    let context = rel_auto:
+    let context = rel_auto {
       perms = rel_vars_perm_map(rel_auto.name, !!);
 
       rel_vars = [v -> {
@@ -30,10 +30,10 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
 
       foreign_keys = [rewrite(k, perms) : k <- rel_auto.foreign_keys];
 
-      methods = [method(m.name, m.args, m.ret_type, perm_expr_rel_vars(m.expr)) : m <- rel_auto.methods];
+      methods = [method(m.id, m.args, m.ret_type, perm_expr_rel_vars(m.expr)) : m <- rel_auto.methods];
       updates  = [update(u.name, u.args, (perm_stmt_rel_vars(s) : s <- u.body)) : u <- rel_auto.updates];
       handlers = [handler(h.type, (perm_stmt_rel_vars(s) : s <- h.body)) : h <- rel_auto.handlers];
-    ;
+    }
 
     return data_base(
       name:         rel_auto.name,
@@ -71,16 +71,17 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
   //////////////////////////////////////////////////////////////////////////////
 
   Procedure permutate_rel_vars(Procedure proc) {
-    let context = proc:
+    let context = proc
       body = (perm_stmt_rel_vars(s) : s <- proc.body);
-    ;
     return procedure(
-      id:         proc.id,
-      args:       proc.args,
-      res_type:   proc.res_type,
-      auto_vars:  proc.auto_vars,
-      db_vars:    proc.db_vars,
-      body:       body
+      id:                   proc.id,
+      args:                 proc.args,
+      rel_auto_args:        proc.rel_auto_args,
+      react_auto_args:      proc.react_auto_args,
+      res_type:             proc.res_type,
+      loc_rel_auto_vars:    proc.loc_rel_auto_vars,
+      loc_react_auto_vars:  proc.loc_react_auto_vars,
+      body:                 body
     );
   }
 }
@@ -186,10 +187,10 @@ implicit program : Program {
       return [i -> i : i <~ idxs] if keys == [];
       ps = [[i -> p(i) : i <~ idxs] : p <- permutations(arity)];
       valid_keys = valid_keys_by_arity[arity];
-      for p <- rand_sort(ps):
+      for p <- rand_sort(ps) {
         perm_keys = [[p(i) : i <- k] : k <- keys];
         return p if valid_keys(perm_keys);
-      ;
+      }
       fail;
     }
 

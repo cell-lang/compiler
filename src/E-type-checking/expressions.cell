@@ -11,10 +11,10 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
       do_expr()     = false,
       _             = true;
 
-    if errs == [] and needs_res_type_check:
+    if errs == [] and needs_res_type_check {
       // Checking that the result type is (a subset of) the expected one
       actual_type = expr_type(expr, env);
-      if not is_subset(actual_type, exp_type):
+      if not is_subset(actual_type, exp_type) {
         errs = match (expr)
           seq_expr()          |
           tuple_expr()        |
@@ -29,8 +29,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
           accessor_test()     = gen_err_msgs(expr, exp_type, env),
           _                   = [];
         errs = type_err_msgs(actual_type, exp_type) if errs == [];
-      ;
-    ;
+      }
+    }
 
     return [add_anchor_if_needed(err, expr) : err <- errs];
   }
@@ -100,11 +100,10 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
     elt_type = elt_type(iter_tree, expr.expr);
     aggr_fns = aggr_functs(expr.fn_id, |expr.extra_args|);
-    for f <- isort(aggr_fns):
-      if is_subset(elt_type, f.elt_type):
+    for f <- isort(aggr_fns) {
+      if is_subset(elt_type, f.elt_type)
         return union([typecheck(e, right(f.extra_args(i)), env) : e @ i <~ expr.extra_args]);
-      ;
-    ;
+    }
 
     extra_args_types = (expr_type(e, env) : e <- expr.extra_args);
     return [no_disp_aggr_fn_found(expr.fn_id, [signature(f) : f <- aggr_fns], elt_type, extra_args_types)];
@@ -119,26 +118,28 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
 
   [TypeCheckingError] pre_typecheck_rel_entry((args: Expr+, cond: Expr?) entry, [EnvVar -> Type] env) {
-    if entry.cond?:
+    if entry.cond? {
       errs = typecheck(entry.cond, type_bool, env);
       return errs if errs != [];
       new_env, unused_var = refine_env(entry.cond, env);
-    else
+    }
+    else {
       new_env = env;
-    ;
+    }
     return seq_union((typecheck(a, type_any, new_env) : a <- entry.args));
   }
 
 
   ## BAD BAD: IT'S ALMOST THE SAME CODE AS ABOVE
   [TypeCheckingError] pre_typecheck_map_entry((key: Expr, value: Expr, cond: Expr?) entry, [EnvVar -> Type] env) {
-    if entry.cond?:
+    if entry.cond? {
       errs = typecheck(entry.cond, type_bool, env);
       return errs if errs != [];
       new_env, unused_var = refine_env(entry.cond, env);
-    else
+    }
+    else {
       new_env = env;
-    ;
+    }
     return typecheck(entry.key, type_any, new_env) & typecheck(entry.value, type_any, new_env);
   }
 
@@ -168,33 +169,33 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
     target_type = expr_type(target, env);
 
-    if target_type == empty_type:
+    if target_type == empty_type {
       exp_value_type = type_any;
-
-    elif is_subset(target_type, atom_type):
+    }
+    else if is_subset(target_type, atom_type) {
       exp_value_type = type_any;
-
-    elif is_subset(target_type, type_seq):
+    }
+    else if is_subset(target_type, type_seq) {
       exp_value_type = integer;
-
-    elif is_subset(target_type, empty_rel_type):
+    }
+    else if is_subset(target_type, empty_rel_type) {
       return [unary_pcall_applied_to_empty_rel];
-
-    elif is_subset(target_type, type_set):
+    }
+    else if is_subset(target_type, type_set) {
       exp_value_type = set_elem_supertype(target_type);
       errs = typecheck(value, type_any, env);
       return errs if errs != [];
       actual_value_type = expr_type(value, env);
       types_are_disjoint = are_ptype_disjoint(actual_value_type, exp_value_type);
       return [invalid_rel_arg_type(0, actual_value_type, exp_value_type) if types_are_disjoint];
-
-    elif is_subset(target_type, type_bin_rel):
+    }
+    else if is_subset(target_type, type_bin_rel) {
       exp_value_type = bin_rel_arg_supertype(target_type, 0);
-
-    else
+    }
+    else {
       ## BAD BAD: THIS ERROR MESSAGE IS ACTUALLY WRONG...
       return [unexpected_actual_type(target_type, type_unary_pseudocall_target)];
-    ;
+    }
 
     return typecheck(value, exp_value_type, env);
   }
@@ -215,15 +216,13 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
       return [] if rel_type == empty_type;
       exp_arg0_type, exp_arg1_type = bin_rel_args_supertypes(rel_type);
 
-      if arg0 != nothing:
+      if arg0 != nothing {
         actual_arg0_type = expr_type(value(arg0), env);
-        if are_ptype_disjoint(actual_arg0_type, exp_arg0_type):
+        if are_ptype_disjoint(actual_arg0_type, exp_arg0_type)
           return [invalid_rel_arg_type(0, actual_arg0_type, exp_arg0_type)];
-        ;
-        if rel_type != empty_type and actual_arg0_type != empty_type and is_subset(rel_type, type_map):
+        if rel_type != empty_type and actual_arg0_type != empty_type and is_subset(rel_type, type_map)
           exp_arg1_type = restricted_bin_rel_arg1_supertype(rel_type, actual_arg0_type);
-        ;
-      ;
+      }
 
       return [] if arg1 == nothing;
       actual_arg1_type = expr_type(value(arg1), env);
@@ -265,12 +264,11 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
       fail if not set_arg_idx :: Bit;
       exp_arg_type = bin_rel_arg_supertype(rel_type, set_arg_idx);
       errs = typecheck(set_arg, exp_arg_type, env);
-      if errs != [] and typecheck(set_arg, type_any, env) == []:
+      if errs != [] and typecheck(set_arg, type_any, env) == [] {
         set_arg_type = expr_type(set_arg, env);
-        if not are_ptype_disjoint(set_arg_type, exp_arg_type):
+        if not are_ptype_disjoint(set_arg_type, exp_arg_type)
           return [lookup_key_may_overlap_but_is_not_subset(rel, rel_type, set_arg, set_arg_idx, set_arg_type)];
-        ;
-      ;
+      }
       return errs;
     }
 
@@ -290,13 +288,11 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     return errs if errs != [];
     args_types = (apply(a, expr_type($, env)) : a <- args);
     sgns = relvar_signatures(rel_var);
-    for s <- rand_sort(sgns):
+    for s <- rand_sort(sgns)
       return [] if not (t @ i <~ args_types : t != nothing and not is_subset(value(t), s(i)));
-    ;
     agg_sgns = aggregated_relation_signatures(sgns); ## BAD BAD BAD: AGGREGATED SIGNATURES SHOULD BE CACHED
-    for s <- rand_sort(agg_sgns):
+    for s <- rand_sort(agg_sgns)
       return [] if not (t @ i <~ args_types : t != nothing and not is_subset(value(t), s(i)));
-    ;
     return [no_matching_relvar(rel_var, args_types, sgns)];
   }
 
@@ -311,13 +307,11 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     return errs if errs != [];
     args_types = (apply(a, expr_type($, env)) : a <- expr.args);
     sgns = relvar_signatures(expr.rel_var);
-    for s <- rand_sort(sgns):
+    for s <- rand_sort(sgns)
       return [] if not (t @ i <~ args_types : t != nothing and not is_subset(value(t), s(i)));
-    ;
     agg_sgns = aggregated_relation_signatures(sgns); ## BAD BAD BAD: AGGREGATED SIGNATURES SHOULD BE CACHED
-    for s <- rand_sort(agg_sgns):
+    for s <- rand_sort(agg_sgns)
       return [] if not (t @ i <~ args_types : t != nothing and not is_subset(value(t), s(i)));
-    ;
     return [no_matching_relvar(expr.rel_var, args_types, sgns)];
   }
 
@@ -382,18 +376,16 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     auto_type = if expr.var? then var_type(expr.var) else this_auto_symbol;
     sgn_set = method_signatures(auto_type, expr.name, |args_types|);
 
-    for s <- rand_sort(sgn_set.sgns):
+    for s <- rand_sort(sgn_set.sgns) {
       assert s.impl_args == [] and s.constrs == [] and |args_types| == |s.args|;
       types = zip(args_types, s.args);
-      if all((is_subset(at, ft) : at, ft <- types)):
+      if all((is_subset(at, ft) : at, ft <- types))
         return [invalid_return_type(s.ret_type, exp_type) if not is_subset(s.ret_type, exp_type)];
-      elif none((are_ptype_disjoint(at, ft) : at, ft <- types)):
+      else if none((are_ptype_disjoint(at, ft) : at, ft <- types))
         return [invalid_return_type(s.ret_type, exp_type)] if not is_subset(s.ret_type, exp_type);
-      ;
-    ;
-    for s <- rand_sort(sgn_set.agg_sgns):
+    }
+    for s <- rand_sort(sgn_set.agg_sgns)
       return [] if all((is_subset(at, ft) : at, ft <- zip(args_types, s.args)));
-    ;
     return [no_disp_db_method(expr.name, args_types, exp_type, sgn_set.sgns)];
   }
 
@@ -406,18 +398,16 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     db_type = if expr.var? then var_type(expr.var) else this_db_symbol;
     sgn_set = method_signatures(db_type, expr.name, |args_types|);
 
-    for s <- rand_sort(sgn_set.sgns):
+    for s <- rand_sort(sgn_set.sgns) {
       assert s.cls_args == () and s.impl_args == [] and s.constrs == [] and |args_types| == |s.args|;
       types = zip(args_types, s.args);
-      if all((is_subset(at, ft) : at, ft <- types)):
+      if all((is_subset(at, ft) : at, ft <- types))
         return [invalid_return_type(s.ret_type, exp_type) if not is_subset(s.ret_type, exp_type)];
-      elif none((are_ptype_disjoint(at, ft) : at, ft <- types)):
+      else if none((are_ptype_disjoint(at, ft) : at, ft <- types))
         return [invalid_return_type(s.ret_type, exp_type)] if not is_subset(s.ret_type, exp_type);
-      ;
-    ;
-    for s <- rand_sort(sgn_set.agg_sgns):
+    }
+    for s <- rand_sort(sgn_set.agg_sgns)
       return [] if all((is_subset(at, ft) : at, ft <- zip(args_types, s.args)));
-    ;
     return [no_disp_db_method(expr.name, args_types, exp_type, sgn_set.sgns)];
   }
 
@@ -474,11 +464,11 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     env_delta = asgnm_env_updates(expr.vars, elem_type) & [expr.idx_var -> type_nat if expr.idx_var?];
     new_env = update(env, env_delta);
 
-    if expr.sel_expr?:
+    if expr.sel_expr? {
       errs = typecheck(expr.sel_expr, type_bool, new_env);
       return errs if errs != [];
       new_env, unused_var = refine_env(expr.sel_expr, new_env);
-    ;
+    }
 
     return typecheck(expr.expr, type_any, new_env);
   }
@@ -491,11 +481,11 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     ## BAD: HERE WE COULD TAKE ADVANTAGE OF THE KNOWLEDGE ON THE TYPE OF THE UPPER BOUND
     new_env = update(env, [expr.var -> type_nat]);
 
-    if expr.sel_expr?:
+    if expr.sel_expr? {
       errs = typecheck(expr.sel_expr, type_bool, new_env);
       return errs if errs != [];
       new_env, unused_var = refine_env(expr.sel_expr, new_env);
-    ;
+    }
 
     return typecheck(expr.expr, type_any, new_env);
   }

@@ -12,18 +12,18 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
 
 
     [PhysRelVar -> [RelVar]] required_insertions_map(Database rel_auto) {
-      ins_keys = [k : k <- rel_auto.foreign_keys, requires_insertion(k)];
+      ins_keys = [k : k <- rel_auto.foreign_keys, insertion_is_statically_checked(k)];
       links = [k.source_rel_var, only(k.target_rel_vars) : k <- ins_keys];
       return [sv -> [logical_rel_var(tv) : tv <- links(sv, ?)] : sv <- keys(rel_auto.rel_vars)];
     }
-
-
-    Bool requires_insertion(ForeignKey key) =
-      match (key.source_args, key.target_args)
-        (just()),         (just(), nothing)           = true,
-        (just(), just()), (just(), just(), nothing)   = true,
-        _,                _                           = false;
   }
+
+
+  Bool insertion_is_statically_checked(ForeignKey key) =
+    match (key.source_args, key.target_args)
+      (just()),         (just(), nothing)           = true,
+      (just(), just()), (just(), just(), nothing)   = true,
+      _,                _                           = false;
 
 
   Bool is_one_to_one_attribute(DBSymbol rel_auto, PhysRelVar rel_var) {
@@ -52,13 +52,12 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
 
     Bool is_slave(PhysRelVar rel_var, RelVarInfo info, [PhysRelVar, PhysRelVar] std_attrs_map, [PhysRelVar, PhysRelVar] mand_attrs_map) {
       arity = |info.signature|;
-      if arity == 2:
+      if arity == 2
         return false if info.keys != [[0]]; ## WHAT IF IT HAS TWO KEYS? WOULDN'T THAT BE OK?
-      elif arity == 3:
+      else if arity == 3
         return false if info.keys != [[0, 1]]; ## DITTO
       else
         return false;
-      ;
       std_masters = [v : v <- std_attrs_map(?, rel_var)];
       mand_masters = [v : v <- mand_attrs_map(?, rel_var)];
       return |std_masters| == 1 and std_masters == mand_masters;

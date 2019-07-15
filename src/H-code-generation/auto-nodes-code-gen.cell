@@ -8,7 +8,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
     pending_input_var = pending_input_var(id);
 
     body = (set_var(memb_var, l0)) &
-           (queue_update(n) : n <- rand_sort(node.downstream_nodes)) &
+           (queue_node_update(n) : n <- rand_sort(node.downstream_nodes)) &
            flag_as_changed_if_output(id);
 
     return nonempty((read_pending_var(l0, pending_input_var), init_memb_var(pending_input_var, :blank)) & body) if node.discrete;
@@ -31,7 +31,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
     eval_code = (try_block(nv_var, eval_code)) if not is_total(node.expr);
     cond = neg(is_eq(var, nv_var));
     body = (set_var(var, nv_var)) &
-           (queue_update(n) : n <- rand_sort(node.downstream_nodes)) &
+           (queue_node_update(n) : n <- rand_sort(node.downstream_nodes)) &
            flag_as_changed_if_output(id);
     return (eval_code | do_if(cond, body));
   }
@@ -47,7 +47,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
     eval_instr = try_block(nv_var, (eval_instr)) if (e <~ node.exprs : not is_total(e));
     cond = neg(is_eq(var, nv_var));
     body = (set_var(var, nv_var)) &
-           (queue_update(n) : n <- rand_sort(node.downstream_nodes)) &
+           (queue_node_update(n) : n <- rand_sort(node.downstream_nodes)) &
            flag_as_changed_if_output(id);
     lock_check_instr = if |node.exprs| > 1
       then do_if_not(is_eq(null_locks_count_var(id), 0), set_ivar(update_source_var(id), |node.exprs|))
@@ -69,7 +69,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
       else no_op;
     return nonempty(
       (lock_check_instr, eval_instr, set_var(var, nv_var)) &
-      (queue_update(n) : n <- rand_sort(node.downstream_nodes)) &
+      (queue_node_update(n) : n <- rand_sort(node.downstream_nodes)) &
       flag_as_changed_if_output(id)
     );
   }
@@ -146,7 +146,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
     continuous_signals = rand_sort([v : v, unused_var <- node.signals_state, not is_discrete(v)]);
     discrete_signals = rand_sort([v : v, unused_var <- node.signals_state, is_discrete(v)]);
 
-    if discrete_signals != ():
+    if discrete_signals != () {
       signals_cond_is_undef = or((is_null(v) : v <- discrete_signals));
       signals_cond = and((
           if node.signals_state[v] then neg(is_blank(v)) else is_blank(v)
@@ -159,9 +159,9 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
           branch(signals_cond, cond_eval_code, (set_var(l0, obj_false)))
         )
       );
-    ;
+    }
 
-    if continuous_signals != ():
+    if continuous_signals != () {
       signals_cond_is_undef = or((is_null(v) : v <- continuous_signals));
       signals_cond_was_undef = or((is_null(prev_var_value(v)) : v <- continuous_signals));
       signals_cond = and(({
@@ -184,7 +184,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
           )
         )
       );
-    ;
+    }
 
     // Executing all the actions associated with the condition
     action_exec_code = (
@@ -288,7 +288,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
         )
       );
 
-    if node.rule_type == :unchanged:
+    if node.rule_type == :unchanged {
       //  These are the possible states for an unchanged-for time rule:
       //
       //  State   Watched   Overall     Next      Current   Timer
@@ -330,8 +330,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
         // Otherwise we are either in state B or C, and the time-varying condition is undefined
         (clear_loc_var(l0))
       );
-
-    else
+    }
+    else {
       //  Here are the possible states for a boolean time rule:
       //
       //  State   Watched   Overall     Next      Current   Timer
@@ -392,7 +392,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
         // Otherwise it is undefined.
         (branch(is_eq(watched_signal_value_var, obj_false), (set_var(l0, obj_false)), (clear_loc_var(l0))))
       );
-    ;
+    }
 
     cond_eval_code = safe_eval_code(node.cond, l0, var_gen);
     cond_eval_code = (try_block(l0, cond_eval_code)) if not is_total(node.cond);
@@ -421,7 +421,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
       do_if_not(
         is_eq(cond_var, l0),
         (set_var(cond_var, l0)) &
-        (queue_update(n) : n <- rand_sort(node.downstream_nodes)) &
+        (queue_node_update(n) : n <- rand_sort(node.downstream_nodes)) &
         flag_as_changed_if_output(id)
       )
     );
@@ -529,7 +529,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
       do_if_not(
         is_eq(cond_var, l0),
         (set_var(cond_var, l0)) &
-        (queue_update(n) : n <- rand_sort(node.downstream_nodes)) &
+        (queue_node_update(n) : n <- rand_sort(node.downstream_nodes)) &
         flag_as_changed_if_output(id)
       );
 
@@ -548,16 +548,16 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
       ## SHOULD I CHECK THAT THE INPUT IS NOT NULL BEFORE SETTING IT, OR IS THIS ALREADY DONE
       ## INSIDE THE NESTED AUTOMATON?
       set_input(auto_var, auto_vars_types[auto_var], node_id.input, nv_var),
-      queue_update(nested_auto_node_id(node_id.auto))
+      queue_node_update(nested_auto_node_id(node_id.auto))
     );
 
     code = eval_code & set_var_code;
 
     discrete_vars = rand_sort(node.discrete_signals);
-    if discrete_vars != ():
+    if discrete_vars != () {
       cond = and((is_not_blank(v) : v <- discrete_vars));
       code = (do_if(cond, code));
-    ;
+    }
 
     return code;
   }
@@ -580,7 +580,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
     );
 
     ## CURRENTLY WE PROPAGATE THE UPDATE WITHOUT CHECKING WHAT INPUTS (IF ANY) HAVE CHANGED. FIX
-    prop_code = (queue_update(id) : id <- rand_sort(union(values(node.downstream_nodes_by_output))));
+    prop_code = (queue_node_update(id) : id <- rand_sort(union(values(node.downstream_nodes_by_output))));
 
     triggers_count_var = nested_auto_int_var(auto_var, time_triggers_count_var);
     first_trigger_var  = nested_auto_int_var(auto_var, trigger_times_heap_var(0));
@@ -609,7 +609,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
     msg_send_instr = send_msg(db_var, db_type, atomic_msg_expr, true);
 
     ## CURRENTLY WE PROPAGATE THE UPDATE WITHOUT CHECKING WHAT INPUTS (IF ANY) HAVE CHANGED. FIX
-    prop_code = (queue_update(id) : id <- rand_sort(union(values(node.downstream_nodes_by_state_var))));
+    prop_code = (queue_node_update(id) : id <- rand_sort(union(values(node.downstream_nodes_by_state_var))));
 
     msg_send_code = (msg_send_instr) & prop_code;
     msg_send_code = (do_if_not(is_null(atomic_msg_expr), msg_send_code)) if atomic_msg_expr :: NullableVar;
@@ -621,13 +621,13 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
   //////////////////////////////////////////////////////////////////////////////
 
   Instr+ gen_update_code(AutoNodeAction action) =
-    state_update_action()   = (queue_update(std_block_node_id(action.target_var), action.expr_idx)),
-    msg_send_action()       = (queue_update(std_block_node_id(action.target_db)));
+    state_update_action()   = (queue_node_update(std_block_node_id(action.target_var), action.expr_idx)),
+    msg_send_action()       = (queue_node_update(std_block_node_id(action.target_db)));
 
 
   Instr* gen_clear_code(AutoNodeAction action) =
     state_update_action()   = { node_id = std_block_node_id(action.target_var);
-                                return (queue_update(node_id, multivalue_node_expr_count[node_id]));
+                                return (queue_node_update(node_id, multivalue_node_expr_count[node_id]));
                               },
     msg_send_action()       = ();
 }
@@ -636,8 +636,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
 ////////////////////////////////////////////////////////////////////////////////
 
 implicit program : Program, automaton : Automaton {
-  Instr queue_update(BlockNodeId node_id) = queue_update(automaton.name, node_id);
-  Instr queue_update(BlockNodeId node_id, Nat expr_idx) = queue_update(automaton.name, node_id, expr_idx);
+  Instr queue_node_update(BlockNodeId node_id) = queue_node_update(automaton.name, node_id);
+  Instr queue_node_update(BlockNodeId node_id, Nat expr_idx) = queue_node_update(automaton.name, node_id, expr_idx);
 
 
   Instr* flag_as_changed_if_output(Atom id) {

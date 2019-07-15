@@ -1,6 +1,7 @@
 implicit program : Program, typedefs : [TypeName -> NeType], context : Context {
   DBSymbol var_type(NestedDBVar var) =
     match (context)
+      ## BUG BUG BUG: WHAT HAPPENS IF WE HAVE SEVERAL LEVELS OF NESTING?
       automaton()   = context.nested_dbs[var].type,
       data_base()   = context.nested_dbs[var];
 
@@ -12,10 +13,17 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context {
 
   DBSymbol var_type(LocDBVar var) =
     match (context)
-      procedure()    = context.db_vars[var].type;
+      procedure() = if context.loc_rel_auto_vars(var, *)
+                      then context.loc_rel_auto_vars(var).type
+                      else only_unsafe((a.type : a <- context.rel_auto_args, a.var == var));
 
 
-  DBSymbol var_type(QualDBVar var) = rel_auto_by_id(var_type(var.outer)).nested_dbs[var.inner];
+  DBSymbol var_type(QualDBVar var) {
+    rel_auto = rel_auto_by_id(var_type(var.outer));
+    return match (var.inner)
+      linked_db_var(i?) = rel_auto.links(i),
+      nested_db_var()   = rel_auto.nested_dbs(var.inner);
+  }
 
 
   DBSymbol this_db_symbol = ## RENAME THIS
@@ -84,6 +92,11 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context {
     store_id = table_col_store_id(rel_auto_type, table_var.table_var, col_idx);
     return nested_value_store_id(table_var.db_var, store_id);
   }
+
+  Column column_info(TableVar var) =
+    match (tables_by_db(this_db_symbol, !!)(var))
+      column() c? = c,
+      table()     = undefined;
 
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////

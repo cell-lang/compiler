@@ -39,6 +39,31 @@ Type replace_type_vars_with_type_any(Type type) = replace_type_vars_computed(typ
 <IntType, empty_type> maybe_int_range(Int min, Int max) = if max >= min then int_range(min, max) else empty_type;
 
 ////////////////////////////////////////////////////////////////////////////////
+
+type AnyIntType = IntType, union_type([+IntType]);
+
+AnyIntType expand_int_type(NeType type, [TypeName -> NeType] typedefs) {
+  return match (type)
+    integer         |
+    low_ints()      |
+    high_ints()     |
+    int_range()     = type,
+    type_ref(ts?)   = expand_int_type(nonempty_type(expand_type_ref(ts, typedefs)), typedefs),
+    union_type(ts?) = union_type(nonempty(union([types(expand_int_type(t, typedefs)) : t <- ts])));
+
+
+  [+IntType] types(AnyIntType type) =
+    integer         |
+    low_ints()      |
+    high_ints()     |
+    int_range()     = [type],
+    union_type(ts?) = ts;
+
+
+  AnyIntType union_type([+IntType] types) = if |types| > 1 then :union_type(types) else only(types);
+}
+
+////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
 [TypeVar] retrieve_type_vars(Type type, [TypeName -> NeType] typedefs) =
@@ -86,8 +111,8 @@ implicit typedefs : [TypeName -> NeType] {
 
     tuple_type(ts?),    ptrn_ne_seq       = type,
     tuple_type(ts?),    ptrn_tuple(ps?)   = if |ts| == |ps|
-                                            then tuple_type((type_pattern_intersection_superset(t, p) : t, p <- nonempty(zip(ts, ps))))
-                                            else empty_type,
+                                              then tuple_type((type_pattern_intersection_superset(t, p) : t, p <- nonempty(zip(ts, ps))))
+                                              else empty_type,
     tuple_type(ts?),    _                 = empty_type,
 
     ne_set_type(),      _                 = if ptrn == ptrn_ne_set then type else empty_type,
@@ -108,12 +133,13 @@ implicit typedefs : [TypeName -> NeType] {
 
     tag_obj_type(),     ptrn_tag_obj()    = { tag_type_int = type_pattern_intersection_superset(type.tag_type, ptrn.tag);
                                               obj_type_int = type_pattern_intersection_superset(type.obj_type, ptrn.obj);
-                                              if tag_type_int == empty_type or obj_type_int == empty_type:
+                                              if tag_type_int == empty_type or obj_type_int == empty_type {
                                                 return empty_type;
-                                              else
+                                              }
+                                              else {
                                                 fail if not tag_type_int :: TagType; ## BAD BAD BAD. CHEATING. NEEDS SUBSIGNATURES HERE...
                                                 return tag_obj_type(tag_type_int, obj_type_int);
-                                              ;
+                                              }
                                             },
 
     tag_obj_type(),     _                 = empty_type,
@@ -197,13 +223,12 @@ implicit typedefs : [TypeName -> NeType] {
   Type tuple_type_minus_tuple_ptrn(NeType+ types, Pattern+ ptrns) {
     rem_types = (type_minus_pattern(t, ptrns(i)) : t @ i <- types);
     ne_count = count(rem_types, $ != empty_type);
-    if ne_count == 0:
+    if ne_count == 0
       return empty_type;
-    elif ne_count == 1:
+    else if ne_count == 1
       return tuple_type((if t != empty_type then t else types(i) : t @ i <- rem_types));
     else
       return tuple_type(types);
-    ;
   }
 
   ////////////////////////////////////////////////////////////////////////////////
@@ -378,6 +403,16 @@ FnType signature(Function fn) =
   );
 
 
+FnType signature(ReactMethod m) =
+  fn_type(
+    args:       (t : t, unused_var <- m.args),
+    ret_type:   m.ret_type,
+    cls_args:   (),
+    impl_args:  [],
+    constrs:    []
+  );
+
+
 FnType signature(Method m) =
   fn_type(
     args:       (t : t, unused_var <- m.args),
@@ -417,8 +452,14 @@ BuiltInType builtin_signature(BuiltIn) =
   tag             = builtin_type((type_tagged_obj),                    atom_type), // The return type is too loose, and it is ignore in the code
   untag           = builtin_type((type_tagged_obj),                    type_any),  // Ditto
 
-  parse           = builtin_type((type_string),                        type_result(type_any, high_ints(0))),
-  print           = builtin_type((type_any),                           type_ascii_string),
+  insert          |
+  remove          = builtin_type((type_set_t, type_var(:t)),  type_set_t),
+
+  put             = builtin_type((type_map_t1_t2, type_var(:t1), type_var(:t2)),  type_map_t1_t2),
+  drop            = builtin_type((type_map_t1_t2, type_var(:t1)),                 type_map_t1_t2),
+
+  parse           = builtin_type((type_string),   type_result(type_any, :tuple_type((type_nat, type_nat)))),
+  print           = builtin_type((type_any),      type_ascii_string),
 
   fneg            = unary_float_op,
   fadd            = binary_float_op,
@@ -460,10 +501,13 @@ NeType type_map_t1_t2         = type_map(type_var(:t1), type_var(:t2));
 ////////////////////////////////////////////////////////////////////////////////
 
 [ProcSymbol -> (NeType*, Maybe[NeType])] builtin_procedures_signatures = [
-  proc_symbol(:file_read)    -> ((type_string), just(type_maybe(type_seq(type_byte)))),
+  proc_symbol(:file_read)    -> ((type_string),                     just(type_maybe(type_seq(type_byte)))),
   proc_symbol(:file_write)   -> ((type_string, type_seq(type_nat)), just(type_bool)),
-  proc_symbol(:print)        -> ((type_string), nothing),
-  proc_symbol(:get_char)     -> ((), just(type_maybe(type_nat)))
+  proc_symbol(:file_append)  -> ((type_string, type_seq(type_nat)), just(type_bool)),
+  proc_symbol(:print)        -> ((type_string),                     nothing),
+  proc_symbol(:get_char)     -> ((),                                just(type_maybe(type_nat))),
+  proc_symbol(:ticks)        -> ((),                                just(type_nat)),
+  proc_symbol(:exit)         -> ((type_nat),                        nothing)
 ];
 
 ////////////////////////////////////////////////////////////////////////////////

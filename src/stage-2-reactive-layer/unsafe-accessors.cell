@@ -6,7 +6,9 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context {
 
   AutoSymbol var_type(LocAutoVar var) =
     match (context)
-      procedure()    = context.auto_vars[var];
+      procedure() = if context.loc_react_auto_vars(var, *)
+                      then context.loc_react_auto_vars(var)
+                      else only_unsafe((a.type : a <- context.react_auto_args, a.var == var));
 
 
   AutoSymbol this_auto_symbol =
@@ -18,13 +20,12 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context {
     auto_type = var_type(var.auto_var);
     auto = automaton_by_id(auto_type);
     memb_var = var.memb_var;
-    if auto.outputs(memb_var, *):
+    if auto.outputs(memb_var, *)
       return auto.outputs[memb_var].type;
-    elif auto.state(memb_var, *):
+    else if auto.state(memb_var, *)
       return auto.state[memb_var].type;
     else
       ## WHAT ELSE IS ACCESSIBLE FROM INSIDE A PROCEDURE?
       return auto.inputs[memb_var].type;
-    ;
   }
 }

@@ -1,12 +1,12 @@
 implicit program : Program, typedefs : [TypeName -> NeType] {
   Bool signature_overlaps_partial_signature(NeType+ signature, Maybe[Type]+ partial_signature) {
     assert |signature| == |partial_signature|;
-    for mt2 @ i <- partial_signature:
-      if mt2 != nothing:
+    for mt2 @ i <- partial_signature {
+      if mt2 != nothing {
         t2 = value(mt2);
         return false if t2 == empty_type or are_ptype_disjoint(signature(i), t2);
-      ;
-    ;
+      }
+    }
     return true;
   }
 }
@@ -22,30 +22,30 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
 implicit typedefs : [TypeName -> NeType] {
   Bool are_disjoint(NeType+ types1, Maybe[NeType]+ types2) {
     assert |types1| == |types2|;
-    for t1 @ i <- types1:
+    for t1 @ i <- types1 {
       t2 = types2(i);
       return true if t2 != nothing and are_ptype_disjoint(t1, value(t2));
-    ;
+    }
     return false;
   }
 
 
   Bool match_exactly(NeType+ types1, Maybe[NeType]+ types2) {
     assert |types1| == |types2|;
-    for t1 @ i <- types1:
+    for t1 @ i <- types1 {
       t2 = types2(i);
       return false if t2 != nothing and not is_eq(t1, value(t2));
-    ;
+    }
     return true;
   }
 
 
   Bool is_subsignature(Maybe[NeType]+ types2, NeType+ types1) {
     assert |types1| == |types2|;
-    for t1 @ i <- types1:
+    for t1 @ i <- types1 {
       t2 = types2(i);
       return false if t2 != nothing and not is_subset(value(t2), t1);
-    ;
+    }
     return true;
   }
 
@@ -68,13 +68,13 @@ implicit typedefs : [TypeName -> NeType] {
 
   Type neat_difference(NeType minuend, [NeType] subtrahends) {
     diff = minuend;
-    for t @ i <- isort(subtrahends):
-      if is_eq(diff, t):
+    for t @ i <- isort(subtrahends) {
+      if is_eq(diff, t) {
         assert i == |subtrahends| - 1;
         return empty_type;
-      ;
+      }
       diff = neat_difference(diff, t);
-    ;
+    }
     return diff;
   }
 
@@ -88,17 +88,18 @@ implicit typedefs : [TypeName -> NeType] {
 
     Maybe[NeType] union_difference([+NeType] minuends, NeType subtrahend) {
       difference = [];
-      for t <- isort(minuends):
-        if not is_eq(t, subtrahend):
-          if are_ptype_disjoint(t, subtrahend):
+      for t <- isort(minuends) {
+        if not is_eq(t, subtrahend) {
+          if are_ptype_disjoint(t, subtrahend) {
             difference = difference & [t];
-          else
+          }
+          else {
             maybe_diff = maybe_neat_difference(t, subtrahend);
             return nothing if maybe_diff == nothing;
             difference = difference & [value(maybe_diff)];
-          ;
-        ;
-      ;
+          }
+        }
+      }
       return if difference != [] then just(ne_union_type(difference)) else nothing;
     }
   }

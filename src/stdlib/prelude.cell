@@ -63,9 +63,8 @@ Nat abs(Int n) = if n :: Nat then n else nat(-n);
 
 Int sum(Int* ns) {
   res = 0;
-  for n <- ns:
+  for n <- ns
     res = res + n;
-  ;
   return res;
 }
 
@@ -78,9 +77,8 @@ Ord min([+Ord] ns) = min(isort(ns));
 
 Ord min(Ord+ ns) {
   min = ns(0);
-  for n <- ns:
+  for n <- ns
     min = n if n < min;
-  ;
   return min;
 }
 
@@ -88,9 +86,8 @@ Ord max([+Ord] ns) = max(isort(ns));
 
 Ord max(Ord+ ns) {
   max = ns(0);
-  for n <- ns:
+  for n <- ns
     max = n if max < n;
-  ;
   return max;
 }
 
@@ -178,9 +175,9 @@ Opt[T] opt(Maybe[T]) =
 Maybe[T] maybe(Opt[T] opt) = if opt != () then just(only(opt)) else nothing;
 
 Maybe[T] maybe_unsafe(T* opt) =
-  if opt == ()    then nothing
-  elif |opt| == 1 then just(only(opt))
-                  else undefined;
+  if opt == ()  then nothing         else
+  if |opt| == 1 then just(only(opt)) else
+                     undefined;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -224,9 +221,8 @@ T+ (_&_)(T+ s1, T+ s2) = {res = _cat_(s1, s2); return if res != () then res else
 
 T* join(T** seqs) {
   res = ();
-  for s <- seqs:
+  for s <- seqs
     res = _cat_(res, s);
-  ;
   return res;
 }
 
@@ -240,11 +236,10 @@ T* slice(T* seq, Int first, Int count) = _slice_(seq, first, count);
 T* (_*_)(Nat count, T* seq) = {
   l = |seq|;
   res = ();
-  for i < count:
-    for x <- seq:
+  for i < count {
+    for x <- seq
       res = res & (x);
-    ;
-  ;
+  }
   return res;
 };
 
@@ -254,7 +249,7 @@ T only((T)) = (x?) = x;
 
 T+ insert(T* seq, Nat idx, T elt) {
   assert idx >= 0 and idx <= |seq|;
-  return (if i == idx then elt elif i < idx then seq(i) else seq(i-1) : i <= |seq|);
+  return (if i == idx then elt else if i < idx then seq(i) else seq(i-1) : i <= |seq|);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -472,12 +467,12 @@ Bool (_<_) (String str1, String str2) = {
   len2 = |chs2|;
   min_len = min(len1, len2);
 
-  for i < min_len:
+  for i < min_len {
     ch1 = chs1(i);
     ch2 = chs2(i);
     return true  if ch1 < ch2;
     return false if ch1 > ch2;
-  ;
+  }
 
   return len1 < len2;
 };

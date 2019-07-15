@@ -80,10 +80,10 @@ NeType ne_tuple_type(NeType+ ts) = :tuple_type(ts);
 
 Type tuple_type(Type+ ts) {
   ne_ts = ();
-  for t <- ts:
+  for t <- ts {
     return empty_type if t == empty_type;
     ne_ts = (ne_ts | t);
-  ;
+  }
   return :tuple_type(nonempty(ne_ts));
 }
 
@@ -102,9 +102,9 @@ NeType ne_union_type([+NeType] ts) {
 
 Type union_type([Type] ts) {
   nu_ts = union([nu_types(t) : t <- ts, t != empty_type]);
-  return if   nu_ts   == [] then empty_type
-         elif |nu_ts| == 1  then only(nu_ts)
-                            else :union_type(nu_ts);
+  return if nu_ts   == [] then empty_type          else
+         if |nu_ts| == 1  then only(nu_ts)         else
+                               :union_type(nu_ts);
 
   [+NeType] nu_types(NeType type) =
     union_type(ts?)  = nonempty(union([nu_types(t) : t <- ts])),
@@ -137,7 +137,9 @@ NeType type_bool = ne_union_type([type_true, type_false]);
 NeType type_nat = high_ints(0);
 NeType type_nz_nat = high_ints(1);
 
-NeType type_nat7 = int_range(0, 127);
+NeType type_nat7  = int_range(0, 127);
+NeType type_nat15 = int_range(0, 32767);
+NeType type_nat31 = int_range(0, 2147483647);
 
 NeType type_byte = int_range(0, 255);
 NeType type_int8 = int_range(-128, 127);
@@ -279,7 +281,17 @@ UniqueAggrFnId unique_aggr_fn_id(Symbol s, Nat n) = :unique_aggr_fn_id(s, n);
 MethodSymbol  method_symbol(Atom n) = :method_symbol(n);
 UpdateSymbol  update_symbol(Atom n) = :update_symbol(n);
 
-<msg_handler> msg_handler = :msg_handler;
+// <msg_handler> msg_handler = :msg_handler;
+
+MethodId method_id(MethodSymbol s, Nat a, Nat id) = method_id(symbol: s, arity: a, id: id);
+MethodFamilyId method_id(MethodSymbol s, Nat a)   = method_id(symbol: s, arity: a);
+MethodFamilyId method_id(Symbol s, Nat a)         = method_id(symbol: method_symbol(s), arity: a);
+
+UpdateId update_id(UpdateSymbol s, Nat a) = update_id(symbol: s, arity: a);
+UpdateId update_id(UpdateSymbol s, Nat a, Nat id) = update_id(symbol: s, arity: a, id: id);
+
+UpdateId main_handler        = :main_handler;
+UpdateId handler_id(Nat n)   = :handler_id(n);
 
 AutoSymbol auto_symbol(Atom a)  = :auto_symbol(a);
 DBSymbol   db_symbol(Atom a)    = :db_symbol(a);
@@ -289,6 +301,14 @@ FnArg     fn_arg(Nat n)       = :fn_arg(n);
 ImplArg   impl_arg(Atom a)    = :impl_arg(a);
 MembVar   memb_var(Atom a)    = :memb_var(a);
 SignalVar signal_var(Atom a)  = :signal_var(a);
+
+## BUG BUG BUG: REPLACE WITH ANOTHER VARIABLE TYPE
+StdVar hidden_var(Nat n) =
+  0  = var(hidden_var_0_id),
+  1  = var(hidden_var_1_id);
+
+Atom hidden_var_0_id = :fe7286e0ba5c7ba302d1729ad00853b88aea516f;
+Atom hidden_var_1_id = :ed6a0f1cbc618033d2eda8293379769d796ac661;
 
 QualMembVar   qual_memb_var(AnyDBVar dbv, MembVar mv)       = qual_memb_var(db_var: dbv, memb_var: mv);
 QualSignalVar qual_signal_var(AnyAutoVar av, SignalVar mv)  = qual_signal_var(auto_var: av, memb_var: mv);
@@ -356,17 +376,15 @@ Expr not_expr(Expr e) = :not_expr(e);
 
 Expr and_expr(Expr+ es) {
   expr = last(es);
-  for i = 1..|es|:
+  for i = 1..|es|
     expr = and_expr(rat(es, i), expr);
-  ;
   return expr;
 }
 
 Expr or_expr(Expr+ es) {
   expr = last(es);
-  for i = 1..|es|:
+  for i = 1..|es|
     expr = or_expr(rat(es, i), expr);
-  ;
   return expr;
 }
 
@@ -480,7 +498,18 @@ ProcSymbol proc_symbol(Atom a) = :proc_symbol(a);
 
 ////////////////////////////////////////////////////////////////////////////////
 
-Method method(MethodSymbol n, (NeType, Maybe[StdVar])* as, NeType t, Expr e) = method(name: n, args: as, ret_type: t, expr: e);
+ReactMethod react_method(MethodSymbol n, (NeType, Maybe[StdVar])* as, NeType t, Expr e) =
+  react_method(name: n, args: as, ret_type: t, expr: e);
+
+////////////////////////////////////////////////////////////////////////////////
+
+Method method(MethodId id, (NeType, Maybe[StdVar])* as, NeType t, Expr e) {
+  assert id.arity == |as|;
+  return method(id: id, args: as, ret_type: t, expr: e);
+}
+
+Method method(MethodSymbol name, (NeType, Maybe[StdVar])* as, NeType t, Expr e) =
+  method(method_id(name, |as|), as, t, e);
 
 Update update(UpdateSymbol n, (NeType, StdVar)* as, Statement* ss) = update(name: n, args: as, body: ss);
 

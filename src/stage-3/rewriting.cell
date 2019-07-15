@@ -1,0 +1,373 @@
+BoolExpr cast_bool_expr(BoolExpr e) = e;
+BoolExpr cast_bool_expr(<IntExpr, Int32Expr, FloatExpr, ObjExpr>) = undefined;
+
+IntExpr cast_int_expr(IntExpr e) = e;
+IntExpr cast_int_expr(<BoolExpr, Int32Var, Int32NatOp, FloatExpr, ObjExpr>) = undefined;
+
+FloatExpr cast_float_expr(FloatExpr e) = e;
+FloatExpr cast_float_expr(<BoolExpr, IntExpr, Int32Expr, ObjExpr>) = undefined;
+
+ObjExpr cast_obj_expr(ObjExpr e) = e;
+ObjExpr cast_obj_expr(<BoolExpr, IntExpr, Int32Expr, FloatExpr>) = undefined;
+
+Int32Expr cast_int32_expr(<Int32Var, Int32NatOp> e) = e;
+Int32Expr cast_int32_expr(Int n) = if n :: Int32 then n else undefined;
+Int32Expr cast_int32_expr(<BoolExpr, IntConst, IntVar, IntNatOp, FloatExpr, ObjExpr>) = undefined;
+
+IntVar cast_int_var(IntVar v) = v;
+IntVar cast_int_var(<BoolExpr, Int, IntConst, IntNatOp, Int32Expr, FloatExpr, ObjExpr>) = undefined;
+
+Int32Var cast_int32_var(Int32Var v) = v;
+Int32Var cast_int32_var(<BoolExpr, IntExpr, Int32, Int32NatOp, FloatExpr, ObjExpr>) = undefined;
+
+<Int32Var, Int32NatOp> cast_int32_var_or_nat_op(<Int32Var, Int32NatOp> v) = v;
+<Int32Var, Int32NatOp> cast_int32_var_or_nat_op(<BoolExpr, IntExpr, Int32, FloatExpr, ObjExpr>) = undefined;
+
+<IntExpr, ObjExpr> cast_int_or_obj_expr(<IntExpr, ObjExpr> e) = e;
+<IntExpr, ObjExpr> cast_int_or_obj_expr(<BoolExpr, Int32Var, Int32NatOp, FloatExpr>) = undefined;
+
+<StdVar, LocVar> cast_loc_or_std_var(AnyTypeExpr expr) = if expr :: <StdVar, LocVar> then expr else undefined;
+
+AnyNullableVar cast_nullable_var(ObjExpr expr) = if expr :: AnyNullableVar then expr else undefined;
+
+<AnySignalVar, LocVar, PendingStateVar> cast_blankable_var(ObjExpr expr) =
+  if expr :: <AnySignalVar, LocVar, PendingStateVar> then expr else undefined;
+
+<PendingStateVar, PendingInputVar> cast_pending_var(ObjExpr expr) =
+  if expr :: <PendingStateVar, PendingInputVar> then expr else undefined;
+
+////////////////////////////////////////////////////////////////////////////////
+
+BoolExpr rewrite_nested(<Bool, BoolVar> expr, (AnyTypeExpr -> AnyTypeExpr) rewrite) =
+  expr;
+
+
+BoolExpr rewrite_nested(BoolNatOp expr, (AnyTypeExpr -> AnyTypeExpr) rewrite) =
+  is_symb(e?)         = is_symb(cast_obj_expr(rewrite(e))),
+  is_int(e?)          = is_int(cast_obj_expr(rewrite(e))),
+  is_float(e?)        = is_float(cast_obj_expr(rewrite(e))),
+  is_ne_set(e?)       = is_ne_set(cast_obj_expr(rewrite(e))),
+  is_ne_seq(e?)       = is_ne_seq(cast_obj_expr(rewrite(e))),
+  is_ne_map(e?)       = is_ne_map(cast_obj_expr(rewrite(e))),
+  is_ne_bin_rel(e?)   = is_ne_bin_rel(cast_obj_expr(rewrite(e))),
+  is_ne_tern_rel(e?)  = is_ne_tern_rel(cast_obj_expr(rewrite(e))),
+  is_tagged_obj(e?)   = is_tagged_obj(cast_obj_expr(rewrite(e))),
+  are_eq(e1?, e2?)    = are_eq(cast_obj_expr(rewrite(e1)), cast_obj_expr(rewrite(e2))),
+  is_lt(e1?, e2?)     = is_lt(cast_int_expr(rewrite(e1)), cast_int_expr(rewrite(e2))),
+  is_le(e1?, e2?)     = is_le(cast_int_expr(rewrite(e1)), cast_int_expr(rewrite(e2))),
+  is_flt(e1?, e2?)    = is_flt(cast_float_expr(rewrite(e1)), cast_float_expr(rewrite(e2))),
+  is_fle(e1?, e2?)    = is_fle(cast_float_expr(rewrite(e1)), cast_float_expr(rewrite(e2))),
+  is_out_of_range()   = expr,
+  is_blank(v?)        = is_blank(cast_blankable_var(cast_obj_expr(rewrite(v)))),
+  is_null(v?)         = is_null(cast_nullable_var(cast_obj_expr(rewrite(v)))),
+  has_field()         = has_field(cast_obj_expr(rewrite(expr.record)), expr.field),
+  rel_obj_contains()  = rel_obj_contains(cast_obj_expr(rewrite(expr.rel)), (apply(a, cast_obj_expr(rewrite($))) : a <- expr.args)),
+  table_contains()    = table_contains(expr.table, (apply(a, cast_int32_var(rewrite($))) : a <- expr.tuple), expr.symmetric);
+
+
+BoolExpr rewrite_nested(BoolFnCall expr, (AnyTypeExpr -> AnyTypeExpr) rewrite) =
+  is_member()     = is_member(expr.pred, cast_obj_expr(rewrite(expr.obj))),
+  state_is_def()  = expr;
+
+
+BoolExpr rewrite_nested(CompositeBoolExpr, (AnyTypeExpr -> AnyTypeExpr) rewrite) =
+  neg(e?)         = neg(cast_bool_expr(rewrite(e))),
+  and(es?)        = and((cast_bool_expr(rewrite(e)) : e <- es)),
+  or(es?)         = or((cast_bool_expr(rewrite(e)) : e <- es)),
+  and_then(es?)   = and_then((cast_bool_expr(rewrite(e)) : e <- es)),
+  or_else(es?)    = or_else((cast_bool_expr(rewrite(e)) : e <- es));
+
+////////////////////////////////////////////////////////////////////////////////
+
+IntExpr rewrite_nested(<Int, IntConst, IntVar> expr, (AnyTypeExpr -> AnyTypeExpr) rewrite) =
+  expr;
+
+
+IntExpr rewrite_nested(IntNatOp expr, (AnyTypeExpr -> AnyTypeExpr) rewrite) =
+  get_int_val(e?)         = get_int_val(cast_obj_expr(rewrite(e))),
+  minus(e?)               = minus(cast_int_expr(rewrite(e))),
+  add(e1?, e2?)           = add(cast_int_expr(rewrite(e1)), cast_int_expr(rewrite(e2))),
+  sub(e1?, e2?)           = sub(cast_int_expr(rewrite(e1)), cast_int_expr(rewrite(e2))),
+  mult(e1?, e2?)          = mult(cast_int_expr(rewrite(e1)), cast_int_expr(rewrite(e2))),
+  div(e1?, e2?)           = div(cast_int_expr(rewrite(e1)), cast_int_expr(rewrite(e2))),
+  mod(e1?, e2?)           = mod_op(cast_int_expr(rewrite(e1)), cast_int_expr(rewrite(e2))),
+  bitwise_and(e1?, e2?)   = bitwise_and(cast_int_expr(rewrite(e1)), cast_int_expr(rewrite(e2))),
+  bitwise_or(e1?, e2?)    = bitwise_or(cast_int_expr(rewrite(e1)), cast_int_expr(rewrite(e2))),
+  bitwise_xor(e1?, e2?)   = bitwise_xor(cast_int_expr(rewrite(e1)), cast_int_expr(rewrite(e2))),
+  float_bits(e?)          = float_bits(cast_float_expr(rewrite(e))),
+  mantissa(e?)            = mantissa(cast_float_expr(rewrite(e))),
+  dec_exp(e?)             = dec_exp(cast_float_expr(rewrite(e))),
+  upcast_int32(e?)        = upcast_int32(cast_int32_var_or_nat_op(rewrite(e))),
+  surr_to_int_value()     = surr_to_int_value(expr.store, cast_int32_var(rewrite(expr.surrogate))),
+  rand_nat(e?)            = rand_nat(cast_int_expr(rewrite(e))),
+  unique_nat              = unique_nat,
+  ticks                   = ticks;
+
+////////////////////////////////////////////////////////////////////////////////
+
+Int32Expr rewrite_nested(Int32Var expr, (AnyTypeExpr -> AnyTypeExpr) rewrite) =
+  expr;
+
+
+Int32Expr rewrite_nested(Int32NatOp expr, (AnyTypeExpr -> AnyTypeExpr) rewrite) =
+  bool_to_bit(e?)   = bool_to_bit(cast_bool_expr(rewrite(e))),
+  get_size(e?)      = get_size(cast_obj_expr(rewrite(e))),
+  get_count()       = get_count(expr.table, (apply(a, cast_int32_var(rewrite($))) : a <- expr.args), expr.symmetric),
+  table_lookup()    = table_lookup(expr.table, (apply(a, cast_int32_var(rewrite($))) : a <- expr.args), expr.symmetric),
+  cast_int32(e?)    = cast_int32(cast_int_expr(rewrite(e))),
+  add32(e1?, e2?)   = add32(cast_int32_expr(rewrite(e1)), cast_int32_expr(rewrite(e2))),
+  value_to_surr()   = value_to_surr(expr.store, rewrite_nested(expr.value, rewrite)),
+  get_unknown_arg() = expr,
+  get_col_index()   = expr;
+
+////////////////////////////////////////////////////////////////////////////////
+
+FloatExpr rewrite_nested(<FloatLit, FloatVar> expr, (AnyTypeExpr -> AnyTypeExpr) rewrite) =
+  expr;
+
+
+FloatExpr rewrite_nested(FloatNatOp expr, (AnyTypeExpr -> AnyTypeExpr) rewrite) =
+  float_value(e?)         = float_value(cast_obj_expr(rewrite(e))),
+  neg_float(e?)           = neg_float(cast_float_expr(rewrite(e))),
+  add_floats(e1?, e2?)    = add_floats(cast_float_expr(rewrite(e1)), cast_float_expr(rewrite(e2))),
+  sub_floats(e1?, e2?)    = sub_floats(cast_float_expr(rewrite(e1)), cast_float_expr(rewrite(e2))),
+  mult_floats(e1?, e2?)   = mult_floats(cast_float_expr(rewrite(e1)), cast_float_expr(rewrite(e2))),
+  div_floats(e1?, e2?)    = div_floats(cast_float_expr(rewrite(e1)), cast_float_expr(rewrite(e2))),
+  exp_floats(e1?, e2?)    = exp_floats(cast_float_expr(rewrite(e1)), cast_float_expr(rewrite(e2))),
+  square_root(e?)         = square_root(cast_float_expr(rewrite(e))),
+  int_to_float(e?)        = int_to_float(cast_int_expr(rewrite(e)));
+
+////////////////////////////////////////////////////////////////////////////////
+
+ObjExpr rewrite_nested(<InlineObj, StdObjVar> expr, (AnyTypeExpr -> AnyTypeExpr) rewrite) =
+  expr;
+
+
+ObjExpr rewrite_nested(ObjNatOp expr, (AnyTypeExpr -> AnyTypeExpr) rewrite) =
+  at()              = at(cast_obj_expr(rewrite(expr.seq)), cast_int_expr(rewrite(expr.idx))),
+  array_at()        = array_at(expr.array, cast_int32_var(rewrite(expr.size)), cast_int_expr(rewrite(expr.idx))),
+  lookup()          = lookup(cast_obj_expr(rewrite(expr.rel)), cast_obj_expr(rewrite(expr.key))),
+  lookup_field()    = lookup_field(cast_obj_expr(rewrite(expr.record)), expr.field, expr.repr),
+  get_tag(e?)       = get_tag(cast_obj_expr(rewrite(e))),
+  get_inner_obj(e?) = get_inner_obj(cast_obj_expr(rewrite(e))),
+  bool_obj(e?)      = bool_obj(cast_bool_expr(rewrite(e))),
+  int_obj(e?)       = int_obj(cast_int_expr(rewrite(e))),
+  float_obj(e?)     = float_obj(cast_float_expr(rewrite(e))),
+  get_curr_obj()    = expr,
+  get_curr_arg()    = expr,
+  get_curr_arg()    = expr,
+  surr_to_value()   = surr_to_value(expr.store, cast_int32_var(rewrite(expr.surrogate))),
+  column_lookup()   = column_lookup(expr.var, cast_int32_var(rewrite(expr.key)), expr.repr),
+  get_value()       = expr,
+  rand_elem(e?)     = rand_elem(cast_obj_expr(rewrite(e)));
+
+
+ObjExpr rewrite_nested(OptTagRecExpr expr, (AnyTypeExpr -> AnyTypeExpr) rewrite) =
+  opt_tag_rec_var()     = expr,
+  opt_tag_rec_fn_arg()  = expr,
+  cast_opt_tag_rec()    = cast_opt_tag_rec(expr.tag, expr.index, cast_obj_expr(rewrite(expr.expr)));
+
+////////////////////////////////////////////////////////////////////////////////
+
+RefObjExpr rewrite_nested(RefObjExpr expr, (AnyTypeExpr -> AnyTypeExpr) rewrite) =
+  mk_set_from_stream()        = expr,
+  mk_set()                    = mk_set(expr.elems, cast_int_expr(rewrite(expr.size))),
+  mk_set_from_array()         = mk_set(expr.array, apply(expr.size, cast_int_expr(rewrite($)))),
+  mk_seq_from_stream()        = expr,
+  mk_seq()                    = mk_seq(expr.elems, cast_int_expr(rewrite(expr.size))),
+  mk_seq_from_array()         = mk_seq(expr.array, cast_int32_expr(rewrite(expr.size))),
+  build_const_int_seq()       = expr,
+  mk_map_from_streams()       = expr,
+  mk_map()                    = mk_map(expr.keys, expr.values, cast_int_expr(rewrite(expr.size))),
+  mk_bin_rel_from_streams()   = expr,
+  mk_bin_rel()                = mk_bin_rel(expr.cols, cast_int_expr(rewrite(expr.size))),
+  mk_bin_rel_from_arrays()    = mk_rel(expr.col1, expr.col2, apply(expr.size, cast_int_expr(rewrite($))), expr.is_map),
+  mk_tern_rel_from_streams()  = expr,
+  mk_tern_rel()               = mk_tern_rel(expr.cols, cast_int_expr(rewrite(expr.size))),
+  mk_tern_rel_from_arrays()   = mk_rel(expr.col1, expr.col2, expr.col3, apply(expr.size, cast_int_expr(rewrite($)))),
+  mk_tagged_obj()             = mk_tagged_obj(cast_obj_expr(rewrite(expr.tag)), cast_obj_expr(rewrite(expr.obj))),
+  mk_record()                 = mk_record([s -> cast_obj_expr(rewrite(e)) : s, e <- expr.fields]),
+  inst_opt_tag_rec()          = expr,
+  get_seq_slice()             = get_seq_slice(cast_obj_expr(rewrite(expr.seq)), cast_int_expr(rewrite(expr.idx_first)), cast_int_expr(rewrite(expr.len))),
+  append_to_seq()             = append_to_seq(cast_obj_expr(rewrite(expr.seq)), cast_obj_expr(rewrite(expr.new_elem))),
+  update_seq_at()             = update_seq_at(cast_obj_expr(rewrite(expr.seq)), cast_int_expr(rewrite(expr.idx)), cast_obj_expr(rewrite(expr.value))),
+  join_seqs()                 = join_seqs(cast_obj_expr(rewrite(expr.left)), cast_obj_expr(rewrite(expr.right))),
+  rev_seq()                   = rev_seq(cast_obj_expr(rewrite(expr.seq))),
+  internal_sort()             = internal_sort(cast_obj_expr(rewrite(expr.set))),
+  insert_elt()                = insert_elt(cast_obj_expr(rewrite(expr.set)), cast_obj_expr(rewrite(expr.elt))),
+  remove_elt()                = remove_elt(cast_obj_expr(rewrite(expr.set)), cast_obj_expr(rewrite(expr.elt))),
+  set_key_value()             = set_key_value(cast_obj_expr(rewrite(expr.map)), cast_obj_expr(rewrite(expr.key)), cast_obj_expr(rewrite(expr.value))),
+  drop_key()                  = drop_key(cast_obj_expr(rewrite(expr.map)), cast_obj_expr(rewrite(expr.key))),
+  parse_value()               = parse_value(cast_obj_expr(rewrite(expr.value))),
+  print_value()               = print_value(cast_obj_expr(rewrite(expr.value))),
+  copy_state()                = expr,
+  copy_rel()                  = expr,
+  copy_persistent_state()     = expr,
+  read_pending_var(v?)        = read_pending_var(cast_pending_var(cast_obj_expr(rewrite(v))));
+
+////////////////////////////////////////////////////////////////////////////////
+
+AnyClsVar rewrite_exprs(AnyClsVar var, (AnyTypeExpr -> AnyTypeExpr) rewrite) = var;
+
+LambdaExpr rewrite_exprs(LambdaExpr expr, (AnyTypeExpr -> AnyTypeExpr) rewrite) =
+  lambda_expr(
+    cls:            expr.cls,
+    capt_auto:      expr.capt_auto,
+    capt_vars:      (cast_obj_expr(rewrite(e)) : e <- expr.capt_vars),
+    capt_cls_vars:  expr.capt_cls_vars
+  );
+
+////////////////////////////////////////////////////////////////////////////////
+
+BasicInstr rewrite_exprs(BasicInstr instr, (AnyTypeExpr -> AnyTypeExpr) rewrite, (RefObjExpr -> RefObjExpr) rewrite_ref) =
+  init_stream()             = instr,
+  append()                  = append(instr.stream, cast_obj_expr(rewrite(instr.obj))),
+  array_alloc()             = array_alloc(instr.var, cast_int32_expr(rewrite(instr.size))),
+  array_write()             = array_write(instr.var, cast_int32_expr(rewrite(instr.idx)), obj_expr(rewrite(instr.value))),
+  array_append()            = array_append(instr.array_var, cast_int32_var(rewrite(instr.size_var)), rewrite(instr.value)),
+  array_set_var()           = instr,
+  write_rec_field()         = write_rec_field(instr.var, instr.label, rewrite(instr.value), instr.optional),
+  finish_init()             = instr,
+  get_seq_iter()            = get_iter(instr.var, cast_obj_expr(rewrite(instr.src))),
+  get_set_iter()            = get_iter(instr.var, cast_obj_expr(rewrite(instr.src))),
+  get_bin_rel_iter()        = get_iter(instr.var, cast_obj_expr(rewrite(instr.src)), (apply(a, cast_obj_expr(rewrite($))) : a <- instr.args)),
+  get_tern_rel_iter()       = get_iter(instr.var, cast_obj_expr(rewrite(instr.src)), (apply(a, cast_obj_expr(rewrite($))) : a <- instr.args)),
+  move_forward()            = instr,
+  set_var()                 = set_var(instr.var, cast_obj_expr(rewrite(instr.value))),
+  set_bvar()                = set_bvar(instr.var, cast_bool_expr(rewrite(instr.value))),
+  set_ivar()                = set_ivar(instr.var, cast_int_expr(rewrite(instr.value))),
+  set_ivar32()              = set_ivar32(instr.var, cast_int32_expr(rewrite(instr.value))),
+  set_fvar()                = set_fvar(instr.var, cast_float_expr(rewrite(instr.value))),
+  set_rc_var()              = set_var(instr.var, rewrite_ref(instr.value)),
+  init_memb_var()           = instr,
+  reset_memb_var()          = instr,
+  clear_loc_var()           = instr,
+  nullify_var()             = instr,
+  add_ref()                 = undefined,
+  release()                 = undefined,
+  print_obj()               = print_obj(cast_obj_expr(rewrite(instr.obj))),
+  no_op                     = instr,
+  call_proc()               = call_proc(
+                                var:              instr.var if instr.var?,
+                                name:             instr.name,
+                                args:             (rewrite(e) : e <- instr.args),
+                                cls_args:         (rewrite_exprs(c, rewrite) : c <- instr.cls_args),
+                                rel_auto_args:    instr.rel_auto_args,
+                                react_auto_args:  instr.react_auto_args
+                              ),
+  call_cls()                = call_cls(instr.var, instr.cls_var, (cast_obj_expr(rewrite(e)) : e <- instr.args)),
+  push_call_info()          = push_call_info(instr.fn_name, (cast_obj_expr(rewrite(e)) : e <- instr.args)),
+  pop_call_info             = instr,
+  log_runtime_failure()     = log_runtime_failure(instr.is_assert, instr.file, instr.line, instr.text, ((v, cast_obj_expr(rewrite(e))) : v, e <- instr.vars)),
+  queue_node_update()       = instr,
+  insert_timer()            = insert_timer(instr.type, instr.idx, cast_int_expr(rewrite(instr.time))),
+  clear_timer()             = clear_timer(instr.type, cast_int_expr(rewrite(instr.idx))),
+  auto_pre_init()           = instr,
+  auto_cleanup()            = instr,
+  set_input()               = set_input(instr.var, instr.type, instr.input, cast_obj_expr(rewrite(instr.value))),
+  clear_input()             = instr,
+  auto_init()               = instr,
+  auto_update_node()        = auto_update_node(type: instr.type, node: instr.node, time_var: cast_int_var(rewrite(instr.time_var)) if instr.time_var?),
+  auto_apply()              = instr,
+  set_persistent_state()    = set_persistent_state(instr.auto_var, cast_obj_expr(rewrite(instr.state)), instr.type),
+  init_db()                 = instr,
+  cleanup_db()              = instr,
+  send_msg()                = send_msg(db_var: instr.db_var, type: instr.type, msg: cast_obj_expr(rewrite(instr.msg)), is_root: instr.is_root, res_var: instr.res_var if instr.res_var?),
+  try_update()              = try_update(instr.type, instr.update_id, (cast_obj_expr(rewrite(e)) : e <- instr.args)),
+  set_state()               = set_state(instr.res_var, instr.db_var, cast_obj_expr(rewrite(instr.state)), instr.type),
+  invoke_auto_method()      = invoke_auto_method(
+                                res_var:    instr.res_var,
+                                auto_var:   instr.auto_var if instr.auto_var?,
+                                type:       instr.type,
+                                method_id:  instr.method_id,
+                                args:       (cast_obj_expr(rewrite(e)) : e <- instr.args)
+                              ),
+  invoke_db_method()        = invoke_db_method(
+                                res_var:    instr.res_var,
+                                db_var:     instr.db_var if instr.db_var?,
+                                type:       instr.type,
+                                method_id:  instr.method_id,
+                                args:       (rewrite(e) : e <- instr.args)
+                              ),
+  init_value_store()        = instr,
+  cleanup_value_store()     = instr,
+  init_table()              = instr,
+  cleanup_table()           = instr,
+  get_table_iter()          = get_table_iter(instr.it_var, instr.table, (apply(a, cast_int32_var(rewrite($))) : a <- instr.args)),
+  get_column_iter()         = get_column_iter(instr.it_var, instr.column),
+  queue_deletes()           = queue_deletes(instr.table_var, (apply(a, cast_int32_var(rewrite($))) : a <- instr.args), instr.symmetric),
+  lookup_or_queue_insert_value() = lookup_or_queue_insert_value(instr.res_var, instr.store, cast_int_or_obj_expr(rewrite(instr.value))),
+  queue_insert_tuple()      = queue_insert_tuple(instr.table_var, (cast_int32_var(rewrite(v)) : v <- instr.tuple)),
+  column_insert_deferred()  = column_insert_deferred(instr.table_var, cast_int32_var(rewrite(instr.key_surr)), rewrite(instr.value), instr.forced),
+  immediate_insert_or_add_ref() = immediate_insert_or_add_ref(instr.res_var, instr.store, cast_int_or_obj_expr(rewrite(instr.value))),
+  immediate_insert_tuple()  = immediate_insert_tuple(instr.table_var, (cast_int32_var(rewrite(v)) : v <- instr.tuple));
+
+
+JumpInstr rewrite_exprs(JumpInstr instr, (AnyTypeExpr -> AnyTypeExpr) rewrite, (RefObjExpr -> RefObjExpr) rewrite_ref) =
+  break_loop    = instr,
+  exit_block    = instr,
+  ret_val(e?)   = ret_val(rewrite(e)),
+  terminate()   = instr;
+
+
+Instr rewrite_exprs(CompInstr instr, (AnyTypeExpr -> AnyTypeExpr) rewrite, (RefObjExpr -> RefObjExpr) rewrite_ref) =
+    branch()          = branch(
+                          cast_bool_expr(rewrite(instr.cond)),
+                          (rewrite_exprs(is, rewrite, rewrite_ref) : is <- instr.when_true),
+                          (rewrite_exprs(is, rewrite, rewrite_ref) : is <- instr.when_false)
+                        ),
+    switch_on_nat()   = switch_on_nat(
+                          cast_int_expr(rewrite(instr.value)),
+                          ((rewrite_exprs(is, rewrite, rewrite_ref) : is <- c) : c <- instr.cases)
+                        ),
+    symb_switch()     = symb_switch(
+                          cast_obj_expr(rewrite(instr.value)),
+                          [(left(c), (rewrite_exprs(is, rewrite, rewrite_ref) : is <- right(c))) : c <- instr.cases],
+                          (rewrite_exprs(is, rewrite, rewrite_ref) : is <- instr.else)
+                        ),
+    repeat(b?)        = repeat((rewrite_exprs(is, rewrite, rewrite_ref) : is <- b)),
+    execute_block(b?) = execute_block((rewrite_exprs(is, rewrite, rewrite_ref) : is <- b)),
+    try_block()       = try_block(instr.var, (rewrite_exprs(is, rewrite, rewrite_ref) : is <- instr.body)), // var is the variable that the try block is supposed to set, so it should not be rewritten
+    foreach()         = foreach(
+                          seq:        cast_loc_or_std_var(rewrite(instr.seq)),
+                          src_array:  instr.src_array,
+                          tmp_buffer: instr.tmp_buffer if instr.tmp_buffer?,
+                          count_var:  cast_int32_var(rewrite(instr.count_var)),
+                          idx_var:    instr.idx_var,
+                          it_var:     instr.it_var,
+                          body:       (rewrite_exprs(is, rewrite, rewrite_ref) : is <- instr.body)
+                        );
+
+////////////////////////////////////////////////////////////////////////////////
+
+Instr rewrite_nested(<BasicInstr, JumpInstr> instr, (Instr -> Instr) rw_instr, (AnyTypeExpr -> AnyTypeExpr) rw_expr) =
+  rewrite_exprs(instr, rw_expr, $);
+
+
+Instr rewrite_nested(CompInstr instr, (Instr -> Instr) rw_instr, (AnyTypeExpr -> AnyTypeExpr) rw_expr) =
+    branch()          = branch(
+                          cast_bool_expr(rw_expr(instr.cond)),
+                          (rw_instr(is) : is <- instr.when_true),
+                          (rw_instr(is) : is <- instr.when_false)
+                        ),
+    switch_on_nat()   = switch_on_nat(
+                          cast_int_expr(rw_expr(instr.value)),
+                          ((rw_instr(is) : is <- c) : c <- instr.cases)
+                        ),
+    symb_switch()     = symb_switch(
+                          cast_obj_expr(rw_expr(instr.value)),
+                          [(left(c), (rw_instr(is) : is <- right(c))) : c <- instr.cases],
+                          (rw_instr(is) : is <- instr.else)
+                        ),
+    repeat(b?)        = repeat((rw_instr(is) : is <- b)),
+    execute_block(b?) = execute_block((rw_instr(is) : is <- b)),
+    try_block()       = try_block(instr.var, (rw_instr(is) : is <- instr.body)), // var is the variable that the try block is supposed to set, so it should not be rewritten
+    foreach()         = foreach(
+                          seq:        cast_loc_or_std_var(rw_expr(instr.seq)),
+                          src_array:  instr.src_array,
+                          tmp_buffer: instr.tmp_buffer if instr.tmp_buffer?,
+                          count_var:  cast_int32_var(rw_expr(instr.count_var)),
+                          idx_var:    instr.idx_var,
+                          it_var:     instr.it_var,
+                          body:       (rw_instr(is) : is <- instr.body)
+                        );

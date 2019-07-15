@@ -24,10 +24,10 @@ NzNat source_line(Any decl) = source_code_location(decl)(1);
 
 (String, NzNat, NzNat) source_code_location(Any decl) {
   maybe_data = fetch(decl);
-  if maybe_data != nothing:
+  if maybe_data != nothing {
     data = value(maybe_data);
     return data if data :: (String, NzNat, NzNat);
-  ;
+  }
   err_msg = "CANNOT DETERMINE LOCATION OF OFFENDING CODE";
   err_msg = err_msg & ": " & printed(value(maybe_data)) if maybe_data != nothing;
   return (err_msg, 1000000, 1000000);
@@ -54,19 +54,17 @@ NzNat source_line(Any decl) = source_code_location(decl)(1);
   line = 1000000000;
 
   err_code = ();
-  if maybe_decl_loc != nothing:
+  if maybe_decl_loc != nothing {
     decl_loc = value(maybe_decl_loc);
-    if decl_loc :: (String, NzNat, NzNat):
+    if decl_loc :: (String, NzNat, NzNat)
       file, line, unused_var = decl_loc;
-    ;
-  ;
+  }
 
-  if maybe_err_loc != nothing:
+  if maybe_err_loc != nothing {
     err_loc = value(maybe_err_loc);
-    if err_loc :: ((NzNat, NzNat), (NzNat, NzNat)):
+    if err_loc :: ((NzNat, NzNat), (NzNat, NzNat))
       line = err_loc(0)(0);
-    ;
-  ;
+  }
 
   return (file, line);
 }
@@ -74,6 +72,11 @@ NzNat source_line(Any decl) = source_code_location(decl)(1);
 ////////////////////////////////////////////////////////////////////////////////
 
 String* indent_lines(String* strs) = (if s != "" then "  " & s else "" : s <- strs);
+
+String* indent_lines(String* strs, Nat level) {
+  ws = string((ascii_space : i < 2 * level));
+  return (if s != "" then ws & s else "" : s <- strs);
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -92,16 +95,17 @@ String upper_camel_case(Atom a) = capitalize(_print_(a), false);
 String capitalize(String s, Bool keep_underscores) {
   first = true;
   res = ();
-  for ch @ i <- chars(s):
+  for ch @ i <- chars(s) {
     tr_ch = ch;
-    if ch == ascii_underscore:
+    if ch == ascii_underscore {
       first = true;
-    else
+    }
+    else {
       tr_ch  = nat(ch - ascii_lower_a + ascii_upper_a) if ch >= ascii_lower_a and ch <= ascii_lower_z and first; ## CREATE PRELUDE FUNCTION is_lower()/is_upper() AND to_lower()/to_upper()
       first = false;
-    ;
+    }
     res = res & (tr_ch if tr_ch != ascii_underscore or keep_underscores);
-  ;
+  }
   return string(res);
 }
 
