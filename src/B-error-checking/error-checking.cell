@@ -46,6 +46,12 @@ implicit syn_prg : SynPrg {
     proc_sgn_errs = procedures_signature_wf_errors(syn_proc_defs);
     return proc_sgn_errs if proc_sgn_errs != ();
 
+    using_blocks_errs = isort([
+      using_block_invalid_auto_errs(b)
+      : b <- using_blocks, not db_defs_by_id(db_symbol(b.target), *)
+    ]);
+    return using_blocks_errs if using_blocks_errs != ();
+
     proc_def_errs = [proc_def_errors(pd, es) : pd <- syn_proc_defs, es = proc_def_wf_errors(pd), es != ()];
 
     standalone_fndef_errs = [fndef_errors(fd, es) : fd <- syn_fn_defs, es = fndef_wf_errors(fd, []), es != ()];

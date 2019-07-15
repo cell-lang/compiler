@@ -11,6 +11,7 @@ type WFError            = dupl_typedef((AnyTypedef, AnyTypedef)),
                           auto_def_errors(auto_def: ReactAutoDef, errors: ExprWFError+),
                           auto_method_def_errors(meth_def: AutoMethodDef, errors: FnDefWFError+),
                           db_def_errors(schema: SchemaDef, errors: ExprWFError+),
+                          using_block_invalid_auto_errs(block: UsingBlock),
                           db_method_def_errors(schema: SchemaDef, method: DBMethodDef, errors: FnDefWFError+),
                           update_def_errs(schema: SchemaDef, update: UpdateDef, errors: UpdateDefWFError+),
                           handler_def_errs(handler: HandlerDef, errors: UpdateDefWFError+),
@@ -199,6 +200,7 @@ WFError auto_inheritance_cycle([+Atom] as)                      = auto_inheritan
 WFError auto_def_errors(ReactAutoDef d, ExprWFError+ es)        = auto_def_errors(auto_def: d, errors: es);
 WFError auto_method_def_errors(AutoMethodDef m, FnDefWFError+ es) = auto_method_def_errors(meth_def: m, errors: es);
 WFError db_def_errors(SchemaDef s, ExprWFError+ es)            = db_def_errors(schema: s, errors: es);
+WFError using_block_invalid_auto_errs(UsingBlock b)             = using_block_invalid_auto_errs(block: b);
 WFError db_method_def_errors(SchemaDef s, DBMethodDef m, FnDefWFError+ es)  = db_method_def_errors(schema: s, method: m, errors: es);
 WFError update_def_errs(SchemaDef s, UpdateDef u, UpdateDefWFError+ es) = update_def_errs(schema: s, update: u, errors: es);
 WFError handler_def_errs(HandlerDef h, UpdateDefWFError+ es)    = handler_def_errs(handler: h, errors: es);
@@ -576,6 +578,7 @@ String* create_error_msg(WFError err) =
   auto_def_errors()                   = auto_def_err_msg(err.auto_def, err.errors),
   auto_method_def_errors()            = auto_method_def_err_msg(err.meth_def, err.errors),
   db_def_errors()                     = db_def_err_msg(err.schema, err.errors),
+  using_block_invalid_auto_errs()     = using_block_invalid_auto_err_msg(err.block),
   db_method_def_errors()              = db_method_def_err_msg(err.schema, err.method, err.errors),
   update_def_errs()                   = update_def_err_msg(err.schema, err.update, err.errors),
   handler_def_errs()                  = handler_def_err_msg(err.handler, err.errors),
@@ -587,6 +590,12 @@ String* create_error_msg(WFError err) =
   dupl_auto_defs()                    = dupl_auto_defs_err_msg(err.defs),
   typevar_decl_errs()                 = typevar_decl_err_msg(err.decl, err.errors),
   aggr_fn_decl_errs()                 = aggr_fn_decl_err_msg(err.decl, err.errors);
+
+
+String* using_block_invalid_auto_err_msg(UsingBlock block) = (
+    "Using block references a schema that does not exists: " & user_repr(db_symbol(block.target)),
+    source_code_loc_str(block)
+  );
 
 
 String* aggr_fn_decl_err_msg(AggrFunctDecl decl, AggrFnWFError+ errors) =
