@@ -205,7 +205,7 @@ implicit {
     return_stmt               = ret_stmt_local_wf_errors(stmt, false),
     break_stmt                = break_stmt_local_wf_errors(stmt),
 
-    send_msg_stmt()           = send_msg_stmt_local_wf_errors(stmt.var, stmt.msg, ro_vars, rw_vars),
+    send_msg_stmt()           = send_msg_stmt_local_wf_errors,
     try_update_stmt()         = try_update_stmt_local_wf_errors(stmt.name, stmt.args, ro_vars, rw_vars),
     set_memb_var_stmt()       = set_memb_var_stmt_local_wf_errors(stmt.var, stmt.value, ro_vars, rw_vars),
     delete_stmt()             = join((delete_or_insert_stmt_local_wf_errors(e.var, |e.args|) : e <- stmt.entries)),
@@ -242,19 +242,15 @@ implicit {
   }
 
 
-  ExprWFError* send_msg_stmt_local_wf_errors(Atom var, SynExpr msg, [DefVar] ro_vars, [StdVar] rw_vars) {
-    // <var> must identify a nested database, which must have at least one message handler
-    interface = db_interfaces[db_symbol(curr_db_def.name)];
-    if interface.nested_dbs(var, *) {
-      nested_db_name = interface.nested_dbs[var];
-      return (db_has_no_handlers(nested_db_name) if not handlers_by_db(nested_db_name, *));
-    }
-    else if interface.memb_vars(var) or interface.rel_vars(var, *) {
-      return (not_a_nested_db_var(var, curr_db_def));
-    }
-    else {
-      return (unknown_nested_db_var(var, curr_db_def));
-    }
+  ExprWFError* send_msg_stmt_local_wf_errors {
+    schema_def = curr_db_def;
+    return (rel_auto_has_no_dependees(schema_def)) if schema_def.links == ();
+
+    interface = db_interfaces(db_symbol(schema_def.name), !!);
+    for dependee <- interface.linked_dbs
+      return () if handlers_by_db(dependee, *);
+
+    return (no_dependee_has_handlers(schema_def));
   }
 
 

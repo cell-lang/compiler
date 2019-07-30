@@ -381,11 +381,12 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
       set_persistent_state(v, tmp_var, automaton.nested_autos[v].type)
     ) : v <- rand_sort(nested_autos)));
 
-    set_nested_dbs_code = join(((
-      lookup_field(tmp_var, state_var, object(bare_id(v))),
-      set_state(res_var, v, tmp_var, automaton.nested_dbs[v].type),
-      do_if_not(res_var, terminate)
-    ) : v <- rand_sort(nested_dbs)));
+    set_nested_dbs_code = (terminate(true) : v <- rand_sort(nested_dbs));
+    // set_nested_dbs_code = join(((
+    //   lookup_field(tmp_var, state_var, object(bare_id(v))),
+    //   set_state(res_var, v, (), tmp_var, automaton.nested_dbs[v].type),
+    //   do_if_not(res_var, terminate)
+    // ) : v <- rand_sort(nested_dbs)));
 
     return set_vars_code & set_nested_autos_code & set_nested_dbs_code;
   }

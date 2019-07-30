@@ -59,6 +59,8 @@ type TypeCheckingError =
   expressions_can_never_be_equal(left_type: Type, right_type: Type),
   expression_can_never_belong_to_type(actual_type: Type, type: Type),
 
+  ambiguous_target_dependee(actual_msg_type: Type, candidates: [+DBSymbol]),
+
   invalid_prot_method_return_type(
     method_name:      FnSymbol,
     args_types:       Type+,
@@ -177,6 +179,9 @@ TypeCheckingError invalid_map_lookup_value_type(Type et, Type at)   = invalid_ma
 TypeCheckingError expressions_can_never_be_equal(Type lt, Type rt)  = expressions_can_never_be_equal(left_type: lt, right_type: rt);
 
 TypeCheckingError expression_can_never_belong_to_type(Type at, Type t)  = expression_can_never_belong_to_type(actual_type: at, type: t);
+
+TypeCheckingError ambiguous_target_dependee(Type t, [+DBSymbol] as) =
+  ambiguous_target_dependee(actual_msg_type: t, candidates: as);
 
 TypeCheckingError invalid_prot_method_return_type(FnSymbol n, Type+ ats, Type rt, Type art) =
   invalid_prot_method_return_type(method_name: n, args_types: ats, ret_type: rt, actual_ret_type: art);
@@ -341,6 +346,11 @@ String* create_error_msg(TypeCheckingError err) =
                                         ),
 
   expression_can_never_belong_to_type() = ("Expression can never belong to type. Actual type: " & user_repr(err.actual_type)),
+
+  ambiguous_target_dependee()         = ( "It's not possible to unambiguously select the dependee that is the target of the message as more than one accepts messages of the given type",
+                                          "  Message type:      " & user_repr(err.actual_msg_type),
+                                          "  Candidate targets: " & append((user_repr(a) : a <- isort(err.candidates)), ", ")
+                                        ),
 
   invalid_prot_method_return_type()   = ( "Invalid return type for protocol method " &
                                             user_repr(err.method_name, |err.args_types|),

@@ -39,8 +39,7 @@ type AnyNullableVar = NullableVar, PendingInputVar;
 
 type VecVar         = vvar(id: Nat, size: NzNat);
 
-type MembBoolVar    = nested_db_spent(NestedDBVar),
-                      cond_value_var(Nat),
+type MembBoolVar    = cond_value_var(Nat),
                       cond_is_def_var(Nat),
                       watched_signal_up_to_date_var(Symbol),
                       up_to_date_var(BlockNodeId),
@@ -364,7 +363,7 @@ type BasicInstr     = init_stream(StreamVar),
                       cleanup_db(db_var: AnyDBVar, type: DBSymbol),
                       send_msg(db_var: AnyDBVar, type: DBSymbol, msg: AtomicExpr, is_root: Bool, res_var: BoolVar?),
                       try_update(type: DBSymbol, update_id: UpdateId, args: AtomicExpr*),
-                      set_state(res_var: BoolVar, db_var: AnyDBVar, state: AtomicExpr, type: DBSymbol),
+                      set_state(res_var: BoolVar, db_var: LocDBVar, dependees: LocDBVar*, state: AtomicExpr, type: DBSymbol),
 
                       invoke_auto_method(
                         res_var:    WriteObjVar,
