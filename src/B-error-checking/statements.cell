@@ -272,7 +272,7 @@ implicit {
     interface = db_interfaces[db_symbol(curr_db_def.name)];
     if interface.memb_vars(var)
       return ();
-    else if interface.rel_vars(var, *) or interface.nested_dbs(var, *)
+    else if interface.rel_vars(var, *)
       return (not_a_memb_var(var, curr_db_def));
     else
       return (unknown_memb_var(var, curr_db_def));
@@ -297,12 +297,10 @@ implicit {
       relvar_arity = interface.rel_vars[var];
       return (invalid_rel_var_arity(var, arity, relvar_arity) if arity != relvar_arity);
     }
-    else if interface.memb_vars(var) or interface.nested_dbs(var, *) {
+    else if interface.memb_vars(var)
       return (not_a_rel_var(var, curr_db_def));
-    }
-    else {
+    else
       return (unknown_rel_var(var, curr_db_def));
-    }
   }
 
 
@@ -468,8 +466,7 @@ implicit {
   Bool is_already_def_as_auto_or_db_var(Atom var_id) =
     loc_auto_vars(loc_auto_var(var_id), *)        or
     nested_auto_vars(nested_auto_var(var_id), *)  or
-    loc_db_vars(loc_db_var(var_id), *)            or
-    nested_db_vars(nested_db_var(var_id), *);
+    loc_db_vars(loc_db_var(var_id), *);
 
 
   ExprWFError* react_auto_var_errors(LocAutoVar var, [DefVar] ro_vars, [StdVar] rw_vars) =

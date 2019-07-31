@@ -27,7 +27,7 @@ implicit syn_prg : SynPrg {
 
       errs = errs & (conflicting_auto_decls(o1, o2) : o1, o2 <- duplicates(auto_def.outputs, just($.name)));
 
-      decls = auto_def.inputs & auto_def.state_vars & auto_def.nested_dbs & auto_def.consts & auto_def.rules;
+      decls = auto_def.inputs & auto_def.state_vars & auto_def.consts & auto_def.rules;
       errs = errs & (conflicting_auto_decls(d1, d2) : d1, d2 <- duplicates(decls, auto_decl_key($, state_vars_ids)));
 
       if errs == () {
@@ -40,7 +40,6 @@ implicit syn_prg : SynPrg {
           (anchor_to_decl(input_decl_wf_errors(i), i)     : i <- auto_def.inputs),
           (anchor_to_decl(output_decl_wf_errors(o), o)    : o <- auto_def.outputs),
           (anchor_to_decl(state_var_decl_wf_errors(v), v) : v <- auto_def.state_vars),
-          (anchor_to_decl(nested_db_decl_wf_errors(a), a) : a <- auto_def.nested_dbs),
           (anchor_to_decl(const_decl_wf_errors(c), c)     : c <- auto_def.consts),
           (anchor_to_decl(rule_decl_wf_error(r), r)       : r <- auto_def.rules)
         )));
@@ -58,7 +57,7 @@ implicit syn_prg : SynPrg {
       return (conflicting_auto_decls(rule, decls_by_key[rule.name]) if has_conflict);
     }
 
-    () conflicts(<TimeRuleDecl, NestedAutoDecl, MsgSendDecl>, [Atom -> AnyAutoDecl]) = undefined;
+    () conflicts(<TimeRuleDecl, NestedAutoDecl>, [Atom -> AnyAutoDecl]) = undefined;
 
 
     ExprWFError* anchor_to_decl(ExprWFError* errs, Any anchor) = (anchored_errors(errs, anchor) if errs != ());
@@ -73,13 +72,11 @@ Maybe[Any] auto_decl_key(InputDecl       decl, [Atom]) = just(decl.name);
 // Maybe[Any] auto_decl_key(OutputDecl      decl, [Atom]) = just(decl.name);
 Maybe[Any] auto_decl_key(StateVarDecl    decl, [Atom]) = just(decl.name);
 Maybe[Any] auto_decl_key(ConstDecl       decl, [Atom]) = just(decl.name);
-Maybe[Any] auto_decl_key(NestedDBDecl    decl, [Atom]) = just(decl.name);
 Maybe[Any] auto_decl_key(WhenRuleDecl    decl, [Atom]) = nothing;
 Maybe[Any] auto_decl_key(CondRuleDecl    decl, [Atom]) = nothing;
 Maybe[Any] auto_decl_key(ForeachRuleDecl decl, [Atom]) = nothing;
 Maybe[Any] auto_decl_key(TimeRuleDecl    decl, [Atom]) = just(decl.name);
 Maybe[Any] auto_decl_key(NestedAutoDecl  decl, [Atom]) = just(decl.name);
-Maybe[Any] auto_decl_key(MsgSendDecl     decl, [Atom]) = just(:msg_send(decl.target));
 
 
 implicit syn_prg : SynPrg, artifact : ReactAutoDef {
@@ -94,10 +91,6 @@ implicit syn_prg : SynPrg, artifact : ReactAutoDef {
     expr_errs = auto_expr_wf_errors(decl.init_value);
     return type_errs & expr_errs;
   }
-
-  ExprWFError* nested_db_decl_wf_errors(NestedDBDecl decl) = (
-    unknown_auto(db_symbol(decl.type)) if not db_defs_by_id(db_symbol(decl.type), *)
-  );
 
   ExprWFError* const_decl_wf_errors(ConstDecl decl) {
     type_errs = if decl.type? then plain_type_wf_errors(decl.type) else ();
@@ -182,11 +175,5 @@ implicit syn_prg : SynPrg, artifact : ReactAutoDef {
     return (duplicate_actual_inputs(decl, dupl_args)) if dupl_args != [];
 
     return join((auto_expr_wf_errors(e) : e <- decl.pos_args & args_exprs));
-  }
-
-  ExprWFError* rule_decl_wf_error(MsgSendDecl decl) {
-    msg_errs = auto_expr_wf_errors(decl.message);
-    cond_errs = if decl.cond != nothing then auto_expr_wf_errors(value(decl.cond)) else ();
-    return msg_errs & cond_errs;
   }
 }

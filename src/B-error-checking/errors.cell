@@ -45,7 +45,6 @@ type SchemaSpecWFError  = schema_def_duplicates_type(schema_def: SchemaDef, tdef
                           undef_foreign_key_var(key: ForeignKeyDecl, var: Symbol),
                           empty_args_list(key: ForeignKeyDecl, rel_var: Symbol),
                           duplicate_foreign_key_args(key: ForeignKeyDecl, dupl_args: [+Symbol]),
-                          uninitialized_memb_var(decl: NestedDBDecl),
                           incomp_symmetries(relvars: [RelVarsDecl], attr_relvars: [(RelVarsDecl, Nat)]);
 
 type AutoSpecWFError    = auto_type_conflict(name: Atom, tdefs: AnyTypedef+),
@@ -139,7 +138,6 @@ type ExprSpecWFError    = already_def_var(Var),
                           rel_auto_has_no_dependees(schema_def: SchemaDef),
                           no_dependee_has_handlers(schema_def: SchemaDef),
 
-                          nested_dbs_are_not_supported_anymore(decl: NestedDBDecl),
                           unknown_update(name: Atom, db_type: Atom),
                           invalid_update_arity(name: Atom, arity: Nat, arities: [+Nat]),
                           not_a_memb_var(var: Atom, schema_def: SchemaDef),
@@ -184,7 +182,7 @@ type UpdateDefWFError   = FnDefWFError;
 
 ////////////////////////////////////////////////////////////////////////////////
 
-type AnyAutoDecl = InputDecl, OutputDecl, StateVarDecl, NestedDBDecl, ConstDecl, RuleDecl;
+type AnyAutoDecl = InputDecl, OutputDecl, StateVarDecl, ConstDecl, RuleDecl;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -239,7 +237,6 @@ SchemaSpecWFError invalid_foreign_key_relvar_arity(ForeignKeyDecl k, Symbol v) =
 SchemaSpecWFError undef_foreign_key_var(ForeignKeyDecl k, Symbol v) = undef_foreign_key_var(key: k, var: v);
 SchemaSpecWFError empty_args_list(ForeignKeyDecl k, Symbol v) = empty_args_list(key: k, rel_var: v);
 SchemaSpecWFError duplicate_foreign_key_args(ForeignKeyDecl k, [+Symbol] as) = duplicate_foreign_key_args(key: k, dupl_args: as);
-SchemaSpecWFError uninitialized_memb_var(NestedDBDecl d) = uninitialized_memb_var(decl: d);
 SchemaSpecWFError incomp_symmetries([RelVarsDecl] rvs, [(RelVarsDecl, Nat)] arvs) = incomp_symmetries(relvars: rvs, attr_relvars: arvs);
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -364,7 +361,6 @@ ExprSpecWFError wrong_auto_arg_type(Atom v, Atom av, Atom a, Atom e)  = wrong_au
 
 ExprSpecWFError rel_auto_has_no_dependees(SchemaDef d)            = rel_auto_has_no_dependees(schema_def: d);
 ExprSpecWFError no_dependee_has_handlers(SchemaDef d)             = no_dependee_has_handlers(schema_def: d);
-ExprSpecWFError nested_dbs_are_not_supported_anymore(NestedDBDecl d) = nested_dbs_are_not_supported_anymore(decl: d);
 ExprSpecWFError unknown_update(Atom n, Atom t)                    = unknown_update(name: n, db_type: t);
 ExprSpecWFError invalid_update_arity(Atom n, Nat a, [+Nat] as)    = invalid_update_arity(name: n, arity: a, arities: as);
 ExprSpecWFError not_a_memb_var(Atom v, SchemaDef d)               = not_a_memb_var(var: v, schema_def: d);
@@ -402,7 +398,6 @@ Any* anchor_objs(SchemaSpecWFError err) =
   undef_foreign_key_var()             |
   empty_args_list()                   |
   duplicate_foreign_key_args()        = (err.key),
-  uninitialized_memb_var()            = (err.decl),
   incomp_symmetries()                 = isort(err.relvars) & isort([left(arv) : arv <- err.attr_relvars]);
 
 
@@ -486,7 +481,6 @@ Any* anchor_objs(ExprSpecWFError err) =
 
   rel_auto_has_no_dependees()             = (),
   no_dependee_has_handlers()              = (),
-  nested_dbs_are_not_supported_anymore()  = (err.decl),
   unknown_update()                        = (),
   invalid_update_arity()                  = (),
   not_a_memb_var()                        = (),
@@ -771,7 +765,6 @@ String* basic_err_msg(SchemaSpecWFError err) =
   undef_foreign_key_var()         = ("Undefined variable: " & printed(err.var)),
   empty_args_list()               = ("Empty arguments list: " & printed(err.rel_var)),
   duplicate_foreign_key_args()    = ("Duplicate arguments in foreign key declaration: " & append((printed(a) : a <- isort(err.dupl_args)), " ")),
-  uninitialized_memb_var()        = ("Uninitialized member variable: " & printed(err.decl.name)),
   incomp_symmetries()             = { name = only(
                                         [v.name : v <- err.relvars] &
                                         [left(v).attributes(right(v)).name : v <- err.attr_relvars]
@@ -946,7 +939,6 @@ String* basic_err_msg(ExprSpecWFError err) =
                                 ),
   rel_auto_has_no_dependees() = ("Relational automaton " & user_repr(db_symbol(err.schema_def.name)) & " has no dependencies"),
   no_dependee_has_handlers()  = ("No dependee of " & user_repr(db_symbol(err.schema_def.name)) & " has any message handlers"),
-  nested_dbs_are_not_supported_anymore() = ("Nested relational automata are not supported anymore. Nested automaton: " & user_repr(nested_db_var(err.decl.name))),
   unknown_update()            = ("Unknown update: " & _print_(err.name)),
   invalid_update_arity()      = ( "Wrong number of arguments: " & printed(err.arity) &
                                   ", actual arity: " & append((printed(a) : a <- rand_sort(err.arities)), ", ")
@@ -1089,6 +1081,5 @@ Maybe[((NzNat, NzNat), (NzNat, NzNat))] artifact_source_code_location(Any obj) {
 String auto_decl_descr(InputDecl)     = "Input";
 String auto_decl_descr(OutputDecl)    = "Output";
 String auto_decl_descr(StateVarDecl)  = "State variable";
-String auto_decl_descr(NestedDBDecl)  = "Nested automaton";
 String auto_decl_descr(ConstDecl)     = "Constant";
 String auto_decl_descr(RuleDecl)      = "Rule";

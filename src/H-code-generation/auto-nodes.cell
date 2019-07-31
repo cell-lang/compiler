@@ -1,7 +1,7 @@
 type AutoNode     = AutoInputNode, AutoDerivedNode, AutoStateNode,
                     AutoDiscDerivedNode, AutoCondNode, AutoRepCondNode,
                     AutoTimeVaryingNode, AutoDiscTimeVaryingNode,
-                    AutoNestedAutoInputNode, AutoNestedAutoNode, AutoNestedDBNode;
+                    AutoNestedAutoInputNode, AutoNestedAutoNode;
 
 
 type AutoInputNode        = input(id: StdBlockNodeId, discrete: Bool, downstream_nodes: [BlockNodeId], level: Nat);
@@ -73,13 +73,6 @@ type AutoNestedAutoNode   = nested_auto_node(
                               level:                      Nat
                             );
 
-type AutoNestedDBNode   = nested_db_node(
-                            id:                             StdBlockNodeId,
-                            message:                        Expr,
-                            downstream_nodes_by_state_var:  [<MembVar, QualMembVar, AnyRelVar> -> [BlockNodeId]],
-                            level:                          Nat
-                          );
-
 ////////////////////////////////////////////////////////////////////////////////
 
 AutoNode input(StdBlockNodeId id, Bool d, [BlockNodeId] ns, Nat l) =
@@ -106,10 +99,6 @@ AutoNode nested_auto_input_node(NestedAutoInputNodeId id, Expr v, [AnySignalVar]
 AutoNode nested_auto_node(NestedAutoNodeId id, [SignalVar -> [BlockNodeId]] ns, Nat l) =
   nested_auto_node(id: id, downstream_nodes_by_output: ns, level: l);
 
-## WHY IS A MembVar ALLOWED HERE? ONLY QUALIFIED VARIABLES SHOULD BE ALLOWED, SHOULDN'T THEY?
-AutoNode nested_db_node(StdBlockNodeId id, Expr m, [<MembVar, QualMembVar, AnyRelVar> -> [BlockNodeId]] ns, Nat l) =
-  nested_db_node(id: id, message: m, downstream_nodes_by_state_var: ns, level: l);
-
 StateUpdateNodeAction state_update_action(Atom t, Nat i) = state_update_action(target_var: t, expr_idx: i);
 MsgSendNodeAction     msg_send_action(Atom t)            = msg_send_action(target_db: t);
 
@@ -125,8 +114,7 @@ Bool needs_initial_update(AutoNode node) =
   time_varying_node()           = true,
   discrete_time_varying_node()  = true,
   nested_auto_input_node()      = true, ## NOT SURE
-  nested_auto_node()            = true, ## AGAIN NOT SURE
-  nested_db_node()              = false;
+  nested_auto_node()            = true; ## AGAIN NOT SURE
 
 
 implicit automaton : Automaton {
@@ -153,8 +141,7 @@ implicit automaton : Automaton {
   cond_node()                   |
   rep_cond_node()               = [downstream_node_id(a) : a <- node.actions],
   nested_auto_input_node()      = [std_block_node_id(node.id.auto)],
-  nested_auto_node()            = union(values(node.downstream_nodes_by_output)),
-  nested_db_node()              = union(values(node.downstream_nodes_by_state_var));
+  nested_auto_node()            = union(values(node.downstream_nodes_by_output));
 
 
 BlockNodeId downstream_node_id(AutoNodeAction action) =
@@ -231,5 +218,4 @@ BlockNodeId downstream_node_id(AutoNodeAction action) =
                                   },
   discrete_time_varying_node()  = [(signal_var(get_inner_id(node.id)), :blank)],
   nested_auto_input_node()      = [],
-  nested_auto_node()            = [],
-  nested_db_node()              = [];
+  nested_auto_node()            = [];

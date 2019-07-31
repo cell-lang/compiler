@@ -1863,23 +1863,10 @@ implicit filename : String, lines : Nat** {
     return (name: name, type: type, discrete: discrete);
   }
 
-  (StateVarDecl*, NestedDBDecl*) build_state_decl_asts(RuleMatch mtc) {
+  StateVarDecl* build_state_decl_asts(RuleMatch mtc) {
     nodes = rule_seq_nodes(mtc);
     assert |nodes| == 3;
-    state_vars = ();
-    nested_dbs = ();
-    for n <- rep_rule_nodes(nodes(2)) {
-      inner_mtc = get_rule_match(n);
-      name = get_rule_name(n);
-      if name == :var {
-        state_vars = (state_vars | build_state_var_decl_ast(inner_mtc));
-      }
-      else {
-        assert name == :nested_db;
-        nested_dbs = (nested_dbs | build_nested_db_decl_ast(inner_mtc));
-      }
-    }
-    return (state_vars, nested_dbs);
+    return (build_state_var_decl_ast(n) : n <- rep_rule_nodes(nodes(2)));
   }
 
   ConstDecl* build_const_decls_asts(RuleMatch mtc) {
@@ -1973,8 +1960,7 @@ implicit filename : String, lines : Nat** {
       foreach_rule      = build_foreach_rule_ast(inner_match),
       time_varying_rule = build_time_varying_rule_ast(inner_match),
       since_rule        = build_time_varying_since_rule_ast(inner_match),
-      nested_auto       = build_nested_auto_ast(inner_match),
-      msg_send          = build_msg_send_ast(inner_match);
+      nested_auto       = build_nested_auto_ast(inner_match);
     return attach_src_code_info(decl, mtc);
   }
 
@@ -1989,22 +1975,13 @@ implicit filename : String, lines : Nat** {
     return attach_src_code_info(state_var_decl(name, type, init_value), mtc);
   }
 
-  NestedDBDecl build_nested_db_decl_ast(RuleMatch mtc) {
-    nodes = rule_seq_nodes(mtc);
-    assert |nodes| == 4;
-    name = get_lowercase_id(nodes(0));
-    type = get_lowercase_id(nodes(2));
-    return attach_src_code_info(nested_db_decl(name, type), mtc);
-  }
-
   SchemaItemDecl build_db_decl_ast(RuleMatch mtc) {
     inner_match = get_rule_match(mtc);
     decl = match (get_rule_name(mtc))
       var           = build_state_var_decl_ast(inner_match),
       relvar        = build_relvar_decl_ast(inner_match),
       relvar_attrs  = build_relvar_attrs_decl_ast(inner_match),
-      foreign_key   = build_foreign_key_decl_ast(inner_match),
-      nested_db     = build_nested_db_decl_ast(inner_match);
+      foreign_key   = build_foreign_key_decl_ast(inner_match);
     return attach_src_code_info(decl, mtc);
   }
 
@@ -2124,7 +2101,7 @@ implicit filename : String, lines : Nat** {
     outputs = if output_node != null_match then build_output_decl_asts(output_node) else ();
 
     state_node = body_nodes(2);
-    state_vars, nested_dbs = if state_node != null_match then build_state_decl_asts(state_node) else ((), ());
+    state_vars = if state_node != null_match then build_state_decl_asts(state_node) else ();
 
     consts_node = body_nodes(3);
     consts = if consts_node != null_match then build_const_decls_asts(consts_node) else ();
@@ -2140,7 +2117,6 @@ implicit filename : String, lines : Nat** {
       inputs:     inputs,
       outputs:    outputs,
       state_vars: state_vars,
-      nested_dbs: nested_dbs,
       consts:     consts,
       rules:      rules
     );
@@ -2304,35 +2280,6 @@ implicit filename : String, lines : Nat** {
       } : n <- rep_rule_nodes(rule_seq_node(args_match, 1)));
       return nested_auto_decl(name, auto_name, pos_args, named_args);
     }
-  }
-
-  MsgSendDecl build_msg_send_ast(RuleMatch mtc) {
-    nodes = rule_seq_nodes(mtc);
-    assert |nodes| == 6;
-
-    target  = get_lowercase_id(nodes(0));
-    message = build_expr_ast(nodes(2));
-
-    cond_node = nodes(3);
-    if cond_node != null_match
-      cond = just(build_expr_ast(rule_seq_node(cond_node, 1)));
-    else
-      cond = nothing;
-
-
-    signals_node = nodes(4);
-    if signals_node != null_match
-      signals = (get_lowercase_id(n) : n <- rep_rule_nodes(rule_seq_node(signals_node, 1)));
-    else
-      signals = ();
-
-
-    return msg_send_decl(
-      target:   target,
-      message:  message,
-      cond:     cond,
-      signals:  signals
-    );
   }
 }
 

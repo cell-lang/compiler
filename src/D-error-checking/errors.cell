@@ -2,7 +2,7 @@ type SgnDecl = Function, AggrFunct, Method, Update, Handler, ReactMethod;
 
 type AnyAuto = Database, Automaton;
 
-type AnyReactAutoVar = SignalVar, NestedAutoVar, NestedDBVar;
+type AnyReactAutoVar = SignalVar, NestedAutoVar;
 
 type CoreWFError  = error_cluster(AnyAuto, [+CoreWFError]),
                     recursively_defined_auto_or_db(AnyAuto),
@@ -19,7 +19,6 @@ type CoreWFError  = error_cluster(AnyAuto, [+CoreWFError]),
                     dependency_loop(signal: AnyReactAutoVar, deps: [AnyReactAutoVar]),
                     invalid_auto_var(var: Var, signal: SignalVar, expr: <Expr, TimeRule>),
                     invalid_nested_auto_input_var(var: Var, auto_id: NestedAutoVar, input_id: Atom, expr: Expr),
-                    invalid_nested_db_msg_var(var: Var, id: NestedDBVar, rule: MsgSendRule),
                     wrong_output_nature(signal: SignalVar, discrete: Bool),
                     undefined_output(signal: SignalVar),
                     invalid_input(var: NestedAutoVar, type: AutoSymbol, input: Atom),
@@ -46,7 +45,6 @@ CoreWFError foreign_key_symmetry_mismatch(ForeignKey k, Bool s) = foreign_key_sy
 CoreWFError invalid_auto_var(Var v, SignalVar s, <Expr, TimeRule> e) = invalid_auto_var(var: v, signal: s, expr: e);
 CoreWFError dependency_loop(AnyReactAutoVar s, [+AnyReactAutoVar] ds) = dependency_loop(signal: s, deps: ds);
 CoreWFError invalid_nested_auto_input_var(Var v, NestedAutoVar a, Atom i, Expr e) = invalid_nested_auto_input_var(var: v, auto_id: a, input_id: i, expr: e);
-CoreWFError invalid_nested_db_msg_var(Var v, NestedDBVar id, MsgSendRule r) = invalid_nested_db_msg_var(var: v, id: id, rule: r);
 CoreWFError wrong_output_nature(SignalVar s, Bool d) = wrong_output_nature(signal: s, discrete: d);
 CoreWFError undefined_output(SignalVar s) = undefined_output(signal: s);
 CoreWFError invalid_input(NestedAutoVar v, AutoSymbol t, Atom i) = invalid_input(var: v, type: t, input: i);
@@ -74,7 +72,6 @@ String* error_message(CoreWFError err) =
   dependency_loop()                   = dependency_loop_error_message(err.signal, err.deps),
   invalid_auto_var()                  = invalid_auto_var_error_message(err.var, err.signal, err.expr),
   invalid_nested_auto_input_var()     = invalid_nested_auto_input_var_error_message(err.var, err.auto_id, err.input_id, err.expr),
-  invalid_nested_db_msg_var()         = invalid_nested_db_msg_var_error_message(err.var, err.id, err.rule),
   wrong_output_nature()               = wrong_output_nature_error_message(err.signal, err.discrete),
   undefined_output()                  = undefined_output_error_message(err.signal),
   invalid_input()                     = invalid_input_error_message(err.var, err.type, err.input),
@@ -194,11 +191,6 @@ String* invalid_auto_var_error_message(Var var, SignalVar signal, <Expr, TimeRul
 
 String* invalid_nested_auto_input_var_error_message(Var var, NestedAutoVar auto_id, Atom input_id, Expr expr) = (
   "Input " & _print_(input_id) & " of nested automaton " & user_repr(auto_id) & " is not permitted to depend on signal " & user_repr(var)
-);
-
-
-String* invalid_nested_db_msg_var_error_message(Var var, NestedDBVar db_id, MsgSendRule rule) = (
-  "Value of message sent to nested static automaton " & user_repr(db_id) & " is not permitted to depend on signal " & user_repr(var)
 );
 
 

@@ -260,16 +260,11 @@ Bool is_param_type(FnType type) = (t <~ type.args : is_param_type(t)) or is_para
   retrieve(rule.value) & retrieve(rule.cond.cond);
 
 
-[T] retrieve_from_nested_exprs(MsgSendRule rule, (Expr -> [T]) retrieve) =
-  retrieve(rule.message) & retrieve(rule.cond.cond);
-
-
 [T] retrieve_from_nested_exprs(Automaton automaton, (Expr -> [T]) retrieve) {
   objs = union([
     values(automaton.state),
     values(automaton.time_rules),
-    union(values(automaton.discrete_rules)),
-    [db.msg_send_rule : unused_var, db <- automaton.nested_dbs, db.msg_send_rule?]
+    union(values(automaton.discrete_rules))
   ]);
   exprs = union([
     [p.value : unused_var, p <- automaton.params],
@@ -536,9 +531,9 @@ Bool is_pattern_any(Pattern ptrn) =
 
 ////////////////////////////////////////////////////////////////////////////////
 
-[<AnySignalVar, PrevVarValue, QualMembVar>] auto_expr_extern_vars(Expr expr) {
+[<AnySignalVar, PrevVarValue>] auto_expr_extern_vars(Expr expr) {
   vars = extern_vars(expr);
-  fail if not vars :: [<AnySignalVar, PrevVarValue, QualMembVar>];
+  fail if not vars :: [<AnySignalVar, PrevVarValue>];
   return vars;
 }
 

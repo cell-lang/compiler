@@ -1,4 +1,4 @@
-type CondNodeInfo = (cond: ReactCond, actions: [+SignalVar, <StateVarUpdate, DiscreteRule>; NestedDBVar, MsgSendRule]);
+type CondNodeInfo = (cond: ReactCond, actions: [+SignalVar, <StateVarUpdate, DiscreteRule>]);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -19,7 +19,6 @@ NestedAutoNodeId auto_or_db_var_to_node_id(AnyAutoVar) =
 
 StdBlockNodeId auto_or_db_var_to_node_id(AnyDBVar var) =
   loc_db_var()      = undefined,
-  nested_db_var(a?) = std_block_node_id(a),
   qual_db_var()     = auto_or_db_var_to_node_id(var.outer);
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -90,9 +89,8 @@ implicit automaton : Automaton {
   [CondNodeId -> CondNodeInfo] cond_nodes_info {
     update_conds = [u.cond, v, u : v, sv <- automaton.state, u <- sv.updates];
     discrete_rule_conds = [r.cond, v, r : v, rs <- automaton.discrete_rules, r <- rs];
-    msg_send_conds = [db.msg_send_rule.cond, v, db.msg_send_rule : v, db <- automaton.nested_dbs, db.msg_send_rule?];
 
-    all_conds = [c, v, a : c, v, a <- update_conds | c, v, a <- discrete_rule_conds | c, v, a <- msg_send_conds];
+    all_conds = [c, v, a : c, v, a <- update_conds | c, v, a <- discrete_rule_conds];
 
     ord_conds = rand_sort([c : c, unused_var_1, unused_var_2 <- all_conds]);
     return [
@@ -127,8 +125,7 @@ implicit automaton : Automaton {
   [StdBlockNodeId -> [AutoNodeDependency]] value_upstream_nodes {
     state_vars_exprs = [v -> [sv.init_value] & [u.value : u <- sv.updates]: v, sv <- automaton.state];
     discrete_rules_exprs = [v -> [r.value : r <- rs] : v, rs <- automaton.discrete_rules];
-    msg_sends_exprs = [v -> [db.msg_send_rule.message] : v, db <- automaton.nested_dbs, db.msg_send_rule?];
-    all_exprs = state_vars_exprs & discrete_rules_exprs & msg_sends_exprs;
+    all_exprs = state_vars_exprs & discrete_rules_exprs;
     return [std_block_node_id(bare_id(v)) -> union([expr_deps(e) : e <- es]) : v, es <- all_exprs];
   }
 
@@ -171,19 +168,6 @@ implicit automaton : Automaton {
     );
     return [s -> merge_value_sets(ms) : s, ms <- pre_map];
   }
-
-
-  ## TYPECHECKING BUG SAME AS ABOVE
-  [StdBlockNodeId -> [<MembVar, QualMembVar, AnyRelVar> -> [BlockNodeId]]] nested_db_vars_trigger_down_nodes_map {
-    // Reversing the dependency mapping: node -> all nodes that depend on it: [AutoNodeDependency -> [+BlockNodeId]]
-    fat_map = reverse_multi(trigger_up_nodes_map);
-    // Coalescing all the (automaton, output -> ...) into (automaton -> ...) entries
-    pre_map = [
-      [dependency_to_node_id(s) -> [one_level_down(s) -> ts]]
-      : s, ts <- fat_map, qual_memb_var() | qual_rel_var() ?= s
-    ];
-    return [s -> merge_value_sets(ms) : s, ms <- merge_values(pre_map)];
-  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -193,14 +177,6 @@ implicit program : Program, automaton : Automaton {
   AutoNode create_auto_node(StdBlockNodeId node_id, Nat level) {
     core_id = get_inner_id(node_id);
     var_id = signal_var(core_id);
-
-    if automaton.nested_dbs(nested_db_var(core_id), *) {
-      msg = nested_msg_sends[core_id];
-      output_dep_nodes = lookup(nested_db_vars_trigger_down_nodes_map, node_id, []);
-      ## WHAT DOES THIS ASSERTION DO?
-      assert not (o, ns <- output_dep_nodes : not disjoint(ns, [std_block_node_id(id) : id <- state_vars_ids]));
-      return nested_db_node(node_id, msg, output_dep_nodes, level);
-    }
 
     dep_nodes = lookup(trigger_down_nodes_map, node_id, []);
     assert disjoint(dep_nodes, [std_block_node_id(id) : id <- state_vars_ids]);
@@ -256,8 +232,6 @@ implicit program : Program, automaton : Automaton {
       expr_idx = index_first(expr, target_ord_exprs);
       return state_update_action(target_id, expr_idx);
     }
-
-    AutoNodeAction action(NestedDBVar db_var, MsgSendRule rule) = msg_send_action(bare_id(db_var));
   }
 
 

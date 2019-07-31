@@ -1,5 +1,5 @@
 implicit syn_prg : SynPrg {
-  WFError* prg_wf_errors(Bool allow_nested_rel_autos) {
+  WFError* prg_wf_errors {
     tdefs         = [d : unused_var, ds <- syn_prg.parsed_src_files, d <~ ds, typedef()         ?= d];
     par_tdefs     = [d : unused_var, ds <- syn_prg.parsed_src_files, d <~ ds, par_typedef()     ?= d];
     schemas       = [d : unused_var, ds <- syn_prg.parsed_src_files, d <~ ds, schema_def()      ?= d];
@@ -20,7 +20,7 @@ implicit syn_prg : SynPrg {
     errs = join((aggr_funct_decl_wf_errors(f) : f <- isort(aggr_funct_decls)));
     return errs if errs != ();
 
-    errs = schemas_wf_errors(schemas, type_arity_map, allow_nested_rel_autos);
+    errs = schemas_wf_errors(schemas, type_arity_map);
     return rand_sort(errs) if errs != [];
 
     let type_arity_map = type_arity_map, schemas = [s.name -> s : s <- schemas], tdefs = tdefs, par_tdefs = par_tdefs

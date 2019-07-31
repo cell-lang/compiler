@@ -594,29 +594,6 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
     return update_code & prop_code & timer_code;
   }
 
-
-  Instr* gen_node_update_code(AutoNestedDBNode node) {
-    inner_id = get_inner_id(node.id);
-
-    db_var = nested_db_var(inner_id);
-    db_type = automaton.nested_dbs[db_var].type;
-
-    nv_var, var_gen = next_obj_var(blank_var_gen);
-    eval_code = safe_eval_code(node.message, nv_var, var_gen);
-    eval_code = (try_block(nv_var, eval_code)) if not is_total(node.message);
-    atomic_msg_expr = nv_var;
-
-    msg_send_instr = send_msg(db_var, db_type, atomic_msg_expr, true);
-
-    ## CURRENTLY WE PROPAGATE THE UPDATE WITHOUT CHECKING WHAT INPUTS (IF ANY) HAVE CHANGED. FIX
-    prop_code = (queue_node_update(id) : id <- rand_sort(union(values(node.downstream_nodes_by_state_var))));
-
-    msg_send_code = (msg_send_instr) & prop_code;
-    msg_send_code = (do_if_not(is_null(atomic_msg_expr), msg_send_code)) if atomic_msg_expr :: NullableVar;
-
-    return eval_code & msg_send_code;
-  }
-
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////
 

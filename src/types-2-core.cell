@@ -125,10 +125,9 @@ type NestedAutoVar  = nested_auto_var(Symbol);
 type AnyAutoVar     = LocAutoVar, NestedAutoVar;
 
 type LocDBVar     = loc_db_var(Symbol);
-type NestedDBVar  = nested_db_var(Symbol);
 type LinkedDBVar  = linked_db_var(Nat);
-type QualDBVar    = qual_db_var(outer: AnyDBVar, inner: <NestedDBVar, LinkedDBVar>);
-type AnyDBVar     = LocDBVar, NestedDBVar, LinkedDBVar, QualDBVar;
+type QualDBVar    = qual_db_var(outer: AnyDBVar, inner: LinkedDBVar);
+type AnyDBVar     = LocDBVar, LinkedDBVar, QualDBVar;
 
 type Var          = StdVar, FnArg, ImplArg, AnyMembVar, AnySignalVar, PrevVarValue;
 
@@ -405,8 +404,6 @@ type StateVarUpdate = state_var_update(value: Expr, cond: ReactCond);
 
 type DiscreteRule   = discrete_rule(value: Expr, cond: ReactCond);
 
-type MsgSendRule    = msg_send_rule(message: Expr, cond: ReactCond);
-
 ///////////////////////////////////////////////////////////////////////////////
 
 type BasicTimeExpr  = at_least(nanosecs: Nat),
@@ -436,7 +433,6 @@ type Automaton  = automaton(
                     time_rules:     [SignalVar -> TimeRule],
                     discrete_rules: [SignalVar -> [+DiscreteRule]],
                     nested_autos:   [NestedAutoVar -> (type: AutoSymbol, args: [Symbol -> Expr], volatile: Bool)],
-                    nested_dbs:     [NestedDBVar -> (type: DBSymbol, msg_send_rule: MsgSendRule?, volatile: Bool)],
                     methods:        [ReactMethod]
                   );
 
@@ -462,7 +458,6 @@ type Database = data_base(
                   rel_vars:     [PhysRelVar -> RelVarInfo],
                   attr_map:     [PhysRelVar, PhysRelVar],
                   foreign_keys: [ForeignKey],
-                  nested_dbs:   [NestedDBVar -> DBSymbol],
                   methods:      [Method],
                   updates:      [Update],
                   handlers:     [Handler]

@@ -1241,8 +1241,7 @@ ParsingRule rule_db_decl =
     (:var,          rule_seq((rule_lc_id, rule_colon, rule_type, rule_equals, rule_expr, rule_semicolon))),
     (:relvar,       rule_relvar_decl),
     (:relvar_attrs, rule_relvar_attrs_decl),
-    (:foreign_key,  rule_foreign_key_decl),
-    (:nested_db,    rule_seq((rule_id, rule_colon, rule_mc_id, rule_semicolon)))
+    (:foreign_key,  rule_foreign_key_decl)
   ));
 
 ParsingRule rule_relvar_decl =
@@ -1340,8 +1339,7 @@ ParsingRule rule_rule_decl =
     (:foreach_rule,       rule_foreach_rule),
     (:time_varying_rule,  rule_time_varying_rule),
     (:since_rule,         rule_time_varying_since_rule),
-    (:nested_auto,        rule_nested_auto),
-    (:msg_send,           rule_msg_send)
+    (:nested_auto,        rule_nested_auto)
   ));
 
 ParsingRule rule_input_decl =
@@ -1371,13 +1369,9 @@ ParsingRule rule_state_decl =
   rule_seq((
     keyword_state,
     rule_colon,
-    rep_rule_nonempty(rule_state_item_decl)
-  ));
-
-ParsingRule rule_state_item_decl =
-  rule_choice((
-    (:var,        rule_seq((rule_lc_id, rule_colon, rule_type, rule_equals, rule_expr, rule_semicolon))),
-    (:nested_db,  rule_seq((rule_id, rule_colon, rule_mc_id, rule_semicolon)))
+    rep_rule_nonempty(
+      rule_seq((rule_lc_id, rule_colon, rule_type, rule_equals, rule_expr, rule_semicolon))
+    )
   ));
 
 ParsingRule rule_static_decl =
@@ -1481,16 +1475,6 @@ ParsingRule rule_nested_auto =
                           rep_rule(rule_seq((rule_comma, rule_lc_id, rule_equals, rule_expr)))
                         ))))
     )),
-    rule_semicolon
-  ));
-
-ParsingRule rule_msg_send =
-  rule_seq((
-    rule_lc_id,
-    rule_left_arrow,
-    rule_expr,
-    optional_rule_seq((keyword_if, rule_expr)),
-    optional_rule_seq((rule_colon, comma_sep_seq(rule_lc_id))),
     rule_semicolon
   ));
 
