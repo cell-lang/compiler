@@ -1,11 +1,4 @@
 implicit program : Program, typedefs : [TypeName -> NeType], context : Context {
-  DBSymbol var_type(NestedDBVar var) =
-    match (context)
-      ## BUG BUG BUG: WHAT HAPPENS IF WE HAVE SEVERAL LEVELS OF NESTING?
-      automaton()   = context.nested_dbs[var].type,
-      data_base()   = context.nested_dbs[var];
-
-
   DBSymbol var_type(LinkedDBVar var) =
     match (context)
       data_base() = context.links(match (var) linked_db_var(i?) = i);
@@ -21,8 +14,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context {
   DBSymbol var_type(QualDBVar var) {
     rel_auto = rel_auto_by_id(var_type(var.outer));
     return match (var.inner)
-      linked_db_var(i?) = rel_auto.links(i),
-      nested_db_var()   = rel_auto.nested_dbs(var.inner);
+      linked_db_var(i?) = rel_auto.links(i);
   }
 
 
@@ -39,6 +31,11 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context {
   DBSymbol rel_auto_type(AnyRelVar var) =
     rel_var()       = this_db_symbol,
     qual_rel_var()  = var_type(var.db_var);
+
+
+  LocDBVar* dependees(LocDBVar var) =
+    match (context)
+      procedure() = context.loc_rel_auto_vars(var).links;
 
   ////////////////////////////////////////////////////////////////////////////////
   ////////////////////////////////////////////////////////////////////////////////

@@ -36,18 +36,6 @@ implicit syn_prg : SynPrg, artifact : ReactAutoDef {
     // Time-varying rules
     time_rules = [signal_var(r.name) -> desugar_time_rule(r) : r <- time_rule_decls];
 
-    // Message sends
-    msg_sends = merge([desugar_msg_send(c) : c <- msg_send_decls]);
-
-    // Nested databases
-    nested_dbs = [
-      db_var -> (
-        type:           db_symbol(db.type),
-        volatile:       false,
-        msg_send_rule:  msg_sends[db_var] if msg_sends(db_var, *)
-      ) : db <~ artifact.nested_dbs, db_var = nested_db_var(db.name)
-    ];
-
     // Nested automata
     nested_autos = [
       nested_auto_var(na.name) -> {
@@ -89,38 +77,9 @@ implicit syn_prg : SynPrg, artifact : ReactAutoDef {
       time_rules:     time_rules,
       discrete_rules: discrete_rules,
       nested_autos:   nested_autos,
-      nested_dbs:     nested_dbs,
       methods:        methods
     );
     return transfer(automaton, artifact);
-  }
-
-
-  [NestedDBVar -> MsgSendRule] desugar_msg_send(MsgSendDecl msg_send_decl) {
-    message = desugar_auto_expr(msg_send_decl.message);
-    cond_expr = if msg_send_decl.cond != nothing
-      then desugar_auto_expr(value(msg_send_decl.cond))
-      else object(true);
-
-    // If the list of discrete signals is not given explicitly, we search
-    // the parameter list and the condition for discrete signals
-    if msg_send_decl.signals != () {
-      signals_state = [signal_var(a) -> true : a <~ msg_send_decl.signals];
-    }
-    else {
-      signals = auto_expr_extern_vars(message) & auto_expr_extern_vars(cond_expr);
-      signals_state = [s -> true : s <- signals, s :: AnySignalVar, signal_is_discrete(s)];
-    }
-
-
-    // If no signals have been specified, either implicitly or explicitly,
-    // the action is triggered by the condition becoming true
-    if signals_state == []
-      cond = on_becoming_true_cond(cond_expr);
-    else
-      cond = react_cond(cond_expr, signals_state);
-
-    return [nested_db_var(msg_send_decl.target) -> msg_send_rule(message, cond)];
   }
 
 

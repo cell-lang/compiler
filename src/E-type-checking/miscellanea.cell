@@ -161,7 +161,6 @@ AnyClsExpr rewrite_cls_expr(AnyClsExpr expr) =
 
 NeType state_type(Database db) {
   state_vars = [bare_id(v) -> info.type : v, info <- db.state_vars];
-  nested_dbs = [bare_id(v) -> type_ref(schema_type_symbol(bare_id(t))) : v, t <- db.nested_dbs];
 
   rel_vars = [bare_id(v) -> {
     sgns = rel_var_signatures(db, v);
@@ -181,7 +180,7 @@ NeType state_type(Database db) {
     }
   } : v <- [logical_rel_var(v) : v, unused_var <- db.rel_vars]];
 
-  fields = [object(f) -> (type: t, optional: false) : f, t <- state_vars | f, t <- nested_dbs | f, t <- rel_vars];
+  fields = [object(f) -> (type: t, optional: false) : f, t <- state_vars | f, t <- rel_vars];
   return if fields != [] then ne_record_type(fields) else empty_rel_type;
 }
 
@@ -190,15 +189,11 @@ implicit program : Program {
   NeType state_type(Automaton auto) {
     inputs = [bare_id(v) -> i.type : v, i <- auto.inputs, not i.discrete and not i.volatile];
     state_vars = [bare_id(v) -> s.type : v, s <- auto.state, not s.volatile];
-    nested_static_autos = [
-      bare_id(v) -> type_ref(schema_type_symbol(bare_id(a.type)))
-      : v, a <- auto.nested_dbs, not a.volatile
-    ];
     nested_react_autos = [
       bare_id(v) -> state_type(automaton_by_id(a.type))
       : v, a <- auto.nested_autos, not a.volatile
     ];
-    pre_fields = inputs & state_vars & nested_static_autos & nested_react_autos;
+    pre_fields = inputs & state_vars & nested_react_autos;
     fields = [object(l) -> (type: t, optional: false) : l, t <- pre_fields];
     return if fields != [] then ne_record_type(fields) else empty_rel_type;
   }

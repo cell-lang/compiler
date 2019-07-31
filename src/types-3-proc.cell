@@ -39,8 +39,7 @@ type AnyNullableVar = NullableVar, PendingInputVar;
 
 type VecVar         = vvar(id: Nat, size: NzNat);
 
-type MembBoolVar    = nested_db_spent(NestedDBVar),
-                      cond_value_var(Nat),
+type MembBoolVar    = cond_value_var(Nat),
                       cond_is_def_var(Nat),
                       watched_signal_up_to_date_var(Symbol),
                       up_to_date_var(BlockNodeId),
@@ -364,7 +363,7 @@ type BasicInstr     = init_stream(StreamVar),
                       cleanup_db(db_var: AnyDBVar, type: DBSymbol),
                       send_msg(db_var: AnyDBVar, type: DBSymbol, msg: AtomicExpr, is_root: Bool, res_var: BoolVar?),
                       try_update(type: DBSymbol, update_id: UpdateId, args: AtomicExpr*),
-                      set_state(res_var: BoolVar, db_var: AnyDBVar, state: AtomicExpr, type: DBSymbol),
+                      set_state(res_var: BoolVar, db_var: LocDBVar, dependees: LocDBVar*, state: AtomicExpr, type: DBSymbol),
 
                       invoke_auto_method(
                         res_var:    WriteObjVar,
@@ -536,7 +535,6 @@ type ReactBlock = react_block(
                     outputs:              [Symbol -> (type: NeType, discrete: Bool)],
                     memb_vars:            [<SignalVar, MembObjVar, PendingInputVar, MembIntVar, MembIntVectVar, MembBoolVar>],
                     nested_auto_vars:     [NestedAutoVar -> AutoSymbol],
-                    nested_static_blocks: [NestedDBVar -> DBSymbol],
                     pre_init_code:        Instr*,
                     cleanup_code:         Instr*,
                     apply_code:           Instr*,
@@ -559,7 +557,6 @@ type StaticBlock = static_block(
                     tables:                       [TableVar -> <Table, Column>],
                     insert_checked_foreign_keys:  [BlockForeignKey],
                     delete_checked_foreign_keys:  [BlockForeignKey],
-                    nested_blocks:                [NestedDBVar -> DBSymbol],
                     init_code:                    Instr*,
                     cleanup_code:                 Instr*,
                     copy_state_code:              Instr*,

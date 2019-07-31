@@ -16,11 +16,6 @@ implicit automaton : Automaton {
   ];
 
 
-  [Atom -> Expr] nested_msg_sends = [
-    bare_id(id) -> db.msg_send_rule.message : id, db <- automaton.nested_dbs, db.msg_send_rule?
-  ];
-
-
   [NestedAutoVar -> AutoSymbol] auto_vars_types = [id -> na.type : id, na <- automaton.nested_autos];
 
 
@@ -65,8 +60,7 @@ implicit program : Program, automaton : Automaton {
       signals_whose_old_value_is_used(u.value) : unused_var, sv <- automaton.state, u <- sv.updates
     ]);
     implicit_instances = [s : unused_var, sv <- automaton.state, u <- sv.updates, s <- signals_to_copy(u.cond)] &
-                         [s : unused_var, rs <- automaton.discrete_rules, r <- rs, s <- signals_to_copy(r.cond)] &
-                         [s : unused_var, db <- automaton.nested_dbs, db.msg_send_rule?, s <- signals_to_copy(db.msg_send_rule.cond)];
+                         [s : unused_var, rs <- automaton.discrete_rules, r <- rs, s <- signals_to_copy(r.cond)];
     return explicit_instances & implicit_instances;
 
     [AnySignalVar] signals_to_copy(ReactCond cond) =

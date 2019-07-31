@@ -94,13 +94,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Automaton
       union([typecheck_time_rule(tvc, curr_env) : unused_var, tvc <- context.time_rules]),
 
       // Nested automata inputs
-      union([typecheck_nested_auto_inputs(info.type, info.args, curr_env) : unused_var, info <- context.nested_autos]),
-
-      // Nested static automata message sends
-      union([
-        typecheck_guarded_expr(rule.message, rule.cond.cond, db_msg_type(db.type), curr_env)
-        : unused_var, db <- context.nested_dbs, db.msg_send_rule?, rule = db.msg_send_rule
-      ])
+      union([typecheck_nested_auto_inputs(info.type, info.args, curr_env) : unused_var, info <- context.nested_autos])
     ]);
     return [context -> errs] if errs != [];
 

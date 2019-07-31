@@ -290,8 +290,8 @@ MethodFamilyId method_id(Symbol s, Nat a)         = method_id(symbol: method_sym
 UpdateId update_id(UpdateSymbol s, Nat a) = update_id(symbol: s, arity: a);
 UpdateId update_id(UpdateSymbol s, Nat a, Nat id) = update_id(symbol: s, arity: a, id: id);
 
-UpdateId main_handler        = :main_handler;
-UpdateId handler_id(Nat n)   = :handler_id(n);
+<main_handler>    main_handler      = :main_handler;
+<handler_id(Nat)> handler_id(Nat n) = :handler_id(n);
 
 AutoSymbol auto_symbol(Atom a)  = :auto_symbol(a);
 DBSymbol   db_symbol(Atom a)    = :db_symbol(a);
@@ -319,10 +319,9 @@ LocAutoVar    loc_auto_var(Atom a)    = :loc_auto_var(a);
 NestedAutoVar nested_auto_var(Atom a) = :nested_auto_var(a);
 
 LocDBVar    loc_db_var(Atom a)    = :loc_db_var(a);
-NestedDBVar nested_db_var(Atom a) = :nested_db_var(a);
 LinkedDBVar linked_db_var(Nat n)  = :linked_db_var(n);
 
-QualDBVar qual_db_var(AnyDBVar ov, <NestedDBVar, LinkedDBVar> iv) = qual_db_var(outer: ov, inner: iv);
+QualDBVar qual_db_var(AnyDBVar ov, LinkedDBVar iv) = qual_db_var(outer: ov, inner: iv);
 
 RelVar     rel_var(Atom a)                       = :rel_var(a);
 PhysRelVar phys_rel_var(Symbol s)                = :phys_rel_var(s);
@@ -462,12 +461,12 @@ FailStmt fail_stmt([<StdVar, ImplArg>] vs, String f, NzNat l) = fail_stmt(env: v
 
 JumpStmt return_stmt(Expr e) = :return_stmt(e);
 
-SendMsgStmt    send_msg_stmt(NestedDBVar v, Expr m)         = send_msg_stmt(target: v, msg: m);
-TryUpdateStmt  try_update_stmt(UpdateSymbol n, Expr* as)    = try_update_stmt(name: n, args: as);
-SetMembVarStmt set_memb_var_stmt(MembVar v, Expr e)         = set_memb_var_stmt(var: v, value: e);
-DeleteStmt     delete_stmt(RelVar v, Maybe[Expr]+ as)       = delete_stmt(var: v, args: as);
-InsertStmt     insert_stmt(RelVar v, Expr+ as)              = insert_stmt(var: v, args: as);
-UpdateStmt     update_stmt(RelVar v, Expr+ as)              = update_stmt(var: v, args: as);
+SendMsgStmt    send_msg_stmt(Expr m)                      = send_msg_stmt(msg: m);
+TryUpdateStmt  try_update_stmt(UpdateSymbol n, Expr* as)  = try_update_stmt(name: n, args: as);
+SetMembVarStmt set_memb_var_stmt(MembVar v, Expr e)       = set_memb_var_stmt(var: v, value: e);
+DeleteStmt     delete_stmt(RelVar v, Maybe[Expr]+ as)     = delete_stmt(var: v, args: as);
+InsertStmt     insert_stmt(RelVar v, Expr+ as)            = insert_stmt(var: v, args: as);
+UpdateStmt     update_stmt(RelVar v, Expr+ as)            = update_stmt(var: v, args: as);
 
 <return_stmt> return_stmt = :return_stmt;
 
@@ -541,5 +540,3 @@ StateVar state_var(NeType t, Expr e, Bool v, [StateVarUpdate] us) = state_var(ty
 StateVarUpdate state_var_update(Expr v, ReactCond c) = state_var_update(value: v, cond: c);
 
 DiscreteRule discrete_rule(Expr v, ReactCond c) = discrete_rule(value: v, cond: c);
-
-MsgSendRule msg_send_rule(Expr m, ReactCond c) = msg_send_rule(message: m, cond: c);

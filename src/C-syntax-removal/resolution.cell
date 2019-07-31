@@ -35,13 +35,11 @@ Nat resol_priority(LocAutoVar)      = 0;
 Nat resol_priority(NestedAutoVar)   = 1;
 
 Nat resol_priority(LocDBVar)        = 0;
-Nat resol_priority(NestedDBVar)     = 1;
 Nat resol_priority(LinkedDBVar)     = undefined; ## BAD BAD BAD
 Nat resol_priority(QualDBVar var)   = nat(resol_priority_baseline(var.outer) + resol_priority(var.inner));
 
 Nat resol_priority_baseline(AnyDBVar var) =
   loc_db_var()    = 0,
-  nested_db_var() = 0,
   linked_db_var() = 10,
   qual_db_var()   = nat(min(10, resol_priority_baseline(var.outer) + resol_priority_baseline(var.inner)));
 
@@ -133,9 +131,9 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
   }
 
 
-  [<AnyAutoVar, LocDBVar, NestedDBVar>] resolve_by_priority_as_auto_or_db_var(Atom symbol, [Var] def_vars) {
+  [<AnyAutoVar, LocDBVar>] resolve_by_priority_as_auto_or_db_var(Atom symbol, [Var] def_vars) {
     raw_resols = resolve_symbol(symbol, def_vars);
-    resols = [r : r <- raw_resols, r :: <AnyAutoVar, LocDBVar, NestedDBVar>];
+    resols = [r : r <- raw_resols, r :: <AnyAutoVar, LocDBVar>];
     assert |resols| <= 1;
     return min_by(resols, resol_priority);
   }
@@ -332,8 +330,6 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
         return just(qual_memb_var(target, memb_var(field)));
       else if interface.rel_vars(field, *)
         return just(qual_rel_var(target, rel_var(field)));
-      else if interface.nested_dbs(field, *)
-        return just(qual_db_var(target, nested_db_var(field)));
       else if method_ids_by_db_id[bare_id(target_type)](field)
         return just(pre_db_method_call(target, method_symbol(field)));
       else
@@ -382,12 +378,9 @@ implicit syn_prg : SynPrg {
   }
 
 
-  [<SignalVar, NestedAutoVar, NestedDBVar, QualSignalVar>] resolve_symbol(ReactAutoDef artifact, Atom symbol) {
+  [<SignalVar, NestedAutoVar, QualSignalVar>] resolve_symbol(ReactAutoDef artifact, Atom symbol) {
     internals = auto_internals[auto_symbol(artifact.name)];
-    resols = [
-      signal_var(symbol)    if in(symbol, internals.memb_vars),
-      nested_db_var(symbol) if internals.nested_dbs(symbol, *)
-    ];
+    resols = [signal_var(symbol) if in(symbol, internals.memb_vars)];
 
     if internals.nested_autos(symbol, *) {
       auto_type = auto_symbol(internals.nested_autos[symbol]);
@@ -397,7 +390,6 @@ implicit syn_prg : SynPrg {
       resol = if interface.default_output == nothing then nested_auto_var(symbol) else signal_var(symbol);
       resols = resols & [resol];
     }
-
     return resols;
   }
 
@@ -407,7 +399,6 @@ implicit syn_prg : SynPrg {
     resols = [
       memb_var(symbol)                          if in(symbol, interface.memb_vars),
       rel_var(symbol)                           if interface.rel_vars(symbol, *),
-      nested_db_var(symbol)                     if interface.nested_dbs(symbol, *),
       pre_db_method_call(method_symbol(symbol)) if method_ids_by_db_id[artifact.name](symbol)
     ];
     resols = seq_union(({
@@ -430,13 +421,12 @@ implicit syn_prg : SynPrg {
 
     AnyDBVar redirected(AnyDBVar var, LinkedDBVar db_var) =
       loc_db_var()      = undefined,
-      nested_db_var()   |
       linked_db_var()   = qual_db_var(outer: db_var, inner: var),
       qual_db_var()     = qual_db_var(outer: redirected(var.outer, db_var), inner: var.inner);
   }
 
 
-  [<SignalVar, NestedAutoVar, NestedDBVar, QualSignalVar, PreCall>] resolve_symbol(AutoMethodDef artifact, Atom symbol) {
+  [<SignalVar, NestedAutoVar, QualSignalVar, PreCall>] resolve_symbol(AutoMethodDef artifact, Atom symbol) {
     auto_def = auto_defs_by_id[auto_symbol(artifact.target)];
     resols = resolve_symbol(auto_def, symbol);
     if method_ids_by_automaton_id[artifact.target](symbol)

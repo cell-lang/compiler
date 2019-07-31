@@ -8,8 +8,7 @@ Atom bare_id(AnyAutoVar) =
   nested_auto_var(a?) = a;
 
 Atom bare_id(AnyDBVar) =
-  loc_db_var(a?)    |
-  nested_db_var(a?) = a;
+  loc_db_var(a?)    = a;
 
 Atom bare_id(FnSymbol) =
   fn_symbol(a?)   = a;
@@ -127,8 +126,8 @@ LocAutoVar cast_loc_auto_var(AnyAutoVar var) =
 NestedAutoVar cast_nested_auto_var(AnyAutoVar var) =
   nested_auto_var() = var;
 
-NestedDBVar cast_nested_db_var(AnyDBVar var) =
-  nested_db_var()   = var;
+LinkedDBVar cast_linked_db_var(AnyDBVar var) =
+  linked_db_var()   = var;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -190,19 +189,16 @@ SignalVar one_level_down(QualSignalVar var) = var.memb_var;
 <MembVar, QualMembVar> one_level_down(QualMembVar var) =
   match (var.db_var)
     loc_db_var()    = var.memb_var,
-    nested_db_var() = var.memb_var,
     qual_db_var()   = qual_memb_var(one_level_down(var.db_var), var.memb_var);
 
 AnyDBVar one_level_down(QualDBVar var) =
   match (var.outer)
     loc_db_var()    = var.inner,
-    nested_db_var() = var.inner,
     qual_db_var()   = one_level_down(var.outer);
 
 AnyRelVar one_level_down(QualRelVar var) =
   match (var.db_var)
     loc_db_var()    = var.rel_var,
-    nested_db_var() = var.rel_var,
     qual_db_var()   = qual_rel_var(one_level_down(var.db_var), var.rel_var);
 
 ////////////////////////////////////////////////////////////////////////////////

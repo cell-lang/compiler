@@ -282,16 +282,13 @@ implicit syn_prg : SynPrg {
   [DBSymbol -> DBInterface] db_interfaces = [id -> interface_info(db) : id, db <- db_defs_by_id];
 
 
-  [AutoSymbol -> (memb_vars: [Atom], nested_autos: [Atom -> Atom], nested_dbs: [Atom -> Atom])] auto_internals {
+  [AutoSymbol -> (memb_vars: [Atom], nested_autos: [Atom -> Atom])] auto_internals {
     res = ();
     for a <- rand_sort(values(auto_defs_by_id)) {
       let artifact = a {
         info = (
           memb_vars:    [bare_id(v) : v <- auto_memb_vars],
-          nested_autos: [na.name -> na.auto_name : na <- nested_auto_decls],
-          // BUG BUG BUG: FIX RESOLUTION
-          // nested_dbs:   [db.name -> db.type | db <~ artifact.nested_dbs]
-          nested_dbs:   [db.name -> db.type : db <~ a.nested_dbs]
+          nested_autos: [na.name -> na.auto_name : na <- nested_auto_decls]
         );
         res = (res | [auto_symbol(a.name) -> info]);
       }
@@ -332,14 +329,6 @@ implicit syn_prg : SynPrg {
     [nested_auto_var(n) -> auto_symbol(t) : n, t <- auto_internals[auto_symb].nested_autos];
 
 
-  [NestedDBVar -> DBSymbol] nested_db_vars(AutoSymbol auto_symb) =
-    [nested_db_var(n) -> db_symbol(t) : n, t <- auto_internals[auto_symb].nested_dbs];
-
-
-  [NestedDBVar -> DBSymbol] nested_db_vars(DBSymbol db_symb) =
-    [nested_db_var(n) -> db_symbol(t) : n, t <- db_interfaces[db_symb].nested_dbs];
-
-
   [LinkedDBVar -> DBSymbol] linked_db_vars(DBSymbol db_symb) =
     merge(([linked_db_var(i) -> db_symbol(t)] : t @ i <- schema_by_id(bare_id(db_symb)).links));
 
@@ -362,11 +351,8 @@ implicit syn_prg : SynPrg, artifact : SchemaDef {
   [StateVarDecl]   db_state_vars    = [d : d <- all_db_decls, state_var_decl() ?= d];
   [RelVarsDecl]    db_rel_vars      = [d : d <- all_db_decls, relvars_decl() ?= d];
   [ForeignKeyDecl] db_foreign_keys  = [d : d <- all_db_decls, foreign_key_decl() ?= d];
-  [NestedDBDecl]   db_nested_dbs    = [d : d <- all_db_decls, nested_db_decl() ?= d];
 
   [MembVar] db_memb_vars = [memb_var(d.name) : d <- db_state_vars];
-
-  [NestedDBVar -> DBSymbol] db_vars_types = [nested_db_var(d.name) -> db_symbol(d.type) : d <- db_nested_dbs];
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -382,7 +368,6 @@ implicit syn_prg : SynPrg, artifact : ReactAutoDef {
   [CondRuleDecl]    cond_rule_decls             = [d : d <- rule_decls, cond_rule_decl()    ?= d];
   [ForeachRuleDecl] foreach_rule_decls          = [d : d <- rule_decls, foreach_rule_decl() ?= d];
   [NestedAutoDecl]  nested_auto_decls           = [d : d <- rule_decls, nested_auto_decl()  ?= d];
-  [MsgSendDecl]     msg_send_decls              = [d : d <- rule_decls, msg_send_decl()     ?= d];
 
 
   [TimeRuleDecl] time_rule_lookalike_decls  = [d : d <- rule_decls, true_for_rule_decl()      ?= d] &
@@ -434,10 +419,6 @@ implicit syn_prg : SynPrg, artifact : ReactAutoDef {
 
   [NestedAutoVar -> AutoSymbol] syn_auto_vars_types =
     [nested_auto_var(a.name) -> auto_symbol(a.auto_name) : a <- nested_auto_decls];
-
-
-  [NestedDBVar -> DBSymbol] db_in_auto_vars_types =
-    [nested_db_var(d.name) -> db_symbol(d.type) : d <~ artifact.nested_dbs];
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -510,16 +491,6 @@ implicit syn_prg : SynPrg, artifact : Artifact {
       _                 = [];
 
 
-  [NestedDBVar -> DBSymbol] nested_db_vars =
-    match (artifact)
-      react_auto_def()          = nested_db_vars(auto_symbol(artifact.name)),
-      auto_method_def()         = nested_db_vars(auto_symbol(artifact.target)),
-      schema_def()              = nested_db_vars(db_symbol(artifact.name)),
-      handler_def()             |
-      using_block_method_def()  |
-      using_block_update_def()  = nested_db_vars(db_symbol(artifact.target)),
-      _                         = [];
-
   [LinkedDBVar -> DBSymbol] linked_db_vars =
     match (artifact)
       schema_def()              = linked_db_vars(db_symbol(artifact.name)),
@@ -533,20 +504,14 @@ implicit syn_prg : SynPrg, artifact : Artifact {
   [AnyDBVar -> DBSymbol] all_db_vars {
     db_vars : [AnyDBVar -> DBSymbol];
 
-    db_vars = loc_db_vars & nested_db_vars & linked_db_vars;
+    db_vars = loc_db_vars & linked_db_vars;
     last_round = db_vars;
     while last_round != [] {
-      new_round = merge([nested_db_vars(v, t) & linked_db_vars(v, t) : v, t <- last_round]);
+      new_round = merge([linked_db_vars(v, t) : v, t <- last_round]);
       db_vars = db_vars & new_round;
       last_round = new_round;
     }
     return db_vars;
-
-
-    [QualDBVar -> DBSymbol] nested_db_vars(AnyDBVar var, DBSymbol type) {
-      nested_dbs = db_interfaces[type].nested_dbs;
-      return [qual_db_var(var, nested_db_var(v)) -> db_symbol(t) : v, t <- nested_dbs];
-    }
 
 
     [QualDBVar -> DBSymbol] linked_db_vars(AnyDBVar var, DBSymbol type) =
@@ -613,11 +578,9 @@ implicit syn_prg : SynPrg, artifact : Artifact {
 
   DBSymbol syn_db_var_type(AnyDBVar var) =
     loc_db_var()      = loc_db_vars[var],
-    nested_db_var()   = nested_db_vars[var],
     linked_db_var()   = linked_db_vars[var],
     qual_db_var()     = { interface = db_interfaces[syn_db_var_type(var.outer)];
                           type_name = match (var.inner)
-                            nested_db_var(a?) = interface.nested_dbs(a, !!),
                             linked_db_var(n?) = interface.linked_dbs(n);
                           return db_symbol(type_name);
                         };

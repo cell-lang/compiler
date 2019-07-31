@@ -68,7 +68,7 @@ implicit program           : Program,
     return_stmt           = ((exit_block), just(surrogates), [], var_gen),
     proc_call_stmt()      = proc_call_stmt_opt_code(stmt, env, var_gen),
 
-    send_msg_stmt()       = send_msg_stmt_opt_code(stmt.target, stmt.msg, env, var_gen),
+    send_msg_stmt()       = send_msg_stmt_opt_code(stmt.msg, env, var_gen),
     try_update_stmt()     = try_update_stmt_opt_code(stmt.name, stmt.args, env, var_gen),
     set_memb_var_stmt()   = set_memb_var_stmt_opt_code(stmt.var, stmt.value, env, var_gen),
     delete_stmt()         = delete_stmt_opt_code(stmt.var, stmt.args, env, var_gen),
@@ -88,15 +88,13 @@ implicit program           : Program,
     restore_state_ctrl_stmt()     = restore_state_ctrl_stmt_opt_code(stmt.res_var, stmt.auto_var, stmt.state, fetch(stmt), env, var_gen);
 
 
-  StmtCompInfo send_msg_stmt_opt_code(NestedDBVar target, Expr msg, [EnvVar -> Type] env, VarGen init_var_gen) {
+  StmtCompInfo send_msg_stmt_opt_code(Expr msg, [EnvVar -> Type] env, VarGen init_var_gen) {
+    rel_auto_type = rel_auto_by_id(this_db_symbol);
+    msg_type = expr_type(msg, env);
+    target_idx = only([i : dependee @ i <~ rel_auto_type.links, is_subset(msg_type, db_msg_type(dependee))]);
+    target = linked_db_var(target_idx);
     code, surr, unused_var = opt_eval_code(msg, env, init_var_gen);
-    spent_var = nested_db_spent(target);
-    code = (
-      code |
-      do_if(spent_var, terminate),
-      send_msg(target, var_type(target), surr, false),
-      set_bvar(spent_var, true)
-    );
+    code = (code | send_msg(target, var_type(target), surr, false));
     return (code, just(surrogates), [], init_var_gen);
   }
 
@@ -419,7 +417,7 @@ implicit program           : Program,
   StmtCompInfo restore_state_ctrl_stmt_opt_code(StdVar res_var, LocDBVar db_var, Expr state, Maybe[Any] stmt_loc, [EnvVar -> Type] env, VarGen init_var_gen) {
     code, surr, unused_var = opt_eval_code(state, env, init_var_gen);
     res_bvar = low_level_bvar(res_var);
-    code = (code | set_state(res_bvar, db_var, surr, var_type(db_var)));
+    code = (code | set_state(res_bvar, db_var, dependees(db_var), surr, var_type(db_var)));
     surrs = update(surrogates, res_var, bool_obj(res_bvar));
     return (code, just(surrs), [], init_var_gen);
   }

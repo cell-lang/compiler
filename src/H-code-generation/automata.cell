@@ -15,8 +15,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
 
     // Generating cleanup code
     cleanup_code = join(((release(v), init_memb_var(v, :blank)) : v, unused_var <- rand_sort(memb_obj_vars))) &
-                   rand_sort([auto_cleanup(id, auto.type) : id, auto <- automaton.nested_autos]) &
-                   rand_sort([cleanup_db(var, db.type) : var, db <- automaton.nested_dbs]);
+                   rand_sort([auto_cleanup(id, auto.type) : id, auto <- automaton.nested_autos]);
 
     // Generating methods for queuing updates
     queue_update_code = [n.id -> queue_update_method(n, nodes_indexes[n.id], item(levels_sizes, n.level)) : n <~ nodes];
@@ -51,7 +50,6 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
       outputs:              [bare_id(id) -> (type: output.type, discrete: output.discrete) : id, output <- automaton.outputs],
       memb_vars:            memb_vars,
       nested_auto_vars:     [id -> auto.type : id, auto <- automaton.nested_autos],
-      nested_static_blocks: [id -> db.type : id, db <- automaton.nested_dbs],
       pre_init_code:        pre_init_code,
       cleanup_code:         cleanup_code,
       nodes_update_code:    nodes_update_code,
@@ -164,9 +162,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
 
     code_5 = rand_sort([auto_pre_init(id, auto.type) : id, auto <- automaton.nested_autos]);
 
-    code_6 = rand_sort([init_db(v, (), db.type) : v, db <- automaton.nested_dbs]);
-
-    return join((code_0, code_1, code_2, code_3, code_4, code_5, code_6));
+    return join((code_0, code_1, code_2, code_3, code_4, code_5));
   }
 
 
@@ -330,9 +326,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
     inputs = [v : v, i <- automaton.inputs, not i.discrete and not i.volatile];
     state_vars = [v : v, s <- automaton.state, not s.volatile];
     nested_autos = [v : v, a <- automaton.nested_autos, not a.volatile];
-    nested_dbs = [v : v, a <- automaton.nested_dbs, not a.volatile];
 
-    count = nat(|inputs| + |state_vars| + |nested_autos| + |nested_dbs|);
+    count = nat(|inputs| + |state_vars| + |nested_autos|);
     return (ret_val(empty_rel)) if count == 0;
 
     res_var, var_gen = next_obj_var(blank_var_gen);
@@ -345,11 +340,10 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
         value_var = evar(values_var.id, i);
         set_value_instr = match (v)
           signal_var()      = set_var(value_var, v),
-          nested_db_var()   = copy_state(value_var, v, var_type(v)),
           nested_auto_var() = copy_persistent_state(value_var, v, var_type(v));
         return (set_label_instr, set_value_instr);
 
-      } : v @ i <- rand_sort(inputs) & rand_sort(state_vars) & rand_sort(nested_autos) & rand_sort(nested_dbs)));
+      } : v @ i <- rand_sort(inputs) & rand_sort(state_vars) & rand_sort(nested_autos)));
     }
 
     return (code | mk_map(res_var, keys_var, values_var, count), ret_val(res_var));
@@ -360,9 +354,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
     inputs = [v : v, i <- automaton.inputs, not i.discrete and not i.volatile];
     state_vars = [v : v, s <- automaton.state, not s.volatile];
     nested_autos = [v : v, a <- automaton.nested_autos, not a.volatile];
-    nested_dbs = [v : v, a <- automaton.nested_dbs, not a.volatile];
 
-    count = nat(|inputs| + |state_vars| + |nested_autos| + |nested_dbs|);
+    count = nat(|inputs| + |state_vars| + |nested_autos|);
     return () if count == 0;
 
     state_var = fn_arg(0);
@@ -381,13 +374,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
       set_persistent_state(v, tmp_var, automaton.nested_autos[v].type)
     ) : v <- rand_sort(nested_autos)));
 
-    set_nested_dbs_code = join(((
-      lookup_field(tmp_var, state_var, object(bare_id(v))),
-      set_state(res_var, v, tmp_var, automaton.nested_dbs[v].type),
-      do_if_not(res_var, terminate)
-    ) : v <- rand_sort(nested_dbs)));
-
-    return set_vars_code & set_nested_autos_code & set_nested_dbs_code;
+    return set_vars_code & set_nested_autos_code;
   }
 
   //////////////////////////////////////////////////////////////////////////////

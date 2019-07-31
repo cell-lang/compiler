@@ -34,7 +34,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
       print_stmt(e?)      = typecheck(e, type_any, env),
       seq_update_stmt()   = typecheck_seq_update_stmt(stmt.seq_var, stmt.idx, stmt.value, env),
 
-      send_msg_stmt()     = typecheck_send_msg_stmt(stmt.target, stmt.msg, env),
+      send_msg_stmt()     = typecheck_send_msg_stmt(stmt.msg, env),
       try_update_stmt()   = typecheck_try_update_stmt(stmt.name, stmt.args, env),
       set_memb_var_stmt() = typecheck_set_memb_var_stmt(stmt.var, stmt.value, env),
       delete_stmt()       = typecheck_delete_stmt(stmt.var, stmt.args, env),
@@ -233,10 +233,21 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////
 
-  [TypeCheckingError] typecheck_send_msg_stmt(NestedDBVar target, Expr msg, [EnvVar -> Type] env) {
-    db_type = var_type(target);
-    msg_type = db_msg_type(db_type);
-    return typecheck(msg, msg_type, env);
+  [TypeCheckingError] typecheck_send_msg_stmt(Expr msg, [EnvVar -> Type] env) {
+    errs = typecheck(msg, type_any, env);
+    return errs if errs != [];
+    msg_type = expr_type(msg, env);
+
+    rel_auto_type = rel_auto_by_id(this_db_symbol);
+    candidates = [dependee : dependee <~ rel_auto_type.links, is_subset(msg_type, db_msg_type(dependee))];
+    return [] if |candidates| == 1;
+
+    if candidates == [] {
+      msg_types_union = union_superset([db_msg_type(d) : d <~ rel_auto_type.links]);
+      return [unexpected_actual_type(msg_type, msg_types_union)];
+    }
+    else
+      return [ambiguous_target_dependee(msg_type, candidates)];
   }
 
 

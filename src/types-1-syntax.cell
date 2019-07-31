@@ -180,7 +180,7 @@ type SynSeqUpdateStmt = seq_update_stmt(obj: StdVar, idx: SynExpr, value: SynExp
 type SynAtomicUpdateStmt  = SynSendMsgStmt, SynTryUpdateStmt, SynSetMembVarStmt,
                             SynDeleteStmt, SynInsertStmt, SynInsertWithAttrsStmt;
 
-type SynSendMsgStmt         = send_msg_stmt(var: Symbol, msg: SynExpr);
+type SynSendMsgStmt         = send_msg_stmt(msg: SynExpr);
 type SynTryUpdateStmt       = try_update_stmt(name: Symbol, args: SynExpr*);
 type SynSetMembVarStmt      = set_memb_var_stmt(var: Symbol, value: SynExpr);
 type SynDeleteStmt          = delete_stmt(entries: (var: Symbol, args: Maybe[SynExpr]+)+);
@@ -298,14 +298,7 @@ type TimeRuleDecl = true_for_rule_decl(name: Symbol, cond: SynExpr, time_expr: T
 
 type NestedAutoDecl = nested_auto_decl(name: Symbol, auto_name: Symbol, pos_args: SynExpr*, args: (Symbol, SynExpr)*);
 
-type MsgSendDecl    = msg_send_decl(
-                        target:   Symbol,
-                        message:  SynExpr,
-                        cond:     Maybe[SynExpr],
-                        signals:  Symbol*
-                      );
-
-type RuleDecl       = PlainRuleDecl, WhenRuleDecl, CondRuleDecl, ForeachRuleDecl, TimeRuleDecl, NestedAutoDecl, MsgSendDecl;
+type RuleDecl       = PlainRuleDecl, WhenRuleDecl, CondRuleDecl, ForeachRuleDecl, TimeRuleDecl, NestedAutoDecl;
 
 type AutoMethodDef  = auto_method_def(
                         target:     Symbol,
@@ -340,7 +333,6 @@ type ReactAutoDef   = react_auto_def(
                         inputs:     InputDecl*,
                         outputs:    OutputDecl*,
                         state_vars: StateVarDecl*,
-                        nested_dbs: NestedDBDecl*,
                         consts:     ConstDecl*,
                         rules:      RuleDecl*
                       );
@@ -362,9 +354,7 @@ type ForeignKeyDecl = foreign_key_decl(
                         targets:  (Symbol, Maybe[Symbol]+)+
                       );
 
-type NestedDBDecl   = nested_db_decl(name: Symbol, type: Symbol);
-
-type SchemaItemDecl = StateVarDecl, RelVarsDecl, ForeignKeyDecl, NestedDBDecl;
+type SchemaItemDecl = StateVarDecl, RelVarsDecl, ForeignKeyDecl;
 
 type SchemaDef      = schema_def(
                         name:   Symbol,

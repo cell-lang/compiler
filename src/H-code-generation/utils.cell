@@ -222,9 +222,8 @@ implicit program : Program {
     inputs = [v -> i.type : v, i <- auto.inputs, not i.discrete and not i.volatile];
     state_vars = [v -> s.type : v, s <- auto.state, not s.volatile];
     nested_autos = [v -> deep_state_type(automaton_by_id(a.type)) : v, a <- auto.nested_autos, not a.volatile];
-    nested_dbs = [v -> type_ref(schema_type_symbol(untag(a.type))) : v, a <- auto.nested_dbs, not a.volatile];
 
-    fields = inputs & state_vars & nested_autos & nested_dbs;
+    fields = inputs & state_vars & nested_autos;
     return empty_rel_type if fields == [];
 
     return ne_record_type([object(bare_id(v)) -> (type: t, optional: false) : v, t <- fields]);

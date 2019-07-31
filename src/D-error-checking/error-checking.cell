@@ -51,7 +51,7 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
   [CoreWFError] databases_errors {
     db_errs = union([database_errors(db) : db <- program.data_bases]);
 
-    shallow_deps = [db.name -> values(db.nested_dbs) & set(db.links) : db <- program.data_bases];
+    shallow_deps = [db.name -> set(db.links) : db <- program.data_bases];
     deep_deps = transitive_closure(shallow_deps);
     rec_errs = [recursively_defined_auto_or_db(automaton_by_id(db_type)) : db_type, deps <- deep_deps, deps(db_type)];
 
@@ -211,8 +211,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
       [rule_errs(id, expr) : id, expr <- automaton.rules],
       [time_rule_errs(id, rule) : id, rule <- automaton.time_rules],
       [discrete_rules_errs(id, rules) : id, rules <- automaton.discrete_rules],
-      [nested_auto_errs(id, info.type, info.args) : id, info <- automaton.nested_autos],
-      [nested_db_errs(id, info.msg_send_rule) : id, info <- automaton.nested_dbs, info.msg_send_rule?]
+      [nested_auto_errs(id, info.type, info.args) : id, info <- automaton.nested_autos]
     ]));
     errs = overlap_errs & var_errs & output_errs;
     errs = dependency_errors if errs == [];
@@ -246,7 +245,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
       init_errs = [
         invalid_auto_var(v, id, state_var.init_value)
         : v <- auto_expr_extern_vars(state_var.init_value),
-          not (v :: QualMembVar or in(v, init_vars))
+          not in(v, init_vars)
       ];
       update_errs = union([state_var_update_errs(id, u) : u <- state_var.updates]);
       return init_errs & update_errs;
@@ -262,14 +261,14 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
       cond_expr_errs = [
         invalid_auto_var(v, id, update.cond.cond)
         : v <- cond_expr_vars,
-          not (v :: QualMembVar or in(v, continuous_signals) or in(v, discrete_signals))
+          not (in(v, continuous_signals) or in(v, discrete_signals))
       ];
       // Value expression check
       value_expr_vars = auto_expr_extern_vars(update.value);
       value_expr_errs = [
         invalid_auto_var(v, id, update.value)
         : v <- cond_expr_vars,
-          not (v :: QualMembVar or in(v, continuous_signals) or in(v, delayed_signals) or in(v, discrete_signals))
+          not (in(v, continuous_signals) or in(v, delayed_signals) or in(v, discrete_signals))
       ];
       return cond_expr_errs & value_expr_errs;
     }
@@ -279,7 +278,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
       signals = continuous_signals_level_2;
       return [
         invalid_auto_var(v, id, value)
-        : v <- auto_expr_extern_vars(value), not (v :: QualMembVar or in(v, signals))
+        : v <- auto_expr_extern_vars(value), not in(v, signals)
       ];
     }
 
@@ -290,7 +289,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
         boolean_time_rule()   |
         unchanged_time_rule() = [ invalid_auto_var(v, id, rule.expr)
                                   : v <- auto_expr_extern_vars(rule.expr),
-                                    not (v :: QualMembVar or in(v, continuous_signals))
+                                    not in(v, continuous_signals)
                                 ],
         since_time_rule()     = [invalid_auto_var(v, id, v) : v <- rule.signals, not is_discrete(v)];
     }
@@ -306,7 +305,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
         : r <- rules,
           discrete_signals = enabled_discrete_signals(r.cond),
           e <- [r.cond.cond, r.value], v <- auto_expr_extern_vars(e),
-          not (v :: QualMembVar or in(v, continuous_signals) or in(v, discrete_signals) or in(v, delayed_signals))
+          not (in(v, continuous_signals) or in(v, discrete_signals) or in(v, delayed_signals))
       ];
     }
 
@@ -326,17 +325,6 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
         } : input_id, e <- args
       ]);
     }
-
-
-    [CoreWFError] nested_db_errs(NestedDBVar id, MsgSendRule rule) {
-      continuous_signals = continuous_signals_level_2;
-      discrete_signals = enabled_discrete_signals(rule.cond);
-      return [
-        invalid_nested_db_msg_var(v, id, rule)
-        : e <- [rule.cond.cond, rule.message], v <- auto_expr_extern_vars(e),
-          not (v :: QualMembVar or in(v, continuous_signals) or in(v, discrete_signals))
-      ];
-    }
   }
 
   //////////////////////////////////////////////////////////////////////////////
@@ -348,8 +336,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
       [id -> dependencies(e) : id, e <- automaton.rules],
       [id -> dependencies(r) : id, r <- automaton.time_rules],
       [id -> union([dependencies(r) : r <- rs]) : id, rs <- automaton.discrete_rules],
-      [id -> union([dependencies(e) : unused_var, e <- info.args]) : id, info <- automaton.nested_autos],
-      [id -> dependencies(db.msg_send_rule) : id, db <- automaton.nested_dbs, db.msg_send_rule?]
+      [id -> union([dependencies(e) : unused_var, e <- info.args]) : id, info <- automaton.nested_autos]
     ]);
     deep_deps = transitive_closure(shallow_deps);
     return [dependency_loop(v, nonempty(ds)) : v, ds <- deep_deps, ds(v)];
@@ -357,15 +344,14 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
 
     [SignalVar]     dependency(SignalVar var)       = [var];
     [NestedAutoVar] dependency(QualSignalVar var)   = [cast_nested_auto_var(var.auto_var)];
-    [NestedDBVar]   dependency(QualMembVar var)     = [cast_nested_db_var(var.db_var)];
     []              dependency(PrevVarValue)        = [];
 
 
-    [<SignalVar, NestedAutoVar, NestedDBVar>] dependencies(Expr expr) =
+    [<SignalVar, NestedAutoVar>] dependencies(Expr expr) =
       union([dependency(v) : v <- auto_expr_extern_vars(expr)]);
 
 
-    [<SignalVar, NestedAutoVar, NestedDBVar>] dependencies(ReactCond cond) {
+    [<SignalVar, NestedAutoVar>] dependencies(ReactCond cond) {
       signals_deps = match (cond)
         react_cond()            = union([dependency(v) : v, unused_var <- cond.signals_state]),
         on_becoming_true_cond() = [];
@@ -373,25 +359,21 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
     }
 
 
-    [<SignalVar, NestedAutoVar, NestedDBVar>] dependencies(SignalVar id, StateVar state_var) {
+    [<SignalVar, NestedAutoVar>] dependencies(SignalVar id, StateVar state_var) {
       init_deps = dependencies(state_var.init_value);
       update_deps = union([dependencies(u.value) & dependencies(u.cond) : u <- state_var.updates]) - [id];
       return init_deps & update_deps;
     }
 
 
-    [<SignalVar, NestedAutoVar, NestedDBVar>] dependencies(TimeRule rule) =
+    [<SignalVar, NestedAutoVar>] dependencies(TimeRule rule) =
       boolean_time_rule()   |
       unchanged_time_rule() = dependencies(rule.expr),
       since_time_rule()     = rule.signals;
 
 
-    [<SignalVar, NestedAutoVar, NestedDBVar>] dependencies(DiscreteRule rule) =
+    [<SignalVar, NestedAutoVar>] dependencies(DiscreteRule rule) =
       dependencies(rule.value) & dependencies(rule.cond);
-
-
-    [<SignalVar, NestedAutoVar, NestedDBVar>] dependencies(MsgSendRule rule) =
-      dependencies(rule.message) & dependencies(rule.cond);
   }
 
   //////////////////////////////////////////////////////////////////////////////

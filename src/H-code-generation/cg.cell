@@ -41,8 +41,12 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
   ObjProcDef gen_proc_code(Procedure procedure) {
     res_var, var_gen = next_obj_var(blank_var_gen);
 
-    body = rand_sort([auto_pre_init(v, t) : v, t <- procedure.loc_react_auto_vars]) &
-           rand_sort([init_db(v, info.links, info.type) : v, info <- procedure.loc_rel_auto_vars]);
+    body = rand_sort([auto_pre_init(v, t) : v, t <- procedure.loc_react_auto_vars]);
+
+    rel_auto_vars = procedure.loc_rel_auto_vars;
+    semi_ord_rel_auto_vars = topological_sort([v -> set(info.links) : v, info <- rel_auto_vars]);
+    ord_rel_auto_vars = join((isort(vs) : vs <- semi_ord_rel_auto_vars));
+    body = body & (init_db(v, rel_auto_vars(v).links, rel_auto_vars(v).type) : v <- ord_rel_auto_vars);
 
     // Evaluating the expression
     if procedure.body != () {
@@ -61,7 +65,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
     }
 
     body = body & rand_sort([auto_cleanup(v, t) : v, t <- procedure.loc_react_auto_vars]);
-    body = body & rand_sort([cleanup_db(v, info.type) : v, info <- procedure.loc_rel_auto_vars]);
+    body = body & (cleanup_db(v, rel_auto_vars(v).type) : v <- ord_rel_auto_vars);
 
     debug_entry_instr = push_call_info(procedure.id, (a.var : a <- procedure.args));
 

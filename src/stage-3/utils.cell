@@ -112,6 +112,15 @@ type CodeOutcome = fails, returns, breaks_loop, exits_block, falls_through;
     _             = search_nested(instr, mutators, []);
 }
 
+
+[LinkedDBVar] updated_dependees(CompiledUpdate update) {
+  return search_instrs(update.body, dependees);
+
+  [LinkedDBVar] dependees(Instr instr) =
+    send_msg()  = [cast_linked_db_var(instr.db_var)],
+    _           = search_nested(instr, dependees, []);
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 
 implicit block : StaticBlock {
@@ -151,5 +160,13 @@ implicit block : StaticBlock {
     deep_call_map = call_graph_transitive_closure;
     indirectly_touched = [s, v : s, t <- deep_call_map, v <- directly_touched(t)];
     return [u, v : u, vs <- directly_touched, v <- vs | v <- indirectly_touched(u, ?)];
+  }
+
+
+  [UpdateId, LinkedDBVar] updated_dependees {
+    directly_touched = [id -> updated_dependees(u) : id, u <- block.updates];
+    deep_call_map = call_graph_transitive_closure;
+    indirectly_touched = [s, a : s, t <- deep_call_map, a <- directly_touched(t)];
+    return [u, a : u, as <- directly_touched, a <- as | a <- indirectly_touched(u, ?)];
   }
 }

@@ -29,7 +29,6 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
       tables:                       tables_info,
       insert_checked_foreign_keys:  insert_checked_foreign_keys,
       delete_checked_foreign_keys:  delete_checked_foreign_keys,
-      nested_blocks:                database.nested_dbs,
       init_code:                    database_init_code,
       cleanup_code:                 database_cleanup_code,
       copy_state_code:              database_copy_state_code(rel_vars_args_perms),
@@ -46,7 +45,6 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 
   Instr* database_init_code {
     state_vars = database.state_vars;
-    nested_dbs = database.nested_dbs;
 
     vars_pre_init_code = rand_sort([init_memb_var(v, :blank) : v, unused_var <- state_vars]);
     let context = database, typed_vars = [], surrogates = [] {
@@ -56,32 +54,28 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
         } : v, d <- isort(state_vars)
       ));
     }
-    nested_dbs_init_code = rand_sort([init_db(v, (), t) : v, t <- nested_dbs]);
 
     value_stores_init_code = (init_value_store(vs) : vs <- rand_sort(keys(value_stores)));
     tables_init_code = rand_sort([init_table(v, t) : v, t <- tables_info]);
 
-    return vars_pre_init_code & vars_init_code & nested_dbs_init_code & value_stores_init_code & tables_init_code;
+    return vars_pre_init_code & vars_init_code & value_stores_init_code & tables_init_code;
   }
 
 
   Instr* database_cleanup_code {
     state_vars = database.state_vars;
-    nested_dbs = database.nested_dbs;
 
     vars_cleanup_code = rand_sort([reset_memb_var(v, :blank) : v, unused_var <- state_vars]);
-    nested_dbs_cleanup_code = rand_sort([cleanup_db(v, t) : v, t <- nested_dbs]);
-
     value_stores_cleanup_code = (cleanup_value_store(vs) : vs <- rand_sort(keys(value_stores)));
     tables_cleanup_code = rand_sort([cleanup_table(v, t) : v, t <- tables_info]);
 
-    return vars_cleanup_code & nested_dbs_cleanup_code & value_stores_cleanup_code & tables_cleanup_code;
+    return vars_cleanup_code & value_stores_cleanup_code & tables_cleanup_code;
   }
 
 
   Instr* database_copy_state_code([RelVar -> [+Nat -> Nat]] rel_vars_args_perms) {
     log_rel_vars = [logical_rel_var(v) : v, unused_var <- database.rel_vars];
-    count = nat(|database.state_vars| + |log_rel_vars| + |database.nested_dbs|);
+    count = nat(|database.state_vars| + |log_rel_vars|);
     return (ret_val(empty_rel)) if count == 0;
 
     res_var, var_gen = next_obj_var(blank_var_gen);
@@ -90,8 +84,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 
     state_vars = rand_sort(keys(database.state_vars));
     log_rel_vars = rand_sort(log_rel_vars);
-    nested_autos = rand_sort(keys(database.nested_dbs));
-    all_vars = state_vars & log_rel_vars & nested_autos;
+    all_vars = state_vars & log_rel_vars;
 
     let context = database {
       code = join(({
@@ -99,7 +92,6 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
         value_var = evar(values_var.id, i);
         set_value_instr = match (var)
           memb_var()      = set_var(value_var, var),
-          nested_db_var() = copy_state(value_var, var, var_type(var)),
           rel_var()       = { table_vars = [table_var(v) : v <- physical_rel_vars(database, var)];
                               tables = nonempty_map(select_by_key(tables_info, table_vars));
                               return copy_rel(value_var, tables, rel_vars_args_perms(var));
@@ -333,20 +325,6 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
         )
       );
 
-      code = (code | instr);
-    }
-
-    // Nested automata
-    nested_dbs = rand_sort(keys(database.nested_dbs));
-    for db <- nested_dbs {
-      db_type = database.nested_dbs[db];
-      instr = do_if(
-        has_field(state_var, object(bare_id(db))),
-        ( lookup_field(tmp_var, state_var, object(bare_id(db))),
-          set_state(bool_var, db, tmp_var, db_type),
-          do_if_not(bool_var, ret_val(false))
-        )
-      );
       code = (code | instr);
     }
 
@@ -585,10 +563,11 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 
   [UpdateId -> CompiledUpdate] compiled_database_handlers([Handler] handlers) {
     return [] if handlers == [];
-    return [main_handler -> compiled_handler(only(handlers))] if |handlers| == 1;
     sorted_handlers = rand_sort(handlers);
     comp_handlers = merge(([handler_id(i) -> compiled_handler(h)] : h @ i <- sorted_handlers));
-    dispatcher_body = update_dispatch_code(database.name, sorted_handlers);
+    dispatcher_body = if |handlers| != 1
+      then update_dispatch_code(database.name, sorted_handlers)
+      else (try_update(database.name, polymorphic_update_id(only(handlers), 0), (fn_arg(0))), ret_val(0));
     dispatcher = compiled_update((fn_arg(0)), dispatcher_body);
     return comp_handlers & [main_handler -> dispatcher];
 
@@ -808,12 +787,16 @@ implicit typedefs : [TypeName -> NeType] {
     assert |[arity(u) : u <~ updates]| == 1;  // All updates have the same arity
     assert arity(head(updates)) > 0;          // No-argument updates cannot be polymorphic
 
-    l0 = lvar(0);
+    i0 = ivar32(0);
     count = |updates|;
 
     an_update = head(updates);
     name      = name(an_update);
     arity     = arity(an_update);
+
+    are_handlers = match (an_update)
+      handler() = true,
+      update()  = false;
 
     args_types = (
       match (u)
@@ -827,12 +810,12 @@ implicit typedefs : [TypeName -> NeType] {
     cases = [{
       types = (args_types(i)(j) : j <- disp_args);
       try_update_instr = try_update(db_type, polymorphic_update_id(u, i), (fn_arg(j) : j < arity));
-      code = (try_update_instr, exit_block);
+      code = (try_update_instr, set_ivar32(i0, int32(i)) if are_handlers, exit_block);
       return (types, code);
     } : u @ i <~ updates];
 
     code = dynamic_dispatch_code((fn_arg(i) : i <- disp_args), cases);
-    return (execute_block(code));
+    return (execute_block(code), ret_val(i0) if are_handlers);
   }
 }
 
