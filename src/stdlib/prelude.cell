@@ -22,11 +22,14 @@ type Opt[T]         = (), (T);
 
 type Nothing        = nothing;
 type Just[T]        = just(T);
-type Maybe[T]       = Nothing, Just[T]; //nothing, just(T);
+type Maybe[T]       = Nothing, Just[T];
 
 type Success[T]     = success(T);
 type Failure[T]     = failure(T);
 type Result[R, E]   = success(R), failure(E);
+
+type Date           = date(Int);
+type Time           = time(Int);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -137,12 +140,6 @@ Float sqrt(Int   x) = _fsqrt_(_float_(x));
 
 ////////////////////////////////////////////////////////////////////////////////
 
-Bool all(Bool* s)  = not (e <~ s : not e);
-Bool none(Bool* s) = not (e <~ s : e);
-Bool any(Bool* s)  = (e <~ s : e);
-
-////////////////////////////////////////////////////////////////////////////////
-
 <0..1> bit(Bool b) = if b then 1 else 0;
 
 //////////////////////////////////////////////////////////////////////////////
@@ -190,27 +187,6 @@ True  failed(Failure[T]) = true;
 T result(Success[T] r) = untag(r);
 
 T error(Failure[T] r) = untag(r);
-
-////////////////////////////////////////////////////////////////////////////////
-
-(A, B)* zip(A* s1, B* s2) {
-  assert |s1| == |s2|;
-  return ((e1, s2(i)) : e1 @ i <- s1);
-}
-
-(A, B, C)* zip(A* s1, B* s2, C* s3) {
-  assert |s1| == |s2| and |s2| == |s3|;
-  return ((e1, s2(i), s3(i)) : e1 @ i <- s1);
-}
-
-(A, B, C, D)* zip(A* s1, B* s2, C* s3, D* s4) {
-  assert |s1| == |s2| and |s2| == |s3| and |s3| == |s4|;
-  return ((e1, s2(i), s3(i), s4(i)) : e1 @ i <- s1);
-}
-
-(A*, B*) unzip((A, B)* ts) = ((t(0) : t <- ts), (t(1) : t <- ts));
-
-(A*, B*, C*) unzip3((A, B, C)* ts) = ((t(0) : t <- ts), (t(1) : t <- ts), (t(2) : t <- ts));
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -278,10 +254,6 @@ T only([T] set) {
   fail if |seq| != 1;
   return seq(0);
 }
-
-([A], [B]) unzip([(A, B)] ps) = ([p(0) : p <- ps], [p(1) : p <- ps]);
-
-([A], [B], [C]) unzip3([(A, B, C)] ts) = ([t(0) : t <- ts], [t(1) : t <- ts], [t(2) : t <- ts]);
 
 () isort([]) = ();
 
