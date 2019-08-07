@@ -94,13 +94,21 @@ Ord max(Ord+ ns) {
   return max;
 }
 
-T max_by(T+ xs, (T T -> Bool) lt) {
-  res = xs(0);
-  for i = 1 .. |xs| {
-    x = xs(i);
-    res = x if lt(res, x);
+[+T] max_by([+T] set, (T -> Ord) key) {
+  an_elt = any(set);
+  max_elts = (an_elt);
+  max_key = key(an_elt);
+  for elt <- set {
+    elt_key = key(elt);
+    if elt_key == max_key {
+      max_elts = (max_elts | elt);
+    }
+    else if max_key < elt_key {
+      max_elts = (elt);
+      max_key = elt_key;
+    }
   }
-  return res;
+  return [elt : elt <~ max_elts];
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -259,6 +267,8 @@ T only([T] set) {
   fail if |seq| != 1;
   return seq(0);
 }
+
+////////////////////////////////////////////////////////////////////////////////
 
 () isort([]) = ();
 
