@@ -711,10 +711,23 @@ implicit program           : Program,
 
 
   (Instr*, ObjExpr, VarGen) membership_opt_eval_info(Expr obj, NeType type, VarGen init_var_gen) {
-    pred = memb_test_preds_map[type];
     res_var, ret_var_gen = next_bool_var(init_var_gen);
     code, surr, var_gen = opt_eval_info(obj, ret_var_gen);
-    return ((code | set_bvar(res_var, is_member(pred, surr))), obj_expr(res_var), ret_var_gen);
+
+    if is_subset(type, integer) and surr :: <int_obj(IntExpr)>
+      check_expr = int_memb_check(expand_int_type(type, typedefs), _untag_(surr));
+    else
+      check_expr = is_member(memb_test_preds_map(type, !!), surr);
+
+    return ((code | set_bvar(res_var, check_expr)), obj_expr(res_var), ret_var_gen);
+
+
+    BoolExpr int_memb_check(AnyIntType type, IntExpr expr) =
+      integer         = true,
+      low_ints()      = is_le(expr, type.max),
+      high_ints()     = is_le(type.min, expr),
+      int_range()     = and((is_le(type.min, expr), is_le(expr, max(type)))),
+      union_type(ts?) = or((int_memb_check(t, expr) : t <- isort(ts)));
   }
 
 
