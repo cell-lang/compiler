@@ -310,37 +310,17 @@ T untag(<+>(T)) =
 
 String string(Nat* chs) = :string(chs);
 
-Nat* chars(String str)  = string(chs?) = chs;
+Nat length(String s) = |_untag_(s)|;
 
-Nat length(String s)    = |chars(s)|;
+Nat (_[_]) (String str, Int idx) = _untag_(str)(idx);
 
-Nat (_[_]) (String str, Int idx) = chars(str)(idx);
+String (_&_) (String s1, String s2)   = string(_untag_(s1) & _untag_(s2));
+String append(String* ss)             = string(join((_untag_(s) : s <- ss)));
+String append(String* ss, String sep) = string(join(intermix((_untag_(s) : s <- ss), _untag_(sep))));
+String reverse(String s)              = string(reverse(_untag_(s)));
+String substr(String s, Int n, Int m) = string(_slice_(_untag_(s), n, m));
 
-String (_&_) (String s1, String s2)   = string(chars(s1) & chars(s2));
-String append(String* ss)             = string(join((chars(s) : s <- ss)));
-String append(String* ss, String sep) = string(join(intermix((chars(s) : s <- ss), chars(sep))));
-String reverse(String s)              = string(reverse(chars(s)));
-String substr(String s, Int n, Int m) = string(_slice_(chars(s), n, m));
+String take(String s, Int count) = string(take(_untag_(s), count));
+String drop(String s, Int count) = string(drop(_untag_(s), count));
 
-String take(String s, Int count) = string(take(chars(s), count));
-String drop(String s, Int count) = string(drop(chars(s), count));
-
-String (_*_) (Nat len, String str)    = string(len * chars(str));
-
-Bool (_<_) (String str1, String str2) = {
-  chs1 = chars(str1);
-  chs2 = chars(str2);
-
-  len1 = |chs1|;
-  len2 = |chs2|;
-  min_len = min(len1, len2);
-
-  for i < min_len {
-    ch1 = chs1(i);
-    ch2 = chs2(i);
-    return true  if ch1 < ch2;
-    return false if ch1 > ch2;
-  }
-
-  return len1 < len2;
-};
+String (_*_) (Nat len, String str) = string(len * _untag_(str));

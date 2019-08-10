@@ -866,6 +866,48 @@ Nat lower(Nat ch) = if is_upper(ch) then nat(ch + 32) else ch;
 Nat upper(Nat ch) = if is_lower(ch) then nat(ch - 32) else ch;
 
 ////////////////////////////////////////////////////////////////////////////////
+
+Nat* chars(String str)  = string(chs?) = chs;
+
+Bool (_<_) (String str1, String str2) = {
+  chs1 = chars(str1);
+  chs2 = chars(str2);
+
+  len1 = |chs1|;
+  len2 = |chs2|;
+  min_len = min(len1, len2);
+
+  for i < min_len {
+    ch1 = chs1(i);
+    ch2 = chs2(i);
+    return true  if ch1 < ch2;
+    return false if ch1 > ch2;
+  }
+
+  return len1 < len2;
+};
+
+////////////////////////////////////////////////////////////////////////////////
+
+Ascii ascii_append(Ascii* strs, Ascii sep) {
+  chars : <0..127>*;
+
+  sep_chs = _untag_(sep);
+
+  chars = ();
+  for str @ i <- strs {
+    if i > 0
+      for ch <- sep_chs
+        chars = (chars | ch);
+
+    for ch <- _untag_(str)
+      chars = (chars | ch);
+  }
+
+  return :string(chars);
+}
+
+////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
 ## THESE SHOULD PROBABLY GO IN A SEPARATE FILE
