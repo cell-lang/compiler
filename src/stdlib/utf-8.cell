@@ -1,4 +1,4 @@
-Result[Nat*, Nat] from_utf8(Byte* bytes) {
+Result[Nat*, Nat] utf8_decode(Byte* bytes) {
   len = |bytes|;
   idx = 0;
   count = 0;
@@ -38,4 +38,44 @@ Result[Nat*, Nat] from_utf8(Byte* bytes) {
   }
 
   return success(chars);
+}
+
+
+Maybe[Byte*] utf8_encode(Nat* chars) {
+  bytes : Byte*;
+
+  bytes = ();
+  failed = false;
+  for ch <- chars {
+    if ch :: <0..127> { // 0xxxxxxx
+      bytes = (bytes | ch);
+    }
+    else if ch :: <128..2047> { // 110xxxxx  10xxxxxx
+      b1 = 192 + ch / 64;
+      b2 = 128 + mod(ch, 64);
+      fail if not (b1 :: Byte and b2 :: Byte);
+      bytes = (bytes | b1, b2);
+    }
+    else if ch :: <2048..65535> { // 1110xxxx  10xxxxxx  10xxxxxx
+      b1 = 224 + ch / 4096;
+      b2 = 128 + mod(ch, 4096) / 64;
+      b3 = 128 + mod(ch, 64);
+      fail if not (b1 :: Byte and b2 :: Byte and b3 :: Byte);
+      bytes = (bytes | b1, b2, b3);
+    }
+    else if ch :: <65536..1114111> { // 11110xxx  10xxxxxx  10xxxxxx  10xxxxxx
+      b1 = 240 + ch / 262144;
+      b2 = 128 + mod(ch, 262144) / 4096;
+      b3 = 128 + mod(ch, 4096) / 64;
+      b4 = 128 + mod(ch, 64);
+      fail if not (b1 :: Byte and b2 :: Byte and b3 :: Byte and b4 :: Byte);
+      bytes = (bytes | b1, b2, b3, b4);
+    }
+    else {
+      failed = true;
+      break;
+    }
+  }
+
+  return if failed then nothing else just(bytes);
 }
