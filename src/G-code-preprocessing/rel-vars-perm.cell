@@ -182,20 +182,36 @@ implicit program : Program {
 
 
     [+Nat -> Nat] rel_var_args_perm(NzNat arity, [[+Nat]] keys) {
-      idxs = (i : i < arity);
-      return [i -> i : i <~ idxs] if keys == [];
-      ps = [[i -> p(i) : i <~ idxs] : p <- permutations(arity)];
-      valid_keys = valid_keys_by_arity[arity];
-      for p <- rand_sort(ps) {
-        perm_keys = [[p(i) : i <- k] : k <- keys];
-        return p if valid_keys(perm_keys);
+      if arity == 1 {
+        assert keys == [];
+        perm = [0 -> 0];
       }
-      fail;
+      else if arity == 2 {
+        perm = if keys == [[1]] then [0 -> 1, 1 -> 0] else [0 -> 0, 1 -> 1];
+      }
+      else {
+        assert arity == 3;
+        perm = if tern_rel_perm_by_key(keys, *)
+          then tern_rel_perm_by_key(keys, !!)
+          else [0 -> 0, 1 -> 1, 2 -> 2];
+      }
+      perm_keys = [[perm(i) : i <- k] : k <- keys];
+      assert keys == [] or valid_keys_by_arity(arity, !!)(perm_keys);
+      return perm;
     }
 
 
+    [[[+Nat]] -> [+Nat -> Nat]] tern_rel_perm_by_key = [
+      [[0, 2]]                  -> [0 -> 0, 1 -> 2, 2 -> 1],
+      [[1, 2]]                  -> [0 -> 2, 1 -> 0, 2 -> 1],
+      [[0, 1], [0, 2]]          -> [0 -> 1, 1 -> 0, 2 -> 2],
+      [[0, 2], [1, 2]]          -> [0 -> 0, 1 -> 2, 2 -> 1],
+      [[0, 2], [1]]             -> [0 -> 0, 1 -> 2, 2 -> 1],
+      [[1, 2], [0]]             -> [0 -> 2, 1 -> 0, 2 -> 1]
+    ];
+
+
     [NzNat -> [+[[+Nat]]]] valid_keys_by_arity = [
-      1 -> [[]],
       2 -> [[[0]], [[0], [1]]],
       3 -> [
         [[0, 1]],

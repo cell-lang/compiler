@@ -807,8 +807,10 @@ implicit filename : String, lines : Nat** {
       memb_copy           = prev_var_value(signal_var(get_var_id(inner_match))),
       integer             = object(get_integer(inner_match)),
       symbol              = object(get_qualified_symbol(inner_match)),
-      string              = build_string_expr_ast(inner_match),
       float               = get_float_lit(inner_match),
+      string              = build_string_expr_ast(inner_match),
+      date                = build_date_literal_ast(inner_match),
+      time                = build_time_literal_ast(inner_match),
       true                = object(true),
       false               = object(false),
       set                 = build_set_expr_ast(block_node(inner_match)),
@@ -947,7 +949,23 @@ implicit filename : String, lines : Nat** {
     return syn_tag_obj_expr(tag, obj);
   }
 
-  SynExpr build_string_expr_ast(RuleMatch mtc) = syn_tag_obj_expr(object(:string), syn_seq_expr((object(ch) : ch <- chars(get_string(mtc)))));
+  SynExpr build_string_expr_ast(RuleMatch mtc) =
+    syn_tag_obj_expr(
+      object(:string),
+      syn_seq_expr((object(ch) : ch <- chars(get_string(mtc))))
+    );
+
+  SynExpr build_date_literal_ast(RuleMatch mtc) =
+    syn_tag_obj_expr(
+      object(:date),
+      object(_untag_(get_date(mtc)))
+    );
+
+  SynExpr build_time_literal_ast(RuleMatch mtc) =
+    syn_tag_obj_expr(
+      object(:time),
+      object(_untag_(get_time(mtc)))
+    );
 
   SynExpr build_builtin_call_expr_ast(RuleMatch mtc) {
     nodes = rule_seq_nodes(mtc);

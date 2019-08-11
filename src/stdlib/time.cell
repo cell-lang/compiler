@@ -1,0 +1,129 @@
+type Weekday = monday, tuesday, wednesday, thursday, friday, saturday, sunday;
+
+////////////////////////////////////////////////////////////////////////////////
+
+Nat+ non_leap_year_days_per_month = (31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31);
+Nat+ leap_year_days_per_month     = (31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31);
+
+Bool is_leap_year(Int year) = (_mod_(year, 4) == 0 and _mod_(year, 100) != 0) or _mod_(year, 400) == 0;
+
+////////////////////////////////////////////////////////////////////////////////
+
+Maybe[Date] date(Int year, Int month, Int day) {
+  return nothing if month <= 0 or month > 12 or day <= 0;
+
+  is_leap_year = is_leap_year(year);
+
+  if month == 2 and day == 29 {
+    return nothing if not is_leap_year;
+    days_since_year_start = 59;
+  }
+  else {
+    days_per_month = if is_leap_year then leap_year_days_per_month else non_leap_year_days_per_month;
+    month_offsets = month_offsets;
+
+    month_idx = month - 1;
+    last_day = days_per_month(month_idx);
+    return nothing if day > last_day;
+    days_since_year_start = month_offsets(month_idx) + day;
+    days_since_year_start = days_since_year_start + 1 if month > 2 and is_leap_year;
+  }
+
+  if year > 2000 {
+    delta_2001 = year - 2001;
+    leap_years = 8 + delta_2001 / 4 - delta_2001 / 100 + delta_2001 / 400;
+  }
+  else {
+    delta_2000 = 2000 - year;
+    leap_years = 7 - delta_2000 / 4 + delta_2000 / 100 - delta_2000 / 400;
+  }
+  days_at_year_start = 365 * (year - 1970) + leap_years;
+
+  return just(:date(days_at_year_start + days_since_year_start));
+
+
+  Int+ month_offsets = (-1, 30, 58, 89, 119, 150, 180, 211, 242, 272, 303, 333);
+}
+
+
+(Int, Int, Int) year_month_day(Date date) {
+  days = _untag_(date);
+  if days >= 0 {
+    year = 1970;
+    loop {
+      is_leap_year = is_leap_year(year);
+      year_len = if is_leap_year then 366 else 365;
+      if days < year_len {
+        days_per_month = if is_leap_year then leap_year_days_per_month else non_leap_year_days_per_month;
+        for month_idx < 12 {
+          month_len = if month_idx == 1 and is_leap_year then 29 else days_per_month(month_idx);
+          if days < month_len
+            return (year, month_idx+1, days+1);
+          days = days - month_len;
+        }
+        fail;
+      }
+      year = year + 1;
+      days = days - year_len;
+    }
+  }
+  else {
+    year = 1969;
+    loop {
+      is_leap_year = is_leap_year(year);
+      year_len = if is_leap_year then 366 else 365;
+      days = days + year_len;
+      if days >= 0 {
+        days_per_month = if is_leap_year then leap_year_days_per_month else non_leap_year_days_per_month;
+        for month_idx < 12 {
+          month_len = if month_idx == 1 and is_leap_year then 29 else days_per_month(month_idx);
+          if days < month_len
+            return (year, month_idx+1, days+1);
+          days = days - month_len;
+        }
+        fail;
+      }
+      year = year - 1;
+    }
+  }
+}
+
+
+Weekday weekday(Date date) {
+  epoc_day = _untag_(date);
+  weekday_idx = _mod_(epoc_day + 3, 7);
+  weekday_idx = weekday_idx + 7 if weekday_idx < 0;
+  assert weekday_idx >= 0 and weekday_idx < 7;
+  weekdays = weekdays;
+  return weekdays(weekday_idx);
+
+  Weekday+ weekdays = (:monday, :tuesday, :wednesday, :thursday, :friday, :saturday, :sunday);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+Maybe[Time] time(Date date, Int hours, Int minutes, Int seconds, Int nanoseconds) {
+  if is_valid_day_time(hours, minutes, seconds, nanoseconds) {
+    day_time = 1000000000 * (60 * (60 * hours + minutes) + seconds) + nanoseconds;
+    days_since_epoc = _untag_(date);
+    if is_within_range(days_since_epoc, day_time) {
+      day_epoc_offset = 86400000000000 * days_since_epoc;
+      return just(:time(day_epoc_offset + day_time));
+    }
+  }
+  return nothing;
+
+
+  Bool is_valid_day_time(Int hours, Int minutes, Int seconds, Int nanoseconds) =
+    hours >= 0 and hours < 24 and
+    minutes >= 0 and minutes < 60 and
+    seconds >= 0 and seconds < 60 and
+    nanoseconds >= 0 and nanoseconds < 1000000000;
+
+
+  // Valid range is from 1677-09-21 00:12:43.145224192 to 2262-04-11 23:47:16.854775807 inclusive
+  Bool is_within_range(Int days_since_epoc, Int day_time) =
+    (days_since_epoc > -106752 and days_since_epoc < 106751) or
+    (days_since_epoc == -106752 and day_time >= 763145224192) or
+    (days_since_epoc ==  106751 and day_time <= 85636854775807);
+}

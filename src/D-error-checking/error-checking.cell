@@ -166,6 +166,21 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
 
     return [unsupported_foreign_key_type(key)] if not is_supported;
 
+
+    perm_map = rel_vars_perm_map(database.name, !!);
+    src_perm = perm_map(logical_rel_var(key.source_rel_var));
+    src_is_perm = (i, j <- src_perm : i != j);
+    tgt_perm = only([perm_map(logical_rel_var(r)) : r <- key.target_rel_vars]);
+    tgt_is_perm = (i, j <- tgt_perm : i != j);
+
+    perms_are_fine = match (src_args, tgt_args)
+      (just(), just()),           (just(), just(), nothing) = not src_is_perm and not tgt_is_perm,
+      (just(), just(), nothing),  (just(), just())          = not src_is_perm and not tgt_is_perm,
+      _,                          _                         = true;
+
+    return [unsupported_combination_of_keys_and_foreign_keys(key)] if not perms_are_fine;
+
+
     src_symm = database.rel_vars(key.source_rel_var).symmetric;
     tgt_symms = [database.rel_vars(v).symmetric : v <- key.target_rel_vars];
     return [unspecified_foreign_key_error(key)] if |tgt_symms| != 1;

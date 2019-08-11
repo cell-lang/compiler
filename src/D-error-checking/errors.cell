@@ -15,6 +15,7 @@ type CoreWFError  = error_cluster(AnyAuto, [+CoreWFError]),
                     multiple_signature_matches(key: ForeignKey, rel_var: RelVar, signatures: [+NeType+], args: Maybe[NeType]+),
                     no_exact_signature_match(key: ForeignKey, rel_var: RelVar, signature: NeType+, args: Maybe[NeType]+),
                     unsupported_foreign_key_type(key: ForeignKey),
+                    unsupported_combination_of_keys_and_foreign_keys(key: ForeignKey),
                     foreign_key_symmetry_mismatch(key: ForeignKey, src_is_sym: Bool),
                     dependency_loop(signal: AnyReactAutoVar, deps: [AnyReactAutoVar]),
                     invalid_auto_var(var: Var, signal: SignalVar, expr: <Expr, TimeRule>),
@@ -41,6 +42,7 @@ CoreWFError no_signature_match(ForeignKey k, RelVar v, [+NeType+] ss, Maybe[NeTy
 CoreWFError multiple_signature_matches(ForeignKey k, RelVar v, [+NeType+] ss, Maybe[NeType]+ as) = multiple_signature_matches(key: k, rel_var: v, signatures: ss, args: as);
 CoreWFError no_exact_signature_match(ForeignKey k, RelVar v, NeType+ s, Maybe[NeType]+ as) = no_exact_signature_match(key: k, rel_var: v, signature: s, args: as);
 CoreWFError unsupported_foreign_key_type(ForeignKey k) = unsupported_foreign_key_type(key: k);
+CoreWFError unsupported_combination_of_keys_and_foreign_keys(ForeignKey k) = unsupported_combination_of_keys_and_foreign_keys(key: k);
 CoreWFError foreign_key_symmetry_mismatch(ForeignKey k, Bool s) = foreign_key_symmetry_mismatch(key: k, src_is_sym: s);
 CoreWFError invalid_auto_var(Var v, SignalVar s, <Expr, TimeRule> e) = invalid_auto_var(var: v, signal: s, expr: e);
 CoreWFError dependency_loop(AnyReactAutoVar s, [+AnyReactAutoVar] ds) = dependency_loop(signal: s, deps: ds);
@@ -68,6 +70,7 @@ String* error_message(CoreWFError err) =
   multiple_signature_matches()        = multiple_signature_matches_error_message(err.key, err.rel_var, err.signatures, err.args),
   no_exact_signature_match()          = no_exact_signature_match_error_message(err.key, err.rel_var, err.signature, err.args),
   unsupported_foreign_key_type()      = unsupported_foreign_key_type_error_message(err.key),
+  unsupported_combination_of_keys_and_foreign_keys() = unsupported_combination_of_keys_and_foreign_keys_error_message(err.key),
   foreign_key_symmetry_mismatch()     = foreign_key_symmetry_mismatch_error_message(err.key, err.src_is_sym),
   dependency_loop()                   = dependency_loop_error_message(err.signal, err.deps),
   invalid_auto_var()                  = invalid_auto_var_error_message(err.var, err.signal, err.expr),
@@ -146,6 +149,13 @@ String* no_exact_signature_match_error_message(ForeignKey key, RelVar rel_var, N
 
 String* unsupported_foreign_key_type_error_message(ForeignKey key) = (
   "Unsupported foreign key type: " & user_repr(key)
+);
+
+
+String* unsupported_combination_of_keys_and_foreign_keys_error_message(ForeignKey key) = (
+  "There's a problem with the following foreign key: " & user_repr(key),
+  "One or both the relation variables involved in the foreign key have keys",
+  "and this specific combination of keys and foreign keys is not yet supported"
 );
 
 

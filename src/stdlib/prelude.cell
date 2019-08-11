@@ -16,17 +16,19 @@ type Byte           = <0..255>;
 
 type String         = string(Nat*);
 type Ascii          = string(<0..127>*);
-type Char           = string((Nat));
 
 type Opt[T]         = (), (T);
 
 type Nothing        = nothing;
 type Just[T]        = just(T);
-type Maybe[T]       = Nothing, Just[T]; //nothing, just(T);
+type Maybe[T]       = Nothing, Just[T];
 
 type Success[T]     = success(T);
 type Failure[T]     = failure(T);
 type Result[R, E]   = success(R), failure(E);
+
+type Date           = date(Int);
+type Time           = time(Int);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -91,6 +93,23 @@ Ord max(Ord+ ns) {
   return max;
 }
 
+[+T] max_by([+T] set, (T -> Ord) key) {
+  an_elt = any(set);
+  max_elts = (an_elt);
+  max_key = key(an_elt);
+  for elt <- set {
+    elt_key = key(elt);
+    if elt_key == max_key {
+      max_elts = (max_elts | elt);
+    }
+    else if max_key < elt_key {
+      max_elts = (elt);
+      max_key = elt_key;
+    }
+  }
+  return [elt : elt <~ max_elts];
+}
+
 //////////////////////////////////////////////////////////////////////////////
 
 Float (-_) (Float x) = _fneg_(x);
@@ -134,12 +153,6 @@ Float (_^_) (Int   x, Int   y) = _fexp_(_float_(x), _float_(y));
 
 Float sqrt(Float x) = _fsqrt_(x);
 Float sqrt(Int   x) = _fsqrt_(_float_(x));
-
-////////////////////////////////////////////////////////////////////////////////
-
-Bool all(Bool* s)  = not (e <~ s : not e);
-Bool none(Bool* s) = not (e <~ s : e);
-Bool any(Bool* s)  = (e <~ s : e);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -193,27 +206,6 @@ T error(Failure[T] r) = untag(r);
 
 ////////////////////////////////////////////////////////////////////////////////
 
-(A, B)* zip(A* s1, B* s2) {
-  assert |s1| == |s2|;
-  return ((e1, s2(i)) : e1 @ i <- s1);
-}
-
-(A, B, C)* zip(A* s1, B* s2, C* s3) {
-  assert |s1| == |s2| and |s2| == |s3|;
-  return ((e1, s2(i), s3(i)) : e1 @ i <- s1);
-}
-
-(A, B, C, D)* zip(A* s1, B* s2, C* s3, D* s4) {
-  assert |s1| == |s2| and |s2| == |s3| and |s3| == |s4|;
-  return ((e1, s2(i), s3(i), s4(i)) : e1 @ i <- s1);
-}
-
-(A*, B*) unzip((A, B)* ts) = ((t(0) : t <- ts), (t(1) : t <- ts));
-
-(A*, B*, C*) unzip3((A, B, C)* ts) = ((t(0) : t <- ts), (t(1) : t <- ts), (t(2) : t <- ts));
-
-////////////////////////////////////////////////////////////////////////////////
-
 () (_&_)((),    ())    = ();
 T+ (_&_)(T+ s,  ())    = s;
 T+ (_&_)((),    T+ s)  = s;
@@ -236,21 +228,15 @@ T* slice(T* seq, Int first, Int count) = _slice_(seq, first, count);
 T* (_*_)(Nat count, T* seq) = {
   l = |seq|;
   res = ();
-  for i < count {
+  for i < count
     for x <- seq
       res = res & (x);
-  }
   return res;
 };
 
 T* intermix(T* seq, T obj) = join(((obj if i != 0, e) : e @ i <- seq));
 
 T only((T)) = (x?) = x;
-
-T+ insert(T* seq, Nat idx, T elt) {
-  assert idx >= 0 and idx <= |seq|;
-  return (if i == idx then elt else if i < idx then seq(i) else seq(i-1) : i <= |seq|);
-}
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -273,15 +259,15 @@ Bool subset([Any] s1, [Any] s2)   = not (e <- s1 : not s2(e));
 
 // [T] union([T]* sets) = [x : s <~ sets, x <- s];
 
+T any([+T] s) = _rand_elem_(s);
+
 T only([T] set) {
   seq = _isort_(set);
   fail if |seq| != 1;
   return seq(0);
 }
 
-([A], [B]) unzip([(A, B)] ps) = ([p(0) : p <- ps], [p(1) : p <- ps]);
-
-([A], [B], [C]) unzip3([(A, B, C)] ts) = ([t(0) : t <- ts], [t(1) : t <- ts], [t(2) : t <- ts]);
+////////////////////////////////////////////////////////////////////////////////
 
 () isort([]) = ();
 
@@ -319,160 +305,21 @@ T+ isort([+T] s) {
 T untag(<+>(T)) =
   t?(v?) = v;
 
-///////////////////////////////////////////////////////////////////////////////
-
-Byte ascii_null              = 0;
-Byte ascii_tab               = 9;
-Byte ascii_newline           = 10;
-Byte ascii_carriage_return   = 13;
-
-Byte ascii_space             = 32;
-Byte ascii_exclamation_mark  = 33;
-Byte ascii_double_quotes     = 34; // quotation marks, quote, double quote
-Byte ascii_hash              = 35;
-Byte ascii_dollar            = 36;
-Byte ascii_percent           = 37; // percent sign
-Byte ascii_ampersand         = 38;
-Byte ascii_single_quote      = 39;
-Byte ascii_left_parenthesis  = 40;
-Byte ascii_right_parenthesis = 41;
-Byte ascii_asterisk          = 42;
-Byte ascii_plus              = 43;
-Byte ascii_comma             = 44;
-Byte ascii_minus             = 45; // dash, hyphen
-Byte ascii_dot               = 46; // period, point, decimal point
-Byte ascii_slash             = 47;
-Byte ascii_0                 = 48;
-Byte ascii_1                 = 49;
-Byte ascii_2                 = 50;
-Byte ascii_3                 = 51;
-Byte ascii_4                 = 52;
-Byte ascii_5                 = 53;
-Byte ascii_6                 = 54;
-Byte ascii_7                 = 55;
-Byte ascii_8                 = 56;
-Byte ascii_9                 = 57;
-Byte ascii_colon             = 58;
-Byte ascii_semicolon         = 59;
-Byte ascii_lower             = 60; // less than, bra
-Byte ascii_equals            = 61;
-Byte ascii_greater           = 62; // greater than, ket
-Byte ascii_question_mark     = 63;
-Byte ascii_at                = 64;
-Byte ascii_upper_a           = 65;
-Byte ascii_upper_b           = 66;
-Byte ascii_upper_c           = 67;
-Byte ascii_upper_d           = 68;
-Byte ascii_upper_e           = 69;
-Byte ascii_upper_f           = 70;
-Byte ascii_upper_g           = 71;
-Byte ascii_upper_h           = 72;
-Byte ascii_upper_i           = 73;
-Byte ascii_upper_j           = 74;
-Byte ascii_upper_k           = 75;
-Byte ascii_upper_l           = 76;
-Byte ascii_upper_m           = 77;
-Byte ascii_upper_n           = 78;
-Byte ascii_upper_o           = 79;
-Byte ascii_upper_p           = 80;
-Byte ascii_upper_q           = 81;
-Byte ascii_upper_r           = 82;
-Byte ascii_upper_s           = 83;
-Byte ascii_upper_t           = 84;
-Byte ascii_upper_u           = 85;
-Byte ascii_upper_v           = 86;
-Byte ascii_upper_w           = 87;
-Byte ascii_upper_x           = 88;
-Byte ascii_upper_y           = 89;
-Byte ascii_upper_z           = 90;
-Byte ascii_left_bracket      = 91;
-Byte ascii_backslash         = 92;
-Byte ascii_right_bracket     = 93;
-Byte ascii_circumflex        = 94;
-Byte ascii_underscore        = 95;
-Byte ascii_backquote         = 96;
-Byte ascii_lower_a           = 97;
-Byte ascii_lower_b           = 98;
-Byte ascii_lower_c           = 99;
-Byte ascii_lower_d           = 100;
-Byte ascii_lower_e           = 101;
-Byte ascii_lower_f           = 102;
-Byte ascii_lower_g           = 103;
-Byte ascii_lower_h           = 104;
-Byte ascii_lower_i           = 105;
-Byte ascii_lower_j           = 106;
-Byte ascii_lower_k           = 107;
-Byte ascii_lower_l           = 108;
-Byte ascii_lower_m           = 109;
-Byte ascii_lower_n           = 110;
-Byte ascii_lower_o           = 111;
-Byte ascii_lower_p           = 112;
-Byte ascii_lower_q           = 113;
-Byte ascii_lower_r           = 114;
-Byte ascii_lower_s           = 115;
-Byte ascii_lower_t           = 116;
-Byte ascii_lower_u           = 117;
-Byte ascii_lower_v           = 118;
-Byte ascii_lower_w           = 119;
-Byte ascii_lower_x           = 120;
-Byte ascii_lower_y           = 121;
-Byte ascii_lower_z           = 122;
-Byte ascii_left_brace        = 123;
-Byte ascii_bar               = 124; // vertical bar, pipe
-Byte ascii_right_brace       = 125;
-Byte ascii_tilde             = 126;
-
-Bool is_digit(Nat ch) = ch >= ascii_0 and ch <= ascii_9;
-Bool is_lower(Nat ch) = ch >= ascii_lower_a and ch <= ascii_lower_z;
-Bool is_upper(Nat ch) = ch >= ascii_upper_a and ch <= ascii_upper_z;
-
-Bool is_hex_digit(Nat ch) = is_digit(ch) or
-                            (ch >= ascii_lower_a and ch <= ascii_lower_f) or
-                            (ch >= ascii_upper_a and ch <= ascii_upper_f);
-
-Bool is_space(Int ch) = ch == ascii_space or
-                        ch == ascii_tab or
-                        ch == ascii_newline or
-                        ch == ascii_carriage_return;
-
-Nat lower(Nat ch) = if is_upper(ch) then nat(ch + 32) else ch;
-Nat upper(Nat ch) = if is_lower(ch) then nat(ch - 32) else ch;
-
 ////////////////////////////////////////////////////////////////////////////////
 
 String string(Nat* chs) = :string(chs);
 
-Nat* chars(String str)  = string(chs?) = chs;
+Nat length(String s) = |_untag_(s)|;
 
-Nat length(String s)    = |chars(s)|;
+Nat (_[_]) (String str, Int idx) = _untag_(str)(idx);
 
-Nat (_[_]) (String str, Int idx) = chars(str)(idx);
+String (_&_) (String s1, String s2)   = string(_untag_(s1) & _untag_(s2));
+String append(String* ss)             = string(join((_untag_(s) : s <- ss)));
+String append(String* ss, String sep) = string(join(intermix((_untag_(s) : s <- ss), _untag_(sep))));
+String reverse(String s)              = string(reverse(_untag_(s)));
+String substr(String s, Int n, Int m) = string(_slice_(_untag_(s), n, m));
 
-String (_&_) (String s1, String s2)   = string(chars(s1) & chars(s2));
-String append(String* ss)             = string(join((chars(s) : s <- ss)));
-String append(String* ss, String sep) = string(join(intermix((chars(s) : s <- ss), chars(sep))));
-String reverse(String s)              = string(reverse(chars(s)));
-String substr(String s, Int n, Int m) = string(_slice_(chars(s), n, m));
+String take(String s, Int count) = string(take(_untag_(s), count));
+String drop(String s, Int count) = string(drop(_untag_(s), count));
 
-String take(String s, Int count) = string(take(chars(s), count));
-String drop(String s, Int count) = string(drop(chars(s), count));
-
-String (_*_) (Nat len, String str)    = string(len * chars(str));
-
-Bool (_<_) (String str1, String str2) = {
-  chs1 = chars(str1);
-  chs2 = chars(str2);
-
-  len1 = |chs1|;
-  len2 = |chs2|;
-  min_len = min(len1, len2);
-
-  for i < min_len {
-    ch1 = chs1(i);
-    ch2 = chs2(i);
-    return true  if ch1 < ch2;
-    return false if ch1 > ch2;
-  }
-
-  return len1 < len2;
-};
+String (_*_) (Nat len, String str) = string(len * _untag_(str));

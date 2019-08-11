@@ -79,6 +79,8 @@ Bool matches(TokenMatchingRule rule, PlainToken token) =
   integer,            <*..*>                    = true,
   float,              float_lit()               = true,
   string,             string()                  = true,
+  date,               date()                    = true,
+  time,               time()                    = true,
   unary_operator,     operator(op?)             = op :: UnaryOperator,
   binary_operator,    operator(op?)             = op :: BinaryOperator,
   builtin,            builtin()                 = true,
@@ -86,7 +88,7 @@ Bool matches(TokenMatchingRule rule, PlainToken token) =
   pref_lowercase_id,  pref_lowercase_id()       = true,
   time_span,          nanoseconds()             = true,
   keyword(kw?),       lowercase_id(a?)          = kw == a,
-  _,                  _                         = rule :: AmberSymb and rule == token;
+  _,                  _                         = rule :: LangSymb and rule == token;
 
 
 ParserResult parse_all(ParsingRule rule, AnnotatedToken+ tokens, [Atom -> ParsingRule] rec_rules) {
@@ -268,7 +270,7 @@ type FastParserRes  = no_match, (RuleMatch, Nat);
 
 
 TokenMatchingRule matching_atomic_rule(PlainToken token) {
-  return token if token :: AmberSymb;
+  return token if token :: LangSymb;
   return match (token)
     lowercase_id()      = lowercase_id,
     mixedcase_id()      = mixedcase_id,
@@ -277,6 +279,8 @@ TokenMatchingRule matching_atomic_rule(PlainToken token) {
     <*..*>              = integer,
     float_lit()         = float,
     string()            = string,
+    date()              = :date,
+    time()              = :time,
     operator(op?)       = operator_matching_rule(op),
     builtin()           = builtin,
     qual_var()          = qual_var,

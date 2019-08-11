@@ -1,0 +1,81 @@
+Result[Nat*, Nat] utf8_decode(Byte* bytes) {
+  len = |bytes|;
+  idx = 0;
+  count = 0;
+  chars = ();
+  while idx < len {
+    byte = bytes(idx);
+    if byte / 128 == 0 { // 0xxxxxxx
+      size = 0;
+      char = byte;
+    }
+    else if byte / 32 == 6 { // 110xxxxx  10xxxxxx
+      size = 1;
+      char = mod(byte, 32);
+    }
+    else if byte / 16 == 14 { // 1110xxxx  10xxxxxx  10xxxxxx
+      size = 2;
+      char = mod(byte, 16);
+    }
+    else if byte / 8 == 30 { // 11110xxx  10xxxxxx  10xxxxxx  10xxxxxx
+      size = 3;
+      char = mod(byte, 8);
+    }
+    else {
+      return failure(nat(idx));
+    }
+
+    return failure(nat(idx)) if idx + size >= len;
+
+    for i = idx+1 ... idx+size {
+      byte = bytes(i);
+      return failure(nat(i)) if byte / 64 != 2;
+      old_char = char;
+      char = 64 * char + mod(byte, 64);
+    }
+    idx = idx + 1 + size;
+    chars = (chars | nat(char));
+  }
+
+  return success(chars);
+}
+
+
+Maybe[Byte*] utf8_encode(Nat* chars) {
+  bytes : Byte*;
+
+  bytes = ();
+  failed = false;
+  for ch <- chars {
+    if ch :: <0..127> { // 0xxxxxxx
+      bytes = (bytes | ch);
+    }
+    else if ch :: <128..2047> { // 110xxxxx  10xxxxxx
+      b1 = 192 + ch / 64;
+      b2 = 128 + mod(ch, 64);
+      fail if not (b1 :: Byte and b2 :: Byte);
+      bytes = (bytes | b1, b2);
+    }
+    else if ch :: <2048..65535> { // 1110xxxx  10xxxxxx  10xxxxxx
+      b1 = 224 + ch / 4096;
+      b2 = 128 + mod(ch, 4096) / 64;
+      b3 = 128 + mod(ch, 64);
+      fail if not (b1 :: Byte and b2 :: Byte and b3 :: Byte);
+      bytes = (bytes | b1, b2, b3);
+    }
+    else if ch :: <65536..1114111> { // 11110xxx  10xxxxxx  10xxxxxx  10xxxxxx
+      b1 = 240 + ch / 262144;
+      b2 = 128 + mod(ch, 262144) / 4096;
+      b3 = 128 + mod(ch, 4096) / 64;
+      b4 = 128 + mod(ch, 64);
+      fail if not (b1 :: Byte and b2 :: Byte and b3 :: Byte and b4 :: Byte);
+      bytes = (bytes | b1, b2, b3, b4);
+    }
+    else {
+      failed = true;
+      break;
+    }
+  }
+
+  return if failed then nothing else just(bytes);
+}
