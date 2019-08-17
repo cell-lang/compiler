@@ -275,6 +275,18 @@ implicit typedefs : [TypeName -> NeType] {
     tuple_type(ts?) = just(ts),
     type_ref(ts?)   = maybe_tuple_type_fields(nonempty_type(expand_type_ref(ts, typedefs))),
     _               = nothing;
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  NeType maybe_type_type_param(NeType type) {
+    return nonempty_type(type_param(type));
+
+    Type type_param(Type type) =
+      symb_type(object(nothing))  = empty_type,
+      tag_obj_type()              = {assert type.tag_type == symb_type(:just); return type.obj_type;},
+      type_ref(ts?)               = type_param(expand_type_ref(ts, typedefs)),
+      union_type(ts?)             = union_type([type_param(t) : t <- ts]);
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
