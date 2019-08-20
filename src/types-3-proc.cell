@@ -526,6 +526,20 @@ type OptCompMethod  = opt_comp_method(
 
 type CompiledUpdate = compiled_update(args_vars: <StdVar, FnArg>*, body: Instr*);
 
+type HandlerWrapper = symbol(SymbObj),
+                      tagged_record(
+                        tag:            SymbObj,
+                        fields:         (SymbObj, NeType, AnyLocVar)+,
+                        msg_inst_code:  Instr*,
+                        msg_expr:       ObjExpr
+                      ),
+                      tagged_tuple(
+                        tag:            SymbObj,
+                        fields:         NeType+,
+                        msg_inst_code:  Instr*,
+                        msg_expr:       ObjExpr
+                      );
+
 type ReactBlock = react_block(
                     name:                 AutoSymbol,
                     ord_inputs:           Symbol*,
@@ -566,6 +580,7 @@ type StaticBlock = static_block(
                     foreign_keys_check_code:      Instr*,
                     methods:                      [MethodId -> OptCompMethod],
                     updates:                      [UpdateId -> CompiledUpdate],
+                    exported_handlers:            [UpdateId -> HandlerWrapper],
                     accessors:                    [MethodId -> CompiledMethod],
                     msg_memb_pred:                Maybe[MembTestPredId] ## REPLACE THE MAYBE WITH A NULL OBJECT?
                   );

@@ -2,7 +2,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
   StaticBlock compiled_database([RelVar -> [+Nat -> Nat]] rel_vars_args_perms) {
     methods = compiled_database_methods(database.methods);
     updates = compiled_database_updates(database.updates);
-    handlers = compiled_database_handlers(database.handlers);
+    handlers, exported_handlers = compiled_database_handlers(database.handlers);
     msg_types = [h.type : h <- database.handlers];
     msg_memb_pred = if msg_types != [] then just(memb_test_preds_map[ne_union_type(msg_types)]) else nothing;
 
@@ -39,6 +39,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
       methods:                      methods,
       accessors:                    [], ## TODO: REMOVE ALTOGETHER
       updates:                      handlers & updates,
+      exported_handlers:            exported_handlers,
       msg_memb_pred:                msg_memb_pred
     );
   }
@@ -561,18 +562,63 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
   }
 
 
-  [UpdateId -> CompiledUpdate] compiled_database_handlers([Handler] handlers) {
-    return [] if handlers == [];
+  ([UpdateId -> CompiledUpdate], [UpdateId -> HandlerWrapper]) compiled_database_handlers([Handler] handlers) {
+    return ([], []) if handlers == [];
     sorted_handlers = rand_sort(handlers);
     comp_handlers = merge(([handler_id(i) -> compiled_handler(h)] : h @ i <- sorted_handlers));
+    exported_handlers = [
+      handler_id(i) -> value(interface)
+      : h @ i <~ sorted_handlers, interface = interface(h), interface != nothing
+    ];
     dispatcher_body = if |handlers| != 1
       then update_dispatch_code(database.name, sorted_handlers)
       else (try_update(database.name, polymorphic_update_id(only(handlers), 0), (fn_arg(0))), ret_val(0));
     dispatcher = compiled_update((fn_arg(0)), dispatcher_body);
-    return comp_handlers & [main_handler -> dispatcher];
+    return (comp_handlers & [main_handler -> dispatcher], exported_handlers);
+
+
+    Maybe[HandlerWrapper] interface(Handler handler) {
+      if is_symb_singl_type(handler.type)
+        return just(:symbol(only_symb(handler.type)));
+
+      res = destructured_tagged_record(handler.type);
+      if res != nothing {
+        // SymbObj, [+SymbObj -> NeType]
+        tag, fields = value(res);
+        ord_fields = ((l, t, var(_untag_(l))) : l, t <- isort(fields));
+
+        rec_expr = map_expr([(key: l, value: var(_untag_(l))) : l, t <- fields]);
+        inst_expr = tag_obj_expr(tag, rec_expr);
+
+        env = [var(_untag_(l)) -> t : l, t <- fields];
+        let context = database, surrogates = [], typed_vars = []
+          code, surr, unused_var = opt_eval_code(inst_expr, env, blank_var_gen);
+
+        return just(tagged_record(tag: tag, fields: ord_fields, msg_inst_code: code, msg_expr: surr));
+
+        // tag_obj_expr(obj: map_expr([(key: object(arg), value: var(a))]), tag: object(do_1)),
+        // tag_obj_expr(
+        //   obj: map_expr([(key: object(arg1), value: var(a1)), (key: object(arg2), value: var(a2))]),
+        //   tag: object(do_2)
+        // ),
+
+
+
+      }
+
+      res = destructured_tagged_tuple(handler.type);
+      if res != nothing {
+        // SymbObj, NeType+
+        symb, fields_types = value(res);
+        // return just(tagged_tuple(tag: symb, fields: fields_types));
+      }
+
+      return nothing;
+    }
 
 
     CompiledUpdate compiled_handler(Handler handler) = compiled_update((var(:this)), handler_body(handler));
+
 
     Instr* handler_body(Handler handler) {
       // Compiling the body of the handler

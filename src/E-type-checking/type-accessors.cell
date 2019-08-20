@@ -287,6 +287,53 @@ implicit typedefs : [TypeName -> NeType] {
       type_ref(ts?)               = type_param(expand_type_ref(ts, typedefs)),
       union_type(ts?)             = union_type([type_param(t) : t <- ts]);
   }
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  Maybe[(SymbObj, [+SymbObj -> NeType])] destructured_tagged_record(NeType type) {
+    return tagged_record(type);
+
+
+    Maybe[(SymbObj, [+SymbObj -> NeType])] tagged_record(Type type) =
+      tag_obj_type()  = if type.tag_type :: SymbType then {
+                          res = record(type.obj_type);
+                          return if res != nothing
+                            then just((_untag_(type.tag_type), value(res)))
+                            else nothing;
+                        }
+                        else nothing,
+      type_ref(ts?)   = tagged_record(expand_type_ref(ts, typedefs)),
+      _               = nothing;
+
+
+    Maybe[[+SymbObj -> NeType]] record(Type type) =
+      ne_record_type(fs?) = just([f -> info.type : f, info <- fs]),
+      type_ref(ts?)       = record(expand_type_ref(ts, typedefs)),
+      _                   = nothing;
+  }
+
+
+  Maybe[(SymbObj, NeType+)] destructured_tagged_tuple(NeType type) {
+    return tagged_tuple(type);
+
+
+    Maybe[(SymbObj, NeType+)] tagged_tuple(Type type) =
+      tag_obj_type()  = if type.tag_type :: SymbType then {
+                          res = tuple(type.obj_type);
+                          return if res != nothing
+                            then just((_untag_(type.tag_type), value(res)))
+                            else nothing;
+                        }
+                        else nothing,
+      type_ref(ts?)   = tagged_tuple(expand_type_ref(ts, typedefs)),
+      _               = nothing;
+
+
+    Maybe[NeType+] tuple(Type type) =
+      tuple_type(ts?) = just(ts),
+      type_ref(ts?)   = tuple(expand_type_ref(ts, typedefs)),
+      _               = nothing;
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
