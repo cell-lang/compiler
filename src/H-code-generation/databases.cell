@@ -578,39 +578,58 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 
 
     Maybe[HandlerWrapper] interface(Handler handler) {
-      if is_symb_singl_type(handler.type)
-        return just(:symbol(only_symb(handler.type)));
+      if is_symb_singl_type(handler.type) {
+        symb = only_symb(handler.type);
+        return just(handler_wrapper(tag: symb, fields: (), msg_inst_code: (), msg_expr: symb));
+      }
 
       res = destructured_tagged_record(handler.type);
       if res != nothing {
-        // SymbObj, [+SymbObj -> NeType]
         tag, fields = value(res);
-        ord_fields = ((l, t, var(_untag_(l))) : l, t <- isort(fields));
+        ord_fields = ((t, var(_untag_(l))) : l, t <- isort(fields));
 
         rec_expr = map_expr([(key: l, value: var(_untag_(l))) : l, t <- fields]);
         inst_expr = tag_obj_expr(tag, rec_expr);
 
         env = [var(_untag_(l)) -> t : l, t <- fields];
-        let context = database, surrogates = [], typed_vars = []
+        let context = database, surrogates = [], typed_vars = [] {
           code, surr, unused_var = opt_eval_code(inst_expr, env, blank_var_gen);
+        }
 
-        return just(tagged_record(tag: tag, fields: ord_fields, msg_inst_code: code, msg_expr: surr));
-
-        // tag_obj_expr(obj: map_expr([(key: object(arg), value: var(a))]), tag: object(do_1)),
-        // tag_obj_expr(
-        //   obj: map_expr([(key: object(arg1), value: var(a1)), (key: object(arg2), value: var(a2))]),
-        //   tag: object(do_2)
-        // ),
-
-
-
+        return just(handler_wrapper(tag: tag, fields: ord_fields, msg_inst_code: code, msg_expr: surr));
       }
 
       res = destructured_tagged_tuple(handler.type);
       if res != nothing {
-        // SymbObj, NeType+
-        symb, fields_types = value(res);
-        // return just(tagged_tuple(tag: symb, fields: fields_types));
+        tag, fields_types = value(res);
+        fields = ((t, hidden_var(i)) : t @ i <- fields_types);
+
+        tuple_expr = seq_expr((hidden_var(i) : i < |fields_types|));
+        inst_expr = tag_obj_expr(tag, tuple_expr);
+
+        env = [hidden_var(i) -> t : t @ i <~ fields_types];
+        let context = database, surrogates = [], typed_vars = [] {
+          code, surr, unused_var = opt_eval_code(inst_expr, env, blank_var_gen);
+        }
+
+        return just(handler_wrapper(tag: tag, fields: fields, msg_inst_code: code, msg_expr: surr));
+      }
+
+      res = destructured_tagged_value(handler.type);
+      if res != nothing {
+        tag, inner_type = value(res);
+
+        inner_var = hidden_var(0);
+        field = (inner_type, inner_var);
+
+        inst_expr = tag_obj_expr(tag, inner_var);
+
+        env = [inner_var -> inner_type];
+        let context = database, surrogates = [], typed_vars = [] {
+          code, surr, unused_var = opt_eval_code(inst_expr, env, blank_var_gen);
+        }
+
+        return just(handler_wrapper(tag: tag, fields: (field), msg_inst_code: code, msg_expr: surr));
       }
 
       return nothing;

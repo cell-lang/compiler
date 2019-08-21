@@ -334,6 +334,19 @@ implicit typedefs : [TypeName -> NeType] {
       type_ref(ts?)   = tuple(expand_type_ref(ts, typedefs)),
       _               = nothing;
   }
+
+
+  Maybe[(SymbObj, NeType)] destructured_tagged_value(NeType type) {
+    return tagged_value(type);
+
+
+    Maybe[(SymbObj, NeType)] tagged_value(Type type) =
+      tag_obj_type()  = if type.tag_type :: SymbType
+                          then just((_untag_(type.tag_type), type.obj_type))
+                          else nothing,
+      type_ref(ts?)   = tagged_value(expand_type_ref(ts, typedefs)),
+      _               = nothing;
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
