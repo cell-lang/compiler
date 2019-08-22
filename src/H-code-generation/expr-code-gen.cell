@@ -1585,11 +1585,10 @@ implicit program           : Program,
   // builtin_call(name: BuiltIn, args: Expr+);
   (Instr*, ObjExpr, VarGen) builtin_call_opt_eval_info(BuiltinCall expr, VarGen init_var_gen) {
     // Evaluation of the arguments
-    args_eval_code, args_surrs, unused_var = opt_eval_info(expr.args, init_var_gen);
+    args_eval_code, args_surrs, var_gen = opt_eval_info(expr.args, init_var_gen);
 
-    // Builtin call. The arguments are not needed anymore once the call
-    // returns, so we can restart from the initial variables generator
-    code, surr, var_gen = eval_info(expr.name, nonempty(args_surrs), init_var_gen);
+    // Builtin call
+    code, surr, var_gen = eval_info(expr.name, nonempty(args_surrs), var_gen);
 
     return (args_eval_code & code, surr, var_gen);
 
