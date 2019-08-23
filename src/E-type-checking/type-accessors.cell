@@ -290,24 +290,23 @@ implicit typedefs : [TypeName -> NeType] {
 
   //////////////////////////////////////////////////////////////////////////////
 
-  Maybe[(SymbObj, [+SymbObj -> NeType])] destructured_tagged_record(NeType type) {
+  Maybe[(SymbObj, [+SymbObj -> NeType], [SymbObj])] destructured_tagged_record(NeType type) {
     return tagged_record(type);
 
 
-    Maybe[(SymbObj, [+SymbObj -> NeType])] tagged_record(Type type) =
-      tag_obj_type()  = if type.tag_type :: SymbType then {
+    Maybe[(SymbObj, [+SymbObj -> NeType], [SymbObj])] tagged_record(Type type) =
+      tag_obj_type()  = { return nothing if not type.tag_type :: SymbType;
                           res = record(type.obj_type);
-                          return if res != nothing
-                            then just((_untag_(type.tag_type), value(res)))
-                            else nothing;
-                        }
-                        else nothing,
+                          return nothing if res == nothing;
+                          types, optional = value(res);
+                          return just((_untag_(type.tag_type), types, optional));
+                        },
       type_ref(ts?)   = tagged_record(expand_type_ref(ts, typedefs)),
       _               = nothing;
 
 
-    Maybe[[+SymbObj -> NeType]] record(Type type) =
-      ne_record_type(fs?) = just([f -> info.type : f, info <- fs]),
+    Maybe[([+SymbObj -> NeType], [SymbObj])] record(Type type) =
+      ne_record_type(fs?) = just(([f -> info.type : f, info <- fs], [f : f, info <- fs, info.optional])),
       type_ref(ts?)       = record(expand_type_ref(ts, typedefs)),
       _                   = nothing;
   }

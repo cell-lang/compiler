@@ -84,8 +84,19 @@ implicit syn_prg : SynPrg, artifact : SchemaDef {
   Handler desugar_handler(HandlerDef handler_def) {
     type = desugar_plain_type(handler_def.type);
     body = desugar_stmts(handler_def.body, [var(:this)], artifact = handler_def, impl_args = []);
-    handler = handler(type, body);
+    fields_order = fields_order(handler_def.type);
+
+    handler = if fields_order != nothing
+      then handler(type, body, value(fields_order))
+      else handler(type, body);
+
     return transfer(handler, handler_def);
+
+
+    Maybe[Symbol+] fields_order(SynType type) =
+      tag_obj_type()    = fields_order(type.obj_type),
+      record_type(fs?)  = just((_untag_(f.label) : f <- fs)),
+      _                 = nothing;
   }
 }
 
