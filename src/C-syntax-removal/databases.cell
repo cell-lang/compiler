@@ -94,9 +94,19 @@ implicit syn_prg : SynPrg, artifact : SchemaDef {
 
 
     Maybe[Symbol+] fields_order(SynType type) =
-      tag_obj_type()    = fields_order(type.obj_type),
-      record_type(fs?)  = just((_untag_(f.label) : f <- fs)),
-      _                 = nothing;
+      tag_obj_type()                  = fields_order(type.obj_type),
+      record_type(fs?)                = just((_untag_(f.label) : f <- fs)),
+      type_ref(type_symbol() ts?)     = { type_name = type_name(ts, 0);
+                                          return if fields_order_map(type_name, *)
+                                            then just(fields_order_map(type_name, !!))
+                                            else nothing;
+                                        },
+      type_ref(par_type_symbol() ts?) = { type_name = type_name(ts.symbol, |ts.params|);
+                                          return if fields_order_map(type_name, *)
+                                            then just(fields_order_map(type_name, !!))
+                                            else nothing;
+                                        },
+      _                               = nothing;
   }
 }
 
@@ -118,6 +128,7 @@ type AttrRelVar2 = attr_relvar(name: Symbol, type: NeType, cardinality: AttrCard
 
 RelVarsDecl2 desugar_nested_types(RelVarsDecl decl) =
   relvars_decl(
+
     name:       decl.name,
     col_types:  (desugar_plain_type(t) : t <- decl.col_types),
     keys:       decl.keys,

@@ -198,6 +198,18 @@ NeType desugar_type(SynType type, (<SynTypeRef, SynTypeVar> -> NeType) desugar) 
   return type_map & par_type_map;
 }
 
+
+[TypeName -> Symbol+] create_fields_order_map([Typedef] tdefs, [ParTypedef] par_tdefs) {
+  type_map = [type_name(td.name, 0) -> fields_order(td.type) : td <- tdefs];
+  par_type_map = [type_name(td.name, |td.params|) -> fields_order(td.type) : td <- par_tdefs];
+  return [tn -> value(fs) : tn, fs <- type_map | tn, fs <- par_type_map, fs != nothing];
+
+  Maybe[Symbol+] fields_order(SynType type) =
+    record_type(fs?)  = just((_untag_(f.label) : f <- fs)),
+    tag_obj_type()    = fields_order(type.obj_type),
+    _                 = nothing;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
