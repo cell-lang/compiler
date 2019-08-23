@@ -592,7 +592,10 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
             then handler.fields_order
             else (_untag_(only(keys(fields))));
 
-          ord_fields = ((fields(object(l)), var(l)) : l @ i <- fields_order);
+          ord_fields = ({
+            field_type = fields(object(l));
+            return (field_type, var(l), memb_test_preds_map(field_type, !!));
+          } : l @ i <- fields_order);
 
           rec_expr = map_expr([(key: l, value: var(_untag_(l))) : l, t <- fields]);
           inst_expr = tag_obj_expr(tag, rec_expr);
@@ -608,7 +611,10 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
             opt_field = _untag_(only(optional));
             fields_order = (f : f <- fields_order, f != opt_field);
 
-            ord_fields = ((fields(object(l)), var(l)) : l @ i <- fields_order);
+            ord_fields = ({
+              field_type = fields(object(l));
+              return (field_type, var(l), memb_test_preds_map(field_type, !!));
+            } : l @ i <- fields_order);
 
             rec_expr = map_expr(nonempty([(key: l, value: var(s)) : l, t <- fields, s = _untag_(l), s != opt_field]));
             inst_expr = tag_obj_expr(tag, rec_expr);
@@ -629,7 +635,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
       res = destructured_tagged_tuple(handler.type);
       if res != nothing {
         tag, fields_types = value(res);
-        fields = ((t, hidden_var(i)) : t @ i <- fields_types);
+        fields = ((t, hidden_var(i), memb_test_preds_map(t, !!)) : t @ i <- fields_types);
 
         tuple_expr = seq_expr((hidden_var(i) : i < |fields_types|));
         inst_expr = tag_obj_expr(tag, tuple_expr);
@@ -647,7 +653,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
         tag, inner_type = value(res);
 
         inner_var = hidden_var(0);
-        field = (inner_type, inner_var);
+        field = (inner_type, inner_var, memb_test_preds_map(inner_type, !!));
 
         inst_expr = tag_obj_expr(tag, inner_var);
 
