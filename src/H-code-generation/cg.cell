@@ -370,9 +370,24 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
     exprs_types = retrieve_from_nested_exprs(db, retrieve_types);
     method_args_types = [t : m <- db.methods, t, unused_var <~ m.args];
     msg_type = [ne_union_type([h.type : h <- db.handlers]) if db.handlers != []];
+    msg_args_types = [t : h <- db.handlers, t <- runtime_checked_types(h)];
     memb_vars_types = [info.type : unused_var, info <- db.state_vars];
     rel_vars_types = [t : unused_var, info <- db.rel_vars, t <~ info.signature];
-    return union([exprs_types, method_args_types, msg_type, memb_vars_types, rel_vars_types]);
+    return union([exprs_types, method_args_types, msg_type, msg_args_types, memb_vars_types, rel_vars_types]);
+
+
+    [NeType] runtime_checked_types(Handler handler) {
+      res = destructured_tagged_record(handler.type);
+      return values(value(res)(1)) if res != nothing;
+
+      res = destructured_tagged_tuple(handler.type);
+      return set(value(res)(1)) if res != nothing;
+
+      res = destructured_tagged_value(handler.type);
+      return [value(res)(1)] if res != nothing;
+
+      return [];
+    }
   }
 
 

@@ -2,7 +2,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
   StaticBlock compiled_database([RelVar -> [+Nat -> Nat]] rel_vars_args_perms) {
     methods = compiled_database_methods(database.methods);
     updates = compiled_database_updates(database.updates);
-    handlers = compiled_database_handlers(database.handlers);
+    handlers, exported_handlers = compiled_database_handlers(database.handlers);
     msg_types = [h.type : h <- database.handlers];
     msg_memb_pred = if msg_types != [] then just(memb_test_preds_map[ne_union_type(msg_types)]) else nothing;
 
@@ -37,11 +37,12 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
       rel_vars_load_code:           database_rel_vars_load_code(rel_vars_args_perms),
       foreign_keys_check_code:      database_foreign_keys_check_code,
       methods:                      methods,
-      accessors:                    [], ## TODO: REMOVE ALTOGETHER
       updates:                      handlers & updates,
+      exported_handlers:            exported_handlers,
       msg_memb_pred:                msg_memb_pred
     );
   }
+
 
   Instr* database_init_code {
     state_vars = database.state_vars;
@@ -561,18 +562,115 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
   }
 
 
-  [UpdateId -> CompiledUpdate] compiled_database_handlers([Handler] handlers) {
-    return [] if handlers == [];
+  ([UpdateId -> CompiledUpdate], [UpdateId, HandlerWrapper]) compiled_database_handlers([Handler] handlers) {
+    return ([], []) if handlers == [];
     sorted_handlers = rand_sort(handlers);
     comp_handlers = merge(([handler_id(i) -> compiled_handler(h)] : h @ i <- sorted_handlers));
+    exported_handlers = [
+      handler_id(i), interface
+      : h @ i <~ sorted_handlers, interfaces = interfaces(h),
+        interfaces != nothing, interface <- value(interfaces)
+    ];
     dispatcher_body = if |handlers| != 1
       then update_dispatch_code(database.name, sorted_handlers)
       else (try_update(database.name, polymorphic_update_id(only(handlers), 0), (fn_arg(0))), ret_val(0));
     dispatcher = compiled_update((fn_arg(0)), dispatcher_body);
-    return comp_handlers & [main_handler -> dispatcher];
+    return (comp_handlers & [main_handler -> dispatcher], exported_handlers);
+
+
+    Maybe[[+HandlerWrapper]] interfaces(Handler handler) {
+      if is_symb_singl_type(handler.type) {
+        symb = only_symb(handler.type);
+        return just([handler_wrapper(tag: symb, fields: (), msg_inst_code: (), msg_expr: symb)]);
+      }
+
+      res = destructured_tagged_record(handler.type);
+      if res != nothing {
+        tag, fields, optional = value(res);
+        if (|fields| == 1 or handler.fields_order?) and |optional| <= 1 {
+          fields_order = if handler.fields_order?
+            then handler.fields_order
+            else (_untag_(only(keys(fields))));
+
+          ord_fields = ({
+            field_type = fields(object(l));
+            return (field_type, var(l), memb_test_preds_map(field_type, !!));
+          } : l @ i <- fields_order);
+
+          rec_expr = map_expr([(key: l, value: var(_untag_(l))) : l, t <- fields]);
+          inst_expr = tag_obj_expr(tag, rec_expr);
+
+          env = [var(_untag_(l)) -> t : l, t <- fields];
+          let context = database, surrogates = [], typed_vars = [] {
+            code, surr, unused_var = opt_eval_code(inst_expr, env, blank_var_gen);
+          }
+
+          wrappers = [handler_wrapper(tag: tag, fields: ord_fields, msg_inst_code: code, msg_expr: surr)];
+
+          if optional != [] {
+            opt_field = _untag_(only(optional));
+            fields_order = (f : f <- fields_order, f != opt_field);
+
+            ord_fields = ({
+              field_type = fields(object(l));
+              return (field_type, var(l), memb_test_preds_map(field_type, !!));
+            } : l @ i <- fields_order);
+
+            rec_expr = map_expr(nonempty([(key: l, value: var(s)) : l, t <- fields, s = _untag_(l), s != opt_field]));
+            inst_expr = tag_obj_expr(tag, rec_expr);
+
+            env = [var(_untag_(l)) -> t : l, t <- fields];
+            let context = database, surrogates = [], typed_vars = [] {
+              code, surr, unused_var = opt_eval_code(inst_expr, env, blank_var_gen);
+            }
+
+            wrapper = handler_wrapper(tag: tag, fields: ord_fields, msg_inst_code: code, msg_expr: surr);
+            wrappers = wrappers & [wrapper];
+          }
+
+          return just(wrappers);
+        }
+      }
+
+      res = destructured_tagged_tuple(handler.type);
+      if res != nothing {
+        tag, fields_types = value(res);
+        fields = ((t, hidden_var(i), memb_test_preds_map(t, !!)) : t @ i <- fields_types);
+
+        tuple_expr = seq_expr((hidden_var(i) : i < |fields_types|));
+        inst_expr = tag_obj_expr(tag, tuple_expr);
+
+        env = [hidden_var(i) -> t : t @ i <~ fields_types];
+        let context = database, surrogates = [], typed_vars = [] {
+          code, surr, unused_var = opt_eval_code(inst_expr, env, blank_var_gen);
+        }
+
+        return just([handler_wrapper(tag: tag, fields: fields, msg_inst_code: code, msg_expr: surr)]);
+      }
+
+      res = destructured_tagged_value(handler.type);
+      if res != nothing {
+        tag, inner_type = value(res);
+
+        inner_var = hidden_var(0);
+        field = (inner_type, inner_var, memb_test_preds_map(inner_type, !!));
+
+        inst_expr = tag_obj_expr(tag, inner_var);
+
+        env = [inner_var -> inner_type];
+        let context = database, surrogates = [], typed_vars = [] {
+          code, surr, unused_var = opt_eval_code(inst_expr, env, blank_var_gen);
+        }
+
+        return just([handler_wrapper(tag: tag, fields: (field), msg_inst_code: code, msg_expr: surr)]);
+      }
+
+      return nothing;
+    }
 
 
     CompiledUpdate compiled_handler(Handler handler) = compiled_update((var(:this)), handler_body(handler));
+
 
     Instr* handler_body(Handler handler) {
       // Compiling the body of the handler

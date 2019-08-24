@@ -205,6 +205,9 @@ NeType type_ascii_string  = tag_obj_type(
                               ne_union_type([empty_seq_type, ne_seq_type(type_nat7)])
                             );
 
+NeType type_date = tag_obj_type(symb_type(:date), integer);
+NeType type_time = tag_obj_type(symb_type(:time), integer);
+
 NeType type_any = type_ref(builtin_type_symbol(:any));
 
 NeType type_maybe(NeType type) = ne_union_type([symb_type(:nothing), tag_obj_type(symb_type(:just), type)]);
@@ -301,14 +304,6 @@ FnArg     fn_arg(Nat n)       = :fn_arg(n);
 ImplArg   impl_arg(Atom a)    = :impl_arg(a);
 MembVar   memb_var(Atom a)    = :memb_var(a);
 SignalVar signal_var(Atom a)  = :signal_var(a);
-
-## BUG BUG BUG: REPLACE WITH ANOTHER VARIABLE TYPE
-StdVar hidden_var(Nat n) =
-  0  = var(hidden_var_0_id),
-  1  = var(hidden_var_1_id);
-
-Atom hidden_var_0_id = :fe7286e0ba5c7ba302d1729ad00853b88aea516f;
-Atom hidden_var_1_id = :ed6a0f1cbc618033d2eda8293379769d796ac661;
 
 QualMembVar   qual_memb_var(AnyDBVar dbv, MembVar mv)       = qual_memb_var(db_var: dbv, memb_var: mv);
 QualSignalVar qual_signal_var(AnyAutoVar av, SignalVar mv)  = qual_signal_var(auto_var: av, memb_var: mv);
@@ -513,6 +508,7 @@ Method method(MethodSymbol name, (NeType, Maybe[StdVar])* as, NeType t, Expr e) 
 Update update(UpdateSymbol n, (NeType, StdVar)* as, Statement* ss) = update(name: n, args: as, body: ss);
 
 Handler handler(NeType t, Statement* ss) = handler(type: t, body: ss);
+Handler handler(NeType t, Statement* ss, Symbol+ o) = handler(type: t, body: ss, fields_order: o);
 
 ForeignKey foreign_key(PhysRelVar sv, Maybe[Symbol]+ sas, [+PhysRelVar] tvs, Maybe[Symbol]+ ta) =
   foreign_key(source_rel_var: sv, source_args: sas, target_rel_vars: tvs, target_args: ta);

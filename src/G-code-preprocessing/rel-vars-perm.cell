@@ -32,7 +32,10 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
 
       methods = [method(m.id, m.args, m.ret_type, perm_expr_rel_vars(m.expr)) : m <- rel_auto.methods];
       updates  = [update(u.name, u.args, (perm_stmt_rel_vars(s) : s <- u.body)) : u <- rel_auto.updates];
-      handlers = [handler(h.type, (perm_stmt_rel_vars(s) : s <- h.body)) : h <- rel_auto.handlers];
+      handlers = [{
+        body = (perm_stmt_rel_vars(s) : s <- h.body);
+        return handler(type: h.type, body: body ,fields_order: h.fields_order if h.fields_order?);
+      } : h <- rel_auto.handlers];
     }
 
     return data_base(
