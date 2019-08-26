@@ -272,7 +272,7 @@ implicit typedefs : [TypeName -> NeType] {
 
     ne_map_type(),        [->]    = obj != [] and
                                     not (
-                                      k, v <- obj :
+                                      k v <- obj :
                                         not type_contains_obj(type.key_type, k) or
                                         not type_contains_obj(type.value_type, v)
                                     ),
@@ -280,7 +280,7 @@ implicit typedefs : [TypeName -> NeType] {
 
     ne_bin_rel_type(),    [,]     = obj != [] and
                                     not (
-                                      l, r <- obj :
+                                      l r <- obj :
                                         not (s <- type.signatures :
                                           type_contains_obj(s(0), l) and type_contains_obj(s(1), r)
                                         )
@@ -289,15 +289,15 @@ implicit typedefs : [TypeName -> NeType] {
 
     ne_tern_rel_type(),   [,,]    = obj != [] and
                                     not (
-                                      l, m, r <- obj :
+                                      l m r <- obj :
                                         not (s <- type.signatures :
                                           all((type_contains_obj(s(i), v) : v @ i <- (l, m, r)))
                                         )
                                     ),
     ne_tern_rel_type(),   _       = false,
 
-    ne_record_type(fs?),  [->]    = obj != [] and subset([l : l, f <- fs, not f.optional], keys(obj)) and
-                                    not (k, v <- obj : not is_key(k, fs) or not type_contains_obj(fs[k].type, v)),
+    ne_record_type(fs?),  [->]    = obj != [] and subset([l : l f <- fs, not f.optional], keys(obj)) and
+                                    not (k v <- obj : not is_key(k, fs) or not type_contains_obj(fs[k].type, v)),
     ne_record_type(fs?),  _       = false,
 
     tuple_type(ts?),      ()      = |ts| == |obj| and all((type_contains_obj(t, e) : t, e <- zip(ts, obj))),
@@ -395,8 +395,8 @@ InfInt inf_max(InfInt i1, InfInt i2) =
 
 FnType signature(Function fn) =
   fn_type(
-    args:       (t : unused_var, t <- fn.args),
-    cls_args:   (t : unused_var, t <- fn.cls_args),
+    args:       (t : _, t <- fn.args),
+    cls_args:   (t : _, t <- fn.cls_args),
     impl_args:  fn.impl_args,
     ret_type:   fn.res_type,
     constrs:    fn.constrs
@@ -405,7 +405,7 @@ FnType signature(Function fn) =
 
 FnType signature(ReactMethod m) =
   fn_type(
-    args:       (t : t, unused_var <- m.args),
+    args:       (t : t, _ <- m.args),
     ret_type:   m.ret_type,
     cls_args:   (),
     impl_args:  [],
@@ -415,7 +415,7 @@ FnType signature(ReactMethod m) =
 
 FnType signature(Method m) =
   fn_type(
-    args:       (t : t, unused_var <- m.args),
+    args:       (t : t, _ <- m.args),
     ret_type:   m.ret_type,
     cls_args:   (),
     impl_args:  [],
@@ -424,7 +424,7 @@ FnType signature(Method m) =
 
 
 AggrFnType signature(AggrFunct aggr_fn) =
-  aggr_fn_type(aggr_fn.elt_type, (t : unused_var, t <- aggr_fn.extra_args), aggr_fn.type);
+  aggr_fn_type(aggr_fn.elt_type, (t : _, t <- aggr_fn.extra_args), aggr_fn.type);
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////

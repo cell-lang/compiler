@@ -219,18 +219,18 @@ implicit block_name : DBSymbol, db_var_chain : NestedDBVar*, root_block_name : D
   //////////////////////////////////////////////////////////////////////////////
 
   (String*, String*) static_auto_accessors(StaticBlock block, [DBSymbol -> StaticBlock] blocks) {
-    state_var_accessors = rand_sort([state_var_accessor(v, t) : v, t <- block.state_vars]);
+    state_var_accessors = rand_sort([state_var_accessor(v, t) : v t <- block.state_vars]);
     state_var_accessors_decls, state_var_accessors_impls = (join(ls) : ls <- unzip(state_var_accessors));
 
-    table_accessors = rand_sort([table_accessors(v, t) : v, t <- block.tables]);
+    table_accessors = rand_sort([table_accessors(v, t) : v t <- block.tables]);
     table_accessors_decls, table_accessors_impls = (join(ls) : ls <- unzip(table_accessors));
 
-    methods_wrappers = rand_sort([db_method_wrapper(id, m) : id, m <- block.methods]);
+    methods_wrappers = rand_sort([db_method_wrapper(id, m) : id m <- block.methods]);
     methods_wrappers_decls, methods_wrappers_impls = (join(ls) : ls <- unzip(methods_wrappers));
 
     nested_autos_accessors = rand_sort([
         static_auto_accessors(blocks[t], blocks, block_name = blocks[t].name, db_var_chain = (db_var_chain | v))
-      : v, t <- block.nested_blocks
+      : v t <- block.nested_blocks
     ]);
     nested_autos_decls, nested_autos_impls = (join(ls) : ls <- unzip(nested_autos_accessors));
 

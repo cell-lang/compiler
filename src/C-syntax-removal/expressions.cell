@@ -10,7 +10,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
     grouped_expr(e?)      = desugar_expr_plain(e, def_vars),
     seq_expr(ses?)        = desugar_seq_expr(ses, def_vars),
     seq_tail_expr()       = seq_tail_expr(desugar_expr(expr.seq, def_vars), (desugar_expr(e, def_vars) : e <- expr.tail)),
-    set_expr(es?)         = set_expr([desugar_expr(e, def_vars) : e <~ es]),
+    set_expr(es?)         = set_expr([desugar_expr(e, def_vars) : e <- es]),
     map_expr(es?)         = desugar_map_expr(set(es), def_vars),
     bin_rel_expr(es?)     = desugar_bin_rel_expr(set(es), def_vars),
     tern_rel_expr(es?)    = desugar_tern_rel_expr(set(es), def_vars),
@@ -56,7 +56,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
     id = aggr_fn_id(expr.fn_name);
     clause = desugar_clause(expr.clause, def_vars);
     fail if not clause :: RelVarClause;
-    new_vars = def_vars & set(clause.vars);
+    new_vars = def_vars & set(values(clause.vars));
     return aggr_fn_call(
       fn_id:      id,
       expr:       desugar_expr(expr.expr, new_vars),
@@ -164,8 +164,8 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
 
 
   Expr desugar_rel_memb_test(SynExpr syn_target, Maybe[SynExpr]+ syn_args, [StdVar] def_vars) {
-    assert (a <~ syn_args : a == nothing);
-    assert (a <~ syn_args : a != nothing);
+    assert (a <- syn_args : a == nothing);
+    assert (a <- syn_args : a != nothing);
 
     args = (apply(a, desugar_expr($, def_vars)) : a <- syn_args);
     if syn_target :: IdChain
@@ -301,7 +301,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
 
 
   Expr desugar_seq_comp_expr(SynLCExpr expr, [StdVar] def_vars) {
-    vs = def_vars & set(expr.vars) & [expr.idx_var if expr.idx_var?];
+    vs = def_vars & set(values(expr.vars)) & [expr.idx_var if expr.idx_var?];
     return seq_comp(
       expr:          desugar_expr(expr.expr, vs),
       vars:          expr.vars,
@@ -313,7 +313,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
 
 
   Expr desugar_range_comp_expr(SynRCExpr expr, [StdVar] def_vars) {
-    vs = def_vars & [expr.var];
+    vs = def_vars & [value(expr.var) if expr.var != nothing];
     return range_comp(
       expr:         desugar_expr(expr.expr, vs),
       var:          expr.var,
@@ -401,33 +401,35 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
       filter_clause()   = filter_clause(desugar_expr(cls.cond, def_vars));
 
 
-    Clause desugar_iter_clause(StdVar+ vars, SynExpr syn_src_expr, [StdVar] def_vars) {
+    Clause desugar_iter_clause(Maybe[Symbol]+ var_symbs, SynExpr syn_src_expr, [StdVar] def_vars) {
+      vars = (apply(v, var) : v <- var_symbs);
       if syn_src_expr :: IdChain {
         symbols = destructure_id_chain(syn_src_expr);
         resols = resolve_by_priority_as_expr_or_rel_var(symbols, |vars|, def_vars);
         if |resols| == 1 {
           resol = only(resols);
           if resol :: AnyRelVar
-            return relvar_clause(vars, resol, (nothing : unused_var <- vars)); ## UGLY UGLY UGLY
+            return relvar_clause(vars, resol, (nothing : _ <- vars)); ## UGLY UGLY UGLY
         }
       }
 
       src_expr = desugar_expr(syn_src_expr, def_vars);
       return if |vars| == 1
-        then set_clause(only(vars), src_expr)
-        else rel_clause(vars, src_expr, (nothing : unused_var <- vars)); ## UGLY UGLY UGLY
+        then set_or_seq_clause(only(vars), src_expr)
+        else rel_clause(vars, src_expr, (nothing : _ <- vars)); ## UGLY UGLY UGLY
     }
 
 
-    Clause desugar_iter_clause(StdVar+ vars, SynProj syn_src_expr, [StdVar] def_vars) {
-      assert (a <~ syn_src_expr.args : a != nothing);
+    Clause desugar_iter_clause(Maybe[Symbol]+ var_symbs, SynProj syn_src_expr, [StdVar] def_vars) {
+      vars = (apply(v, var) : v <- var_symbs);
+      assert (a <- syn_src_expr.args : a != nothing);
       args = (apply(a, desugar_expr($, def_vars)) : a <- syn_src_expr.args);
       resol = only(resolve_by_priority_as_expr_or_rel_var(syn_src_expr.target, |args|, def_vars));
       return rel_or_relvar_clause(vars, resol, args);
     }
 
-    Clause rel_or_relvar_clause(StdVar+ vars, AnyRelVar src, Maybe[Expr]+ args) = relvar_clause(vars, src, args);
-    Clause rel_or_relvar_clause(StdVar+ vars, Expr src, Maybe[Expr]+ args) = rel_clause(vars, src, args);
+    Clause rel_or_relvar_clause(Maybe[StdVar]+ vars, AnyRelVar src, Maybe[Expr]+ args) = relvar_clause(vars, src, args);
+    Clause rel_or_relvar_clause(Maybe[StdVar]+ vars, Expr src, Maybe[Expr]+ args) = rel_clause(vars, src, args);
   }
 
   ////////////////////////////////////////////////////////////////////////////////
@@ -566,7 +568,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
       }
       else {
         hidden_var = hidden_var(i);
-        args_code = (args_code | assignment_stmt((hidden_var), a));
+        args_code = (args_code | assignment_stmt((just(hidden_var)), a));
         args = (args | hidden_var);
       }
     }
@@ -649,6 +651,21 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
     Iter iter(Maybe[StdVar]+ vars, Expr expr)         = coll_value_iter(vars, expr);
 
 
+    Statement desugar(SynRelIter syn_iter, Statement+ body, [StdVar] def_vars) {
+      iter_vars = (apply(v, var) : v <- syn_iter.vars);
+
+      if syn_iter.src_expr :: IdChain {
+        symbs = destructure_id_chain(syn_iter.src_expr);
+        target = only(resolve_by_priority_as_expr_or_rel_var(symbs, |iter_vars|, def_vars));
+      }
+      else
+        target = desugar_expr(syn_iter.src_expr, def_vars);
+
+      iter = iter(iter_vars, target, (nothing : i < |iter_vars|));
+      return foreach_stmt(iter, body);
+    }
+
+
     Statement desugar(SynFilteredIter syn_iter, Statement+ body, [StdVar] def_vars) {
       vars = (apply(v, var) : v <- syn_iter.vars);
       args = (apply(a, desugar_expr($, def_vars)) : a <- syn_iter.args);
@@ -705,6 +722,6 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
       ptrn_tag_obj            = ptrn_tag_obj(ptrn_symbol, ptrn_any),
       ptrn_tag_obj()          = ptrn_tag_obj(ptrn.tag, desugar_ptrn(ptrn.obj)),
       ptrn_var()              = ptrn_var(ptrn.var, desugar_ptrn(ptrn.ptrn)),
-      ptrn_union(ps?)         = ptrn_union([desugar_ptrn(p) : p <~ ps]);
+      ptrn_union(ps?)         = ptrn_union([desugar_ptrn(p) : p <- ps]);
   }
 }

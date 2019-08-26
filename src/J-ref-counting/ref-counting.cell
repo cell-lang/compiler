@@ -1,5 +1,3 @@
-## REPLACE ALL THE unused_var, unused_var_X
-
 // RIGHT NOW IMPLICIT PARAMETERS ARE INCLUDED IN THE LIST OF LIVE VAR.
 // THAT'S WRONG, THEY ARE JUST LIKE EXTERNAL VARS, THEY ARE ALWAYS LIVE
 
@@ -34,14 +32,14 @@ ReactBlock add_ref_counting(ReactBlock block) =
     nested_static_blocks: block.nested_static_blocks,
     pre_init_code:        add_ref_counting(block.pre_init_code),
     cleanup_code:         block.cleanup_code,
-    nodes_update_code:    [id -> add_ref_counting(c) : id, c <- block.nodes_update_code],
+    nodes_update_code:    [id -> add_ref_counting(c) : id c <- block.nodes_update_code],
     apply_code:           add_ref_counting(block.apply_code),
     queue_update_code:    block.queue_update_code,
     state_is_def_code:    block.state_is_def_code,
     copy_state_code:      add_ref_counting(block.copy_state_code),
     set_state_code:       add_ref_counting(block.set_state_code),
     methods:              [ id -> compiled_method(m.args_types, m.args_memb_preds, m.ret_type, add_ref_counting(m.code))
-                            : id, m <- block.methods
+                            : id m <- block.methods
                           ],
     const_data:           block.const_data,
     time_rules_count:     block.time_rules_count,
@@ -62,9 +60,9 @@ StaticBlock add_ref_counting(StaticBlock block) =
     copy_state_code:  add_ref_counting(block.copy_state_code),
     set_state_code:   add_ref_counting(block.set_state_code),
     methods:          [ id -> compiled_method(m.args_types, m.args_memb_preds, m.ret_type, add_ref_counting(m.code))
-                        : id, m <- block.methods
+                        : id m <- block.methods
                       ],
-    updates_code:     [id -> add_ref_counting(c) : id, c <- block.updates_code],
+    updates_code:     [id -> add_ref_counting(c) : id c <- block.updates_code],
     msg_memb_pred:    block.msg_memb_pred,
     state_memb_pred:  block.state_memb_pred
   );
@@ -238,8 +236,8 @@ implicit flow_map : NodeId**, live_vars_after_map : [TrkVar]*, entry_vars_states
 
 
   RCNodeInfo rc_ret_node(<AtomicExpr, AtomicBoolExpr> expr, VarsState entry_state, Instr* pre_instrs) { ## THE LAST PARAMETER SHOULD BE REMOVED BECAUSE IT'S RECALCULATED. IT IS ONLY USED FOR AN ASSERTION
-    state, unused_var = swallow_var(entry_state, maybe_var(expr), []);
-    assert pre_instrs == unused_var;
+    state, instrs = swallow_var(entry_state, maybe_var(expr), []);
+    assert pre_instrs == instrs;
     pre_instrs_2 = gen_state_switch_code(state, blank_vars_state);
     return std_node(pre_instrs & pre_instrs_2 & (ret_val(expr)));
   }

@@ -28,8 +28,8 @@ StaticBlock optimize_static_block(StaticBlock block) =
     memb_var_check_exprs:         block.memb_var_check_exprs,
     rel_vars_load_code:           block.rel_vars_load_code,
     foreign_keys_check_code:      block.foreign_keys_check_code,
-    methods:                      [id -> optimize_static_block_method(def) : id, def <- block.methods],
-    updates:                      [id -> optimize_static_block_update(def) : id, def <- block.updates],
+    methods:                      [id -> optimize_static_block_method(def) : id def <- block.methods],
+    updates:                      [id -> optimize_static_block_update(def) : id def <- block.updates],
     exported_handlers:            block.exported_handlers,
     msg_memb_pred:                block.msg_memb_pred
   );
@@ -74,7 +74,7 @@ Instr+ optimize_code(Instr+ instrs) {
   no_end_node_flow_map = ((n : n <- ns, n != end_node) : ns <- flow_map);
   rev_flow_map = reverse_flow_map(no_end_node_flow_map);
 
-  prop_info = propagate(leaf_nodes, (no_prop_info : unused_var <- leaf_nodes), rev_flow_map);
+  prop_info = propagate(leaf_nodes, (no_prop_info : _ <- leaf_nodes), rev_flow_map);
   rewritten_nodes = (rewrite_node(n, prop_info(i)) : n @ i <- leaf_nodes);
   vars_used_map = (std_loc_vars_used(n) : n <- rewritten_nodes);
   vars_set_map = (std_loc_vars_set(n) : n <- rewritten_nodes);
@@ -119,34 +119,34 @@ PropInfo no_prop_info = prop_info(values: [], ints32: []);
 ////////////////////////////////////////////////////////////////////////////////
 
 PropInfo merge(PropInfo info1, PropInfo info2) {
-  values = [v -> e : v, e <- info1.values, info2.values(v, e)];
-  ints32 = [v -> e : v, e <- info1.ints32, info2.ints32(v, e)];
+  values = [v -> e : v e <- info1.values, info2.values(v, e)];
+  ints32 = [v -> e : v e <- info1.ints32, info2.ints32(v, e)];
   return prop_info(values: values, ints32: ints32);
 }
 
 PropInfo add_dependency(PropInfo info, DependantVar var, PropExpr expr) {
   cleared_info = clear_dependants(info, var);
-  values = [v -> e : v, e <- cleared_info.values | v, e <- [var -> expr]];
+  values = [v -> e : v e <- cleared_info.values | v e <- [var -> expr]];
   return prop_info(values: values, ints32: cleared_info.ints32);
 }
 
 PropInfo add_dependency(PropInfo info, Int32Var var, PropInt32Expr expr) {
   cleared_info = clear_dependants(info, var);
-  ints32 = [v -> e : v, e <- cleared_info.ints32 | v, e <- [var -> expr]];
+  ints32 = [v -> e : v e <- cleared_info.ints32 | v e <- [var -> expr]];
   return prop_info(values: cleared_info.values, ints32: ints32);
 }
 
 PropInfo add_dependency(PropInfo info, Int32Var var, ValueStoreId store, <PropExpr, PropIntExpr> value) {
   cleared_info = clear_dependants(info, var);
   quasi_expr = value_to_ex_surr(store: store, value: value);
-  ints32 = [v -> e : v, e <- cleared_info.ints32 | v, e <- [var -> quasi_expr]];
+  ints32 = [v -> e : v e <- cleared_info.ints32 | v e <- [var -> quasi_expr]];
   return prop_info(values: cleared_info.values, ints32: ints32);
 }
 
 PropInfo clear_dependants(PropInfo info, DependeeVar var) =
   prop_info(
-    values: [v -> e : v, e <- info.values, v != var, not dependees(e)(var)],
-    ints32: [v -> e : v, e <- info.ints32, v != var, not dependees(e)(var)]
+    values: [v -> e : v e <- info.values, v != var, not dependees(e)(var)],
+    ints32: [v -> e : v e <- info.ints32, v != var, not dependees(e)(var)]
   );
 
 ////////////////////////////////////////////////////////////////////////////////

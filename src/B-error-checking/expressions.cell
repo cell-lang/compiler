@@ -75,7 +75,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg], actual_ar
 
 
   ExprWFError* seq_comp_expr_nested_wf_errors(SynLCExpr expr, [DefVar] def_vars) {
-    new_def_vars = def_vars & set(expr.vars) & [expr.idx_var if expr.idx_var?];
+    new_def_vars = def_vars & set(values(expr.vars)) & [expr.idx_var if expr.idx_var?];
     src_errs = expr_wf_errors(expr.src_expr, def_vars);
     expr_errs = expr_wf_errors(expr.expr, new_def_vars);
     sel_expr_errs = if expr.sel_expr? then expr_wf_errors(expr.sel_expr, new_def_vars) else ();
@@ -84,7 +84,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg], actual_ar
 
 
   ExprWFError* range_comp_expr_nested_wf_errors(SynRCExpr expr, [DefVar] def_vars) {
-    new_def_vars = def_vars & [expr.var];
+    new_def_vars = def_vars & [value(expr.var) if expr.var != nothing];
     bound_expr_errs = expr_wf_errors(expr.bound_expr, def_vars);
     expr_errs = expr_wf_errors(expr.expr, new_def_vars);
     sel_expr_errs = if expr.sel_expr? then expr_wf_errors(expr.sel_expr, new_def_vars) else ();
@@ -122,7 +122,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg], actual_ar
     builtin_call()      = (wrong_builtin_arity(expr.name, expr.args) if |expr.args| != builtin_arities[expr.name]),
     rel_var_size_expr() = rel_var_size_expr_wf_errors(expr, def_vars),
     seq_comp()          = seq_comp_expr_local_wf_errors(expr, def_vars),
-    range_comp()        = (already_def_var(expr.var) if already_def(expr.var, def_vars)), ## BUG BUG BUG
+    range_comp()        = (already_def_var(value(expr.var)) if expr.var != nothing and already_def(value(expr.var), def_vars)), ## BUG BUG BUG
     match_expr()        = match_expr_local_wf_errors(expr, def_vars),
     output_is_def()     = output_is_def_local_wf_errors(expr.var, expr.output, def_vars),
     _                   = ();
@@ -144,7 +144,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg], actual_ar
 
   // type SynRelVarSizeExpr = rel_var_size_expr(rel_var_path: Symbol+, args: Maybe[SynExpr]+);
   ExprWFError* rel_var_size_expr_wf_errors(SynRelVarSizeExpr expr, [DefVar] def_vars) {
-    return (invalid_expr(expr)) if not (a <~ expr.args : a == nothing);
+    return (invalid_expr(expr)) if not (a <- expr.args : a == nothing);
     resols = resolve_by_priority_as_rel_var(expr.rel_var_path, |expr.args|, def_vars);
     return (ambiguous_expr(expr, resols)) if |resols| > 1;
     return () if resols != [];
@@ -342,7 +342,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg], actual_ar
 
 
   ExprWFError* seq_comp_expr_local_wf_errors(SynLCExpr expr, [DefVar] def_vars) {
-    new_vars = expr.vars & (expr.idx_var if expr.idx_var?);
+    new_vars = values(expr.vars) & (expr.idx_var if expr.idx_var?);
     dupl_vars = duplicates(new_vars);
     return (dupl_var_mult_asgnm(v) : v <- rand_sort(dupl_vars)) &
            (already_def_var(v) : v <- rand_sort(already_def_vars(set(new_vars), def_vars)));

@@ -107,7 +107,7 @@ Ord max(Ord+ ns) {
       max_key = elt_key;
     }
   }
-  return [elt : elt <~ max_elts];
+  return [elt : elt <- max_elts];
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -257,7 +257,7 @@ Bool subset([Any] s1, [Any] s2)   = not (e <- s1 : not s2(e));
 
 [T] union([[T]] sets) = [x : s <- sets, x <- s];
 
-// [T] union([T]* sets) = [x : s <~ sets, x <- s];
+// [T] union([T]* sets) = [x : s <- sets, x <- s];
 
 T any([+T] s) = _rand_elem_(s);
 
@@ -281,13 +281,13 @@ T+ isort([+T] s) {
 
 [+A -> B] (_&_)([],             [+A -> B] map)  = map;
 [+A -> B] (_&_)([+A -> B] map,  [])             = map;
-[+A -> B] (_&_)([+A -> B] map1, [+A -> B] map2) = [k -> v : k, v <- map1 | k, v <- map2];
+[+A -> B] (_&_)([+A -> B] map1, [+A -> B] map2) = [k -> v : k v <- map1 | k v <- map2];
 
-[A -> B] merge([[A -> B]] maps) = [k -> v : m <- maps, k, v <- m];
-[A -> B] merge([A -> B]* maps)  = [k -> v : m <~ maps, k, v <- m];
+[A -> B] merge([[A -> B]] maps) = [k -> v : m <- maps, k v <- m];
+[A -> B] merge([A -> B]* maps)  = [k -> v : m <- maps, k v <- m];
 
 (A, B)+ isort([+A, B] rel) {
-  seq = _isort_([(a, b) : a, b <- rel]);
+  seq = _isort_([(a, b) : a b <- rel]);
   fail if seq == ();
   return seq;
 }
@@ -295,7 +295,7 @@ T+ isort([+T] s) {
 ////////////////////////////////////////////////////////////////////////////////
 
 (A, B, C)+ isort([+A, B, C] rel) {
-  seq = _isort_([(a, b, c) : a, b, c <- rel]);
+  seq = _isort_([(a, b, c) : a b c <- rel]);
   fail if seq == ();
   return seq;
 }

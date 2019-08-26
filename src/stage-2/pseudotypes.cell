@@ -214,12 +214,12 @@ PseudoType pseudotype(Type type, [TypeName -> Type] typedefs) =
                         -> ptrn
                       ];
                     },
-  ptrn_var()      = [pt -> ptrn_var(ptrn.var, p) : pt, p <- split_by_tag_ptype(ptrn.ptrn)],
-  ptrn_union(ps?) = [pt -> ptrn_union(ps2) : pt, ps2 <- merge_values([split_by_tag_ptype(p) : p <- ps])];
+  ptrn_var()      = [pt -> ptrn_var(ptrn.var, p) : pt p <- split_by_tag_ptype(ptrn.ptrn)],
+  ptrn_union(ps?) = [pt -> ptrn_union(ps2) : pt ps2 <- merge_values([split_by_tag_ptype(p) : p <- ps])];
 
 
 [<symbols, symbol(Atom)> -> Pattern] split_by_ptype(Pattern ptrn) =
   ptrn_symbol     = [:symbols -> ptrn],
   ptrn_symbol(s?) = [:symbol(untag(s)) -> ptrn],
-  ptrn_var()      = [pt -> ptrn_var(ptrn.var, p) : pt, p <- split_by_ptype(ptrn.ptrn)],
-  ptrn_union(ps?) = [pt -> ptrn_union(ps2) : pt, ps2 <- merge_values([split_by_ptype(p) : p <- ps])];
+  ptrn_var()      = [pt -> ptrn_var(ptrn.var, p) : pt p <- split_by_ptype(ptrn.ptrn)],
+  ptrn_union(ps?) = [pt -> ptrn_union(ps2) : pt ps2 <- merge_values([split_by_ptype(p) : p <- ps])];

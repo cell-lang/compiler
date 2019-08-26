@@ -170,11 +170,11 @@ PrintTree print_tree(Any obj) {
     // separator = if map :: Record then ": " else " -> ";
     // entry_nodes = (print_tree_node((print_tree(k), separator, print_tree(v))) : k, v <- entries);
     if map :: Record {
-      entry_nodes = [print_tree_node((_print_(k) & ": ", print_tree(v))) : k, v <- map];
+      entry_nodes = [print_tree_node((_print_(k) & ": ", print_tree(v))) : k v <- map];
       nodes = ("(") & intermix(rand_sort(entry_nodes), ", ") & (")");
     }
     else {
-      entry_nodes = [print_tree_node((print_tree(k), " -> ", print_tree(v))) : k, v <- map];
+      entry_nodes = [print_tree_node((print_tree(k), " -> ", print_tree(v))) : k v <- map];
       nodes = ("[") & intermix(rand_sort(entry_nodes), ", ") & ("]");
     }
     return print_tree_node(nonempty(nodes));
@@ -183,7 +183,7 @@ PrintTree print_tree(Any obj) {
 
   PrintTree bin_rel_print_tree(BinRel rel) {
     return print_tree_node(("[]")) if rel == [];
-    entry_nodes = [print_tree_node((print_tree(l), ", ", print_tree(r))) : l, r <- rel];
+    entry_nodes = [print_tree_node((print_tree(l), ", ", print_tree(r))) : l r <- rel];
     nodes = ("[") & intermix(rand_sort(entry_nodes), "; ") & (";" if |rel| == 1, "]");
     return print_tree_node(nonempty(nodes));
   }
@@ -191,7 +191,7 @@ PrintTree print_tree(Any obj) {
 
   PrintTree tern_rel_print_tree(TernRel rel) {
     return print_tree_node(("[]")) if rel == [];
-    entry_nodes = [print_tree_node((print_tree(a1), ", ", print_tree(a2), ", ", print_tree(a3))) : a1, a2, a3 <- rel];
+    entry_nodes = [print_tree_node((print_tree(a1), ", ", print_tree(a2), ", ", print_tree(a3))) : a1 a2 a3 <- rel];
     nodes = ("[") & intermix(rand_sort(entry_nodes), "; ") & (";" if |rel| == 1, "]");
     return print_tree_node(nonempty(nodes));
   }

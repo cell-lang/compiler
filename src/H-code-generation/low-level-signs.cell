@@ -198,35 +198,35 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
 implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptions {
   LowLevelSign low_level_sign(Function fn) =
     low_level_sign(
-      args:       (opt_repr(t) : unused_var, t <- fn.args),
+      args:       (opt_repr(t) : _, t <- fn.args),
       ret_value:  opt_repr(fn.res_type)
     );
 
 
   (FnId, LowLevelSign) low_level_sign(FnFamilyId fn_id, Type* args_types) {
     for id, s, ts <- signatures_info_by_family_id(fn_id, !!)
-      return (id, s) if not (t @ i <~ args_types : not is_subset(t, ts(i)));
+      return (id, s) if not (t @ i <- args_types : not is_subset(t, ts(i)));
     return (fn_id, aggr_sign_by_fn_family_id(fn_id, !!));
 
 
     [FnFamilyId -> LowLevelSign] aggr_sign_by_fn_family_id =
-      [id -> aggr_sign([s : unused_var_1, s, unused_var_2 <~ info]) : id, info <- signatures_info_by_family_id];
+      [id -> aggr_sign([s : (_, s, _) <- info]) : id info <- signatures_info_by_family_id];
 
 
     [FnFamilyId -> (FnId, LowLevelSign, NeType*)+] signatures_info_by_family_id {
-      family_ids = [id : id, unused_var <- signature_info];
+      family_ids = [id : id _ <- signature_info];
       return [id -> nonempty(isort([info : info <- signature_info(id, ?)])) : id <- family_ids];
     }
 
 
     [FnFamilyId, (FnId, LowLevelSign, NeType*)] signature_info =
-      [family_id(fn.id), (fn.id, low_level_sign(fn), (t : unused_var, t <- fn.args)) : fn <- program.fndefs];
+      [family_id(fn.id), (fn.id, low_level_sign(fn), (t : _, t <- fn.args)) : fn <- program.fndefs];
   }
 
 
   LowLevelSign low_level_sign(Method method) =
     low_level_sign(
-      args:       (opt_repr(t) : t, unused_var <- method.args),
+      args:       (opt_repr(t) : t, _ <- method.args),
       ret_value:  opt_repr(method.ret_type)
     );
 
@@ -235,20 +235,20 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
     family_id = method_id(symbol, |args_types|);
     methods = signatures_map(rel_auto_id, !!)(family_id);
     for id, s, ts <- isort(methods)
-      return (id, s) if not (t @ i <~ args_types : not is_subset(t, ts(i)));
+      return (id, s) if not (t @ i <- args_types : not is_subset(t, ts(i)));
     return (family_id, aggr_signatures_map(rel_auto_id, !!)(family_id));
 
 
     [DBSymbol -> [MethodFamilyId -> LowLevelSign]] aggr_signatures_map = [
-      auto_id -> [id -> aggr_sign([m(1) : m <- ms]) : id, ms <- auto_map]
-      : auto_id, auto_map <- signatures_map
+      auto_id -> [id -> aggr_sign([m(1) : m <- ms]) : id ms <- auto_map]
+      : auto_id auto_map <- signatures_map
     ];
 
 
     [DBSymbol -> [MethodFamilyId -> [+(MethodId, LowLevelSign, NeType*)]]] signatures_map = [
       a.name -> [
-        fid -> [(m.id, low_level_sign(m), (t : t, unused_var <- m.args)) : m <- ms]
-        : fid, ms <- group_by(a.methods, family_id($.id))
+        fid -> [(m.id, low_level_sign(m), (t : t, _ <- m.args)) : m <- ms]
+        : fid ms <- group_by(a.methods, family_id($.id))
       ] : a <- program.data_bases
     ];
   }

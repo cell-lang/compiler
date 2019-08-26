@@ -7,10 +7,10 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
     msg_memb_pred = if msg_types != [] then just(memb_test_preds_map[ne_union_type(msg_types)]) else nothing;
 
     insert_checked_foreign_keys = [
-      bk : k, bk <- physical_foreign_keys_map, not insertion_is_statically_checked(k)
+      bk : k bk <- physical_foreign_keys_map, not insertion_is_statically_checked(k)
     ];
     delete_checked_foreign_keys = [
-      bk : k, bk <- physical_foreign_keys_map,
+      bk : k bk <- physical_foreign_keys_map,
         not database.attr_map(only(k.target_rel_vars), k.source_rel_var) and not
         ( database.attr_map(k.source_rel_var, only(k.target_rel_vars)) and
           is_one_to_one_attribute(database.name, only(k.target_rel_vars))
@@ -18,13 +18,13 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
     ];
 
     memb_var_check_exprs = [
-      v -> is_member(memb_test_preds_map(info.type, !!), v) : v, info <- database.state_vars
+      v -> is_member(memb_test_preds_map(info.type, !!), v) : v info <- database.state_vars
     ];
 
     return static_block(
       name:                         database.name,
       links:                        database.links,
-      state_vars:                   [v -> info.type : v, info <- database.state_vars],
+      state_vars:                   [v -> info.type : v info <- database.state_vars],
       value_stores:                 value_stores,
       tables:                       tables_info,
       insert_checked_foreign_keys:  insert_checked_foreign_keys,
@@ -47,17 +47,17 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
   Instr* database_init_code {
     state_vars = database.state_vars;
 
-    vars_pre_init_code = rand_sort([init_memb_var(v, :blank) : v, unused_var <- state_vars]);
+    vars_pre_init_code = rand_sort([init_memb_var(v, :blank) : v _ <- state_vars]);
     let context = database, typed_vars = [], surrogates = [] {
       vars_init_code = join(({
-          eval_code, surr, unused_var = opt_eval_code(d.init_value, [], blank_var_gen);
+          eval_code, surr, _ = opt_eval_code(d.init_value, [], blank_var_gen);
           return (eval_code | set_var(v, surr));
         } : v, d <- isort(state_vars)
       ));
     }
 
     value_stores_init_code = (init_value_store(vs) : vs <- rand_sort(keys(value_stores)));
-    tables_init_code = rand_sort([init_table(v, t) : v, t <- tables_info]);
+    tables_init_code = rand_sort([init_table(v, t) : v t <- tables_info]);
 
     return vars_pre_init_code & vars_init_code & value_stores_init_code & tables_init_code;
   }
@@ -66,16 +66,16 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
   Instr* database_cleanup_code {
     state_vars = database.state_vars;
 
-    vars_cleanup_code = rand_sort([reset_memb_var(v, :blank) : v, unused_var <- state_vars]);
+    vars_cleanup_code = rand_sort([reset_memb_var(v, :blank) : v _ <- state_vars]);
     value_stores_cleanup_code = (cleanup_value_store(vs) : vs <- rand_sort(keys(value_stores)));
-    tables_cleanup_code = rand_sort([cleanup_table(v, t) : v, t <- tables_info]);
+    tables_cleanup_code = rand_sort([cleanup_table(v, t) : v t <- tables_info]);
 
     return vars_cleanup_code & value_stores_cleanup_code & tables_cleanup_code;
   }
 
 
   Instr* database_copy_state_code([RelVar -> [+Nat -> Nat]] rel_vars_args_perms) {
-    log_rel_vars = [logical_rel_var(v) : v, unused_var <- database.rel_vars];
+    log_rel_vars = [logical_rel_var(v) : v _ <- database.rel_vars];
     count = nat(|database.state_vars| + |log_rel_vars|);
     return (ret_val(empty_rel)) if count == 0;
 
@@ -424,7 +424,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 
 
   [MethodId -> OptCompMethod] compiled_database_methods([Method] methods) {
-    return merge([compiled(ms) : unused_var, ms <- group_by(methods, family_id($.id))]);
+    return merge([compiled(ms) : _ ms <- group_by(methods, family_id($.id))]);
 
 
     [MethodId -> OptCompMethod] compiled([+Method] methods) {
@@ -448,18 +448,18 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
       disp_args = choose_disp_args((nonempty(left(unzip(m.args))) : m <- isort(methods)), program.typedefs);
 
       low_level_signs = [m.id -> low_level_sign(m) : m <- methods];
-      aggr_sign = aggr_sign([s : unused_var, s <- low_level_signs]);
+      aggr_sign = aggr_sign([s : _ s <- low_level_signs]);
 
       args = (low_level_arg(fn_arg(i), r) : r @ i <- aggr_sign.args);
 
-      aggr_ret_var, unused_var_1 = next_var(aggr_sign.ret_value, blank_var_gen);
+      aggr_ret_var, _ = next_var(aggr_sign.ret_value, blank_var_gen);
 
       cases = [{
         types = (left(m.args(i)) : i <- disp_args);
         sign = low_level_signs(m.id);
         call_args = (low_level_expr(r, obj_expr(args(j))) : r @ j <- sign.args);
         // We can reuse the same seed to generate variables
-        ret_var, unused_var_2 = next_var(sign.ret_value, blank_var_gen);
+        ret_var, _ = next_var(sign.ret_value, blank_var_gen);
         code = (
           invoke_db_method(ret_var, database.name, m.id, call_args),
           ## THESE TWO INSTRUCTIONS SHOULD BE MERGED
@@ -474,7 +474,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
       return opt_comp_method(
         args:             args,
         args_types:       (ne_union_superset([left(m.args(i)) : m <- methods]) : i < |args|),
-        args_memb_preds:  [(memb_test_preds_map[t] : t, unused_var_2 <- m.args) : m <- methods],
+        args_memb_preds:  [(memb_test_preds_map[t] : t, _ <- m.args) : m <- methods],
         loc_vars_types:   [],
         ret_type:         ne_union_superset([m.ret_type : m <- methods]),
         ret_val_repr:     aggr_sign.ret_value,
@@ -485,15 +485,15 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 
     OptCompMethod compiled(Method method) {
       vars = (if v != nothing then value(v) else fn_arg(i) : t, v @ i <- method.args);
-      args = (low_level_arg(vars(i), fn_arg_low_level_repr(t)) : t, unused_var @ i <- method.args);
-      args_surrs = [vars(i) -> obj_expr(a) : a @ i <~ args];
+      args = (low_level_arg(vars(i), fn_arg_low_level_repr(t)) : t, _ @ i <- method.args);
+      args_surrs = [vars(i) -> obj_expr(a) : a @ i <- args];
 
-      env = [v -> left(method.args(i)) : v @ i <~ vars];
+      env = [v -> left(method.args(i)) : v @ i <- vars];
 
       ret_val_repr = opt_repr(method.ret_type);
 
       let context = database, surrogates = args_surrs, typed_vars = [] {
-        body, ret_val_surr, unused_var_1 = match (method.expr)
+        body, ret_val_surr, _ = match (method.expr)
           do_expr() = do_expr_opt_eval_code(method.expr, ret_val_repr, env, blank_var_gen),
           _         = opt_eval_code(method.expr, env, blank_var_gen);
       }
@@ -511,7 +511,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
       return opt_comp_method(
         args:             args,
         args_types:       left(unzip(method.args)),
-        args_memb_preds:  [(memb_test_preds_map[t] : t, unused_var_2 <- method.args)],
+        args_memb_preds:  [(memb_test_preds_map[t] : t, _ <- method.args)],
         loc_vars_types:   loc_vars_types,
         ret_type:         method.ret_type,
         ret_val_repr:     ret_val_repr,
@@ -522,7 +522,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 
 
   [UpdateId -> CompiledUpdate] compiled_database_updates([Update] updates) {
-    return merge([compiled_updates(ms) : unused_var, ms <- group_by(updates, ($.name, |$.args|))]);
+    return merge([compiled_updates(ms) : _ ms <- group_by(updates, ($.name, |$.args|))]);
 
 
     [UpdateId -> CompiledUpdate] compiled_updates([+Update] updates) {
@@ -539,16 +539,16 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 
 
     CompiledUpdate compiled_update(Update update) =
-      compiled_update((v : unused_var, v <- update.args), update_body(update));
+      compiled_update((v : _, v <- update.args), update_body(update));
 
 
     Instr* update_body(Update update) {
       // Compiling the body of the update
       return () if update.body == ();
 
-      code, unused_var_1, unused_var_2, unused_var_3 = stmts_opt_code(
+      code, _, _, _ = stmts_opt_code(
         update.body,
-        [v -> t : t, v <~ update.args],
+        [v -> t : (t, v) <- update.args],
         blank_var_gen,
         context           = database,
         typed_vars        = [],
@@ -568,7 +568,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
     comp_handlers = merge(([handler_id(i) -> compiled_handler(h)] : h @ i <- sorted_handlers));
     exported_handlers = [
       handler_id(i), interface
-      : h @ i <~ sorted_handlers, interfaces = interfaces(h),
+      : h @ i <- sorted_handlers, interfaces = interfaces(h),
         interfaces != nothing, interface <- value(interfaces)
     ];
     dispatcher_body = if |handlers| != 1
@@ -597,12 +597,12 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
             return (field_type, var(l), memb_test_preds_map(field_type, !!));
           } : l @ i <- fields_order);
 
-          rec_expr = map_expr([(key: l, value: var(_untag_(l))) : l, t <- fields]);
+          rec_expr = map_expr([(key: l, value: var(_untag_(l))) : l t <- fields]);
           inst_expr = tag_obj_expr(tag, rec_expr);
 
-          env = [var(_untag_(l)) -> t : l, t <- fields];
+          env = [var(_untag_(l)) -> t : l t <- fields];
           let context = database, surrogates = [], typed_vars = [] {
-            code, surr, unused_var = opt_eval_code(inst_expr, env, blank_var_gen);
+            code, surr, _ = opt_eval_code(inst_expr, env, blank_var_gen);
           }
 
           wrappers = [handler_wrapper(tag: tag, fields: ord_fields, msg_inst_code: code, msg_expr: surr)];
@@ -616,12 +616,12 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
               return (field_type, var(l), memb_test_preds_map(field_type, !!));
             } : l @ i <- fields_order);
 
-            rec_expr = map_expr(nonempty([(key: l, value: var(s)) : l, t <- fields, s = _untag_(l), s != opt_field]));
+            rec_expr = map_expr(nonempty([(key: l, value: var(s)) : l t <- fields, s = _untag_(l), s != opt_field]));
             inst_expr = tag_obj_expr(tag, rec_expr);
 
-            env = [var(_untag_(l)) -> t : l, t <- fields];
+            env = [var(_untag_(l)) -> t : l t <- fields];
             let context = database, surrogates = [], typed_vars = [] {
-              code, surr, unused_var = opt_eval_code(inst_expr, env, blank_var_gen);
+              code, surr, _ = opt_eval_code(inst_expr, env, blank_var_gen);
             }
 
             wrapper = handler_wrapper(tag: tag, fields: ord_fields, msg_inst_code: code, msg_expr: surr);
@@ -640,9 +640,9 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
         tuple_expr = seq_expr((hidden_var(i) : i < |fields_types|));
         inst_expr = tag_obj_expr(tag, tuple_expr);
 
-        env = [hidden_var(i) -> t : t @ i <~ fields_types];
+        env = [hidden_var(i) -> t : t @ i <- fields_types];
         let context = database, surrogates = [], typed_vars = [] {
-          code, surr, unused_var = opt_eval_code(inst_expr, env, blank_var_gen);
+          code, surr, _ = opt_eval_code(inst_expr, env, blank_var_gen);
         }
 
         return just([handler_wrapper(tag: tag, fields: fields, msg_inst_code: code, msg_expr: surr)]);
@@ -659,7 +659,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 
         env = [inner_var -> inner_type];
         let context = database, surrogates = [], typed_vars = [] {
-          code, surr, unused_var = opt_eval_code(inst_expr, env, blank_var_gen);
+          code, surr, _ = opt_eval_code(inst_expr, env, blank_var_gen);
         }
 
         return just([handler_wrapper(tag: tag, fields: (field), msg_inst_code: code, msg_expr: surr)]);
@@ -676,7 +676,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
       // Compiling the body of the handler
       return () if handler.body == ();
 
-      code, unused_var_1, unused_var_2, unused_var_3 = stmts_opt_code(
+      code, _, _, _ = stmts_opt_code(
         handler.body,
         [var(:this) -> handler.type],
         blank_var_gen,
@@ -774,9 +774,9 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 
 [[+(TableVar, Nat)]] column_clusters([TableVar, NzNat, Bool] tables, [BlockForeignKey] foreign_keys) {
   init_clusters = union([associations(k) : k <- foreign_keys]) &
-                  [[(v, 0), (v, 1)] : v, unused_var, s <- tables, s];
+                  [[(v, 0), (v, 1)] : v _ s <- tables, s];
   non_trivial_clusters = merge_intersecting(init_clusters);
-  all_cols = [(r, i) : r, a, unused_var <- tables, i <~ (i : i < a)];
+  all_cols = [(r, i) : r a _ <- tables, i <- (i : i < a)];
   rem_cols = all_cols - union(non_trivial_clusters);
   final_clusters = non_trivial_clusters & [[c] : c <- rem_cols];
   assert union(final_clusters) == all_cols;
@@ -799,7 +799,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
       sym_binary_sym_ternary  |
       sym_ternary_sym_binary  = [0 -> 0];
 
-    return [[(foreign_key.origin, i), (foreign_key.target, j)] : i, j <- idx_assocs];
+    return [[(foreign_key.origin, i), (foreign_key.target, j)] : i j <- idx_assocs];
   }
 }
 
@@ -819,10 +819,10 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 
   [(TableVar, Nat) -> ValueStoreId] table_col_value_store_map {
     auto_id = database.name;
-    table_vars = [table_var(r), arity(auto_id, r), info.symmetric : r, info <- database.rel_vars];
+    table_vars = [table_var(r), arity(auto_id, r), info.symmetric : r info <- database.rel_vars];
     clusters = column_clusters(table_vars, physical_foreign_keys);
     ord_clusters = isort(clusters);
-    return [c -> value_store_id(i) : cs @ i <~ ord_clusters, c <- cs];
+    return [c -> value_store_id(i) : cs @ i <- ord_clusters, c <- cs];
   }
 
 
@@ -841,7 +841,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
           value_stores = (col_to_vs_map((tv, i)) : i < |info.signature|);
           return table(value_stores, info.keys, info.signature, info.symmetric);
         }
-      } : rv, info <- database.rel_vars, tv = table_var(rv)
+      } : rv info <- database.rel_vars, tv = table_var(rv)
     ];
   }
 }
@@ -853,8 +853,8 @@ implicit typedefs : [TypeName -> NeType] {
   // ## THIS IS AN ALMOST PERFECT DUPLICATE OF gen_dispatch_auto_method_body().
   // Instr* method_dispatch_code(DBSymbol db_type, Method+ methods) {
   //   assert |methods| > 1;
-  //   assert |[m.name : m <~ methods]| == 1;    // All methods must have the same name
-  //   assert |[|m.args| : m <~ methods]| == 1;  // All methods have the same arity
+  //   assert |[m.name : m <- methods]| == 1;    // All methods must have the same name
+  //   assert |[|m.args| : m <- methods]| == 1;  // All methods have the same arity
   //   assert |head(methods).args| > 0;          // No-argument methods cannot be polymorphic
 
 
@@ -865,14 +865,14 @@ implicit typedefs : [TypeName -> NeType] {
   //   name      = a_method.name;
   //   arity     = |a_method.args|;
 
-  //   disp_args = choose_disp_args(((t : t, unused_var <- nonempty(m.args)) : m <- methods), typedefs);
+  //   disp_args = choose_disp_args(((t : t, _ <- nonempty(m.args)) : m <- methods), typedefs);
 
   //   cases = [{
   //     types = (left(m.args(j)) : j <- disp_args);
   //     invoke_method_instr = invoke_db_method(l0, db_type, method_id(name, arity, i), (fn_arg(j) : j < arity));
   //     code = (invoke_method_instr, ret_val(l0));
   //     return (types, code);
-  //   } : m @ i <~ methods];
+  //   } : m @ i <- methods];
 
   //   code = dynamic_dispatch_code((fn_arg(i) : i <- disp_args), cases);
   //   return (code | ret_val(l0));
@@ -881,8 +881,8 @@ implicit typedefs : [TypeName -> NeType] {
 
   Instr* update_dispatch_code(DBSymbol db_type, <Update+, Handler+> updates) {
     assert |updates| > 1;
-    assert |[name(u) : u <~ updates]| == 1;   // All updates must have the same name
-    assert |[arity(u) : u <~ updates]| == 1;  // All updates have the same arity
+    assert |[name(u) : u <- updates]| == 1;   // All updates must have the same name
+    assert |[arity(u) : u <- updates]| == 1;  // All updates have the same arity
     assert arity(head(updates)) > 0;          // No-argument updates cannot be polymorphic
 
     i0 = ivar32(0);
@@ -898,7 +898,7 @@ implicit typedefs : [TypeName -> NeType] {
 
     args_types = (
       match (u)
-        update()  = (t : t, unused_var <- nonempty(u.args)),
+        update()  = (t : t, _ <- nonempty(u.args)),
         handler() = (u.type)
       : u <- updates
     );
@@ -910,7 +910,7 @@ implicit typedefs : [TypeName -> NeType] {
       try_update_instr = try_update(db_type, polymorphic_update_id(u, i), (fn_arg(j) : j < arity));
       code = (try_update_instr, set_ivar32(i0, int32(i)) if are_handlers, exit_block);
       return (types, code);
-    } : u @ i <~ updates];
+    } : u @ i <- updates];
 
     code = dynamic_dispatch_code((fn_arg(i) : i <- disp_args), cases);
     return (execute_block(code), ret_val(i0) if are_handlers);
@@ -958,7 +958,7 @@ Maybe[UpdateSymbol] name(<Update, Handler>) =
   handler()     = nothing;
 
 NeType* arg_types(<Update, Handler>) =
-  update() u?   = (t : t, unused_var <- u.args),
+  update() u?   = (t : t, _ <- u.args),
   handler() h?  = (h.type);
 
 UpdateId polymorphic_update_id(<Update, Handler>, Nat idx) =

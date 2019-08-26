@@ -40,9 +40,9 @@ VarsState unreachable_vars_state = :unreachable_vars_state;
 VarsState blank_vars_state = vars_state([], []);
 
 VarsState vars_state([TrkObjVar -> VarStatus] std_vs, [TrkItVar -> StdObjVar] it_vs) {
-  assert not (v, s <- std_vs : not status_is_fine(s, std_vs));
+  assert not (v s <- std_vs : not status_is_fine(s, std_vs));
   assert not (v <- keys(std_vs) : has_cycles(v, std_vs, []));
-  assert not (iv, cv <- it_vs : not coll_status_is_fine(cv, std_vs));
+  assert not (iv cv <- it_vs : not coll_status_is_fine(cv, std_vs));
 
   return vars_state(vars_status: std_vs, it_vars_map: it_vs);
 
@@ -120,7 +120,7 @@ StdObjVar root_var(VarsState state, TrkObjVar var) =
 ([+TrkObjVar], [TrkItVar]) group_vars(VarsState state, TrkObjVar var) {
   rv = root_var(state, var);
   obj_vars = [v : v  <- tracked_vars(state), root_var(state, v) == rv];
-  it_vars = [iv : iv, cv <- it_vars_map(state), in(cv, obj_vars)];
+  it_vars = [iv : iv cv <- it_vars_map(state), in(cv, obj_vars)];
   return (nonempty(obj_vars), it_vars);
 }
 
@@ -144,7 +144,7 @@ Bool var_group_is_live(VarsState state, TrkObjVar var, [TrkVar] live_vars) {
   // In all cases, I must remove the variable from the state.
   new_vars_status = remove_key(vars_status, var);
 
-  copies = [v : v, ov <- vars_status, ov == copy_of(var)];
+  copies = [v : v ov <- vars_status, ov == copy_of(var)];
   if copies != [] {
     // Either owner or dependent variable with no copies
     a_copy = an_elem(copies);
@@ -172,15 +172,15 @@ Bool var_group_is_live(VarsState state, TrkObjVar var, [TrkVar] live_vars) {
            if s == copy_of(var)       then copy_of(a_copy)      else
            if s == dependent_on(var)  then dependent_on(a_copy) else
                                            s
-      : v, s <- new_vars_status
+      : v s <- new_vars_status
     ];
-    new_it_vars_map = [iv -> if ov == var then a_copy else ov : iv, ov <- it_vars_map];
+    new_it_vars_map = [iv -> if ov == var then a_copy else ov : iv ov <- it_vars_map];
   }
   else {
     // Here the variables has no copies, so there mustn't be any iterators on it left,
     // either because the variable is itself not a copy, and therefore has no iterators
     // in the first place, or because the reference is not going to survive
-    new_it_vars_map = [iv -> cv : iv, cv <- it_vars_map, cv != var];
+    new_it_vars_map = [iv -> cv : iv cv <- it_vars_map, cv != var];
 
     // var_status = vars_status[var];
     var_status = lookup(vars_status, var, owner); ## THIS IS A TEMPORARY HACK USED TO ACCOMODATE IMPLICIT PARAMETERS BEFORE copy_of() IS ACTUALLY IMPLEMENTED
@@ -188,13 +188,13 @@ Bool var_group_is_live(VarsState state, TrkObjVar var, [TrkVar] live_vars) {
     if var_status == owner {
       // Owner variable with no copies
       // Add-refing all children and making them owners and then releasing the variable
-      new_vars_status = [v -> if s == dependent_on(var) then owner else s : v, s <- new_vars_status];
-      code = rand_sort([add_ref(v) : v, s <- vars_status, s == dependent_on(var)]) & (release(var));
+      new_vars_status = [v -> if s == dependent_on(var) then owner else s : v s <- new_vars_status];
+      code = rand_sort([add_ref(v) : v s <- vars_status, s == dependent_on(var)]) & (release(var));
     }
     else if is_dependent(var_status) {
       // Dependent variable that has no copies. No release is needed.
       // Replacing all references to it with references to its parent.
-      new_vars_status = [v -> if s == dependent_on(var) then var_status else s : v, s <- new_vars_status];
+      new_vars_status = [v -> if s == dependent_on(var) then var_status else s : v s <- new_vars_status];
     }
 
     // Nothing to do if the variable is inline or if it is a copy
@@ -266,7 +266,7 @@ VarsState reconcile([VarsState] states) {
   common_it_vars = intersection([keys(m) : m <- it_vars_maps]);
 
   common_coll_map = [iv -> intersection([collection_copies(s, iv) : s <- states]): iv <- common_it_vars];
-  new_it_vars_map = [iv -> deref_copy(new_vars_status, an_elem(cvs)) : iv, cvs <- common_coll_map, cvs != []];
+  new_it_vars_map = [iv -> deref_copy(new_vars_status, an_elem(cvs)) : iv cvs <- common_coll_map, cvs != []];
 
   return vars_state(new_vars_status, new_it_vars_map);
 
@@ -275,7 +275,7 @@ VarsState reconcile([VarsState] states) {
   [+StdObjVar] var_copies(VarsState state, StdObjVar var) {
     vars_status = vars_status(state);
     master_copy = deref_copy(vars_status, var);
-    copies = [v : v, s <- vars_status, s == copy_of(master_copy)];
+    copies = [v : v s <- vars_status, s == copy_of(master_copy)];
     return nonempty([master_copy] & copies);
   }
 }

@@ -1,17 +1,17 @@
 implicit syn_prg : SynPrg, artifact : ReactAutoDef {
   Automaton desugar_automaton {
     // Inputs
-    inputs = [signal_var(i.name) -> input(desugar_plain_type(i.type), i.discrete, false) : i <~ artifact.inputs];
+    inputs = [signal_var(i.name) -> input(desugar_plain_type(i.type), i.discrete, false) : i <- artifact.inputs];
 
     // Outputs
-    outputs = [signal_var(o.name) -> output(desugar_plain_type(o.type), o.discrete) : o <~ artifact.outputs];
+    outputs = [signal_var(o.name) -> output(desugar_plain_type(o.type), o.discrete) : o <- artifact.outputs];
 
     // Desugaring constants
     params = [
       signal_var(c.name) -> (
         type:  desugar_plain_type(c.type) if c.type?,
         value: desugar_auto_expr(c.value)
-      ) : c <~ artifact.consts
+      ) : c <- artifact.consts
     ];
 
     // Plain, conditional and foreach rules
@@ -30,7 +30,7 @@ implicit syn_prg : SynPrg, artifact : ReactAutoDef {
         init_value = desugar_auto_expr(v.init_value);
         var_updates = lookup(updates, var, []);
         return state_var(type, init_value, false, var_updates);
-      } : v <~ artifact.state_vars, var = signal_var(v.name)
+      } : v <- artifact.state_vars, var = signal_var(v.name)
     ];
 
     // Time-varying rules
@@ -86,7 +86,7 @@ implicit syn_prg : SynPrg, artifact : ReactAutoDef {
   ReactMethod desugar_method(AutoMethodDef method_def) {
     args = ((desugar_plain_type(t), just(v)) : t, v <- method_def.args);
     ret_type = desugar_plain_type(method_def.ret_type);
-    arg_vars = [v : _, v <~ method_def.args];
+    arg_vars = [v : (_, v) <- method_def.args];
     expr = desugar_expr(method_def.expr, arg_vars, artifact = method_def, impl_args = []);
     method = react_method(method_symbol(method_def.name), args, ret_type, expr);
     return transfer(method, method_def);
@@ -152,7 +152,7 @@ implicit syn_prg : SynPrg, artifact : ReactAutoDef {
   ([SignalVar -> StateVarUpdate], [SignalVar -> DiscreteRule]) desugar_foreach_rule(ForeachRuleDecl rule) {
     value = desugar_auto_expr(rule.value);
     cond_expr = if rule.cond? then desugar_auto_expr(rule.cond) else object(true);
-    signals_state = [signal_var(id) -> state : id, state <~ rule.signals];
+    signals_state = [signal_var(id) -> state : (id, state) <- rule.signals];
     cond = react_cond(cond_expr, signals_state);
     target = signal_var(rule.name);
     return (
@@ -165,7 +165,7 @@ implicit syn_prg : SynPrg, artifact : ReactAutoDef {
   TimeRule desugar_time_rule(TimeRuleDecl rule) =
     true_for_rule_decl()      = boolean_time_rule(desugar_auto_expr(rule.cond), rule.time_expr),
     unchanged_for_rule_decl() = unchanged_time_rule(desugar_auto_expr(rule.cond), rule.time_expr),
-    inactive_for_rule_decl()  = since_time_rule([signal_var(s) : s <~ rule.signals], rule.time_expr, rule.starts_at_time_0);
+    inactive_for_rule_decl()  = since_time_rule([signal_var(s) : s <- rule.signals], rule.time_expr, rule.starts_at_time_0);
 
 
   Expr desugar_auto_expr(SynExpr expr) = desugar_expr(expr, [], impl_args = []);

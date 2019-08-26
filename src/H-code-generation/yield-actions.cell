@@ -1,12 +1,12 @@
 type YieldValueAction   = yield_value_action(var: AnyLocVar, expr: Expr, instrs: Instr+);
 
-type SetYieldAction     = set_yield_action(var: StdVar, src_set: Expr, next: YieldAction);
+type SetYieldAction     = set_yield_action(var: Maybe[StdVar], src_set: Expr, next: YieldAction);
 type RelYieldAction     = rel_yield_action(
-                            vars: StdVar+, src_rel: Expr, args: Maybe[Expr]+, next: YieldAction
+                            vars: Maybe[StdVar]+, src_rel: Expr, args: Maybe[Expr]+, next: YieldAction
                           );
 
 type RelVarYieldAction  = relvar_yield_action(
-                            vars: StdVar+, relvar: AnyRelVar, args: Maybe[Expr]+, next: YieldAction
+                            vars: Maybe[StdVar]+, relvar: AnyRelVar, args: Maybe[Expr]+, next: YieldAction
                           );
 
 type SeqYieldAction     = seq_yield_action(
@@ -29,25 +29,11 @@ YieldValueAction yield_value_action(AnyLocVar v, Expr e, Instr+ is) =
 
 CondYieldAction cond_yield_action(Expr c, YieldAction a) = cond_yield_action(cond: c, next: a);
 
-RelVarYieldAction relvar_yield_action(StdVar+ vs, AnyRelVar r, Maybe[Expr]+ as, YieldAction a) =
+RelVarYieldAction relvar_yield_action(Maybe[StdVar]+ vs, AnyRelVar r, Maybe[Expr]+ as, YieldAction a) =
   relvar_yield_action(vars: vs, relvar: r, args: as, next: a);
 
 YieldAction yield_actions(YieldAction+ actions) =
   if |actions| != 1 then :yield_actions(actions) else only(actions);
-
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-
-YieldAction yield_action(Clause cls, YieldAction next) =
-  set_clause()      = set_yield_action(var: cls.var, src_set: cls.src, next: next),
-  rel_clause()      = rel_yield_action(vars: cls.vars, src_rel: cls.src, args: cls.args, next: next),
-  relvar_clause()   = relvar_yield_action(vars: cls.vars, relvar: cls.rel_var, args: cls.args, next: next),
-  seq_clause()      = seq_yield_action(vars: cls.vars, idx_var: cls.idx_var, src_seq: cls.src, next: next),
-  and_clause()      = yield_action(cls.left, yield_action(cls.right, next)),
-  or_clause()       = yield_actions((yield_action(cls.left, next), yield_action(cls.right, next))),
-  match_clause()    = match_yield_action(ptrn: cls.ptrn, expr: cls.expr, next: next),
-  asgnm_clause()    = let_yield_action(var: cls.var, expr: cls.expr, next: next),
-  filter_clause(e?) = cond_yield_action(cond: e, next: next);
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -60,7 +46,31 @@ implicit program           : Program,
          environments      : [EnvVar -> Type]+,
          surrogates        : [SurrExpr -> ObjExpr],
          expr_id           : Nat,
-         options           : CompOptions {
+         options           : CompOptions
+{
+  YieldAction yield_action(Clause cls, YieldAction next) {
+    return match (cls)
+      set_or_seq_clause() = set_or_seq_yield_action(cls.var, cls.src, next),
+      rel_clause()        = rel_yield_action(vars: cls.vars, src_rel: cls.src, args: cls.args, next: next),
+      relvar_clause()     = relvar_yield_action(vars: cls.vars, relvar: cls.rel_var, args: cls.args, next: next),
+      seq_clause()        = seq_yield_action(vars: cls.vars, idx_var: cls.idx_var, src_seq: cls.src, next: next),
+      and_clause()        = yield_action(cls.left, yield_action(cls.right, next)),
+      or_clause()         = yield_actions((yield_action(cls.left, next), yield_action(cls.right, next))),
+      match_clause()      = match_yield_action(ptrn: cls.ptrn, expr: cls.expr, next: next),
+      asgnm_clause()      = let_yield_action(var: cls.var, expr: cls.expr, next: next),
+      filter_clause(e?)   = cond_yield_action(cond: e, next: next);
+
+
+    YieldAction set_or_seq_yield_action(Maybe[StdVar] var, Expr src, YieldAction next) {
+      src_type = subexpr_type(src);
+      return if is_subset(src_type, type_set)
+        then set_yield_action(var: var, src_set: src, next: next)
+        else seq_yield_action(vars: (var), idx_var: nothing, src_seq: src, next: next);
+    }
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////
 
   Instr* yield_action_opt_code(YieldAction action, VarGen var_gen) =
     yield_value_action()    = yield_value_action_opt_code(action, var_gen),
@@ -93,7 +103,7 @@ implicit program           : Program,
     }
 
 
-    Instr* one_value_iter_code(Expr key_arg, StdVar value_var, AnyRelVar relvar, YieldAction next_action, VarGen init_var_gen) {
+    Instr* one_value_iter_code(Expr key_arg, Maybe[StdVar] value_var, AnyRelVar relvar, YieldAction next_action, VarGen init_var_gen) {
       key_arg_eval_code, key_arg_alias, var_gen = opt_eval_info(key_arg, init_var_gen);
 
       key_arg_surr, var_gen = next_int32_var(var_gen);
@@ -106,13 +116,14 @@ implicit program           : Program,
       cases = [{
         sign = table_signature(tv);
         value_repr = low_level_repr(sign(1));
-        ll_value_var = low_level_var(value_repr, value_var);
+        ll_value_var = apply(value_var, low_level_var(value_repr, $));
 
         store_id = table_col_store_id(tv, 0);
         store_type = value_store_type(rel_auto_type(relvar), unqualified(store_id));
         store_id = substitute(store_id);
 
-        next_action_surrs = surrogates & [value_var -> obj_expr(ll_value_var)];
+        new_surrs = [value(value_var) -> obj_expr(value_unsafe(ll_value_var)) if value_var != nothing];
+        next_action_surrs = surrogates & new_surrs;
         action_code = yield_action_opt_code(next_action, var_gen, surrogates = next_action_surrs);
 
         code = (
@@ -122,9 +133,9 @@ implicit program           : Program,
             do_if(
               table_contains(tv, (just(key_arg_surr), nothing), false),
               ( set_any_var(
-                  ll_value_var,
+                  value(ll_value_var),
                   column_lookup(substitute(tv), key_arg_surr, column_repr(sign(1)))
-                )
+                ) if ll_value_var != nothing
               ) & action_code
             )
           )
@@ -141,8 +152,13 @@ implicit program           : Program,
     }
 
 
-    Instr* full_column_iter_code(StdVar var_0, StdVar var_1, AnyRelVar relvar, YieldAction next_action, VarGen init_var_gen) {
-      surr_var_0 = shadow_surr_var(var_0);
+    Instr* full_column_iter_code(Maybe[StdVar] var_0, Maybe[StdVar] var_1, AnyRelVar relvar, YieldAction next_action, VarGen init_var_gen) {
+      if var_0 != nothing {
+        surr_var_0 = shadow_surr_var(value(var_0));
+        var_gen = init_var_gen;
+      }
+      else
+        surr_var_0, var_gen = next_int32_var(init_var_gen);
 
       // Selecting the candidate tables among those the logical relation is partitioned into
       // In this specific case, that means all of them
@@ -155,23 +171,27 @@ implicit program           : Program,
         sign = table_signature(tv);
         repr_0 = low_level_repr(sign(0));
         repr_1 = low_level_repr(sign(1));
-        ll_var_0 = low_level_var(repr_0, var_0);
-        ll_var_1 = low_level_var(repr_1, var_1);
+        ll_var_0 = apply(var_0, low_level_var(repr_0, $));
+        ll_var_1 = apply(var_1, low_level_var(repr_1, $));
 
         store_id = table_col_store_id(tv, 0);
         store_type = value_store_type(rel_auto_type(relvar), unqualified(store_id));
         store_id = substitute(store_id);
 
         col_repr = column_repr(sign(1));
-        it_var, var_gen = next_column_it_var(init_var_gen, col_repr);
+        it_var, var_gen = next_column_it_var(var_gen, col_repr);
 
         vars_setup_code = (
           set_ivar32(surr_var_0, get_col_index(it_var)),
-          surr_to_decoded_value(ll_var_0, store_id, store_type, surr_var_0),
-          set_any_var(ll_var_1, column_lookup(substitute(tv), surr_var_0, col_repr))
+          surr_to_decoded_value(value(ll_var_0), store_id, store_type, surr_var_0) if ll_var_0 != nothing,
+          set_any_var(value(ll_var_1), column_lookup(substitute(tv), surr_var_0, col_repr)) if ll_var_1 != nothing
         );
 
-        next_action_surrs = surrogates & [var_0 -> obj_expr(ll_var_0), var_1 -> obj_expr(ll_var_1)];
+        new_surrs = [
+          value(var_0) -> obj_expr(value_unsafe(ll_var_0)) if var_0 != nothing,
+          value(var_1) -> obj_expr(value_unsafe(ll_var_1)) if var_1 != nothing
+        ];
+        next_action_surrs = surrogates & new_surrs;
         action_code = yield_action_opt_code(next_action, var_gen, surrogates = next_action_surrs);
 
         loop_code = (break_if(is_out_of_range(it_var))) & vars_setup_code & action_code & (move_forward(it_var));
@@ -196,7 +216,7 @@ implicit program           : Program,
 
     bound_args_idxs = (i : a @ i <- args, a != nothing);
     free_args_idxs = (i : a @ i <- args, a == nothing);
-    arg_idx_bound_arg_idx = [i -> j : i @ j <~ bound_args_idxs];
+    arg_idx_bound_arg_idx = [i -> j : i @ j <- bound_args_idxs];
 
     args_eval_code, args_aliases, var_gen = opt_eval_info(set_args, init_var_gen);
 
@@ -217,11 +237,11 @@ implicit program           : Program,
 
     // Iterating through all candidate tables
     for tv <- isort(candidate_tables) {
-      assert (a <~ surr_args : a == nothing);
+      assert (a <- surr_args : a == nothing);
 
       sign = table_signature(tv);
       vars_types = (sign(free_args_idxs(i)) : i < |action.vars|);
-      low_level_vars = (low_level_var(low_level_repr(vars_types(i)), v) : v @ i <- action.vars);
+      low_level_vars = (apply(v, low_level_var(low_level_repr(vars_types(i)), $)) : v @ i <- action.vars);
 
       vars_setup_code = join(({
         shadow_surr_var = shadow_surr_vars(i);
@@ -230,11 +250,15 @@ implicit program           : Program,
         store_id = substitute(store_id);
         return (
           set_ivar32(shadow_surr_var, get_unknown_arg(it_var, i)),
-          surr_to_decoded_value(v, store_id, store_type, shadow_surr_var)
+          surr_to_decoded_value(value(v), store_id, store_type, shadow_surr_var)
         );
-      } : v @ i <- low_level_vars));
+      } : v @ i <- low_level_vars, v != nothing));
 
-      next_action_surrs = surrogates & [v -> obj_expr(low_level_vars(i)) : v @ i <~ action.vars];
+      new_surrs = [
+        value(v) -> obj_expr(value_unsafe(low_level_vars(i)))
+        : v @ i <- action.vars, v != nothing
+      ];
+      next_action_surrs = surrogates & new_surrs;
       action_code = yield_action_opt_code(action.next, var_gen, surrogates = next_action_surrs);
 
       loop_code = (break_if(is_out_of_range(it_var))) & vars_setup_code & action_code & (move_forward(it_var));
@@ -294,7 +318,7 @@ implicit program           : Program,
     body = (break_if(is_out_of_range(it_var)));
 
     vars_idxs = (i : a @ i <- action.args, a == nothing);
-    body = body & (get_curr_arg(v, it_var, vars_idxs(i)) : v @ i <- action.vars);
+    body = body & (get_curr_arg(value(v), it_var, vars_idxs(i)) : v @ i <- action.vars, v != nothing);
 
     body = body & yield_action_opt_code(action.next, var_gen);
     body = (body | move_forward(it_var));
@@ -305,13 +329,13 @@ implicit program           : Program,
 
   // yield_value_action(var: LocVar, expr: Expr, instrs: Instr+)
   Instr* yield_value_action_opt_code(YieldValueAction action, VarGen var_gen) {
-    code, surr, unused_var = opt_eval_info(action.expr, var_gen);
+    code, surr, _ = opt_eval_info(action.expr, var_gen);
     code = store_result(code, surr, action.var);
     return code & action.instrs;
   }
 
 
-  // set_yield_action(var: StdVar, src_set: Expr, next: YieldAction)
+  // set_yield_action(var: Mayb[StdVar], src_set: Expr, next: YieldAction)
   Instr* set_yield_action_opt_code(SetYieldAction action, VarGen init_var_gen) {
     src_eval_code, src_surr, var_gen = opt_eval_info(action.src_set, init_var_gen);
     it_var, var_gen = next_set_it_var(var_gen);
@@ -322,7 +346,7 @@ implicit program           : Program,
       get_iter(it_var, src_surr),
       repeat((
         break_if(is_out_of_range(it_var)),
-        set_var(action.var, get_curr_obj(it_var))
+        set_var(value(action.var), get_curr_obj(it_var)) if action.var != nothing
         ) & nested_code & (
         move_forward(it_var)
       ))
@@ -426,8 +450,8 @@ implicit program           : Program,
     expr_type = subexpr_type(action.expr);
 
     ptrn_env = generate_env(action.ptrn, expr_type);
-    vars_reprs = [v -> low_level_var(opt_repr(t), v) : v, t <- ptrn_env];
-    surrs = surrogates & [v -> obj_expr(pv) : v, pv <- vars_reprs];
+    vars_reprs = [v -> low_level_var(opt_repr(t), v) : v t <- ptrn_env];
+    surrs = surrogates & [v -> obj_expr(pv) : v pv <- vars_reprs];
 
     let surrogates = surrs, vars_reprs = vars_reprs {
       nested_code = yield_action_opt_code(action.next, var_gen);

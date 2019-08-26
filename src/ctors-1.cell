@@ -118,7 +118,7 @@ SynCondExpr syn_cond_expr(SynExpr e, SynExpr c) = cond_expr(expr: e, cond: c);
 
 ////////////////////////////////////////////////////////////////////////////////
 
-SynAsgnStmt       syn_asgnm_stmt(StdVar+ vs, SynExpr e)               = assignment_stmt(vars: vs, value: e);
+SynAsgnStmt       syn_asgnm_stmt(Maybe[StdVar]+ vs, SynExpr e)        = assignment_stmt(vars: vs, value: e);
 SynReturnStmt     syn_ret_stmt(SynExpr e)                             = :return_stmt(e);
 SynFailStmt       syn_fail_stmt(String f, NzNat l)                    = fail_stmt(file: f, line: l);
 SynSeqUpdateStmt  syn_seq_update_stmt(StdVar o, SynExpr i, SynExpr v) = seq_update_stmt(obj: o, idx: i, value: v);
@@ -153,11 +153,13 @@ SynLetStmt     syn_let_stmt((ImplArg, SynExpr)+ a, SynStmt+ b)  = let_stmt(asgnm
 SynIter syn_coll_iter(Maybe[StdVar]+ vs, SynExpr e)             = coll_value_iter(vars: vs, src_expr: e);
 SynIter syn_coll_iter(Maybe[StdVar]+ vs, StdVar iv, SynExpr e)  = coll_value_iter(vars: vs, idx_var: iv, src_expr: e);
 
+SynIter syn_rel_iter(Maybe[Symbol]+ vs, SynExpr e)              = rel_iter(vars: vs, src_expr: e);
+
 SynFilteredIter syn_filtered_iter(Maybe[Symbol]+ vs, Symbol+ t, Maybe[SynExpr]+ as) = filtered_iter(vars: vs, target: t, args: as);
 
 ////////////////////////////////////////////////////////////////////////////////
 
-SynClause syn_iter_clause(StdVar+ vs, <SynExpr, SynProj> s) = iter_clause(vars: vs, src: s);
+SynClause syn_iter_clause(Maybe[Symbol]+ vs, <SynExpr, SynProj> s) = iter_clause(vars: vs, src: s);
 SynClause syn_seq_clause(Maybe[Atom]+ vs, Maybe[Atom] iv, SynExpr e) = seq_clause(vars: vs, idx_var: iv, src: e);
 SynClause syn_and_clause(SynClause+ cs)             = if |cs| == 1 then cs(0) else :and_clause(cs);
 SynClause syn_or_clause(SynClause+ cs)              = if |cs| == 1 then cs(0) else :or_clause(cs);

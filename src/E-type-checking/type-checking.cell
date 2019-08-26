@@ -19,7 +19,7 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
 
   [TypeCheckingError] typecheck_function(Function func) {
     args = func.args;
-    obj_vars = [v -> t : v, t <~ args] & [v -> t : v, t <- func.impl_args];
+    obj_vars = [v -> t : (v, t) <- args] & [v -> t : v t <- func.impl_args];
     let context=func, typed_vars = []
       errs = typecheck(func.expr, func.res_type, obj_vars);
     return errs;
@@ -35,15 +35,15 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
         return [invalid_main_ret_type(ret_type)] if not is_subset(ret_type, integer);
       }
     }
-    env = [a.var -> a.type : a <~ proc.args];
+    env = [a.var -> a.type : a <- proc.args];
     ret_type = if proc.res_type != nothing then value(proc.res_type) else empty_type;
     return typecheck(proc.body, ret_type, env, context=proc, typed_vars=[]);
   }
 
 
   [TypeCheckingError] typecheck_aggr_funct(AggrFunct aggr_fn) {
-    base_env = [v -> t : v, t <~ aggr_fn.extra_args];
-    res_env = base_env & [v -> info.type : v, info <- aggr_fn.red_vars];
+    base_env = [v -> t : (v, t) <- aggr_fn.extra_args];
+    res_env = base_env & [v -> info.type : v info <- aggr_fn.red_vars];
     let context=:null_context, typed_vars = [] {
       errs = typecheck(aggr_fn.null_value, aggr_fn.type, res_env) &
              typecheck(aggr_fn.final_value, aggr_fn.type, res_env) &
@@ -54,7 +54,7 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
                merge_env = base_env & [var1 -> var_type, var2 -> var_type];
                return typecheck(info.init_value, var_type, init_env) &
                       typecheck(merge_expr, var_type, merge_env);
-             } : v, info <- aggr_fn.red_vars]);
+             } : v info <- aggr_fn.red_vars]);
     }
     return errs;
   }
@@ -98,15 +98,29 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
 
     [TypeCheckingError] typecheck_without_annotations(Clause cls, [EnvVar -> Type] env) =
-      set_clause()      = typecheck(cls.src, type_set, env),
-      rel_clause()      = typecheck_rel_clause(cls.vars, cls.src, cls.args, env),
-      relvar_clause()   = typecheck_relvar_clause(cls.vars, cls.rel_var, cls.args, env),
-      seq_clause()      = typecheck_seq_clause(cls.vars, cls.src, env),
-      and_clause()      = typecheck_and_clause(cls.left, cls.right, env),
-      or_clause()       = typecheck(cls.left, env) & typecheck(cls.right, env),
-      match_clause()    = typecheck_match_clause(cls.ptrn, cls.expr, env),
-      asgnm_clause()    = typecheck(cls.expr, type_any, env),
-      filter_clause(e?) = typecheck(e, type_bool, env);
+      set_or_seq_clause() = typecheck_set_or_seq_clause(cls.var, cls.src, env),
+      rel_clause()        = typecheck_rel_clause(cls.vars, cls.src, cls.args, env),
+      relvar_clause()     = typecheck_relvar_clause(cls.vars, cls.rel_var, cls.args, env),
+      seq_clause()        = typecheck_seq_clause(cls.vars, cls.src, env),
+      and_clause()        = typecheck_and_clause(cls.left, cls.right, env),
+      or_clause()         = typecheck(cls.left, env) & typecheck(cls.right, env),
+      match_clause()      = typecheck_match_clause(cls.ptrn, cls.expr, env),
+      asgnm_clause()      = typecheck(cls.expr, type_any, env),
+      filter_clause(e?)   = typecheck(e, type_bool, env);
+  }
+
+
+  [TypeCheckingError] typecheck_set_or_seq_clause(Maybe[StdVar] var, Expr src, [EnvVar -> Type] env) {
+    errs_set = typecheck(src, type_set, env);
+    return [] if errs_set == [];
+
+    errs_seq = typecheck(src, type_seq, env);
+    return [] if errs_seq == [];
+
+    errs = typecheck(src, type_set_seq, env);
+    return errs if errs != [];
+
+    return errs_set; ## BAD BAD BAD
   }
 
 
@@ -117,7 +131,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   }
 
 
-  [TypeCheckingError] typecheck_rel_clause(StdVar+ vars, Expr src, Maybe[Expr]+ args, [EnvVar -> Type] env) {
+  [TypeCheckingError] typecheck_rel_clause(Maybe[StdVar]+ vars, Expr src, Maybe[Expr]+ args, [EnvVar -> Type] env) {
     assert |vars| == count(args, $ == nothing);
 
     return match (args)
@@ -142,7 +156,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   }
 
 
-  [TypeCheckingError] typecheck_relvar_clause(StdVar+ vars, AnyRelVar rel_var, Maybe[Expr]+ args, [EnvVar -> Type] env) {
+  [TypeCheckingError] typecheck_relvar_clause(Maybe[StdVar]+ vars, AnyRelVar rel_var, Maybe[Expr]+ args, [EnvVar -> Type] env) {
     assert |vars| == count(args, $ == nothing);
 
     errs = seq_union((typecheck(value(a), type_any, env) : a <- args, a != nothing));
@@ -201,7 +215,7 @@ implicit typedefs : [TypeName -> NeType] {
       ptrns = match (ptrn) ptrn_tuple(ts?) = ts;
       type_tuples = tuple_types_field_types(type, |ptrns|);
       return [ptrn_cannot_match_type(ptrn, type)] if type_tuples == [];
-      errs = [union([typecheck_pattern(p, t) : p, t <~ zip(ptrns, types)]) : types <- type_tuples];
+      errs = [union([typecheck_pattern(p, t) : (p, t) <- zip(ptrns, types)]) : types <- type_tuples];
       return if errs([]) then [] else an_elem(errs);
     }
 

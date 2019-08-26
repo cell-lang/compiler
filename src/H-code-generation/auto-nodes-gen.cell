@@ -38,7 +38,7 @@ implicit program : Program, automaton : Automaton {
   }
 
 
-  [BlockNodeId -> AutoNode] nodes_by_id = merge([[n.id -> n] : n <~ gen_auto_nodes]);
+  [BlockNodeId -> AutoNode] nodes_by_id = merge([[n.id -> n] : n <- gen_auto_nodes]);
 
 
   [BlockNodeId]* nodes_ids_by_level{
@@ -62,7 +62,7 @@ implicit program : Program, automaton : Automaton {
 
 
   [StdBlockNodeId -> Nat] multivalue_node_expr_count =
-    [t.id -> |t.exprs| : t <~ gen_auto_nodes, state() | derived_discrete() ?= t];
+    [t.id -> |t.exprs| : t <- gen_auto_nodes, state() | derived_discrete() ?= t];
 
 
   ## SHOULDN'T WE JUST INCLUDE THE PENDING STATE VAR IN THE LIST OF POSSIBLE
@@ -87,15 +87,15 @@ implicit automaton : Automaton {
   /////////////////// Continuous and discrete condition nodes //////////////////
 
   [CondNodeId -> CondNodeInfo] cond_nodes_info {
-    update_conds = [u.cond, v, u : v, sv <- automaton.state, u <- sv.updates];
-    discrete_rule_conds = [r.cond, v, r : v, rs <- automaton.discrete_rules, r <- rs];
+    update_conds = [u.cond, v, u : v sv <- automaton.state, u <- sv.updates];
+    discrete_rule_conds = [r.cond, v, r : v rs <- automaton.discrete_rules, r <- rs];
 
-    all_conds = [c, v, a : c, v, a <- update_conds | c, v, a <- discrete_rule_conds];
+    all_conds = [c, v, a : c v a <- update_conds | c v a <- discrete_rule_conds];
 
-    ord_conds = rand_sort([c : c, unused_var_1, unused_var_2 <- all_conds]);
+    ord_conds = rand_sort([c : c _ _ <- all_conds]);
     return [
       cond_node_id(i) -> (cond: c, actions: if as != [] then as else undefined) ## BAD BAD BAD
-      : c @ i <~ ord_conds, as = [v, a : v, a <- all_conds(c, ?, ?)]
+      : c @ i <- ord_conds, as = [v, a : v a <- all_conds(c, ?, ?)]
     ];
   }
 
@@ -104,13 +104,13 @@ implicit automaton : Automaton {
 
   [BlockNodeId -> [AutoNodeDependency]] common_up_nodes_map {
     // Creating node -> all nodes it depends on mapping
-    cond_up_nodes                 = [id -> cond_deps(info.cond) : id, info <- cond_nodes_info];
-    nested_auto_input_up_nodes    = [id -> expr_deps(e) : id, e <- nested_auto_inputs];
-    rules_up_nodes                = [std_block_node_id(bare_id(a)) -> expr_deps(e) : a, e <- automaton.rules];
-    time_rules_up_nodes           = [std_block_node_id(bare_id(a)) -> time_rule_deps(c) : a, c <- automaton.time_rules];
+    cond_up_nodes                 = [id -> cond_deps(info.cond) : id info <- cond_nodes_info];
+    nested_auto_input_up_nodes    = [id -> expr_deps(e) : id e <- nested_auto_inputs];
+    rules_up_nodes                = [std_block_node_id(bare_id(a)) -> expr_deps(e) : a e <- automaton.rules];
+    time_rules_up_nodes           = [std_block_node_id(bare_id(a)) -> time_rule_deps(c) : a c <- automaton.time_rules];
     nested_autos_up_nodes         = [nested_auto_node_id(bare_id(auto_id)) ->
-                                      [nested_auto_input_id(bare_id(auto_id), in_id) : in_id, unused_var <- auto.args]
-                                      : auto_id, auto <- automaton.nested_autos
+                                      [nested_auto_input_id(bare_id(auto_id), in_id) : in_id _ <- auto.args]
+                                      : auto_id auto <- automaton.nested_autos
                                     ];
 
     // Putting all dependency maps together
@@ -119,14 +119,14 @@ implicit automaton : Automaton {
 
 
   [StdBlockNodeId -> [CondNodeId]] trigger_upstream_nodes =
-    merge_values([[std_block_node_id(bare_id(v)) -> cond_id] : cond_id, info <- cond_nodes_info, v, a <- info.actions]);
+    merge_values([[std_block_node_id(bare_id(v)) -> cond_id] : cond_id info <- cond_nodes_info, v a <- info.actions]);
 
 
   [StdBlockNodeId -> [AutoNodeDependency]] value_upstream_nodes {
-    state_vars_exprs = [v -> [sv.init_value] & [u.value : u <- sv.updates]: v, sv <- automaton.state];
-    discrete_rules_exprs = [v -> [r.value : r <- rs] : v, rs <- automaton.discrete_rules];
+    state_vars_exprs = [v -> [sv.init_value] & [u.value : u <- sv.updates]: v sv <- automaton.state];
+    discrete_rules_exprs = [v -> [r.value : r <- rs] : v rs <- automaton.discrete_rules];
     all_exprs = state_vars_exprs & discrete_rules_exprs;
-    return [std_block_node_id(bare_id(v)) -> union([expr_deps(e) : e <- es]) : v, es <- all_exprs];
+    return [std_block_node_id(bare_id(v)) -> union([expr_deps(e) : e <- es]) : v es <- all_exprs];
   }
 
   //////////////////////////////////////////////////////////////////////////////
@@ -140,9 +140,9 @@ implicit automaton : Automaton {
   /////////////// Nodes (node ids, actually) sorted into layers ////////////////
 
   [+BlockNodeId]* nodes_by_level {
-    level_0 = [std_block_node_id(bare_id(a)) : a, unused_var <- automaton.params | a, unused_var <- automaton.inputs];
-    coalesced_value_down_nodes_map = [s -> [dependency_to_node_id(t) : t <- ts] : s, ts <- value_up_nodes_map];
-    return topological_sort([s -> new_ts : s, ts <- coalesced_value_down_nodes_map, new_ts = ts - level_0 - [s]]);
+    level_0 = [std_block_node_id(bare_id(a)) : a _ <- automaton.params | a _ <- automaton.inputs];
+    coalesced_value_down_nodes_map = [s -> [dependency_to_node_id(t) : t <- ts] : s ts <- value_up_nodes_map];
+    return topological_sort([s -> new_ts : s ts <- coalesced_value_down_nodes_map, new_ts = ts - level_0 - [s]]);
   }
 
   //////////////////////////////////////////////////////////////////////////////
@@ -154,7 +154,7 @@ implicit automaton : Automaton {
     // Reversing the dependency mapping: node -> all nodes that depend on it
     fat_map = reverse_multi(trigger_up_nodes_map);
     ## BAD BAD BAD: THIS IS SUPER SUPER UGLY
-    return [s -> ts : s, ts <- fat_map, s :: BlockNodeId];
+    return [s -> ts : s ts <- fat_map, s :: BlockNodeId];
   }
 
 
@@ -164,9 +164,9 @@ implicit automaton : Automaton {
     fat_map = reverse_multi(trigger_up_nodes_map);
     // Coalescing all the (automaton, output -> ...) into (automaton -> ...) entries
     pre_map = merge_values(
-      [[dependency_to_node_id(s) -> [one_level_down(s) -> ts]] : s, ts <- fat_map, qual_signal_var() ?= s]
+      [[dependency_to_node_id(s) -> [one_level_down(s) -> ts]] : s ts <- fat_map, qual_signal_var() ?= s]
     );
-    return [s -> merge_value_sets(ms) : s, ms <- pre_map];
+    return [s -> merge_value_sets(ms) : s ms <- pre_map];
   }
 }
 
@@ -212,7 +212,7 @@ implicit program : Program, automaton : Automaton {
   AutoNode create_auto_node(CondNodeId node_id, Nat level) {
     node_info = cond_nodes_info[node_id];
 
-    actions = [action(v, r) : v, r <- node_info.actions];
+    actions = [action(v, r) : v r <- node_info.actions];
     record = (
       id:       node_id,
       cond:     node_info.cond.cond,
@@ -222,7 +222,7 @@ implicit program : Program, automaton : Automaton {
 
     return match (node_info.cond)
       on_becoming_true_cond() = :cond_node(record),
-      react_cond() c?         = :rep_cond_node([l -> v : l, v <- record | l, v <- (signals_state: c.signals_state)]);
+      react_cond() c?         = :rep_cond_node([l -> v : l v <- record | l v <- (signals_state: c.signals_state)]);
 
 
     AutoNodeAction action(SignalVar var, <StateVarUpdate, DiscreteRule> update) {
@@ -240,7 +240,7 @@ implicit program : Program, automaton : Automaton {
     assert automaton.nested_autos(nested_auto_var(core_id), *);
     output_dep_nodes = lookup(output_trigger_down_nodes_map, node_id, []);
     ## WHAT DOES THIS ASSERTION DO?
-    assert not (o, ns <- output_dep_nodes : not disjoint(ns, [std_block_node_id(id) : id <- state_vars_ids]));
+    assert not (o ns <- output_dep_nodes : not disjoint(ns, [std_block_node_id(id) : id <- state_vars_ids]));
     return nested_auto_node(node_id, output_dep_nodes, level);
   }
 
@@ -268,7 +268,7 @@ implicit program : Program, automaton : Automaton {
   expr_cond_deps = expr_deps(cond.cond);
   signals_deps = match (cond)
     on_becoming_true_cond() = [],
-    react_cond()            = [dependency(v) : v, unused_var <- cond.signals_state];
+    react_cond()            = [dependency(v) : v _ <- cond.signals_state];
   return expr_cond_deps & signals_deps;
 
   AutoNodeDependency dependency(AnySignalVar var) =

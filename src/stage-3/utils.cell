@@ -19,7 +19,7 @@ type CodeOutcome = fails, returns, breaks_loop, exits_block, falls_through;
 
 [+CodeOutcome] code_outcomes(CompInstr instr) =
   branch()            = nonempty(code_outcomes(instr.when_true) & code_outcomes(instr.when_false)),
-  switch_on_nat()     = nonempty(union([code_outcomes(c) : c <~ instr.cases])),
+  switch_on_nat()     = nonempty(union([code_outcomes(c) : c <- instr.cases])),
   symb_switch()       = nonempty(union([code_outcomes(right(c)) : c <- instr.cases]) & code_outcomes(instr.else)),
   repeat(is?)         = loop_outcomes(is),
   foreach()           = [if o == breaks_loop then falls_through else o : o <- code_outcomes(instr.body)],
@@ -125,48 +125,48 @@ type CodeOutcome = fails, returns, breaks_loop, exits_block, falls_through;
 
 implicit block : StaticBlock {
   [UpdateId, UpdateId] call_graph_transitive_closure {
-    shallow_graph = [id -> invoked_mutators(u) : id, u <- block.updates];
+    shallow_graph = [id -> invoked_mutators(u) : id u <- block.updates];
     deep_graph = transitive_closure(shallow_graph);
-    return [s, t : s, ts <- deep_graph, t <- ts];
+    return [s, t : s ts <- deep_graph, t <- ts];
   }
 
 
   [UpdateId, MembVar] updated_memb_vars {
-    directly_touched = [id -> updated_memb_vars(u) : id, u <- block.updates];
+    directly_touched = [id -> updated_memb_vars(u) : id u <- block.updates];
     deep_call_map = call_graph_transitive_closure;
-    indirectly_touched = [s, v : s, t <- deep_call_map, v <- directly_touched(t)];
-    return [u, v : u, vs <- directly_touched, v <- vs | v <- indirectly_touched(u, ?)];
+    indirectly_touched = [s, v : s t <- deep_call_map, v <- directly_touched(t)];
+    return [u, v : u vs <- directly_touched, v <- vs | v <- indirectly_touched(u, ?)];
   }
 
 
   [UpdateId, ValueStoreId] updated_value_stores {
-    directly_touched = [id -> updated_value_stores(u) : id, u <- block.updates];
+    directly_touched = [id -> updated_value_stores(u) : id u <- block.updates];
     deep_call_map = call_graph_transitive_closure;
-    indirectly_touched = [s, v : s, t <- deep_call_map, v <- directly_touched(t)];
-    return [u, s : u, ss <- directly_touched, s <- ss | s <- indirectly_touched(u, ?)];
+    indirectly_touched = [s, v : s t <- deep_call_map, v <- directly_touched(t)];
+    return [u, s : u ss <- directly_touched, s <- ss | s <- indirectly_touched(u, ?)];
   }
 
 
   [UpdateId, TableVar] table_vars_with_insertions {
-    directly_touched = [id -> table_vars_with_insertions(u) : id, u <- block.updates];
+    directly_touched = [id -> table_vars_with_insertions(u) : id u <- block.updates];
     deep_call_map = call_graph_transitive_closure;
-    indirectly_touched = [s, v : s, t <- deep_call_map, v <- directly_touched(t)];
-    return [u, v : u, vs <- directly_touched, v <- vs | v <- indirectly_touched(u, ?)];
+    indirectly_touched = [s, v : s t <- deep_call_map, v <- directly_touched(t)];
+    return [u, v : u vs <- directly_touched, v <- vs | v <- indirectly_touched(u, ?)];
   }
 
 
   [UpdateId, TableVar] table_vars_with_deletions {
-    directly_touched = [id -> table_vars_with_deletions(u) : id, u <- block.updates];
+    directly_touched = [id -> table_vars_with_deletions(u) : id u <- block.updates];
     deep_call_map = call_graph_transitive_closure;
-    indirectly_touched = [s, v : s, t <- deep_call_map, v <- directly_touched(t)];
-    return [u, v : u, vs <- directly_touched, v <- vs | v <- indirectly_touched(u, ?)];
+    indirectly_touched = [s, v : s t <- deep_call_map, v <- directly_touched(t)];
+    return [u, v : u vs <- directly_touched, v <- vs | v <- indirectly_touched(u, ?)];
   }
 
 
   [UpdateId, LinkedDBVar] updated_dependees {
-    directly_touched = [id -> updated_dependees(u) : id, u <- block.updates];
+    directly_touched = [id -> updated_dependees(u) : id u <- block.updates];
     deep_call_map = call_graph_transitive_closure;
-    indirectly_touched = [s, a : s, t <- deep_call_map, a <- directly_touched(t)];
-    return [u, a : u, as <- directly_touched, a <- as | a <- indirectly_touched(u, ?)];
+    indirectly_touched = [s, a : s t <- deep_call_map, a <- directly_touched(t)];
+    return [u, a : u as <- directly_touched, a <- as | a <- indirectly_touched(u, ?)];
   }
 }

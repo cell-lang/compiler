@@ -53,7 +53,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg], actual_ar
 
         ## BAD BAD BAD: ENCODING THE MAXIMUM ARITY OF THE CLOSURES.
         ## SHOULD ALSO CHECK THAT NO FUNCTION HAS BEEN DISCARDED BECAUSE IT HAS IMPLICIT ARGUMENTS
-        arities = [i : i <~ (nz_nat(i+1) : i < 20), resolve_by_priority_as_cls_expr(symb, i, cls_vars) != []];
+        arities = [i : i <- (nz_nat(i+1) : i < 20), resolve_by_priority_as_cls_expr(symb, i, cls_vars) != []];
         if arities == []
           return (undef_var_or_const(symb));
         else
@@ -65,7 +65,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg], actual_ar
 
 
     ExprWFError* impl_args_wf_errors(FnFamilyId fn_id, (ImplArg, SynExpr)* redef_impl_args, [ImplArg] exp_impl_args, [DefVar] def_vars) {
-      redef_impl_args_names = [a : a, _ <~ redef_impl_args];
+      redef_impl_args_names = [a : (a, _) <- redef_impl_args];
       errs = ();
       for a <- rand_sort(exp_impl_args)
         errs = (errs | missing_impl_arg(fn_id, a)) if not redef_impl_args_names(a) and not impl_args(a);

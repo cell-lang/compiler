@@ -109,8 +109,8 @@ type SynSCExpr        = set_comp(expr: SynExpr, source: SynClause+);
 type SynMCExpr        = map_comp(key_expr: SynExpr, value_expr: SynExpr, source: SynClause+);
 type SynRelCompExpr   = rel_comp(exprs: SynExpr+, source: SynClause+);
 
-type SynLCExpr        = seq_comp(expr: SynExpr, vars: StdVar+, idx_var: StdVar?, src_expr: SynExpr, sel_expr: SynExpr?);
-type SynRCExpr        = range_comp(expr: SynExpr, var: StdVar, bound_expr: SynExpr, inclusive: Bool, sel_expr: SynExpr?);
+type SynLCExpr        = seq_comp(expr: SynExpr, vars: Maybe[StdVar]+, idx_var: StdVar?, src_expr: SynExpr, sel_expr: SynExpr?);
+type SynRCExpr        = range_comp(expr: SynExpr, var: Maybe[StdVar], bound_expr: SynExpr, inclusive: Bool, sel_expr: SynExpr?);
 
 type SynIfExpr        = if_expr(branches: (cond: SynExpr, expr: SynExpr)+, else: SynExpr);
 type SynTryExpr       = match_expr(exprs: SynExpr+, cases: SynCase+);
@@ -147,7 +147,7 @@ type SynPtrn    = ptrn_symbol,
                   ptrn_var(var: StdVar, ptrn: SynPtrn),
                   ptrn_union(SynPtrn+);
 
-type SynIterClause = iter_clause(vars: StdVar+, src: <SynExpr, SynProj>);
+type SynIterClause = iter_clause(vars: Maybe[Symbol]+, src: <SynExpr, SynProj>);
 
 type SynClause  = SynIterClause,
                   seq_clause(vars: Maybe[Symbol]+, idx_var: Maybe[Symbol], src: SynExpr),
@@ -169,7 +169,7 @@ type SynStmt  = SynAtomicFnStmt, SynAtomicUpdateStmt, SynAtomicProcStmt,
 type SynAtomicFnStmt  = SynAsgnStmt, SynReturnStmt, SynBreakStmt, SynFailStmt,
                         SynAssertStmt, SynPrintStmt, SynSeqUpdateStmt;
 
-type SynAsgnStmt      = assignment_stmt(vars: StdVar+, value: SynExpr);
+type SynAsgnStmt      = assignment_stmt(vars: Maybe[StdVar]+, value: SynExpr);
 type SynReturnStmt    = return_stmt(SynExpr);
 type SynBreakStmt     = break_stmt;
 type SynFailStmt      = fail_stmt(file: String, line: NzNat);
@@ -221,10 +221,11 @@ type SynLetStmt      = let_stmt(asgnms: (ImplArg, SynExpr)+, body: SynStmt+);
 /////////////////////////////////////////////////////////////////////////////////////
 
 type SynCollIter      = coll_value_iter(vars: Maybe[StdVar]+, idx_var: StdVar?, src_expr: SynExpr);
+type SynRelIter       = rel_iter(vars: Maybe[Symbol]+, src_expr: SynExpr);
 type SynFilteredIter  = filtered_iter(vars: Maybe[Symbol]+, target: Symbol+, args: Maybe[SynExpr]+);
 type SynRangeIter     = range_iter(var: StdVar?, start_val: SynExpr, end_val: SynExpr, end_val_incl: Bool);
 
-type SynIter = SynCollIter, SynFilteredIter, SynRangeIter;
+type SynIter = SynCollIter, SynRelIter, SynFilteredIter, SynRangeIter;
 
 /////////////////////////////////////////////////////////////////////////////////////
 

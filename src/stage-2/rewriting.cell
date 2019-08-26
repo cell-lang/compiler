@@ -19,7 +19,7 @@ Expr rewrite_expr(Expr expr, (Expr -> Expr) rw_expr, (Clause -> Clause) rw_cls, 
                               expr.fn_id,
                               (rw_expr(a) : a <- expr.args),
                               (rewrite_closure(c, rw_expr) : c <- expr.cls_args),
-                              [a -> rw_expr(e) : a, e <- expr.impl_args]
+                              [a -> rw_expr(e) : a e <- expr.impl_args]
                             ),
     cls_call()            = cls_call(expr.name, (rw_expr(a) : a <- expr.args)),
     builtin_call()        = builtin_call(expr.name, (rw_expr(a) : a <- expr.args)),
@@ -101,15 +101,15 @@ Expr rewrite_expr(Expr expr, (Expr -> Expr) rw_expr, (Clause -> Clause) rw_cls, 
 ////////////////////////////////////////////////////////////////////////////////
 
 Clause rewrite_clause(Clause cls, (Expr -> Expr) rw_expr, (Clause -> Clause) rw_cls) =
-  set_clause()      = set_clause(cls.var, rw_expr(cls.src)),
-  rel_clause()      = rel_clause(cls.vars, rw_expr(cls.src), (apply(a, rw_expr) : a <- cls.args)),
-  relvar_clause()   = relvar_clause(cls.vars, cls.rel_var, (apply(a, rw_expr) : a <- cls.args)),
-  seq_clause()      = seq_clause(cls.vars, cls.idx_var, rw_expr(cls.src)),
-  and_clause()      = and_clause(rw_cls(cls.left), rw_cls(cls.right)),
-  or_clause()       = or_clause(rw_cls(cls.left), rw_cls(cls.right)),
-  match_clause()    = match_clause(cls.ptrn, rw_expr(cls.expr)),
-  asgnm_clause()    = asgnm_clause(cls.var, rw_expr(cls.expr)),
-  filter_clause(e?) = filter_clause(rw_expr(e));
+  set_or_seq_clause() = set_or_seq_clause(cls.var, rw_expr(cls.src)),
+  rel_clause()        = rel_clause(cls.vars, rw_expr(cls.src), (apply(a, rw_expr) : a <- cls.args)),
+  relvar_clause()     = relvar_clause(cls.vars, cls.rel_var, (apply(a, rw_expr) : a <- cls.args)),
+  seq_clause()        = seq_clause(cls.vars, cls.idx_var, rw_expr(cls.src)),
+  and_clause()        = and_clause(rw_cls(cls.left), rw_cls(cls.right)),
+  or_clause()         = or_clause(rw_cls(cls.left), rw_cls(cls.right)),
+  match_clause()      = match_clause(cls.ptrn, rw_expr(cls.expr)),
+  asgnm_clause()      = asgnm_clause(cls.var, rw_expr(cls.expr)),
+  filter_clause(e?)   = filter_clause(rw_expr(e));
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -156,7 +156,7 @@ Statement rewrite_stmt(Statement stmt, (Expr -> Expr) rw_expr, (Statement -> Sta
                                 end_val_incl: stmt.end_val_incl,
                                 body:         (rw_stmt(s) : s <- stmt.body)
                               ),
-    let_stmt()              = let_stmt([a -> rw_expr(e) : a, e <- stmt.asgnms], (rw_stmt(s) : s <- stmt.body));
+    let_stmt()              = let_stmt([a -> rw_expr(e) : a e <- stmt.asgnms], (rw_stmt(s) : s <- stmt.body));
 
 
     CollValueIter rewrite(CollValueIter iter, (Expr -> Expr) rw_expr) =

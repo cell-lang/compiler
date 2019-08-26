@@ -214,7 +214,7 @@ implicit typedefs : [TypeName -> NeType], memb_test_preds : [NeType -> MembTestP
     value_var, var_gen = next_obj_var(var_gen);
     tmp_bvar,  var_gen = next_bool_var(var_gen);
 
-    mandatory_fields_count = |[l : l, f <- fs, not f.optional]|; ## BAD BAD BAD: REALLY UGLY WAY TO DO A COUNT
+    mandatory_fields_count = |[l : l f <- fs, not f.optional]|; ## BAD BAD BAD: REALLY UGLY WAY TO DO A COUNT
 
     let next_var_gen = var_gen {
       code_cases = [
@@ -222,7 +222,7 @@ implicit typedefs : [TypeName -> NeType], memb_test_preds : [NeType -> MembTestP
           ( gen_type_checking_code(f.type, value_var, tmp_bvar) |
             branch(tmp_bvar, (increment(count_var) if not f.optional), (exit_block))
           )
-        ) : l, f <- fs
+        ) : l f <- fs
       ];
     }
 

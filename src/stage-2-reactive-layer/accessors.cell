@@ -3,14 +3,14 @@ implicit program : Program {
     return auto_input_is_discrete_map[auto][input];
 
     [AutoSymbol -> [SignalVar -> Bool]] auto_input_is_discrete_map =
-      [a.name -> [id -> input.discrete  : id, input <- a.inputs]  : a <- program.auto_defs];
+      [a.name -> [id -> input.discrete  : id input <- a.inputs]  : a <- program.auto_defs];
   }
 
   Bool output_is_discrete(AutoSymbol auto, SignalVar output) {
     return auto_output_is_discrete_map[auto][output];
 
     [AutoSymbol -> [SignalVar -> Bool]] auto_output_is_discrete_map =
-      [a.name -> [id -> output.discrete : id, output <- a.outputs] : a <- program.auto_defs];
+      [a.name -> [id -> output.discrete : id output <- a.outputs] : a <- program.auto_defs];
   }
 
   Bool is_time_sensitive(AutoSymbol auto) = in(auto, time_sensitive_autos);
@@ -20,7 +20,7 @@ implicit program : Program {
   [AutoSymbol] time_sensitive_autos {
     automata = program.auto_defs;
     autos_with_time_rules = [a.name : a <- automata, a.time_rules != []];
-    auto_shallow_deps = [a.name -> [na.type : unused_var, na <- a.nested_autos] : a <- automata];
+    auto_shallow_deps = [a.name -> [na.type : _ na <- a.nested_autos] : a <- automata];
     auto_deep_deps = transitive_closure(auto_shallow_deps);
     autos_with_time_sensitive_nested_autos =  [a.name : a <- automata, not disjoint(auto_deep_deps[a.name], autos_with_time_rules)];
     return autos_with_time_rules & autos_with_time_sensitive_nested_autos;
@@ -43,11 +43,11 @@ implicit program : Program, automaton : Automaton {
     return in(var, discrete_signals);
 
     [AnySignalVar] discrete_signals =
-      [id : id, input <- automaton.inputs, input.discrete] &
+      [id : id input <- automaton.inputs, input.discrete] &
       keys(automaton.discrete_rules) &
       [ qual_signal_var(id, out_id)
-        : id, info <- automaton.nested_autos,
-          out_id, out_info <- automaton_by_id(info.type).outputs,
+        : id info <- automaton.nested_autos,
+          out_id out_info <- automaton_by_id(info.type).outputs,
           out_info.discrete
       ];
   }

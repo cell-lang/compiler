@@ -14,7 +14,7 @@ implicit syn_prg : SynPrg {
   [AggrFunct] desugared_aggr_fn_defs {
     return [
       transfer(desugar(d, maybe(i, |ds| > 1)), d)
-      : n, ds <- group_by(aggr_funct_decls, $.name), d @ i <~ isort(ds)
+      : n ds <- group_by(aggr_funct_decls, $.name), d @ i <- isort(ds)
     ];
 
     AggrFunct desugar(AggrFunctDecl decl, Maybe[Nat] unique_id) {
@@ -25,7 +25,7 @@ implicit syn_prg : SynPrg {
       elt_type = desugar_plain_type(decl.elt_type);
       elt_var = var(decl.elt_name);
       extra_args = ((var(s), desugar_plain_type(t)) : t, s <- decl.extra_args);
-      extra_args_vars = [s : s, unused_var <~ extra_args];
+      extra_args_vars = [s : (s, _) <- extra_args];
       red_vars = [
         var(v.name) -> (
           type:       desugar_plain_type(v.type),
@@ -37,7 +37,7 @@ implicit syn_prg : SynPrg {
             e = desugar_aggr_fn_expr(e, extra_args_vars & [v1, v2]);
             return (v1, v2, e);
           }
-        ) : v <~ decl.red_vars
+        ) : v <- decl.red_vars
       ];
       null_value = desugar_aggr_fn_expr(decl.null_value, extra_args_vars);
       final_value = desugar_aggr_fn_expr(decl.final_value, extra_args_vars & keys(red_vars));
@@ -80,7 +80,7 @@ implicit syn_prg : SynPrg {
     maybe_ret_type = if pd.res_type != nothing
       then just(desugar_schema_aware_type(value(pd.res_type), schema_names))
       else nothing;
-    body = desugar_stmts(pd.body, [a.var : a <~ args], artifact = pd, impl_args = []);
+    body = desugar_stmts(pd.body, [a.var : a <- args], artifact = pd, impl_args = []);
     react_auto_vars = merge(([loc_auto_var(v.var) -> auto_symbol(v.type)] : v <- pd.auto_or_db_vars, automaton_is_reactive(v.type)));
     rel_auto_vars = merge((
       [loc_db_var(v.var) -> (type: db_symbol(v.type), links: (loc_db_var(a) : a <- v.args))]
@@ -105,7 +105,7 @@ implicit syn_prg : SynPrg {
 
   [Function] desugared_fn_defs {
     fn_defs_by_name_arity = group_by(ext_syn_fn_defs, (left($).name, |left($).args|));
-    return union([desugar_fn_def_family(fds) : unused_var, fds <- fn_defs_by_name_arity]);
+    return union([desugar_fn_def_family(fds) : _ fds <- fn_defs_by_name_arity]);
 
 
     [Function] desugar_fn_def_family([+(SynFnDef, [ImplArgDecl])] fn_defs) {
@@ -134,7 +134,7 @@ implicit syn_prg : SynPrg {
       multiple = |fn_defs| > 1;
       return [
         desugar_nested_fn_def(fd, maybe(i, multiple), outer_fn_def, outer_fn_id, impl_args)
-        : fd @ i <~ rand_sort(fn_defs)
+        : fd @ i <- rand_sort(fn_defs)
       ];
     }
 
@@ -184,7 +184,7 @@ implicit syn_prg : SynPrg, artifact : Artifact {
     res_type = desugar_arbitrary_type(syn_res_type, subst_map, schema_names);
 
     // Desugaring expression
-    def_vars = [var(a.name) : a <~ syn_args, obj_arg() ?= a, a.name?];
+    def_vars = [var(a.name) : a <- syn_args, obj_arg() ?= a, a.name?];
     expr = desugar_expr(syn_expr, def_vars, impl_args = [a.name : a <- syn_impl_args]);
 
     // Creating type variable -> protocol type map for implicitly declared type variables
@@ -209,17 +209,17 @@ implicit syn_prg : SynPrg, artifact : Artifact {
 
 
     [FnSymbol -> [+ClsType]] constraints([+TypeVar -> Atom] binds) {
-      assert |[prot_decl_by_type(t) : unused_var, t <- binds]| == 1;
+      assert |[prot_decl_by_type(t) : _ t <- binds]| == 1;
 
       bound_types = values(binds);
-      prot = only([prot_decl_by_type(t) : unused_var, t <- binds]);
+      prot = only([prot_decl_by_type(t) : _ t <- binds]);
       subst_map = reverse(binds);
 
       return merge_values([{
           args_types = (desugar_arbitrary_type(t, subst_map, schema_names) : t <- ats);
           ret_type = desugar_arbitrary_type(rt, subst_map, schema_names);
           return [n -> cls_type(args_types, ret_type)];
-        } : n, ats, rt <~ prot.methods, subset(refd_prot_types(ats, rt, set(prot.types)), bound_types)
+        } : (n, ats, rt) <- prot.methods, subset(refd_prot_types(ats, rt, set(prot.types)), bound_types)
       ]);
     }
 
@@ -227,7 +227,7 @@ implicit syn_prg : SynPrg, artifact : Artifact {
     [[+TypeVar -> Atom]] type_vars_bindings(Atom* sorted_prot_types) {
       var_type_pairs = seq_union(([(type_var(i), pt)] : pt @ i <- sorted_prot_types));
       var_type_by_prot = group_by(var_type_pairs, prot_decl_by_type(right($)));
-      return [[left(vt) -> right(vt) : vt <- vts] : p, vts <- var_type_by_prot];
+      return [[left(vt) -> right(vt) : vt <- vts] : p vts <- var_type_by_prot];
     }
   }
 }

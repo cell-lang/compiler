@@ -318,8 +318,9 @@ ExprSpecWFError not_a_scalar_var(Atom a)                                = not_a_
 ExprSpecWFError not_a_scalar_var(Atom+ as)                              = not_a_scalar_var(names: as);
 ExprSpecWFError dupl_var_mult_asgnm(StdVar v)                           = :dupl_var_mult_asgnm(v);
 ExprSpecWFError diff_var_sets_in_ptrn_union(SynPtrn+ ps)                = :diff_var_sets_in_ptrn_union(ps);
-ExprSpecWFError wrong_iter_arity(Maybe[Symbol]+ vs, NzNat a)            = wrong_iter_arity(vars: (apply(v, var) : v <- vs), valid_arities: [a]);
-ExprSpecWFError wrong_iter_arity(StdVar+ vs, [+NzNat] as)               = wrong_iter_arity(vars: (just(v) : v <- vs), valid_arities: as);
+ExprSpecWFError wrong_iter_arity(Maybe[Symbol]+ vs, [+NzNat] as)        = wrong_iter_arity(vars: (apply(v, var) : v <- vs), valid_arities: as);
+ExprSpecWFError wrong_iter_arity(Maybe[Symbol]+ vs, NzNat a)            = wrong_iter_arity(vs, [a]);
+ExprSpecWFError wrong_iter_arity(Maybe[Symbol]+ vs)                     = wrong_iter_arity(vs, [1, 2, 3]);
 ExprSpecWFError invalid_case_arity(Nat n, Nat m)                        = invalid_case_arity(actual: n, expected: m);
 
 ExprSpecWFError ro_vars_asgnm([+Var] vs)                        = ro_vars_asgnm(vars: vs);
@@ -504,7 +505,7 @@ Any* anchor_objs(ExprSpecWFError err) =
 ExprWFError attach_anchor_obj_if_needed(ExprWFError error, <SynExpr, SynStmt> anchor) {
   objs = anchor_objs(error);
   attrs = (fetch(o) : o <- objs);
-  return error if (a <~ attrs : a != nothing);
+  return error if (a <- attrs : a != nothing);
   new_attr = fetch(anchor);
   return error if new_attr == nothing;
   return annotated_error(error, anchor);
@@ -802,7 +803,7 @@ String* incomp_relvar_decls_basic_err_msg([RelVarsDecl] relvars, [(RelVarsDecl, 
 String* basic_err_msg(ProtSpecWFError err) =
   prot_type_conflict()    = ("A type with the same name already exists: " & upper_camel_case(err.name)),
   prot_schema_conflict()  = ("A schema with the same name already exists: " & upper_camel_case(err.name)),
-  dupl_prot_methods()     = { id, ats, unused_var = err.methods(0);
+  dupl_prot_methods()     = { id, ats, _ = err.methods(0);
                               return ("Duplicate protocol method: " & user_repr(id, |ats|));
                             };
 

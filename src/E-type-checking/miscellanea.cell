@@ -52,7 +52,7 @@ implicit typedefs : [TypeName -> NeType] {
   [TypeVar -> Type] type_var_instantiations_for_subset(Type* actual_types, Type* formal_types) {
     type_vars = seq_union((retrieve_type_vars(t, typedefs) : t <- formal_types));
     return [] if type_vars == []; ## SEE IF THIS MAKES ANY PERFORMANCE DIFFERENCE
-    conds = merge_value_sets([subset_conds(at, ft) : at, ft <~ zip(actual_types, formal_types)]);
+    conds = merge_value_sets([subset_conds(at, ft) : (at, ft) <- zip(actual_types, formal_types)]);
     return [v -> union_superset(lookup(conds, v, [])) : v <- type_vars];
   }
 
@@ -116,7 +116,7 @@ implicit typedefs : [TypeName -> NeType] {
 
   [StdVar -> Type] ptrn_union_gen_env([+Pattern] ptrns, Type type) {
     matching_ptrns = [p : p <- ptrns, may_match(p, type)];
-    return [v -> union_superset(ts) : v, ts <- merge_values([generate_env(p, type) : p <- matching_ptrns])];
+    return [v -> union_superset(ts) : v ts <- merge_values([generate_env(p, type) : p <- matching_ptrns])];
   }
 }
 
@@ -160,7 +160,7 @@ AnyClsExpr rewrite_cls_expr(AnyClsExpr expr) =
 ////////////////////////////////////////////////////////////////////////////////
 
 NeType state_type(Database db) {
-  state_vars = [bare_id(v) -> info.type : v, info <- db.state_vars];
+  state_vars = [bare_id(v) -> info.type : v info <- db.state_vars];
 
   rel_vars = [bare_id(v) -> {
     sgns = rel_var_signatures(db, v);
@@ -178,23 +178,23 @@ NeType state_type(Database db) {
       fail if not sgns :: [+(NeType, NeType, NeType)];
       return type_tern_rel(sgns, false);
     }
-  } : v <- [logical_rel_var(v) : v, unused_var <- db.rel_vars]];
+  } : v <- [logical_rel_var(v) : v _ <- db.rel_vars]];
 
-  fields = [object(f) -> (type: t, optional: false) : f, t <- state_vars | f, t <- rel_vars];
+  fields = [object(f) -> (type: t, optional: false) : f t <- state_vars | f t <- rel_vars];
   return if fields != [] then ne_record_type(fields) else empty_rel_type;
 }
 
 
 implicit program : Program {
   NeType state_type(Automaton auto) {
-    inputs = [bare_id(v) -> i.type : v, i <- auto.inputs, not i.discrete and not i.volatile];
-    state_vars = [bare_id(v) -> s.type : v, s <- auto.state, not s.volatile];
+    inputs = [bare_id(v) -> i.type : v i <- auto.inputs, not i.discrete and not i.volatile];
+    state_vars = [bare_id(v) -> s.type : v s <- auto.state, not s.volatile];
     nested_react_autos = [
       bare_id(v) -> state_type(automaton_by_id(a.type))
-      : v, a <- auto.nested_autos, not a.volatile
+      : v a <- auto.nested_autos, not a.volatile
     ];
     pre_fields = inputs & state_vars & nested_react_autos;
-    fields = [object(l) -> (type: t, optional: false) : l, t <- pre_fields];
+    fields = [object(l) -> (type: t, optional: false) : l t <- pre_fields];
     return if fields != [] then ne_record_type(fields) else empty_rel_type;
   }
 

@@ -67,10 +67,15 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   }
 
 
-  [TypeCheckingError] typecheck_assignment_stmt(Var+ vars, Expr value, [EnvVar -> Type] env) {
-    vars_types = (lookup(typed_vars, v, type_any) : v <- vars);
+  [TypeCheckingError] typecheck_assignment_stmt(Maybe[StdVar]+ vars, Expr expr, [EnvVar -> Type] env) {
+    vars_types = (
+      if v != nothing
+        then lookup(typed_vars, value(v), type_any)
+        else type_any
+      : v <- vars
+    );
     exp_type = if |vars_types| == 1 then only(vars_types) else tuple_type(vars_types);
-    return typecheck(value, exp_type, env);
+    return typecheck(expr, exp_type, env);
   }
 
 
@@ -91,7 +96,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
       errs = typecheck(body, exp_type, entry_env);
       return errs if errs != [];
       exit_env = select_by_key(update_env(body, entry_env), out_of_loop_vars);
-      return [] if not (v, t <- exit_env : not is_subset(t, entry_env[v]));
+      return [] if not (v t <- exit_env : not is_subset(t, entry_env[v]));
       entry_env = exit_env;
       envs = (envs | exit_env);
     }
@@ -108,35 +113,18 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     // type CollValueIter  = coll_value_iter(vars: Maybe[StdVar]+, idx_var: StdVar?, src_expr: Expr);
     [TypeCheckingError] typecheck_iter(CollValueIter iter, [EnvVar -> Type] env) {
       nvars = |iter.vars|;
+
+      // Trying sequences first
       exp_src_type = if nvars == 1 then type_seq else type_seq(type_tuple(nvars));
       errs_seq = typecheck(iter.src_expr, exp_src_type, env);
       return [] if errs_seq == [];
-      return errs_seq if iter.idx_var? or nvars > 3;
+      return errs_seq if iter.idx_var? or nvars != 1;
 
-      if |iter.vars| == 1 {
-        errs_set = typecheck(iter.src_expr, type_set, env);
-        if errs_set != [] {
-          errs_any = typecheck(iter.src_expr, ne_union_type([type_seq, type_set]), env);
-          return if errs_any != [] then errs_any else errs_seq & errs_set;
-        }
-      }
-      else if |iter.vars| == 2 {
-        errs_rel = typecheck(iter.src_expr, type_bin_rel, env);
-        if errs_rel != [] {
-          errs_any = typecheck(iter.src_expr, ne_union_type([type_seq, type_bin_rel]), env);
-          return if errs_any != [] then errs_any else errs_seq & errs_rel;
-        }
-      }
-      else {
-        assert |iter.vars| == 3;
-        errs_rel = typecheck(iter.src_expr, type_tern_rel, env);
-        if errs_rel != [] {
-          errs_any = typecheck(iter.src_expr, ne_union_type([type_seq, type_tern_rel]), env);
-          return if errs_any != [] then errs_any else errs_seq & errs_rel;
-        }
-      }
-
-      return [];
+      // Otherwise it must be sets
+      errs_set = typecheck(iter.src_expr, type_set, env);
+      return [] if errs_set == [];
+      errs_any = typecheck(iter.src_expr, ne_union_type([type_seq, type_set]), env);
+      return if errs_any != [] then errs_any else errs_seq & errs_set;
     }
 
 
@@ -153,7 +141,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
         1   = (set_elem_supertype(src_type)),
         2   = bin_rel_args_supertypes(src_type),
         3   = tern_rel_args_supertypes(src_type);
-      return union([typecheck(value(a), args_types(i), env) : a @ i <~ iter.args, a != nothing]);
+      return union([typecheck(value(a), args_types(i), env) : a @ i <- iter.args, a != nothing]);
     }
 
 
@@ -183,7 +171,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
         errs = typecheck(body, exp_type, entry_env);
         return errs if errs != [];
         exit_env = select_by_key(update_env(body, entry_env), out_of_loop_vars);
-        return [] if not (v, t <- exit_env : not is_subset(t, entry_env[v]));
+        return [] if not (v t <- exit_env : not is_subset(t, entry_env[v]));
         entry_env = exit_env & loop_vars;
         envs = (envs | exit_env);
       }
@@ -213,7 +201,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
       errs = typecheck(body, exp_type, entry_env);
       return errs if errs != [];
       exit_env = select_by_key(update_env(body, entry_env), out_of_loop_vars);
-      return [] if not (v, t <- exit_env : not is_subset(t, entry_env[v]));
+      return [] if not (v t <- exit_env : not is_subset(t, entry_env[v]));
       entry_env = exit_env & loop_vars;
       envs = (envs | exit_env);
     }
@@ -223,9 +211,9 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
 
   [TypeCheckingError] typecheck_let_stmt([ImplArg -> Expr] asgnms, Statement+ body, Type exp_type, [EnvVar -> Type] env) {
-    errs = union([typecheck(e, type_any, env) : v, e <- asgnms]);
+    errs = union([typecheck(e, type_any, env) : v e <- asgnms]);
     return errs if errs != [];
-    env_delta = [v -> expr_type(e, env) : v, e <- asgnms];
+    env_delta = [v -> expr_type(e, env) : v e <- asgnms];
     new_env = update(env, env_delta);
     return typecheck(body, exp_type, new_env); ## BUG BUG BUG (WHY?)
   }
@@ -239,11 +227,11 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     msg_type = expr_type(msg, env);
 
     rel_auto_type = rel_auto_by_id(this_db_symbol);
-    candidates = [dependee : dependee <~ rel_auto_type.links, is_subset(msg_type, db_msg_type(dependee))];
+    candidates = [dependee : dependee <- rel_auto_type.links, is_subset(msg_type, db_msg_type(dependee))];
     return [] if |candidates| == 1;
 
     if candidates == [] {
-      msg_types_union = union_superset([db_msg_type(d) : d <~ rel_auto_type.links]);
+      msg_types_union = union_superset([db_msg_type(d) : d <- rel_auto_type.links]);
       return [unexpected_actual_type(msg_type, msg_types_union)];
     }
     else
@@ -278,7 +266,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     args_types = (apply(a, expr_type($, env)) : a <- args);
     sgns = rel_var_signatures(cast_database(context), var);
     for s <- rand_sort(sgns)
-      return [] if not (t @ i <~ args_types : t != nothing and are_ptype_disjoint(value(t), s(i)));
+      return [] if not (t @ i <- args_types : t != nothing and are_ptype_disjoint(value(t), s(i)));
     return [no_matching_relvar(var, args_types, sgns)];
   }
 
@@ -291,7 +279,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     sgns = rel_var_signatures(database, var);
     agg_sgns = relvar_aggregated_signatures(database.name, var);
     for s <- rand_sort(sgns) & rand_sort(agg_sgns)
-      return [] if not (t @ i <~ args_types : not is_subset(t, s(i)));
+      return [] if not (t @ i <- args_types : not is_subset(t, s(i)));
     return [no_matching_relvar(var, (just(a) : a <- args_types), nonempty(sgns))];
   }
 
@@ -299,7 +287,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   //////////////////////////////////////////////////////////////////////////////
 
   [TypeCheckingError] typecheck_proc_call_stmt(Maybe[StdVar] maybe_res_var, ProcSymbol proc_name, Expr* args, [EnvVar -> Type] env) {
-    args_types, unused_var = procedure_signature(proc_name);
+    args_types, _ = procedure_signature(proc_name);
     return seq_union((typecheck(e, t, env) : e, t <- zip(args, args_types)));
   }
 
@@ -343,7 +331,7 @@ implicit typedefs : [TypeName -> NeType] {
   [+EnvVar -> Type+] bad_vars_history([EnvVar -> Type]+ envs) {
     fail if |envs| != 3;
     env0, env1, env2 = envs;
-    vars = only([keys(e) : e <~ envs]);
+    vars = only([keys(e) : e <- envs]);
     res = [v -> (e(v, !!) : e <- envs) : v <- vars, not is_subset(env2(v, !!), env1(v, !!))];
     return nonempty_map(res);
   }

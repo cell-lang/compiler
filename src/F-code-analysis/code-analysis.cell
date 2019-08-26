@@ -23,7 +23,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Database 
 
   // type Update = update(name: UpdateSymbol, args: (NeType, StdVar)*, body: Statement*);
   [AnalysisError] analysis_errors(Update update) {
-    env = [v -> t : t, v <~ update.args];
+    env = [v -> t : (t, v) <- update.args];
     return analyse(update.body, env, typed_vars = []);
   }
 }
@@ -49,9 +49,9 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Database,
       curr_reqrs = update_insert_requirement(s, curr_reqrs, curr_env);
       curr_env = update_env(s, curr_env);
     }
-    prob_stmts = [s : unused_var_1, unused_var_2, s <- curr_reqrs];
+    prob_stmts = [s : _ _ s <- curr_reqrs];
     return [
-      possible_foreign_key_violation(s, nonempty([v : v, unused_var <- curr_reqrs(?, ?, s)]))
+      possible_foreign_key_violation(s, nonempty([v : v _ <- curr_reqrs(?, ?, s)]))
       : s <- prob_stmts
     ];
   }
@@ -86,7 +86,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Database,
 
 
   [AnalysisError] analyse(LetStmt stmt, [RelVar, Expr+, InsertStmt] reqrs, [EnvVar -> Type] env) {
-    env_delta = [v -> expr_type(e, env) : v, e <- stmt.asgnms];
+    env_delta = [v -> expr_type(e, env) : v e <- stmt.asgnms];
     new_env = update(env, env_delta);
     return analyse(stmt.body, new_env);
   }
@@ -129,8 +129,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Database,
 
 
   [AnalysisError] analyse(AssignmentStmt stmt, [RelVar, Expr+, InsertStmt] reqrs, [EnvVar -> Type] env) {
-    req_vars = [r, v : r, es, unused_var_2 <- reqrs, e <~ es, v <- extern_vars(e)];
-    violations = [r, v : v <~ stmt.vars, r <- req_vars(?, v)];
+    req_vars = [r, v : r es _ <- reqrs, e <- es, v <- extern_vars(e)];
+    violations = [r, v : mv <- stmt.vars, mv != nothing, v = value(mv), r <- req_vars(?, v)];
     return [assignment_with_pending_updates(stmt, violations) if violations != []];
   }
 
@@ -152,12 +152,12 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Database,
       rel_var = stmt.var;
       arity = |stmt.args|;
       if req_ins_rel_vars != []
-        new_reqrs = [v, as, s : v, as, s <- reqrs | v, as, s <- [v, stmt.args, stmt : v <- req_ins_rel_vars]];
+        new_reqrs = [v, as, s : v as s <- reqrs | v as s <- [v, stmt.args, stmt : v <- req_ins_rel_vars]];
       else
         new_reqrs = reqrs;
       if arity > 1 {
         key_args = take(stmt.args, arity - 1);
-        new_reqrs = [v, as, s : v, as, s <- new_reqrs, v != rel_var or as != key_args] if new_reqrs(rel_var, key_args, *);
+        new_reqrs = [v, as, s : v as s <- new_reqrs, v != rel_var or as != key_args] if new_reqrs(rel_var, key_args, *);
       }
       return new_reqrs;
     }
@@ -188,7 +188,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Database,
       ## BAD BAD BAD: WHAT ARE WE SUPPOSED TO DO IF THE TYPE OF THE SOURCE IS THE EMPTY TYPE?
       return src_type != empty_type and
              not type_contains_obj(src_type, []) and
-             not (a <~ iter.args : a != nothing);
+             not (a <- iter.args : a != nothing);
     }
 
 
@@ -206,7 +206,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Database,
       // The body of the statement must have already been checked, so no insert requirement
       // that comes up in the body of the statement (as opposed to coming from the parent
       // block(s) of code) can remain unsatisfied at this point
-      assert not (v, as, unused_var <- curr_reqrs : not reqrs(v, as, *));
+      assert not (v as _ <- curr_reqrs : not reqrs(v, as, *));
       return curr_reqrs;
     }
   }

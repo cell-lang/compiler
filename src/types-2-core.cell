@@ -223,7 +223,7 @@ type TernRelCompExpr  = tern_rel_comp(exprs: (Expr, Expr, Expr), source: Clause)
 type SeqCompExpr    = seq_comp(
                         expr:           Expr,
                         decl_elt_type:  NeType?, ## BAD BAD BAD: THIS IS A HACK. TODO: ADD IT EVERYWHERE IT'S NEEDED (REWRITING AND SO ON)
-                        vars:           StdVar+,
+                        vars:           Maybe[StdVar]+,
                         idx_var:        StdVar?,
                         src_expr:       Expr,
                         sel_expr:       Expr?
@@ -232,7 +232,7 @@ type SeqCompExpr    = seq_comp(
 type RangeCompExpr  = range_comp(
                         expr:           Expr,
                         decl_elt_type:  NeType?, ## BAD BAD BAD: THIS IS A HACK. TODO: ADD IT EVERYWHERE IT'S NEEDED (REWRITING AND SO ON)
-                        var:            StdVar,
+                        var:            Maybe[StdVar],
                         bound_expr:     Expr,
                         inclusive:      Bool,
                         sel_expr:       Expr?
@@ -277,18 +277,18 @@ type TagPtrn  = ptrn_symbol, ptrn_symbol(SymbObj), ptrn_var(var: StdVar, ptrn: p
 
 ////////////////////////////////////////////////////////////////////////////////
 
-type Clause = SetClause, RelClause, RelVarClause, SeqClause, AndClause,
+type Clause = SetOrSeqClause, RelClause, RelVarClause, SeqClause, AndClause,
               OrClause, MatchClause, AsgnmClause, FilterClause;
 
-type SetClause    = set_clause(var: StdVar, src: Expr);
-type RelClause    = rel_clause(vars: StdVar+, src: Expr, args: Maybe[Expr]+);
-type RelVarClause = relvar_clause(vars: StdVar+, rel_var: AnyRelVar, args: Maybe[Expr]+);
-type SeqClause    = seq_clause(vars: Maybe[StdVar]+, idx_var: Maybe[StdVar], src: Expr);
-type AndClause    = and_clause(left: Clause, right: Clause);
-type OrClause     = or_clause(left: Clause, right: Clause);
-type MatchClause  = match_clause(ptrn: Pattern, expr: Expr);
-type AsgnmClause  = asgnm_clause(var: StdVar, expr: Expr);
-type FilterClause = filter_clause(Expr);
+type SetOrSeqClause = set_or_seq_clause(var: Maybe[StdVar], src: Expr);
+type RelClause      = rel_clause(vars: Maybe[StdVar]+, src: Expr, args: Maybe[Expr]+);
+type RelVarClause   = relvar_clause(vars: Maybe[StdVar]+, rel_var: AnyRelVar, args: Maybe[Expr]+);
+type SeqClause      = seq_clause(vars: Maybe[StdVar]+, idx_var: Maybe[StdVar], src: Expr);
+type AndClause      = and_clause(left: Clause, right: Clause);
+type OrClause       = or_clause(left: Clause, right: Clause);
+type MatchClause    = match_clause(ptrn: Pattern, expr: Expr);
+type AsgnmClause    = asgnm_clause(var: StdVar, expr: Expr);
+type FilterClause   = filter_clause(Expr);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -302,7 +302,7 @@ type AssertStmt     = assert_stmt(
 
 type FailStmt       = fail_stmt(env: [<StdVar, ImplArg>], file: String, line: NzNat);
 type SeqUpdateStmt  = seq_update_stmt(seq_var: StdVar, idx: Expr, value: Expr);
-type AssignmentStmt = assignment_stmt(vars: StdVar+, value: Expr);
+type AssignmentStmt = assignment_stmt(vars: Maybe[StdVar]+, value: Expr);
 type PrintStmt      = print_stmt(Expr);
 
 type AtomicFnStmt   = AssignmentStmt, PrintStmt, SeqUpdateStmt, AssertStmt, FailStmt;

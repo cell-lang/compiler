@@ -9,12 +9,12 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
       : t <- types, tr <- tagged_records(t, options.max_opt_fields_in_opt_rec)
     ];
     recs_by_tag = group_by_left_arg(tag_recs);
-    return [s -> isort(rs) : s, ts <- recs_by_tag, rs = optimized_reprs(ts), rs != []];
+    return [s -> isort(rs) : s ts <- recs_by_tag, rs = optimized_reprs(ts), rs != []];
   }
 
 
   [Symbol -> NeType+] optimized_tagged_records_types = [
-    s -> (low_level_repr_type(r) : r <- rs) : s, rs <- optimized_tagged_records
+    s -> (low_level_repr_type(r) : r <- rs) : s rs <- optimized_tagged_records
   ];
 
   //////////////////////////////////////////////////////////////////////////////
@@ -31,7 +31,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
 RecordType low_level_repr_type(OptRecRepr repr) =
   ne_record_type([
     object(s) -> (type: low_level_repr_type(f.repr), optional: f.optional)
-    : s, f <- untag(repr)
+    : s f <- untag(repr)
   ]);
 
 
@@ -40,7 +40,7 @@ implicit typedefs : [TypeName -> NeType] {
     // Best representation for each type
     reprs = isort([opt_rec_repr(t) : t <- types]);
     // Removing representations that are a subset of another one
-    reprs = (r1 : r1 @ i1 <- reprs, not (r2 @ i2 <~ reprs : i1 != i2 and is_subset(r1, r2)));
+    reprs = (r1 : r1 @ i1 <- reprs, not (r2 @ i2 <- reprs : i1 != i2 and is_subset(r1, r2)));
     // Picking one representation at random if two of them overlap
     last_idx = |reprs| - 1;
     reprs = (r : r @ i <- reprs, none((overlap(r, reprs(i+j+1)) : j < last_idx - i)));
@@ -48,20 +48,20 @@ implicit typedefs : [TypeName -> NeType] {
 
     OptRecRepr opt_rec_repr(RecordType type) = :opt_rec_repr([
       untag(s) -> (repr: low_level_repr(f.type), optional: f.optional)
-      : s, f <- untag(type)
+      : s f <- untag(type)
     ]);
   }
 
 
   Bool is_subset(OptRecRepr repr1, OptRecRepr repr2) {
     fields1 = untag(repr1);
-    labels1 = [s : s, unused_var <- fields1];
-    req_labels_1 = [s : s, f <- fields1, not f.optional];
+    labels1 = [s : s _ <- fields1];
+    req_labels_1 = [s : s f <- fields1, not f.optional];
     opt_labels_1 = labels1 - req_labels_1;
 
     fields2 = untag(repr2);
-    labels2 = [s : s, unused_var <- fields2];
-    req_labels_2 = [s : s, f <- fields2, not f.optional];
+    labels2 = [s : s _ <- fields2];
+    req_labels_2 = [s : s f <- fields2, not f.optional];
     opt_labels_2 = labels2 - req_labels_2;
 
     // Mandatory fields in the subtype can be either mandatory or optional in the supertype
@@ -86,12 +86,12 @@ implicit typedefs : [TypeName -> NeType] {
 
   Bool overlap(OptRecRepr repr1, OptRecRepr repr2) {
     fields1 = untag(repr1);
-    labels1 = [s : s, unused_var <- fields1];
-    req_labels_1 = [s : s, f <- fields1, not f.optional];
+    labels1 = [s : s _ <- fields1];
+    req_labels_1 = [s : s f <- fields1, not f.optional];
 
     fields2 = untag(repr2);
-    labels2 = [s : s, unused_var <- fields2];
-    req_labels_2 = [s : s, f <- fields2, not f.optional];
+    labels2 = [s : s _ <- fields2];
+    req_labels_2 = [s : s f <- fields2, not f.optional];
 
     return false if not subset(req_labels_2, labels1) or not subset(req_labels_1, labels2);
 

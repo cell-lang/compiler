@@ -8,8 +8,8 @@ implicit typedefs : [TypeName -> NeType] {
     block_failures = [b.name -> error(r) : b <- prg.static_blocks, r = blocks_results(b.name), failed(r)];
     return failure((proc_failures, block_failures)) if proc_failures != [] or block_failures != [];
 
-    opt_procs = [value_unsafe(r) : unused_var, r <- proc_results];
-    opt_static_blocks = [match (r) success(b?) = b, failure() = undefined : unused_var, r <- blocks_results];
+    opt_procs = [value_unsafe(r) : _ r <- proc_results];
+    opt_static_blocks = [match (r) success(b?) = b, failure() = undefined : _ r <- blocks_results];
 
     opt_prg = compiled_prg(
       typedefs:       prg.typedefs,
@@ -47,14 +47,14 @@ implicit typedefs : [TypeName -> NeType] {
 
 
   Result[StaticBlock, [+<MethodId, UpdateId>]] optimize_array_init(StaticBlock block) {
-    opt_methods = [id -> optimize_array_init(m) : id, m <- block.methods];
-    opt_updates = [id -> optimize_array_init(u) : id, u <- block.updates];
+    opt_methods = [id -> optimize_array_init(m) : id m <- block.methods];
+    opt_updates = [id -> optimize_array_init(u) : id u <- block.updates];
 
-    failures = [id : id, r <- opt_methods | id, r <- opt_updates, r == nothing];
+    failures = [id : id r <- opt_methods | id r <- opt_updates, r == nothing];
     return failure(failures) if failures != [];
 
-    opt_methods = [id -> value_unsafe(r) : id, r <- opt_methods];
-    opt_updates = [id -> value_unsafe(r) : id, r <- opt_updates];
+    opt_methods = [id -> value_unsafe(r) : id r <- opt_methods];
+    opt_updates = [id -> value_unsafe(r) : id r <- opt_updates];
 
     opt_block = static_block(
       name:                         block.name,

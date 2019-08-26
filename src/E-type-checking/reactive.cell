@@ -8,8 +8,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Automaton
   [<Automaton, ReactMethod> -> [+TypeCheckingError]] typecheck_automaton {
     // Typechecking and inferring type of constants
     consts = context.params;
-    consts_vars = [id -> type_dependencies(info.value) : id, info <- consts];
-    expl_consts_types = [id -> info.type : id, info <- consts, info.type?];
+    consts_vars = [id -> type_dependencies(info.value) : id info <- consts];
+    expl_consts_types = [id -> info.type : id info <- consts, info.type?];
 
     consts_ids = keys(consts);
     curr_env = expl_consts_types;
@@ -27,15 +27,15 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Automaton
     }
 
     // All explicitly declared types, except for outputs
-    inputs_types      = [id -> info.type : id, info <- context.inputs];
-    state_vars_types  = [id -> info.type : id, info <- context.state];
-    time_rules_types  = [id -> type_bool : id, unused_var <- context.time_rules];
+    inputs_types      = [id -> info.type : id info <- context.inputs];
+    state_vars_types  = [id -> info.type : id info <- context.state];
+    time_rules_types  = [id -> type_bool : id _ <- context.time_rules];
 
     expl_types = inputs_types & state_vars_types & time_rules_types;
 
     // Typechecking and inferring types of rules
     rules = context.rules;
-    rules_vars = [id -> type_dependencies(expr) : id, expr <- rules];
+    rules_vars = [id -> type_dependencies(expr) : id expr <- rules];
 
     rule_ids = keys(rules);
     curr_env = curr_env & expl_types;
@@ -52,7 +52,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Automaton
 
     // Typechecking and inferring types of discrete rules
     discrete_rules = context.discrete_rules;
-    discrete_rules_vars = [id -> union([type_dependencies(r) : r <- rs]) : id, rs <- discrete_rules];
+    discrete_rules_vars = [id -> union([type_dependencies(r) : r <- rs]) : id rs <- discrete_rules];
 
     discrete_rules_ids = keys(discrete_rules);
     while discrete_rules_ids != [] {
@@ -82,26 +82,26 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Automaton
     // Now that we have the type of all member variables, we can typecheck all the remaining expressions
     errs = union([
       // Initial value of all state variables
-      union([typecheck(sv.init_value, sv.type, curr_env) : unused_var, sv <- context.state]),
+      union([typecheck(sv.init_value, sv.type, curr_env) : _ sv <- context.state]),
 
       // State variable updates
       union([
         typecheck(u.value, sv.type, curr_env) & typecheck(u.cond.cond, type_bool, curr_env)
-        : unused_var, sv <- context.state, u <- sv.updates
+        : _ sv <- context.state, u <- sv.updates
       ]),
 
       // Time-varying conditions
-      union([typecheck_time_rule(tvc, curr_env) : unused_var, tvc <- context.time_rules]),
+      union([typecheck_time_rule(tvc, curr_env) : _ tvc <- context.time_rules]),
 
       // Nested automata inputs
-      union([typecheck_nested_auto_inputs(info.type, info.args, curr_env) : unused_var, info <- context.nested_autos])
+      union([typecheck_nested_auto_inputs(info.type, info.args, curr_env) : _ info <- context.nested_autos])
     ]);
     return [context -> errs] if errs != [];
 
     // Checking all outputs have the right type
     errs = [
       invalid_output_type(bare_id(id), actual_type, info.type)
-      : id, info <- context.outputs, actual_type = curr_env[id], not is_subset(actual_type, info.type)
+      : id info <- context.outputs, actual_type = curr_env[id], not is_subset(actual_type, info.type)
     ];
     return [context -> errs] if errs != [];
 
@@ -112,7 +112,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Automaton
     [TypeCheckingError] typecheck_guarded_expr(Expr expr, Expr cond, Type exp_type, [EnvVar -> Type] env) {
       errs = typecheck(cond, type_bool, env);
       return errs if errs != [];
-      new_env, unused_var = refine_env(cond, env);
+      new_env, _ = refine_env(cond, env);
       return typecheck(expr, exp_type, new_env);
     }
   }
@@ -126,12 +126,12 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Automaton
 
   [TypeCheckingError] typecheck_nested_auto_inputs(AutoSymbol auto_type, [Atom -> Expr] args, [EnvVar -> Type] env) {
     inputs = automaton_by_id(auto_type).inputs;
-    return union([typecheck(e, inputs[signal_var(i)].type, env) : i, e <- args]);
+    return union([typecheck(e, inputs[signal_var(i)].type, env) : i e <- args]);
   }
 
 
   [TypeCheckingError] typecheck_auto_method(ReactMethod method, [EnvVar -> Type] env) {
-    env_delta = merge([[fn_arg(i) -> t, value(v) -> t if v != nothing] : t, v @ i <~ method.args]);
+    env_delta = merge([[fn_arg(i) -> t, value(v) -> t if v != nothing] : (t, v) @ i <- method.args]);
     return typecheck(method.expr, method.ret_type, env & env_delta);
   }
 }
@@ -144,8 +144,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
     let context = automaton, typed_vars = [] {
       // Inferring type of constants
       consts = context.params;
-      consts_vars = [id -> type_dependencies(info.value) : id, info <- consts];
-      expl_consts_types = [id -> info.type : id, info <- consts, info.type?];
+      consts_vars = [id -> type_dependencies(info.value) : id info <- consts];
+      expl_consts_types = [id -> info.type : id info <- consts, info.type?];
 
       consts_ids = keys(consts);
       curr_env = expl_consts_types;
@@ -157,15 +157,15 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
       }
 
       // All explicitly declared types, except for outputs
-      inputs_types      = [id -> info.type : id, info <- context.inputs];
-      state_vars_types  = [id -> info.type : id, info <- context.state];
-      time_rules_types  = [id -> type_bool : id, unused_var <- context.time_rules];
+      inputs_types      = [id -> info.type : id info <- context.inputs];
+      state_vars_types  = [id -> info.type : id info <- context.state];
+      time_rules_types  = [id -> type_bool : id _ <- context.time_rules];
 
       expl_types = inputs_types & state_vars_types & time_rules_types;
 
       // Typechecking and inferring types of rules
       rules = context.rules;
-      rules_vars = [id -> type_dependencies(expr) : id, expr <- rules];
+      rules_vars = [id -> type_dependencies(expr) : id expr <- rules];
 
       rule_ids = keys(rules);
       curr_env = curr_env & expl_types;
@@ -179,7 +179,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
 
       // Typechecking and inferring types of discrete rules
       discrete_rules = context.discrete_rules;
-      discrete_rules_vars = [id -> union([type_dependencies(r) : r <- rs]) : id, rs <- discrete_rules];
+      discrete_rules_vars = [id -> union([type_dependencies(r) : r <- rs]) : id rs <- discrete_rules];
 
       discrete_rules_ids = keys(discrete_rules);
       while discrete_rules_ids != [] {

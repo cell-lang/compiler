@@ -6,9 +6,9 @@ implicit block : ReactBlock {
 
 implicit block : ReactBlock, typedefs : [TypeName -> NeType] {
   // (String*, String*) record_input_setter(Atom id, RecordTypeFields fields, Maybe[SymbObj] maybe_tag) {
-  //   return ((), ()) if (l, f <- fields : f.optional);
+  //   return ((), ()) if (l f <- fields : f.optional);
 
-  //   ord_fields = nonempty(rand_sort([bare_obj(l) : l, unused_var <- fields]));
+  //   ord_fields = nonempty(rand_sort([bare_obj(l) : l _ <- fields]));
   //   field_types = (fields(object(l)).type : l <- ord_fields);
   //   inter_types = maybe_input_interface_types(field_types);
   //   return ((), ()) if inter_types == nothing;
@@ -197,7 +197,7 @@ implicit block : ReactBlock, typedefs : [TypeName -> NeType] {
     output_getters_decl = join(output_getters_decl);
     output_getters_impl = join(output_getters_impl);
 
-    methods_wrappers = rand_sort([auto_method_wrapper(id, m) : id, m <- block.methods]);
+    methods_wrappers = rand_sort([auto_method_wrapper(id, m) : id m <- block.methods]);
     methods_wrappers_decls, methods_wrappers_impls = (join(ls) : ls <- unzip(methods_wrappers));
 
     input_enum_decl = if inputs == ()
@@ -390,7 +390,7 @@ implicit typedefs : [TypeName -> NeType] {
     memb_preds = method.args_memb_preds;
     args_types_by_pos = ([ps(i) : ps <- memb_preds] : i < arity);
     mono_args = ((i, only(ts)) : ts @ i <- args_types_by_pos, |ts| == 1);
-    poly_args = rand_sort([i : ts @ i <~ args_types_by_pos, |ts| != 1]);
+    poly_args = rand_sort([i : ts @ i <- args_types_by_pos, |ts| != 1]);
 
     decl = "  " & ret_val_str & "call_" & base_name & "(" & args_types_str & ");";
 

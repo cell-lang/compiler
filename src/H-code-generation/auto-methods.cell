@@ -1,32 +1,32 @@
 implicit automaton : Automaton {
-  Atom* sorted_outputs_ids = rand_sort([bare_id(v) : v, unused_var <- automaton.outputs]);
+  Atom* sorted_outputs_ids = rand_sort([bare_id(v) : v _ <- automaton.outputs]);
 
-  [Atom] state_vars_ids = [bare_id(v) : v, unused_var <- automaton.state];
+  [Atom] state_vars_ids = [bare_id(v) : v _ <- automaton.state];
 
-  [Atom] continuous_inputs_ids = [bare_id(id) : id, input <- automaton.inputs, not input.discrete];
+  [Atom] continuous_inputs_ids = [bare_id(id) : id input <- automaton.inputs, not input.discrete];
 
-  [Atom] discrete_inputs_ids = [bare_id(id) : id, input <- automaton.inputs, input.discrete];
+  [Atom] discrete_inputs_ids = [bare_id(id) : id input <- automaton.inputs, input.discrete];
 
-  [Atom] discrete_signals_ids = discrete_inputs_ids & [bare_id(id) : id, unused_var <- automaton.discrete_rules];
+  [Atom] discrete_signals_ids = discrete_inputs_ids & [bare_id(id) : id _ <- automaton.discrete_rules];
 
 
   [NestedAutoInputNodeId -> Expr] nested_auto_inputs = [
     nested_auto_input_id(bare_id(auto_id), in_id) -> expr
-    : auto_id, auto <- automaton.nested_autos, in_id, expr <- auto.args
+    : auto_id auto <- automaton.nested_autos, in_id expr <- auto.args
   ];
 
 
-  [NestedAutoVar -> AutoSymbol] auto_vars_types = [id -> na.type : id, na <- automaton.nested_autos];
+  [NestedAutoVar -> AutoSymbol] auto_vars_types = [id -> na.type : id na <- automaton.nested_autos];
 
 
   [Atom -> Expr*] state_vars_and_discrete_signals_update_values {
     state_vars_values = [
       bare_id(id) -> rand_sort([u.value : u <- sv.updates] & [sv.init_value])
-      : id, sv <- automaton.state
+      : id sv <- automaton.state
     ];
     discrete_signals_values = [
       bare_id(id) -> rand_sort([r.value : r <- rs])
-      : id, rs <- automaton.discrete_rules
+      : id rs <- automaton.discrete_rules
     ];
     return state_vars_values & discrete_signals_values;
   }
@@ -37,8 +37,8 @@ implicit automaton : Automaton {
 
 implicit program : Program, automaton : Automaton {
   <StdBlockNodeId, NestedAutoNodeId>* sorted_time_varying_nodes {
-    time_rules = [std_block_node_id(bare_id(id)) : id, unused_var <- automaton.time_rules];
-    nested_autos = [nested_auto_node_id(bare_id(id)) : id, na <- automaton.nested_autos, is_time_sensitive(na.type)];
+    time_rules = [std_block_node_id(bare_id(id)) : id _ <- automaton.time_rules];
+    nested_autos = [nested_auto_node_id(bare_id(id)) : id na <- automaton.nested_autos, is_time_sensitive(na.type)];
     return rand_sort(time_rules & nested_autos);
   }
 
@@ -57,14 +57,14 @@ implicit program : Program, automaton : Automaton {
 
   [AnySignalVar] signals_to_copy {
     explicit_instances = union([
-      signals_whose_old_value_is_used(u.value) : unused_var, sv <- automaton.state, u <- sv.updates
+      signals_whose_old_value_is_used(u.value) : _ sv <- automaton.state, u <- sv.updates
     ]);
-    implicit_instances = [s : unused_var, sv <- automaton.state, u <- sv.updates, s <- signals_to_copy(u.cond)] &
-                         [s : unused_var, rs <- automaton.discrete_rules, r <- rs, s <- signals_to_copy(r.cond)];
+    implicit_instances = [s : _ sv <- automaton.state, u <- sv.updates, s <- signals_to_copy(u.cond)] &
+                         [s : _ rs <- automaton.discrete_rules, r <- rs, s <- signals_to_copy(r.cond)];
     return explicit_instances & implicit_instances;
 
     [AnySignalVar] signals_to_copy(ReactCond cond) =
       on_becoming_true_cond() = [],
-      react_cond()            = [v : v, unused_var <- cond.signals_state, not is_discrete(v)];
+      react_cond()            = [v : v _ <- cond.signals_state, not is_discrete(v)];
   }
 }

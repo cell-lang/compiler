@@ -2,11 +2,11 @@ type Trie[A, B] = [A -> (Maybe[B], Trie[A, B])];
 
 
 Trie[A, B] trie([A+ -> B] map) {
-  keys = [ks(0) : ks, v <- map];
+  keys = [ks(0) : ks v <- map];
   terminals = [k -> if map((k), *) then just(map[(k)]) else nothing : k <- keys];
-  continuations = [[ks(0) -> [nonempty(drop(ks, 1)) -> v]] : ks, v <- map, |ks| > 1];
-  merged_continuations = [k -> merge(submaps) : k, submaps <- merge_values(continuations)];
-  trie = [k -> (t, trie(lookup(merged_continuations, k, []))) : k, t <- terminals];
+  continuations = [[ks(0) -> [nonempty(drop(ks, 1)) -> v]] : ks v <- map, |ks| > 1];
+  merged_continuations = [k -> merge(submaps) : k submaps <- merge_values(continuations)];
+  trie = [k -> (t, trie(lookup(merged_continuations, k, []))) : k t <- terminals];
   return trie;
 }
 

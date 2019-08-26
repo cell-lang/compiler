@@ -14,7 +14,7 @@ implicit program           : Program,
   (Instr*, ObjExpr, VarGen) do_expr_opt_eval_code(DoExpr expr, AnyLowLevelRepr repr, [EnvVar -> Type] init_env, VarGen init_var_gen) {
     var, ret_var_gen = next_var(repr, init_var_gen);
     let typed_vars = expr.typed_vars, exp_break_surrs = nothing, result_var = var
-      code, unused_var_1, unused_var_2, unused_var_3 = stmts_opt_code(expr.body, init_env, ret_var_gen);
+      code, _, _, _ = stmts_opt_code(expr.body, init_env, ret_var_gen);
     return ((execute_block(code) if code != ()), obj_expr(var), ret_var_gen);
   }
 }
@@ -91,23 +91,23 @@ implicit program           : Program,
   StmtCompInfo send_msg_stmt_opt_code(Expr msg, [EnvVar -> Type] env, VarGen init_var_gen) {
     rel_auto_type = rel_auto_by_id(this_db_symbol);
     msg_type = expr_type(msg, env);
-    target_idx = only([i : dependee @ i <~ rel_auto_type.links, is_subset(msg_type, db_msg_type(dependee))]);
+    target_idx = only([i : dependee @ i <- rel_auto_type.links, is_subset(msg_type, db_msg_type(dependee))]);
     target = linked_db_var(target_idx);
-    code, surr, unused_var = opt_eval_code(msg, env, init_var_gen);
+    code, surr, _ = opt_eval_code(msg, env, init_var_gen);
     code = (code | send_msg(target, var_type(target), surr, false));
     return (code, just(surrogates), [], init_var_gen);
   }
 
 
   StmtCompInfo try_update_stmt_opt_code(UpdateSymbol name, Expr* args, [EnvVar -> Type] env, VarGen init_var_gen) {
-    code, surrs, unused_var = opt_eval_code(args, env, init_var_gen);
+    code, surrs, _ = opt_eval_code(args, env, init_var_gen);
     code = (code | try_update(this_db_symbol, update_id(name, |args|), surrs));
     return (code, just(surrogates), [], init_var_gen);
   }
 
 
   StmtCompInfo set_memb_var_stmt_opt_code(MembVar var, Expr value, [EnvVar -> Type] env, VarGen init_var_gen) {
-    code, surr, unused_var = opt_eval_code(value, env, init_var_gen);
+    code, surr, _ = opt_eval_code(value, env, init_var_gen);
     pvar = pending_state_var(bare_id(var));
     code = (code | do_if_not(is_blank(pvar), terminate), set_var(pvar, surr));
     return (code, just(surrogates), [], init_var_gen);
@@ -399,7 +399,7 @@ implicit program           : Program,
 
 
   StmtCompInfo send_msg_ctrl_stmt_opt_code(StdVar res_var, LocDBVar db_var, Expr msg, [EnvVar -> Type] env, VarGen init_var_gen) {
-    code, surr, unused_var = opt_eval_code(msg, env, init_var_gen);
+    code, surr, _ = opt_eval_code(msg, env, init_var_gen);
     db_type = var_type(db_var);
     res_bvar = low_level_bvar(res_var);
     code = (code | send_msg(db_var, db_type, surr, true, res_bvar));
@@ -415,7 +415,7 @@ implicit program           : Program,
 
 
   StmtCompInfo restore_state_ctrl_stmt_opt_code(StdVar res_var, LocDBVar db_var, Expr state, Maybe[Any] stmt_loc, [EnvVar -> Type] env, VarGen init_var_gen) {
-    code, surr, unused_var = opt_eval_code(state, env, init_var_gen);
+    code, surr, _ = opt_eval_code(state, env, init_var_gen);
     res_bvar = low_level_bvar(res_var);
     code = (code | set_state(res_bvar, db_var, dependees(db_var), surr, var_type(db_var)));
     surrs = update(surrogates, res_var, bool_obj(res_bvar));
@@ -426,7 +426,7 @@ implicit program           : Program,
   //////////////////////////////////////////////////////////////////////////////
 
   StmtCompInfo read_state_ctrl_stmt_opt_code(StdVar res_var, LocAutoVar auto_var, [EnvVar -> Type] env, VarGen init_var_gen) {
-    tmp_var, unused_var = next_obj_var(init_var_gen);
+    tmp_var, _ = next_obj_var(init_var_gen);
     code = (
       branch(
         state_is_def(auto_var, var_type(auto_var)),
@@ -521,7 +521,7 @@ implicit program           : Program,
   StmtCompInfo assert_stmt_opt_code(AssertStmt stmt, [EnvVar -> Type] env, VarGen var_gen) {
     return ((), just(surrogates), [], var_gen) if options.ignore_assertions;
 
-    eval_code, surr, unused_var = opt_eval_code(stmt.cond, env, var_gen);
+    eval_code, surr, _ = opt_eval_code(stmt.cond, env, var_gen);
     expr_vars = extern_vars(stmt.cond);
     vars = isort([v : v <- stmt.env, expr_vars(v)]) & isort([v : v <- stmt.env, not expr_vars(v)]);
     vars = ((v, lookup(surrogates, v, v)) : v <- vars);
@@ -532,7 +532,7 @@ implicit program           : Program,
 
 
   StmtCompInfo print_stmt_opt_code(Expr expr, [EnvVar -> Type] env, VarGen var_gen) {
-    eval_code, surr, unused_var = opt_eval_code(expr, env, var_gen);
+    eval_code, surr, _ = opt_eval_code(expr, env, var_gen);
     return ((eval_code | print_obj(surr)), just(surrogates), [], var_gen);
   }
 
@@ -547,15 +547,15 @@ implicit program           : Program,
     backup_vars, var_gen = next_obj_vars(init_var_gen, |ord_asgnms|);
 
     set_up_code = join(({
-        eval_code, surr, unused_var = opt_eval_code(e, env, var_gen);
+        eval_code, surr, _ = opt_eval_code(e, env, var_gen);
         backup_var = backup_vars(i);
         return (eval_code | set_var(backup_var, v), set_var(v, surr));
       } : v, e @ i <- ord_asgnms
     ));
 
-    tear_down_code = reverse((set_var(v, backup_vars(i)) : v, unused_var @ i <- ord_asgnms));
+    tear_down_code = reverse((set_var(v, backup_vars(i)) : v, _ @ i <- ord_asgnms));
 
-    env_delta = [a -> expr_type(e, env) : a, e <- asgnms];
+    env_delta = [a -> expr_type(e, env) : a e <- asgnms];
     body_env = update(env, env_delta);
 
     body_code, surrs, break_surrs, var_gen = stmts_opt_code(body, body_env, var_gen);
@@ -580,7 +580,7 @@ implicit program           : Program,
 
   StmtCompInfo break_stmt_opt_code([EnvVar -> Type] env, VarGen var_gen) {
     exp_surrs = value_unsafe(exp_break_surrs);
-    surrs_to_drop = [v : v, e <- surrogates, not exp_surrs(v, *) or exp_surrs(v, !!) != e];
+    surrs_to_drop = [v : v e <- surrogates, not exp_surrs(v, *) or exp_surrs(v, !!) != e];
     fail if not surrs_to_drop :: [StdVar];
     sync_code = (set_var(v, surrogates(v, !!)) : v <- isort(surrs_to_drop));
     surrs = remove_keys(surrogates, surrs_to_drop);
@@ -598,23 +598,26 @@ implicit program           : Program,
   }
 
 
-  StmtCompInfo assignment_stmt_opt_code(StdVar+ vars, Expr value, [EnvVar -> Type] env, VarGen init_var_gen) {
-    value_type = expr_type(value, env);
+  StmtCompInfo assignment_stmt_opt_code(Maybe[StdVar]+ vars, Expr expr, [EnvVar -> Type] env, VarGen init_var_gen) {
+    value_type = expr_type(expr, env);
     return ((terminate), just(surrogates), [], init_var_gen) if value_type == empty_type;
 
-    rw_value = value;
+    rw_value = expr;
     if |vars| == 1 {
-      var = only(vars);
-      if typed_vars(var, *) {
-        var_type = typed_vars(var);
-        if is_subset(var_type, type_seq) {
-          decl_elt_type = seq_elem_supertype(var_type);
-          if decl_elt_type != empty_type {
-            if is_subset(decl_elt_type, integer) {
-              rw_value = match (value)
-                seq_comp()    |
-                range_comp()  = annotate(value, decl_elt_type),
-                _             = value;
+      maybe_var = only(vars);
+      if maybe_var != nothing {
+        var = value(maybe_var);
+        if typed_vars(var, *) {
+          var_type = typed_vars(var);
+          if is_subset(var_type, type_seq) {
+            decl_elt_type = seq_elem_supertype(var_type);
+            if decl_elt_type != empty_type {
+              if is_subset(decl_elt_type, integer) {
+                rw_value = match (expr)
+                  seq_comp()    |
+                  range_comp()  = annotate(expr, decl_elt_type),
+                  _             = expr;
+              }
             }
           }
         }
@@ -625,23 +628,30 @@ implicit program           : Program,
     code, surr, var_gen = opt_eval_code(rw_value, env, init_var_gen);
 
     if |vars| == 1 {
-      var = only(vars);
-      ll_var = low_level_var(repr, var);
-      code = store_result(code, surr, ll_var);
-      surrs = if var != ll_var
-        then update(surrogates, var, obj_expr(ll_var))
-        else remove_key(surrogates, var);
+      maybe_var = only(vars);
+      if maybe_var != nothing {
+        var = value(maybe_var);
+        ll_var = low_level_var(repr, var);
+        code = store_result(code, surr, ll_var);
+        surrs = if var != ll_var
+          then update(surrogates, var, obj_expr(ll_var))
+          else remove_key(surrogates, var);
+      }
+      else
+        surrs = surrogates;
     }
     else {
       assert repr == :object;
       types = tuple_field_supertypes(value_type, |vars|);
-      ## REMOVE WHEN DONE
-      assert types == (restricted_seq_elem_supertype(value_type, singleton_type(i)) : i < |vars|);
       reprs = (opt_repr(t) : t <- types);
-      phys_vars = (low_level_var(reprs(i), v) : v @ i <- vars);
-      code = code & (set_any_var(v, at(surr, i)) : v @ i <- phys_vars);
-      surrs = remove_keys(surrogates, set(vars));
-      surrs = surrs & [v -> obj_expr(pv) : v @ i <~ vars, pv = phys_vars(i), v != pv];
+      phys_vars = (apply(v, low_level_var(reprs(i), $)) : v @ i <- vars);
+      code = code & (set_any_var(value(v), at(surr, i)) : v @ i <- phys_vars, v != nothing);
+      surrs = remove_keys(surrogates, set(values(vars)));
+      new_surrs = [
+        value(v) -> obj_expr(value_unsafe(pv))
+        : v @ i <- vars, v != nothing, pv = phys_vars(i), v != pv
+      ];
+      surrs = surrs & new_surrs;
     }
 
     return (code, just(surrs), [], var_gen);
@@ -692,7 +702,7 @@ implicit program           : Program,
     //     else ((), just(surrogates), [], init_var_gen);
     // }
 
-    cond_code, cond_surr, unused_var = opt_eval_code(stmt.cond, env, init_var_gen);
+    cond_code, cond_surr, _ = opt_eval_code(stmt.cond, env, init_var_gen);
     then_env, else_env = refine_env(stmt.cond, env);
 
     // The variable used to store the value of the condition is not
@@ -848,9 +858,9 @@ implicit program           : Program,
       ## REMOVE WHEN DONE
       assert vars_types == (restricted_seq_elem_supertype(elt_type, singleton_type(i)) : i < |vars|);
       reprs = (opt_repr(t) : t <- vars_types);
-      vars = [i -> value(v) : v @ i <~ vars, v != nothing];
-      phys_vars = [i -> low_level_var(reprs(i), v) : i, v <- vars];
-      local_surrs = [v -> obj_expr(pv) : i, v <- vars, pv = phys_vars(i), v != pv];
+      vars = [i -> value(v) : v @ i <- vars, v != nothing];
+      phys_vars = [i -> low_level_var(reprs(i), v) : i v <- vars];
+      local_surrs = [v -> obj_expr(pv) : i v <- vars, pv = phys_vars(i), v != pv];
       it_var, var_gen = next_obj_var(var_gen);
       body_code_setup = (set_any_var(v, at(it_var, i)) : i, v <- sort_bin_rel_by_key(phys_vars, $a));
     }
@@ -942,7 +952,7 @@ implicit program           : Program,
       args_types = (nonempty_type(t) : t <- bin_rel_args_supertypes(coll_type));
       args_reprs = (opt_repr(t) : t <- args_types);
       it_var, var_gen = next_bin_rel_it_var(var_gen);
-      loop_vars_env = [value(v) -> args_types(i) : v @ i <~ vars, v != nothing];
+      loop_vars_env = [value(v) -> args_types(i) : v @ i <- vars, v != nothing];
       for v @ i <- vars {
         if v != nothing {
           var = value(v);
@@ -960,7 +970,7 @@ implicit program           : Program,
       args_types = (nonempty_type(t) : t <- tern_rel_args_supertypes(coll_type));
       args_reprs = (opt_repr(t) : t <- args_types);
       it_var, var_gen = next_tern_rel_it_var(var_gen);
-      loop_vars_env = [value(v) -> args_types(i) : v @ i <~ vars, v != nothing];
+      loop_vars_env = [value(v) -> args_types(i) : v @ i <- vars, v != nothing];
       for v @ i <- vars {
         if v != nothing {
           var = value(v);
@@ -1094,8 +1104,8 @@ implicit program           : Program,
       for tv <- isort(candidate_tables) {
 
         sign = table_signature(tv);
-        vars_reprs = [value(v) -> low_level_repr(sign(i)) : v @ i <~ vars, v != nothing];
-        low_level_vars = [v -> low_level_var(r, v) : v, r <- vars_reprs];
+        vars_reprs = [value(v) -> low_level_repr(sign(i)) : v @ i <- vars, v != nothing];
+        low_level_vars = [v -> low_level_var(r, v) : v r <- vars_reprs];
 
         store_id = table_col_store_id(tv, 0);
         store_type = value_store_type(rel_auto_type(rel_var), unqualified(store_id));
@@ -1118,11 +1128,11 @@ implicit program           : Program,
 
         // Environment the body runs in
         sgn = table_signature(tv);
-        loop_vars = [value(v) -> sgn(i) : v @ i <~ vars, v != nothing];
+        loop_vars = [value(v) -> sgn(i) : v @ i <- vars, v != nothing];
         exit_env = update_env(body, env & loop_vars);
         body_env = merge_envs(env, exit_env) & loop_vars;
 
-        local_surrs = [v -> obj_expr(llv) : v, llv <- low_level_vars];
+        local_surrs = [v -> obj_expr(llv) : v llv <- low_level_vars];
 
         let surrogates = surrs
           entry_code_fixes, body_code, surrs = loop_stable_code(body, local_surrs, body_env, var_gen);
@@ -1151,12 +1161,12 @@ implicit program           : Program,
 
     bound_args_idxs = (i : a @ i <- table_args, a != nothing);
     free_args_idxs = (i : a @ i <- table_args, a == nothing);
-    arg_idx_bound_arg_idx = [i -> j : i @ j <~ bound_args_idxs];
+    arg_idx_bound_arg_idx = [i -> j : i @ j <- bound_args_idxs];
 
     entry_code, args_aliases, var_gen = opt_eval_code(set_args, env, init_var_gen);
 
     surr_vars, var_gen = next_int32_vars(var_gen, |set_args|);
-    shadow_surr_vars, var_gen = next_int32_vars(var_gen, [i : v @ i <~ iter.vars, v != nothing]);
+    shadow_surr_vars, var_gen = next_int32_vars(var_gen, [i : v @ i <- iter.vars, v != nothing]);
     it_var, var_gen = next_table_it_var(var_gen, |table_args|, symmetric(iter.rel_var));
 
     surr_args = (apply(a, surr_vars(arg_idx_bound_arg_idx(i))) : a @ i <- table_args);
@@ -1172,11 +1182,11 @@ implicit program           : Program,
     code = ();
     surrs = surrogates;
     for tv <- isort(candidate_tables) {
-      assert (a <~ surr_args : a == nothing);
+      assert (a <- surr_args : a == nothing);
 
       sign = table_signature(tv);
-      vars_reprs = [value(v) -> low_level_repr(sign(free_args_idxs(i))) : v @ i <~ iter.vars, v != nothing];
-      low_level_vars = [v -> low_level_var(r, v) : v, r <- vars_reprs];
+      vars_reprs = [value(v) -> low_level_repr(sign(free_args_idxs(i))) : v @ i <- iter.vars, v != nothing];
+      low_level_vars = [v -> low_level_var(r, v) : v r <- vars_reprs];
 
       vars_setup_code = join(({
         shadow_surr_var = shadow_surr_vars(i);
@@ -1191,11 +1201,11 @@ implicit program           : Program,
 
       // Environment the body runs in
       sgn = table_signature(tv);
-      loop_vars = [value(v) -> sgn(free_args_idxs(i)) : v @ i <~ iter.vars, v != nothing];
+      loop_vars = [value(v) -> sgn(free_args_idxs(i)) : v @ i <- iter.vars, v != nothing];
       exit_env = update_env(body, env & loop_vars);
       body_env = merge_envs(env, exit_env) & loop_vars;
 
-      local_surrs = [v -> obj_expr(llv) : v, llv <- low_level_vars];
+      local_surrs = [v -> obj_expr(llv) : v llv <- low_level_vars];
 
       let surrogates = surrs
         entry_code_fixes, body_code, surrs = loop_stable_code(body, local_surrs, body_env, var_gen);
@@ -1269,17 +1279,17 @@ implicit program           : Program,
   loop_stable_code(Statement+ stmts, [SurrExpr -> ObjExpr] local_surrs, [EnvVar -> Type] env, VarGen var_gen) {
     ## MAYBE HERE I COULD EXPLICITLY PASS A LIST OF VARIABLES THAT ARE
     ## EXPECTED TO SURVIVE THE LOOP INSTEAD OF TRYING TO FIGURE THAT OUT SOMEHOW
-    surr_vars = [v : v, unused_var <- env, v :: SurrExpr, not local_surrs(v, *)];
+    surr_vars = [v : v _ <- env, v :: SurrExpr, not local_surrs(v, *)];
     entry_surrs = surrogates;
     entry_code = ();
 
     loop {
       body_surrs = entry_surrs & local_surrs;
       let surrogates = body_surrs, exp_break_surrs = just(body_surrs)
-        body_code, exit_surrs, break_surrs, unused_var = stmts_opt_code(stmts, env, var_gen);
+        body_code, exit_surrs, break_surrs, _ = stmts_opt_code(stmts, env, var_gen);
 
       // Finding out what variables get out of sync after one iteraction of the loop
-      out_of_sync_vars = [v : v, e <- entry_surrs, is_out_of_sync(v, e, exit_surrs, break_surrs)];
+      out_of_sync_vars = [v : v e <- entry_surrs, is_out_of_sync(v, e, exit_surrs, break_surrs)];
 
       // If no variable is out of sync, then we're done
       if out_of_sync_vars == [] {

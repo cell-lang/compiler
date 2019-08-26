@@ -1,13 +1,13 @@
 implicit syn_prg : SynPrg {
   [WFError] schemas_wf_errors([SchemaDef] schemas, [BasicTypeSymbol -> [+Nat]] type_arity_map) {
-    errs = [duplicate_schema_defs(rand_sort(dbs)) : id, dbs <- group_by(schemas, $.name), |dbs| > 1];
+    errs = [duplicate_schema_defs(rand_sort(dbs)) : id dbs <- group_by(schemas, $.name), |dbs| > 1];
     return errs if errs != [];
 
     shallow_deps = [s.name -> set(s.links) : s <- schemas];
     deep_deps = transitive_closure(shallow_deps);
     errs = [
       recursively_defined_schema(only([s : s <- schemas, s.name == n]), nonempty(deps))
-      : n, deps <- deep_deps, deps(n)
+      : n deps <- deep_deps, deps(n)
     ];
     return errs if errs != [];
 
@@ -41,13 +41,13 @@ implicit syn_prg : SynPrg, type_arity_map : [BasicTypeSymbol -> [+Nat]] {
     return errs if errs != ();
 
     // Checking individual relation declarations
-    non_overloadable_decls_by_name = [d.name -> d : d <~ non_overloadable_decls];
+    non_overloadable_decls_by_name = [d.name -> d : d <- non_overloadable_decls];
     errs = join((schema_decl_wf_errors(rv, non_overloadable_decls_by_name) : rv <- rel_vars));
     return errs if errs != ();
 
     // Now looking for conflicts among overloaded relation declarations
-    std_relvars_by_name = merge_values([[rv.name -> rv] : rv <~ rel_vars]);
-    attr_relvar_by_name = merge_values([[arv.name -> (rv, i)] : rv <~ rel_vars, arv @ i <~ rv.attributes]);
+    std_relvars_by_name = merge_values([[rv.name -> rv] : rv <- rel_vars]);
+    attr_relvar_by_name = merge_values([[arv.name -> (rv, i)] : rv <- rel_vars, arv @ i <- rv.attributes]);
     all_relvar_names = rand_sort(keys(std_relvars_by_name) & keys(attr_relvar_by_name));
     errs = join(({
         std_relvars = lookup(std_relvars_by_name, n, []);
@@ -74,7 +74,7 @@ implicit syn_prg : SynPrg, type_arity_map : [BasicTypeSymbol -> [+Nat]] {
       else if |as| != info.rel_vars(r)
         errs = (errs | invalid_foreign_key_relvar_arity(key, r));
 
-      if not (a <~ as : a != nothing)
+      if not (a <- as : a != nothing)
         errs = (errs | empty_args_list(key, r));
     }
     return errs if errs != ();
@@ -84,7 +84,7 @@ implicit syn_prg : SynPrg, type_arity_map : [BasicTypeSymbol -> [+Nat]] {
     dupl_args = duplicates(args);
     return (duplicate_foreign_key_args(key, dupl_args)) if dupl_args != [];
     args = set(args);
-    errs = [undef_foreign_key_var(key, s) : unused_var, as <~ key.targets, a <~ as, just(s?) ?= a, not args(s)];
+    errs = [undef_foreign_key_var(key, s) : (_, as) <- key.targets, a <- as, just(s?) ?= a, not args(s)];
     return isort(errs);
   }
 
@@ -111,7 +111,7 @@ implicit syn_prg : SynPrg, type_arity_map : [BasicTypeSymbol -> [+Nat]] {
 
     return (diff_types_in_sym_cols(decl)) if decl.symmetric and decl.col_types(0) != decl.col_types(1);
 
-    keys = [set(k) : k <~ decl.keys];
+    keys = [set(k) : k <- decl.keys];
     valid_keys = if decl.symmetric
       then sym_rel_vars_valid_key_sets_by_arity(arity, !!)
       else valid_key_sets_by_arity(arity, !!);
@@ -165,7 +165,7 @@ implicit syn_prg : SynPrg, type_arity_map : [BasicTypeSymbol -> [+Nat]] {
     return (incomp_relvar_decls(std_relvars, attr_relvars)) if |all_arities| != 1;
 
     // Checking that the set of keys is the same
-    std_relvars_keys = [[set(k) : k <~ rv.keys] : rv <- std_relvars];
+    std_relvars_keys = [[set(k) : k <- rv.keys] : rv <- std_relvars];
     attr_relvars_keys = [{
       rv, idx = arv_info;
       arv = rv.attributes(idx);

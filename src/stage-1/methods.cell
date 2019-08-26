@@ -45,8 +45,8 @@ Nat arity(SynArg arg) = syn_type_arity(arg.type);
 
 implicit syn_prg : SynPrg {
   AutoInterface interface_info(ReactAutoDef auto_def) = (
-    inputs:         [i.name -> (discrete: i.discrete) : i <~ auto_def.inputs],
-    outputs:        [o.name -> (discrete: o.discrete) : o <~ auto_def.outputs],
+    inputs:         [i.name -> (discrete: i.discrete) : i <- auto_def.inputs],
+    outputs:        [o.name -> (discrete: o.discrete) : o <- auto_def.outputs],
     state_vars:     set((d.name : d <- auto_def.state_vars)),
     rule_vars:      [r.name : r <- plain_rule_decls(artifact=auto_def)],
     pos_inputs:     auto_def.pos_inputs,
@@ -62,12 +62,12 @@ DBInterface interface_info(SchemaDef db_def) {
   main_relvars = [d.name -> |d.col_types| : d <- relvars_decls];
   attr_relvars = merge_values([
     [a.name -> nz_nat(|d.col_types| + 1)]
-    : d <- relvars_decls, a <~ d.attributes
+    : d <- relvars_decls, a <- d.attributes
   ]);
 
   return (
     memb_vars:    [d.name : d <- decls, state_var_decl() ?= d],
-    rel_vars:     main_relvars & [n -> only(as) : n, as <- attr_relvars],
+    rel_vars:     main_relvars & [n -> only(as) : n as <- attr_relvars],
     linked_dbs:   db_def.links
   );
 }

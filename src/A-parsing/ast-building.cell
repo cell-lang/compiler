@@ -1035,7 +1035,7 @@ implicit filename : String, lines : Nat** {
     var_and_type_node = nodes(2);
     if get_rule_name(var_and_type_node) == :seq {
       ns = rule_seq_nodes(get_rule_match(var_and_type_node));
-      vars = (var(get_lowercase_id(n)) : n <- rep_rule_nodes(ns(0)));
+      vars = (maybe_var(n) : n <- rep_rule_nodes(ns(0)));
       if ns(1) != null_match {
         sub_ns = rule_seq_nodes(ns(1));
         idx_var = just(var(get_lowercase_id(sub_ns(1))));
@@ -1055,7 +1055,7 @@ implicit filename : String, lines : Nat** {
     else {
       assert get_rule_name(var_and_type_node) == :range;
       ns = rule_seq_nodes(get_rule_match(var_and_type_node));
-      var = var(get_lowercase_id(ns(0)));
+      var = maybe_var(ns(0));
       op = get_token(ns(1));
       assert op == lower or op == lower_eq;
       inclusive = op == lower_eq;
@@ -1314,7 +1314,7 @@ implicit filename : String, lines : Nat** {
   SynStmt build_asgnm_stmt_ast(RuleMatch mtc) {
     nodes = rule_seq_nodes(mtc);
     assert |nodes| == 5;
-    vars = (var(get_lowercase_id(n)) : n <- rep_rule_nodes(nodes(0)));
+    vars = (maybe_var(n) : n <- rep_rule_nodes(nodes(0)));
     assert vars != ();
     expr = build_expr_ast(nodes(2));
     stmt = syn_asgnm_stmt(nonempty(vars), expr);
@@ -1411,6 +1411,13 @@ implicit filename : String, lines : Nat** {
                   : n <- nonempty(rep_rule_nodes(nodes(0))));
         proj = build_proj_ast(nodes(2));
         return syn_filtered_iter(vars, proj.target, proj.args);
+      }
+
+      if get_rule_name(mtc) == :foreach_rel {
+        vars = (if get_token(n) != underscore then just(get_lowercase_id(n)) else nothing
+                  : n <- nonempty(rep_rule_nodes(nodes(0))));
+        expr = build_expr_ast(nodes(2));
+        return syn_rel_iter(vars, expr);
       }
 
       if get_rule_name(mtc) == :for_upper {
@@ -1715,11 +1722,12 @@ implicit filename : String, lines : Nat** {
   SynClause build_clause_ast(RuleMatch mtc) {
     inner_mtc = get_rule_match(mtc);
     clause = match (get_rule_name(mtc))
-      iter      = build_iter_clause_ast(inner_mtc),
-      seq_iter  = build_seq_iter_clause_ast(inner_mtc),
-      asgnm     = build_asgnm_clause_ast(inner_mtc),
-      match     = build_match_clause_ast(inner_mtc),
-      filter    = syn_filter_clause(build_expr_ast(inner_mtc));
+      iter          = build_iter_clause_ast(inner_mtc),
+      seq_iter_one  = build_seq_iter_clause_ast(inner_mtc, :one),
+      seq_iter_many = build_seq_iter_clause_ast(inner_mtc, :many),
+      asgnm         = build_asgnm_clause_ast(inner_mtc),
+      match         = build_match_clause_ast(inner_mtc),
+      filter        = syn_filter_clause(build_expr_ast(inner_mtc));
     return attach_src_code_info(clause, mtc);
   }
 
@@ -1731,7 +1739,7 @@ implicit filename : String, lines : Nat** {
   SynClause build_single_iter_clause_ast(RuleMatch mtc) {
     nodes = rule_seq_nodes(mtc);
     assert |nodes| == 3;
-    vars = (var(get_lowercase_id(n)) : n <- rep_rule_nodes(nodes(0)));
+    vars = (maybe_symbol(n) : n <- rep_rule_nodes(nodes(0)));
     expr_or_proj = build_iter_clause_src(nodes(2));
     return syn_iter_clause(nonempty(vars), expr_or_proj);
 
@@ -1762,13 +1770,12 @@ implicit filename : String, lines : Nat** {
     return syn_proj(nonempty(target), nonempty(pre_args & (nothing) & post_args));
   }
 
-  SynClause build_seq_iter_clause_ast(RuleMatch mtc) {
+  SynClause build_seq_iter_clause_ast(RuleMatch mtc, <one, many> iter_type) {
     nodes = rule_seq_nodes(mtc);
     assert |nodes| == 4;
-    vars = (
-      if get_token(n) == underscore then nothing else just(get_lowercase_id(n))
-      : n <- rep_rule_nodes(nodes(0))
-    );
+    vars = match (iter_type)
+      one   = (maybe_symbol(nodes(0))),
+      many  = (maybe_symbol(n) : n <- rep_rule_nodes(block_node(nodes(0))));
     idx_var = if nodes(1) != null_match then just(get_lowercase_id(nodes(1), 1)) else nothing;
     src = build_expr_ast(nodes(3));
     return syn_seq_clause(nonempty(vars), idx_var, src);
@@ -2304,6 +2311,16 @@ implicit filename : String, lines : Nat** {
 ////////////////////////////////////////////////////////////////////////////////
 
 BasicTypeSymbol build_basic_type_symbol_ast(RuleMatch mtc) = type_symbol(get_lowercase_id(mtc));
+
+Maybe[Symbol] maybe_symbol(RuleMatch node) =
+  if get_token(node) != underscore
+    then just(get_lowercase_id(node))
+    else nothing;
+
+Maybe[StdVar] maybe_var(RuleMatch node) =
+  if get_token(node) != underscore
+    then just(var(get_lowercase_id(node)))
+    else nothing;
 
 ////////////////////////////////////////////////////////////////////////////////
 

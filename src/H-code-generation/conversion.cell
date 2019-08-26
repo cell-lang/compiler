@@ -1,7 +1,7 @@
 implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptions {
   [ObjProcDef] conversion_functions {
-    per_tag_conv_fns = [repr_conv_fn(t, rs) : t, rs <- optimized_tagged_records];
-    per_repr_conv_fns = [repr_conv_fn(t, r, i) : t, rs <- optimized_tagged_records, r @ i <~ rs];
+    per_tag_conv_fns = [repr_conv_fn(t, rs) : t rs <- optimized_tagged_records];
+    per_repr_conv_fns = [repr_conv_fn(t, r, i) : t rs <- optimized_tagged_records, r @ i <- rs];
     return [gen_tag_rec_repr_conv_fn] & per_tag_conv_fns & per_repr_conv_fns;
   }
 
@@ -80,7 +80,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
 ////////////////////////////////////////////////////////////////////////////////
 
 ObjProcDef repr_conv_fn(Symbol tag, OptRecRepr repr, Nat repr_idx) {
-  code, surr, unused_var = opt_repr_conv_code(fn_arg(0), tag, repr, repr_idx, blank_var_gen);
+  code, surr, _ = opt_repr_conv_code(fn_arg(0), tag, repr, repr_idx, blank_var_gen);
 
   return obj_proc_def(
     name:             :tag_rec_repr_conv(tag, repr_idx),

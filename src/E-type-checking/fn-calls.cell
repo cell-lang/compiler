@@ -68,12 +68,12 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
         }
       }
 
-      return union_type([t : t <~ ret_types]);
+      return union_type([t : t <- ret_types]);
     }
 
 
     Bool may_match(NeType* types, PseudoType* ptypes) =
-      not (t, pt <~ zip(types, ptypes) : not may_match(t, pt));
+      not ((t, pt) <- zip(types, ptypes) : not may_match(t, pt));
 
     Bool may_match(NeType type, PseudoType ptype) = not are_disjoint(pseudotype(type, typedefs), ptype);
   }
@@ -163,7 +163,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     // We first check that all scalar positional parameters (and those parameters only) match
     // the type of the corresponding formal parameter (we already know they typecheck)
     invalid_args = [
-      (i, e, at) : e, t @ i <~ zip(args, signature.args), at = expr_type(e, env),
+      (i, e, at) : (e, t) @ i <- zip(args, signature.args), at = expr_type(e, env),
         not is_subset(at, replace_type_vars_with_type_any(t))
     ];
     return [invalid_args_types(fn_id, signature, invalid_args)] if invalid_args != [];
@@ -180,7 +180,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
     // If there are constraints on those type variable instantiations we check them
     if type_var_insts != [] {
-      errs = union([check_type_var_insts(type_var_insts, n, t) : n, ts <- signature.constrs, t <- ts]);
+      errs = union([check_type_var_insts(type_var_insts, n, t) : n ts <- signature.constrs, t <- ts]);
       return errs if errs != [];
     }
 
@@ -294,7 +294,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     // OK, now we have our initial instantiations, based on the type of scalar parameters.
     // Next we must complete and refine those instantiations by looking at closure parameters
 
-    // cls_pars = ((p, t) : p, t <- zip(args, arg_types), p :: AnyClsExpr and t :: ClsType);
+    // cls_pars = ((p, t) : p t <- zip(args, arg_types), p :: AnyClsExpr and t :: ClsType);
     cls_pars = zip(cls_args, cls_types);
     for 5 {
       new_type_pairs = ();

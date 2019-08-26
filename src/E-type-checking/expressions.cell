@@ -102,7 +102,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     aggr_fns = aggr_functs(expr.fn_id, |expr.extra_args|);
     for f <- isort(aggr_fns) {
       if is_subset(elt_type, f.elt_type)
-        return union([typecheck(e, right(f.extra_args(i)), env) : e @ i <~ expr.extra_args]);
+        return union([typecheck(e, right(f.extra_args(i)), env) : e @ i <- expr.extra_args]);
     }
 
     extra_args_types = (expr_type(e, env) : e <- expr.extra_args);
@@ -113,7 +113,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   [TypeCheckingError] pre_typecheck_builtin_call(BuiltIn name, Expr+ args, [EnvVar -> Type] env) =
     union([
       typecheck(a, replace_type_vars_with_type_any(t), env)
-      : a, t <~ zip(args, builtin_signature(name).args_types)
+      : (a, t) <- zip(args, builtin_signature(name).args_types)
     ]);
 
 
@@ -121,7 +121,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     if entry.cond? {
       errs = typecheck(entry.cond, type_bool, env);
       return errs if errs != [];
-      new_env, unused_var = refine_env(entry.cond, env);
+      new_env, _ = refine_env(entry.cond, env);
     }
     else {
       new_env = env;
@@ -135,7 +135,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     if entry.cond? {
       errs = typecheck(entry.cond, type_bool, env);
       return errs if errs != [];
-      new_env, unused_var = refine_env(entry.cond, env);
+      new_env, _ = refine_env(entry.cond, env);
     }
     else {
       new_env = env;
@@ -154,12 +154,12 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     // is critical to avoiding clashes
     ## THIS CHECK IS NOT CRITICAL AND PROBABLY NOT THAT USEFUL EITHER. MOVE IT TO
     ## LEVEL 1 WELL-FORMEDNESS CHECKING, OR REMOVE IT ALTOGETHER?
-    dup_key_errs = [duplicate_map_key(k, es) : k, es <- group_by(entries, $.key), |es| > 1];
+    dup_key_errs = [duplicate_map_key(k, es) : k es <- group_by(entries, $.key), |es| > 1];
     return dup_key_errs if dup_key_errs != [];
 
     symb_key_entries = [e : e <- entries, is_symb_singl_type(expr_type(e.key, env))];
     symb_key_entries_by_key = group_by(symb_key_entries, only_symb(expr_type($.key, env)));
-    return [duplicate_map_key(k, es) : k, es <- symb_key_entries_by_key, |es| > 1];
+    return [duplicate_map_key(k, es) : k es <- symb_key_entries_by_key, |es| > 1];
   }
 
 
@@ -209,7 +209,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
     [TypeCheckingError] pre_typecheck_bin_rel_memb_test(Expr rel, Maybe[Expr] arg0, Maybe[Expr] arg1, [EnvVar -> Type] env) {
       errs = typecheck(rel, type_bin_rel, env);
-      errs = errs & union([typecheck(value(a), type_any, env) : a <~ (arg0, arg1), a != nothing]);
+      errs = errs & union([typecheck(value(a), type_any, env) : a <- (arg0, arg1), a != nothing]);
       return errs if errs != [];
 
       rel_type = expr_type(rel, env);
@@ -233,7 +233,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
     [TypeCheckingError] pre_typecheck_tern_rel_memb_test(Expr rel, (Maybe[Expr], Maybe[Expr], Maybe[Expr]) args, [EnvVar -> Type] env) {
       errs = typecheck(rel, type_tern_rel, env);
-      errs = errs & union([typecheck(value(a), type_any, env) : a <~ args, a != nothing]);
+      errs = errs & union([typecheck(value(a), type_any, env) : a <- args, a != nothing]);
       return errs if errs != [];
 
       rel_type = expr_type(rel, env);
@@ -242,7 +242,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
       return [
         invalid_rel_arg_type(i, at, et)
-        : a @ i <~ args, a != nothing, at = expr_type(value(a), env),
+        : a @ i <- args, a != nothing, at = expr_type(value(a), env),
           et = rel_arg_types(i), are_ptype_disjoint(at, et)
       ];
     }
@@ -278,7 +278,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
       return errs if errs != [];
       rel_type = expr_type(rel, env);
       exp_args_types = tern_rel_args_supertypes(rel_type);
-      return union([typecheck(value(a), exp_args_types(i), env) : a @ i <~ args, a != nothing]);
+      return union([typecheck(value(a), exp_args_types(i), env) : a @ i <- args, a != nothing]);
     }
   }
 
@@ -289,10 +289,10 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     args_types = (apply(a, expr_type($, env)) : a <- args);
     sgns = relvar_signatures(rel_var);
     for s <- rand_sort(sgns)
-      return [] if not (t @ i <~ args_types : t != nothing and not is_subset(value(t), s(i)));
+      return [] if not (t @ i <- args_types : t != nothing and not is_subset(value(t), s(i)));
     agg_sgns = aggregated_relation_signatures(sgns); ## BAD BAD BAD: AGGREGATED SIGNATURES SHOULD BE CACHED
     for s <- rand_sort(agg_sgns)
-      return [] if not (t @ i <~ args_types : t != nothing and not is_subset(value(t), s(i)));
+      return [] if not (t @ i <- args_types : t != nothing and not is_subset(value(t), s(i)));
     return [no_matching_relvar(rel_var, args_types, sgns)];
   }
 
@@ -303,15 +303,15 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
 
   [TypeCheckingError] pre_typecheck_relvar_lookup(RelVarLookup expr, [EnvVar -> Type] env) {
-    errs = union([typecheck(value(a), type_any, env) : a <~ expr.args, a != nothing]);
+    errs = union([typecheck(value(a), type_any, env) : a <- expr.args, a != nothing]);
     return errs if errs != [];
     args_types = (apply(a, expr_type($, env)) : a <- expr.args);
     sgns = relvar_signatures(expr.rel_var);
     for s <- rand_sort(sgns)
-      return [] if not (t @ i <~ args_types : t != nothing and not is_subset(value(t), s(i)));
+      return [] if not (t @ i <- args_types : t != nothing and not is_subset(value(t), s(i)));
     agg_sgns = aggregated_relation_signatures(sgns); ## BAD BAD BAD: AGGREGATED SIGNATURES SHOULD BE CACHED
     for s <- rand_sort(agg_sgns)
-      return [] if not (t @ i <~ args_types : t != nothing and not is_subset(value(t), s(i)));
+      return [] if not (t @ i <- args_types : t != nothing and not is_subset(value(t), s(i)));
     return [no_matching_relvar(expr.rel_var, args_types, sgns)];
   }
 
@@ -319,7 +319,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   [TypeCheckingError] pre_typecheck_and_expr(Expr left_expr, Expr right_expr, [EnvVar -> Type] env) {
     errs = typecheck(left_expr, type_bool, env);
     return errs if errs != [];
-    new_env, unused_var = refine_env(left_expr, env);
+    new_env, _ = refine_env(left_expr, env);
     return typecheck(right_expr, type_bool, new_env);
   }
 
@@ -327,7 +327,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   [TypeCheckingError] pre_typecheck_or_expr(Expr left_expr, Expr right_expr, [EnvVar -> Type] env) {
     errs = typecheck(left_expr, type_bool, env);
     return errs if errs != [];
-    unused_var, new_env = refine_env(left_expr, env);
+    _, new_env = refine_env(left_expr, env);
     return typecheck(right_expr, type_bool, new_env);
   }
 
@@ -429,7 +429,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
 
     [TypeCheckingError] fully_typecheck_case(Expr+ exprs, Type+ types, Pattern+ ptrns, Expr expr, Type exp_type, [EnvVar -> Type] env) {
-      errs = union([typecheck_pattern(p, t) : p, t <~ zip(ptrns, types)]);
+      errs = union([typecheck_pattern(p, t) : (p, t) <- zip(ptrns, types)]);
       return errs if errs != [];
       case_expr_env = update_env(exprs, ptrns, env);
       return typecheck(expr, exp_type, case_expr_env);
@@ -461,13 +461,13 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
     src_type = expr_type(expr.src_expr, env);
     elem_type = seq_elem_supertype(src_type);
-    env_delta = asgnm_env_updates(expr.vars, elem_type) & [expr.idx_var -> type_nat if expr.idx_var?];
+    env_delta = partial_asgnm_env_updates(expr.vars, elem_type) & [expr.idx_var -> type_nat if expr.idx_var?];
     new_env = update(env, env_delta);
 
     if expr.sel_expr? {
       errs = typecheck(expr.sel_expr, type_bool, new_env);
       return errs if errs != [];
-      new_env, unused_var = refine_env(expr.sel_expr, new_env);
+      new_env, _ = refine_env(expr.sel_expr, new_env);
     }
 
     return typecheck(expr.expr, type_any, new_env);
@@ -479,12 +479,12 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     return errs if errs != [];
 
     ## BAD: HERE WE COULD TAKE ADVANTAGE OF THE KNOWLEDGE ON THE TYPE OF THE UPPER BOUND
-    new_env = update(env, [expr.var -> type_nat]);
+    new_env = update(env, [value(expr.var) -> type_nat if expr.var != nothing]);
 
     if expr.sel_expr? {
       errs = typecheck(expr.sel_expr, type_bool, new_env);
       return errs if errs != [];
-      new_env, unused_var = refine_env(expr.sel_expr, new_env);
+      new_env, _ = refine_env(expr.sel_expr, new_env);
     }
 
     return typecheck(expr.expr, type_any, new_env);

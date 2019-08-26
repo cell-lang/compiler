@@ -4,7 +4,7 @@
 }
 
 (A, B)* sort_bin_rel_by_key([A, B] r, (A B -> Int) k) =
-  sort_by_key([(a, b) : a, b <- r], k(left($), right($)));
+  sort_by_key([(a, b) : a b <- r], k(left($), right($)));
 
 ## THIS DOESN'T WORK BECAUSE OF THE UNBOUNDABLE TYPE
 ## VARIABLE T IN THE FIRST INSTANCE OF THE FUNCTIONS
@@ -69,7 +69,7 @@ T* mergesort(T* seq, (T T -> Bool) lt) {
   curr_map = [n -> lookup(map, n, []) : n <- keys(map) & union(values(map))];
 
   loop {
-    new_map = [n -> rs & union([curr_map[r] : r <- rs]) : n, rs <- curr_map];
+    new_map = [n -> rs & union([curr_map[r] : r <- rs]) : n rs <- curr_map];
     break if new_map == curr_map;
     curr_map = new_map;
   }
@@ -109,16 +109,16 @@ Nat** reverse_adj_list(Nat** adj_list) {
 ## THINK OF HOW TO REWRITE THIS FUNCTION (AND ITS SIGNATURE) SO THAT IS CAN BE PROVED IT'S TOTAL
 [+T]* topological_sort([T -> [T]] edges) {
   return () if edges == [];
-  all_nodes = union([[s] & ts : s, ts <- edges]);
+  all_nodes = union([[s] & ts : s ts <- edges]);
   done_nodes = [n : n <- all_nodes, not edges(n, *) or edges[n] == []];
   layers = (nonempty(done_nodes));
-  rem_edges = [s -> ts : s, ts <- edges, ts != []];
+  rem_edges = [s -> ts : s ts <- edges, ts != []];
   while rem_edges != [] {
-    cleaned_edges = [s -> ts - done_nodes : s, ts <- rem_edges];
-    new_layer = nonempty([s : s, ts <- cleaned_edges, ts == []]);
+    cleaned_edges = [s -> ts - done_nodes : s ts <- rem_edges];
+    new_layer = nonempty([s : s ts <- cleaned_edges, ts == []]);
     layers = (layers | new_layer);
     done_nodes = done_nodes & new_layer;
-    rem_edges = [s -> ts : s, ts <- cleaned_edges, ts != []];
+    rem_edges = [s -> ts : s ts <- cleaned_edges, ts != []];
   }
   return layers;
 }
@@ -204,7 +204,7 @@ Nat++ ordered_combinations(NzNat m, NzNat n) =
     );
 
 
-[+[+Nat]] combinations(NzNat m, NzNat n) = [[i : i <~ c] : c <~ ordered_combinations(m, n)];
+[+[+Nat]] combinations(NzNat m, NzNat n) = [[i : i <- c] : c <- ordered_combinations(m, n)];
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -266,7 +266,7 @@ Nat* reverse_perm(Nat* p) = array_map(reverse(merge(([i -> n] : n @ i <- p))));
 
 [T, T] symmetric_cart_prod([T] set) {
   ord_set = rand_sort(set);
-  return [x, y : x @ i <~ ord_set, y <~ drop(ord_set, i+1)];
+  return [x, y : x @ i <- ord_set, y <- drop(ord_set, i+1)];
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -282,7 +282,7 @@ Nat* reverse_perm(Nat* p) = array_map(reverse(merge(([i -> n] : n @ i <- p))));
     for s @ i <- ord_sets {
       if not taken(i) {
         intersecting = (i+j+1 : os @ j <- drop(ord_sets, i+1), not taken(j) and not disjoint(s, os));
-        merged_set = s & union([ord_sets(j) : j <~ intersecting]);
+        merged_set = s & union([ord_sets(j) : j <- intersecting]);
         merged_sets = (merged_sets | merged_set);
         taken = taken & set(intersecting);
       }

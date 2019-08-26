@@ -11,7 +11,7 @@ implicit syn_prg : SynPrg, artifact : SchemaDef {
     updates  = [desugar_update(u)    : u <- lookup(updates_by_db, artifact.name, [])];
     handlers = [desugar_handler(h)   : h <- lookup(handlers_by_db, artifact.name, [])];
 
-    rel_var_decls = [d : d <~ artifact.decls, relvars_decl() ?= d];
+    rel_var_decls = [d : d <- artifact.decls, relvars_decl() ?= d];
 
     rel_vars, impl_fkeys, attr_map = desugar_relvars(db_rel_vars);
     expl_fkeys = desugar_foreign_keys(db_foreign_keys, rel_vars);
@@ -35,8 +35,8 @@ implicit syn_prg : SynPrg, artifact : SchemaDef {
   //////////////////////////////////////////////////////////////////////////////
 
   [ForeignKey] desugar_foreign_keys([ForeignKeyDecl] decls, [PhysRelVar -> RelVarInfo] rel_vars) {
-    log_to_phys_map = group_by_left_arg([bare_id(logical_rel_var(v)), v : v, unused_var <- rel_vars]);
-    return union([desugar(d.src_rel, d.src_args, r, as, log_to_phys_map) : d <- decls, t <~ d.targets, (r?, as?) ?= t]);
+    log_to_phys_map = group_by_left_arg([bare_id(logical_rel_var(v)), v : v _ <- rel_vars]);
+    return union([desugar(d.src_rel, d.src_args, r, as, log_to_phys_map) : d <- decls, t <- d.targets, (r?, as?) ?= t]);
 
     [ForeignKey] desugar(Symbol src_rel, Maybe[Symbol]+ src_args, Symbol tgt_rel, Maybe[Symbol]+ tgt_args, [Symbol -> [+PhysRelVar]] log_to_phys_map) {
       used_args = set(values(tgt_args));
@@ -50,15 +50,15 @@ implicit syn_prg : SynPrg, artifact : SchemaDef {
 
   [Method] desugared_rel_auto_methods([DBMethodDef] methods) =
     union([
-      [desugared_rel_auto_method(m, maybe(i, |ms| > 1)) : m @ i <~ isort(ms)]
-      : unused_var, ms <- group_by(methods, ($.name, |$.args|))
+      [desugared_rel_auto_method(m, maybe(i, |ms| > 1)) : m @ i <- isort(ms)]
+      : _ ms <- group_by(methods, ($.name, |$.args|))
     ]);
 
 
   Method desugared_rel_auto_method(DBMethodDef method_def, Maybe[Nat] unique_id) {
     args = ((desugar_plain_type(t), just(var(n))) : t, n <- method_def.args);
     ret_type = desugar_plain_type(method_def.ret_type);
-    arg_vars = [var(n) : _, n <~ method_def.args];
+    arg_vars = [var(n) : (_, n) <- method_def.args];
     method_artifact = using_block_method_def(artifact.name, method_def);
     expr = desugar_expr(method_def.expr, arg_vars, artifact = method_artifact, impl_args = []);
     method_id = method_id(
@@ -73,7 +73,7 @@ implicit syn_prg : SynPrg, artifact : SchemaDef {
 
   Update desugar_update(UpdateDef update_def) {
     args = ((desugar_plain_type(t), v) : t, v <- update_def.args);
-    arg_vars = [v : _, v <~ update_def.args];
+    arg_vars = [v : (_, v) <- update_def.args];
     update_artifact = using_block_update_def(artifact.name, update_def);
     body = desugar_stmts(update_def.body, arg_vars, artifact = update_artifact, impl_args = []);
     update = update(update_symbol(update_def.name), args, body);
@@ -153,7 +153,7 @@ implicit syn_prg : SynPrg {
     decls_groups = group_by(semi_desugared_decls, $.name);
 
     // First we rewrite the declarations so as to get rid of hierarchies
-    flat_decls = union([flatten_rel_var_decls(ds) : unused_var, ds <- decls_groups]);
+    flat_decls = union([flatten_rel_var_decls(ds) : _ ds <- decls_groups]);
 
     // Then we identify all polymorphic relations
     poly_rel_vars = polymorphic_rel_vars(flat_decls);
@@ -195,7 +195,7 @@ implicit syn_prg : SynPrg {
 
 
     [RelVarsDecl2] flatten_hierarchy(TypeTree tree, [NeType -> RelVarsDecl2] root_type_to_decl, AttrRelVar2* inherited_attrs) =
-      union([flatten_hierarchy(t, st, root_type_to_decl, inherited_attrs) : t, st <- tree]);
+      union([flatten_hierarchy(t, st, root_type_to_decl, inherited_attrs) : t st <- tree]);
 
 
     [RelVarsDecl2] flatten_hierarchy(NeType arg_type, [NeType -> TypeTree] subtree, [NeType -> RelVarsDecl2] root_type_to_decl, AttrRelVar2* inherited_attrs) {
@@ -237,7 +237,7 @@ implicit syn_prg : SynPrg {
       // Root relation information
       root_arity = |d.col_types|;
       root_args_types = (t : t <- d.col_types);
-      root_keys = [set(k) : k <~ d.keys];
+      root_keys = [set(k) : k <- d.keys];
       root_info = (signature: root_args_types, keys: root_keys, symmetric: d.symmetric);
 
       // Adding the new relation into the list
@@ -281,6 +281,6 @@ implicit syn_prg : SynPrg {
       }
     }
 
-    return ([v -> info : v, info <~ rel_vars], set(foreign_keys), [e, a : e, a <~ attrs_map]);
+    return ([v -> info : (v, info) <- rel_vars], set(foreign_keys), [e, a : (e, a) <- attrs_map]);
   }
 }

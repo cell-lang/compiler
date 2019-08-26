@@ -11,8 +11,8 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
 
 
   Database partition_rel_vars(Database rel_auto) {
-    sgns = [v -> info.signature : v, info <- rel_auto.rel_vars];
-    keys = [logical_rel_var(v) -> info.keys : v, info <- rel_auto.rel_vars];
+    sgns = [v -> info.signature : v info <- rel_auto.rel_vars];
+    keys = [logical_rel_var(v) -> info.keys : v info <- rel_auto.rel_vars];
     res = try_to_split(sgns, rel_auto.foreign_keys, keys);
     fail if not succeeded(res);
     rel_vars_sgns, foreign_keys = get_result(res);
@@ -21,7 +21,7 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
         signature: s,
         keys:      rel_var_keys(rel_auto, lv),
         symmetric: rel_var_is_symmetric(rel_auto, lv)
-      ) : v, s <- rel_vars_sgns, lv = logical_rel_var(v)
+      ) : v s <- rel_vars_sgns, lv = logical_rel_var(v)
     ];
     return data_base(
       name:         rel_auto.name,

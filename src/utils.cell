@@ -57,7 +57,7 @@ NzNat source_line(Any decl) = source_code_location(decl)(1);
   if maybe_decl_loc != nothing {
     decl_loc = value(maybe_decl_loc);
     if decl_loc :: (String, NzNat, NzNat)
-      file, line, unused_var = decl_loc;
+      file, line, _ = decl_loc;
   }
 
   if maybe_err_loc != nothing {
@@ -143,7 +143,7 @@ String user_repr(Type type, Bool inside_type_union, Bool incl_empty_seq, Bool in
 
 
 String ne_record_type_user_repr(RecordTypeFields fields) {
-  field_reprs = [record_field_user_repr(l, f.type, f.optional) : l, f <- fields];
+  field_reprs = [record_field_user_repr(l, f.type, f.optional) : l f <- fields];
   return "(" & append(rand_sort(field_reprs), ", ") & ")";
 
   String record_field_user_repr(SymbObj label, NeType type, Bool optional) =
@@ -176,7 +176,7 @@ String union_type_user_repr([+NeType] types) {
     ne_map_type()         |
     ne_bin_rel_type()     |
     ne_tern_rel_type()    = true,
-    ne_record_type(fs?)   = not (l, f <- fs : not f.optional),
+    ne_record_type(fs?)   = not (l f <- fs : not f.optional),
     _                     = false;
 }
 

@@ -26,7 +26,7 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
           keys:       [[perm(i) : i <- k] : k <- info.keys],
           symmetric:  info.symmetric
         );
-      } : v, info <- rel_auto.rel_vars];
+      } : v info <- rel_auto.rel_vars];
 
       foreign_keys = [rewrite(k, perms) : k <- rel_auto.foreign_keys];
 
@@ -111,7 +111,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context {
       args = permutate(cls.args, perm);
       args = (apply(a, perm_expr_rel_vars) : a <- args);
       var_arg_idxs = (i : a @ i <- cls.args, a == nothing);
-      vars = values_ord_by_idx([perm(var_arg_idxs(i)) -> v : v @ i <~ cls.vars]);
+      vars = values_ord_by_idx([perm(var_arg_idxs(i)) -> v : v @ i <- cls.vars]);
       return relvar_clause(vars, cls.rel_var, args);
     }
   }
@@ -142,7 +142,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context {
       args = permutate(iter.args, perm);
       args = (apply(a, perm_expr_rel_vars) : a <- args);
       var_arg_idxs = (i : a @ i <- iter.args, a == nothing);
-      vars = values_ord_by_idx([perm(i) -> v : v @ i <~ iter.vars]);
+      vars = values_ord_by_idx([perm(i) -> v : v @ i <- iter.vars]);
       return rel_var_iter(vars, iter.rel_var, args);
     }
   }
@@ -179,7 +179,7 @@ implicit program : Program {
   [DBSymbol -> [RelVar -> [+Nat -> Nat]]] rel_vars_perm_map {
     return [
       a.name -> [
-        logical_rel_var(r) -> rel_var_args_perm(|info.signature|, info.keys) : r, info <- a.rel_vars
+        logical_rel_var(r) -> rel_var_args_perm(|info.signature|, info.keys) : r info <- a.rel_vars
       ] : a <- program.data_bases
     ];
 

@@ -9,16 +9,16 @@
 implicit program : Program, typedefs : [TypeName -> NeType] {
   [CoreWFError] core_wf_errors {
     fndefs_families = group_by(program.fndefs, family_id($.id));
-    functions_errs = union([function_family_errors(fs) : unused_var, fs <- fndefs_families]);
+    functions_errs = union([function_family_errors(fs) : _ fs <- fndefs_families]);
     return typedefs_errors & functions_errs & aggregate_functions_errors & databases_errors & automata_errors;
   }
 
   //////////////////////////////////////////////////////////////////////////////
 
   [CoreWFError] typedefs_errors {
-    shallow_refs_map = [n -> direct_refs(t) : n, t <- typedefs];
+    shallow_refs_map = [n -> direct_refs(t) : n t <- typedefs];
     deep_refs_map = transitive_closure(shallow_refs_map);
-    return [non_nested_self_ref(t) : t, ts <- deep_refs_map, ts(t)];
+    return [non_nested_self_ref(t) : t ts <- deep_refs_map, ts(t)];
 
     [TypeName] direct_refs(NeType type) =
       type_ref(type_symbol() ts?)     = [type_name(ts, 0)],
@@ -31,18 +31,18 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
 
   [CoreWFError] function_family_errors([+Function] functions) {
     ord_fns = rand_sort(functions);
-    return [overlapping_signatures(f1, f2) : f1 @ i1 <~ ord_fns, f2 <~ drop(ord_fns, i1+1), overlap(f1, f2)];
+    return [overlapping_signatures(f1, f2) : f1 @ i1 <- ord_fns, f2 <- drop(ord_fns, i1+1), overlap(f1, f2)];
 
     Bool overlap(Function f1, Function f2) =
-      not (a1, a2 <~ zip(f1.args, f2.args) : are_ptype_disjoint(right(a1), right(a2)));
+      not ((a1, a2) <- zip(f1.args, f2.args) : are_ptype_disjoint(right(a1), right(a2)));
   }
 
   //////////////////////////////////////////////////////////////////////////////
 
   [CoreWFError] aggregate_functions_errors = [
     overlapping_signatures(f1, f2)
-    : unused_var, fs <- group_by(program.aggr_fn_defs, (plain_id($.id), |$.extra_args|)),
-      f1, f2 <- symmetric_cart_prod(fs),
+    : _ fs <- group_by(program.aggr_fn_defs, (plain_id($.id), |$.extra_args|)),
+      f1 f2 <- symmetric_cart_prod(fs),
       not are_ptype_disjoint(f1.elt_type, f2.elt_type)
   ];
 
@@ -53,7 +53,7 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
 
     shallow_deps = [db.name -> set(db.links) : db <- program.data_bases];
     deep_deps = transitive_closure(shallow_deps);
-    rec_errs = [recursively_defined_auto_or_db(automaton_by_id(db_type)) : db_type, deps <- deep_deps, deps(db_type)];
+    rec_errs = [recursively_defined_auto_or_db(automaton_by_id(db_type)) : db_type deps <- deep_deps, deps(db_type)];
 
     return db_errs & rec_errs;
   }
@@ -65,33 +65,33 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
     foreign_key_errs = union([foreign_key_errors(database, f) : f <- database.foreign_keys]);
 
     method_errs = union([
-      [overlapping_signatures(m1, m2) : m1, m2 <- symmetric_cart_prod(ms), overlap(m1, m2)]
-      : unused_var, ms <- group_by(database.methods, family_id($.id))
+      [overlapping_signatures(m1, m2) : m1 m2 <- symmetric_cart_prod(ms), overlap(m1, m2)]
+      : _ ms <- group_by(database.methods, family_id($.id))
     ]);
 
     updates_errs = union([
-      [overlapping_signatures(u1, u2) : u1, u2 <- symmetric_cart_prod(us), overlap(u1, u2)]
-      : unused_var, us <- group_by(database.updates, ($.name, arity($)))
+      [overlapping_signatures(u1, u2) : u1 u2 <- symmetric_cart_prod(us), overlap(u1, u2)]
+      : _ us <- group_by(database.updates, ($.name, arity($)))
     ]);
 
     handler_errs = [
       overlapping_signatures(h1, h2)
-      : h1, h2 <- symmetric_cart_prod(database.handlers), not are_ptype_disjoint(h1.type, h2.type)
+      : h1 h2 <- symmetric_cart_prod(database.handlers), not are_ptype_disjoint(h1.type, h2.type)
     ];
 
     errs = rel_vars_errs & foreign_key_errs & method_errs & updates_errs & handler_errs;
     return [error_cluster(database, errs)] if errs != [];
 
-    sgns = [v -> info.signature : v, info <- database.rel_vars];
-    keys = [logical_rel_var(v) -> info.keys : v, info <- database.rel_vars];
+    sgns = [v -> info.signature : v info <- database.rel_vars];
+    keys = [logical_rel_var(v) -> info.keys : v info <- database.rel_vars];
     res = try_to_split(sgns, database.foreign_keys, keys);
     return [unpartitionable_foreign_key(get_error(res)) if failed(res)];
   }
 
 
   [CoreWFError] rel_vars_errors([PhysRelVar -> RelVarInfo] rel_vars) {
-    rel_vars_by_log_id = group_by_left_arg([logical_rel_var(v), v : v, unused_var <- rel_vars]);
-    return union([rel_var_family_errors(lv, pvs, rel_vars) : lv, pvs <- rel_vars_by_log_id]);
+    rel_vars_by_log_id = group_by_left_arg([logical_rel_var(v), v : v _ <- rel_vars]);
+    return union([rel_var_family_errors(lv, pvs, rel_vars) : lv pvs <- rel_vars_by_log_id]);
 
 
     [CoreWFError] rel_var_family_errors(RelVar rel_var, [+PhysRelVar] phys_rel_vars, [PhysRelVar -> RelVarInfo] rel_vars) {
@@ -169,9 +169,9 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
 
     perm_map = rel_vars_perm_map(database.name, !!);
     src_perm = perm_map(logical_rel_var(key.source_rel_var));
-    src_is_perm = (i, j <- src_perm : i != j);
+    src_is_perm = (i j <- src_perm : i != j);
     tgt_perm = only([perm_map(logical_rel_var(r)) : r <- key.target_rel_vars]);
-    tgt_is_perm = (i, j <- tgt_perm : i != j);
+    tgt_is_perm = (i j <- tgt_perm : i != j);
 
     perms_are_fine = match (src_args, tgt_args)
       (just(), just()),           (just(), just(), nothing) = not src_is_perm and not tgt_is_perm,
@@ -204,9 +204,9 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
   [CoreWFError] automata_errors {
     auto_errs = union([automaton_errors(automaton=a) : a <- program.auto_defs]);
 
-    shallow_deps = [auto.name -> [a.type : unused_var, a <- auto.nested_autos] : auto <- program.auto_defs];
+    shallow_deps = [auto.name -> [a.type : _ a <- auto.nested_autos] : auto <- program.auto_defs];
     deep_deps = transitive_closure(shallow_deps);
-    rec_errs = [recursively_defined_auto_or_db(automaton_by_id(auto_type)) : auto_type, deps <- deep_deps, deps(auto_type)];
+    rec_errs = [recursively_defined_auto_or_db(automaton_by_id(auto_type)) : auto_type deps <- deep_deps, deps(auto_type)];
 
     return auto_errs & rec_errs;
   }
@@ -217,16 +217,16 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
 implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automaton {
   [CoreWFError] automaton_errors {
     overlap_errs = union([
-      [overlapping_signatures(m1, m2) : m1, m2 <- symmetric_cart_prod(ms), overlap(m1, m2)]
-      : unused_var, ms <- group_by(automaton.methods, ($.name, arity($)))
+      [overlapping_signatures(m1, m2) : m1 m2 <- symmetric_cart_prod(ms), overlap(m1, m2)]
+      : _ ms <- group_by(automaton.methods, ($.name, arity($)))
     ]);
     var_errs = union(union([
-      [param_errs(id, info.value) : id, info <- automaton.params],
-      [state_var_errs(id, state_var) : id, state_var <- automaton.state],
-      [rule_errs(id, expr) : id, expr <- automaton.rules],
-      [time_rule_errs(id, rule) : id, rule <- automaton.time_rules],
-      [discrete_rules_errs(id, rules) : id, rules <- automaton.discrete_rules],
-      [nested_auto_errs(id, info.type, info.args) : id, info <- automaton.nested_autos]
+      [param_errs(id, info.value) : id info <- automaton.params],
+      [state_var_errs(id, state_var) : id state_var <- automaton.state],
+      [rule_errs(id, expr) : id expr <- automaton.rules],
+      [time_rule_errs(id, rule) : id rule <- automaton.time_rules],
+      [discrete_rules_errs(id, rules) : id rules <- automaton.discrete_rules],
+      [nested_auto_errs(id, info.type, info.args) : id info <- automaton.nested_autos]
     ]));
     errs = overlap_errs & var_errs & output_errs;
     errs = dependency_errors if errs == [];
@@ -235,17 +235,17 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
 
     [CoreWFError] output_errs {
       candidate_outputs = merge([
-        [id -> false : id, unused_var <- automaton.params],
-        [id -> input.discrete : id, input <- automaton.inputs],
-        [id -> false : id, unused_var <- automaton.state],
-        [id -> false : id, unused_var <- automaton.rules],
-        [id -> false : id, unused_var <- automaton.time_rules],
-        [id -> true : id, unused_var <- automaton.discrete_rules]
+        [id -> false : id _ <- automaton.params],
+        [id -> input.discrete : id input <- automaton.inputs],
+        [id -> false : id _ <- automaton.state],
+        [id -> false : id _ <- automaton.rules],
+        [id -> false : id _ <- automaton.time_rules],
+        [id -> true : id _ <- automaton.discrete_rules]
       ]);
 
       return [
         if candidate_outputs(id, *) then wrong_output_nature(id, output.discrete) else undefined_output(id)
-        : id, output <- automaton.outputs, not candidate_outputs(id, *) or candidate_outputs[id] != output.discrete
+        : id output <- automaton.outputs, not candidate_outputs(id, *) or candidate_outputs[id] != output.discrete
       ];
     }
 
@@ -327,8 +327,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
 
     [CoreWFError] nested_auto_errs(NestedAutoVar id, AutoSymbol type, [Atom -> Expr] args) {
       nested_auto = automaton_by_id(type);
-      exp_inputs = [bare_id(v) : v, unused_var <- nested_auto.inputs];
-      errs  = [invalid_input(id, type, input_id) : input_id, unused_var <- args, not exp_inputs(input_id)] &
+      exp_inputs = [bare_id(v) : v _ <- nested_auto.inputs];
+      errs  = [invalid_input(id, type, input_id) : input_id _ <- args, not exp_inputs(input_id)] &
               [undefined_input(id, type, input_id) : input_id <- exp_inputs, not args(input_id, *)];
       return errs if errs != [];
       return union([{
@@ -337,7 +337,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
           return if input_is_discrete
             then [continous_expr_for_discrete_input(id, input_id) if discrete_vars == []]
             else [invalid_nested_auto_input_var(v, id, input_id, e) : v <- discrete_vars];
-        } : input_id, e <- args
+        } : input_id e <- args
       ]);
     }
   }
@@ -346,15 +346,15 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
 
   [CoreWFError] dependency_errors {
     shallow_deps = merge([
-      [id -> dependencies(info.value) : id, info <- automaton.params],
-      [id -> dependencies(id, sv) : id, sv <- automaton.state],
-      [id -> dependencies(e) : id, e <- automaton.rules],
-      [id -> dependencies(r) : id, r <- automaton.time_rules],
-      [id -> union([dependencies(r) : r <- rs]) : id, rs <- automaton.discrete_rules],
-      [id -> union([dependencies(e) : unused_var, e <- info.args]) : id, info <- automaton.nested_autos]
+      [id -> dependencies(info.value) : id info <- automaton.params],
+      [id -> dependencies(id, sv) : id sv <- automaton.state],
+      [id -> dependencies(e) : id e <- automaton.rules],
+      [id -> dependencies(r) : id r <- automaton.time_rules],
+      [id -> union([dependencies(r) : r <- rs]) : id rs <- automaton.discrete_rules],
+      [id -> union([dependencies(e) : _ e <- info.args]) : id info <- automaton.nested_autos]
     ]);
     deep_deps = transitive_closure(shallow_deps);
-    return [dependency_loop(v, nonempty(ds)) : v, ds <- deep_deps, ds(v)];
+    return [dependency_loop(v, nonempty(ds)) : v ds <- deep_deps, ds(v)];
 
 
     [SignalVar]     dependency(SignalVar var)       = [var];
@@ -368,7 +368,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
 
     [<SignalVar, NestedAutoVar>] dependencies(ReactCond cond) {
       signals_deps = match (cond)
-        react_cond()            = union([dependency(v) : v, unused_var <- cond.signals_state]),
+        react_cond()            = union([dependency(v) : v _ <- cond.signals_state]),
         on_becoming_true_cond() = [];
       return dependencies(cond.cond) & signals_deps;
     }
@@ -396,14 +396,14 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
 
   [AnySignalVar] enabled_discrete_signals(ReactCond cond) =
     on_becoming_true_cond() = [],
-    react_cond()            = [v : v, s <- cond.signals_state, s, is_discrete(v)];
+    react_cond()            = [v : v s <- cond.signals_state, s, is_discrete(v)];
 
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////
 
   [SignalVar] continuous_signals_level_1 =
     keys(automaton.params) &
-    [id : id, input <- automaton.inputs, not input.discrete] &
+    [id : id input <- automaton.inputs, not input.discrete] &
     keys(automaton.state) &
     keys(automaton.rules);
 
@@ -411,14 +411,14 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
     continuous_signals_level_1 &
     keys(automaton.time_rules) &
     [ qual_signal_var(id, out_id)
-      : id, info <- automaton.nested_autos,
-        out_id, out_info <- automaton_by_id(info.type).outputs,
+      : id info <- automaton.nested_autos,
+        out_id out_info <- automaton_by_id(info.type).outputs,
         not out_info.discrete
     ];
 
   [<AnySignalVar, PrevVarValue>] delayed_signals =
-    [prev_var_value(id) : id, input <- automaton.inputs, not input.discrete] &
-    [prev_var_value(id) : id, unused_var <- automaton.state];
+    [prev_var_value(id) : id input <- automaton.inputs, not input.discrete] &
+    [prev_var_value(id) : id _ <- automaton.state];
 }
 
 ////////////////////////////////////////////////////////////////////////////////

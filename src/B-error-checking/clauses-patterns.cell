@@ -9,17 +9,18 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg], actual_ar
     filter_clause()     = expr_wf_errors(cls.cond, def_vars);
 
 
-  ExprWFError* iter_clause_wf_errors(StdVar+ vars, [DefVar] def_vars) {
-    arity = |vars|;
+  ExprWFError* iter_clause_wf_errors(Maybe[Symbol]+ maybe_vars, [DefVar] def_vars) {
+    arity = |maybe_vars|;
+    vars = (var(value(v)) : v <- maybe_vars, v != nothing);
     dupl_vars = duplicates(vars);
     errs  = (already_def_var(v) : v <- vars, already_def(v, def_vars)) &
             (dupl_var_mult_asgnm(v) : v <- rand_sort(dupl_vars)) &
-            (wrong_iter_arity(vars, [1, 2, 3]) if not in(arity, [1, 2, 3]));
+            (wrong_iter_arity(maybe_vars, [1, 2, 3]) if not in(arity, [1, 2, 3]));
     return errs;
   }
 
 
-  ExprWFError* iter_clause_wf_errors(StdVar+ vars, SynExpr src_expr, [DefVar] def_vars) {
+  ExprWFError* iter_clause_wf_errors(Maybe[Symbol]+ vars, SynExpr src_expr, [DefVar] def_vars) {
     errs = iter_clause_wf_errors(vars, def_vars);
     return errs if errs != ();
 
@@ -49,7 +50,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg], actual_ar
   }
 
 
-  ExprWFError* iter_clause_wf_errors(StdVar+ vars, SynProj src_expr, [DefVar] def_vars) {
+  ExprWFError* iter_clause_wf_errors(Maybe[Symbol]+ vars, SynProj src_expr, [DefVar] def_vars) {
     errs = iter_clause_wf_errors(vars, def_vars);
     return errs if errs != ();
 
@@ -57,7 +58,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg], actual_ar
     args = src_expr.args;
 
     ## BAD BAD RETURNING THE WRONG ERRORS...
-    return (invalid_expr(const_or_var(last(target)))) if not (s <~ args : s != nothing);
+    return (invalid_expr(const_or_var(last(target)))) if not (s <- args : s != nothing);
 
     // Checking the arguments first
     args_errs = join((expr_wf_errors(value(a), def_vars) : a <- args, a != nothing));

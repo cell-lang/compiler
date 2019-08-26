@@ -593,7 +593,7 @@ ParsingRule rule_stmt_or_stmt_block(StmtCtx ctx) =
 
 ParsingRule rule_asgnm_stmt =
   rule_seq((
-    comma_sep_seq(rule_id),
+    comma_sep_seq(rule_opt_id),
     rule_equals,
     rule_ref_expr,
     optional_rule_seq((keyword_if, rule_ref_expr)),
@@ -647,9 +647,10 @@ ParsingRule rule_for_stmt(StmtCtx ctx) =
 
 ParsingRule rule_for_range =
   rule_choice((
-    (:foreach_prj,  rule_seq((comma_sep_seq(rule_opt_id), rule_left_arrow, rule_projection))),
+    (:foreach_prj,  rule_seq((rep_rule_nonempty(rule_opt_id), rule_left_arrow, rule_projection))),
     (:foreach,      rule_seq((comma_sep_seq(rule_opt_id), rule_left_arrow, rule_ref_expr))),
     (:foreach_idx,  rule_seq((comma_sep_seq(rule_opt_id), rule_at, rule_id, rule_left_arrow, rule_ref_expr))),
+    (:foreach_rel,  rule_seq((rep_rule(rule_opt_id, 2), rule_left_arrow, rule_ref_expr))),
     (:for_upper,    rule_seq((rule_id, rule_ops((lower, lower_eq)), rule_ref_expr))),
     (:for_range,    rule_seq((rule_id, rule_equals, rule_ref_expr, rule_ops((double_dot, triple_dot)), rule_ref_expr))),
     (:repeat,       rule_ref_expr)
@@ -863,24 +864,26 @@ ParsingRule rule_write_state_ctrl_stmt =
 
 ParsingRule rule_clause =
   rule_choice((
-    (:iter,     rule_iter_clause),
-    (:seq_iter, rule_seq_clause),
-    (:asgnm,    rule_seq((rule_id, rule_equals, rule_ref_expr))),
-    (:match,    rule_seq((rule_ptrn, rule_try_assign, rule_ref_expr))),
-    (:filter,   rule_ref_expr)
+    (:iter,           rule_iter_clause),
+    (:seq_iter_one,   rule_seq_clause_one),
+    (:seq_iter_many,  rule_seq_clause_many),
+    (:asgnm,          rule_seq((rule_id, rule_equals, rule_ref_expr))),
+    (:match,          rule_seq((rule_ptrn, rule_try_assign, rule_ref_expr))),
+    (:filter,         rule_ref_expr)
   ));
 
 ParsingRule rule_head_clause =
   rule_choice((
-    (:iter,     rule_iter_clause),
-    (:seq_iter, rule_seq_clause)
+    (:iter,           rule_iter_clause),
+    (:seq_iter_one,   rule_seq_clause_one),
+    (:seq_iter_many,  rule_seq_clause_many)
   ));
 
 ParsingRule rule_iter_clause =
   rep_rule(rule_single_iter_clause, rule_pipe, true, false);
 
 ParsingRule rule_single_iter_clause =
-  rule_seq((comma_sep_seq(rule_id), rule_left_arrow, rule_iter_clause_src));
+  rule_seq((rep_rule(rule_opt_id), rule_left_arrow, rule_iter_clause_src));
 
 ParsingRule rule_iter_clause_src = rule_choice(((:proj, rule_projection), (:expr, rule_ref_expr)));
 
@@ -899,11 +902,19 @@ ParsingRule rule_projection =
     )
   ));
 
-ParsingRule rule_seq_clause =
+ParsingRule rule_seq_clause_one =
   rule_seq((
-    comma_sep_seq(rule_anon_choice((rule_id, rule_underscore))),
+    rule_opt_id,
+    rule_seq((rule_at, rule_id)), // Bundled together in a rule sequence so it has the same shape as the multivariable case
+    rule_left_arrow,
+    rule_ref_expr
+  ));
+
+ParsingRule rule_seq_clause_many =
+  rule_seq((
+    par_rule(comma_sep_seq(rule_opt_id)),
     optional_rule_seq((rule_at, rule_id)),
-    rule_wavy_left_arrow,
+    rule_left_arrow,
     rule_ref_expr
   ));
 
@@ -1168,12 +1179,12 @@ ParsingRule rule_seq_cp_expr =
       rule_choice((
         ( :seq,
           rule_seq((
-            comma_sep_seq(rule_id),
+            comma_sep_seq(rule_opt_id),
             optional_rule_seq((rule_at, rule_id)),
             rule_left_arrow
           ))
         ),
-        (:range, rule_seq((rule_id, rule_ops((lower, lower_eq)))))
+        (:range, rule_seq((rule_opt_id, rule_ops((lower, lower_eq)))))
       )),
       rule_ref_expr,
       optional_rule_seq((rule_comma, rule_ref_expr))

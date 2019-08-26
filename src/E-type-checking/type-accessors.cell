@@ -55,7 +55,7 @@ implicit typedefs : [TypeName -> NeType] {
     NeType update_field_type(<empty_type>, SymbObj label, NeType new_field_type, Bool bypass_tag) = undefined;
 
     NeType update_field_type(NeType type, SymbObj label, NeType new_field_type, Bool bypass_tag) =
-      ne_record_type(fs?) = ne_record_type([l -> update_record_field(f, l, label, new_field_type) : l, f <- fs]),
+      ne_record_type(fs?) = ne_record_type([l -> update_record_field(f, l, label, new_field_type) : l f <- fs]),
       tag_obj_type()      = update_tagged_record_field_type(type, label, new_field_type, bypass_tag),
       union_type(ts?)     = ne_union_superset([update_field_type(t, label, new_field_type, bypass_tag) : t <- ts]),
       type_ref(ts?)       = update_field_type(expand_type_ref(ts, typedefs), label, new_field_type, bypass_tag);
@@ -94,7 +94,7 @@ implicit typedefs : [TypeName -> NeType] {
 
   Type restricted_seq_elem_supertype(Type type, Type idx_type) =
     ne_seq_type()     = type.elem_type,
-    tuple_type(ts?)   = union_superset([t : t @ i <~ ts, type_contains_obj(idx_type, i)]),
+    tuple_type(ts?)   = union_superset([t : t @ i <- ts, type_contains_obj(idx_type, i)]),
     union_type(ts?)   = union_superset([restricted_seq_elem_supertype(t, idx_type) : t <- ts]),
     type_var()        = type_any,
     type_ref(ts?)     = restricted_seq_elem_supertype(expand_type_ref(ts, typedefs), idx_type),
@@ -113,8 +113,8 @@ implicit typedefs : [TypeName -> NeType] {
     ne_map_type()       = if arg == 0 then type.key_type else type.value_type,
     ne_bin_rel_type()   = union_superset([s(arg) : s <- type.signatures]),
     ne_record_type(fs?) = if arg == 0
-                            then union_type([symb_type(s) : s, unused_var <- fs])
-                            else union_superset([f.type : unused_var, f <- fs]),
+                            then union_type([symb_type(s) : s _ <- fs])
+                            else union_superset([f.type : _ f <- fs]),
     union_type(ts?)     = union_superset([bin_rel_arg_supertype(t, arg) : t <- ts]),
     type_var()          = type_any,
     type_ref(ts?)       = bin_rel_arg_supertype(expand_type_ref(ts, typedefs), arg),
@@ -152,7 +152,7 @@ implicit typedefs : [TypeName -> NeType] {
                             if are_ptype_disjoint(s(0), arg0_type) then empty_type else s(1)
                             : s <- type.signatures
                           ]),
-    ne_record_type(fs?) = union_superset([f.type : s, f <- fs, type_contains_obj(arg0_type, bare_obj(s))]),
+    ne_record_type(fs?) = union_superset([f.type : s f <- fs, type_contains_obj(arg0_type, bare_obj(s))]),
     union_type(ts?)     = union_superset([restricted_bin_rel_arg1_supertype(t, arg0_type) : t <- ts]),
     type_var()          = if arg0_type != empty_type then type_any else empty_type,
     type_ref(ts?)       = restricted_bin_rel_arg1_supertype(expand_type_ref(ts, typedefs), arg0_type),
@@ -161,13 +161,13 @@ implicit typedefs : [TypeName -> NeType] {
 
   Type+ tuple_field_supertypes(Type type, NzNat tuple_length) =
     ne_seq_type()     = (type.elem_type : i < tuple_length),
-    tuple_type(ts?)   = if |ts| == tuple_length then ts else (empty_type : unused_var < tuple_length),
+    tuple_type(ts?)   = if |ts| == tuple_length then ts else (empty_type : _ < tuple_length),
     union_type(ts?)   = { ftss = [tuple_field_supertypes(t, tuple_length) : t <- ts];
                           return (union_superset([fts(i) : fts <- ftss]) : i < tuple_length);
                         },
-    type_var()        = (type_any : unused_var < tuple_length),
+    type_var()        = (type_any : _ < tuple_length),
     type_ref(ts?)     = tuple_field_supertypes(expand_type_ref(ts, typedefs), tuple_length),
-    _                 = (empty_type : unused_var < tuple_length);
+    _                 = (empty_type : _ < tuple_length);
 
 
   Maybe[[+NeType*]] maybe_tuple_types_union(NeType type) =
@@ -306,7 +306,7 @@ implicit typedefs : [TypeName -> NeType] {
 
 
     Maybe[([+SymbObj -> NeType], [SymbObj])] record(Type type) =
-      ne_record_type(fs?) = just(([f -> info.type : f, info <- fs], [f : f, info <- fs, info.optional])),
+      ne_record_type(fs?) = just(([f -> info.type : f info <- fs], [f : f info <- fs, info.optional])),
       type_ref(ts?)       = record(expand_type_ref(ts, typedefs)),
       _                   = nothing;
   }

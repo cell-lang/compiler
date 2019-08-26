@@ -7,7 +7,7 @@ type CompOptions  = options(
 
 implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptions {
   CompiledPrg compiled_program([DBSymbol -> [RelVar -> [+Nat -> Nat]]] rel_vars_args_perms) {
-    memb_test_preds = [memb_test_pred(t, memb_test_preds_map) : t, unused_var <- memb_test_preds_map];
+    memb_test_preds = [memb_test_pred(t, memb_test_preds_map) : t _ <- memb_test_preds_map];
     fndefs          = [gen_fn_code(fd) : fd <- program.fndefs];
     proc_defs       = [gen_proc_code(pd) : pd <- program.proc_defs];
     react_blocks    = [gen_auto_code(automaton=a) : a <- program.auto_defs];
@@ -30,8 +30,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
     return reprs(arg_type, !!);
 
     [NeType -> AnyLowLevelRepr] reprs {
-      args_types = [t : f <- program.fndefs, unused_var, t <~ f.args] &
-                   [t : a <- program.data_bases, m <- a.methods, t, unused_var <~ m.args];
+      args_types = [t : f <- program.fndefs, (_, t) <- f.args] &
+                   [t : a <- program.data_bases, m <- a.methods, (t, _) <- m.args];
       return [t -> opt_repr(replace_type_vars_with_type_any(t)) : t <- args_types];
     }
   }
@@ -41,18 +41,18 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
   ObjProcDef gen_proc_code(Procedure procedure) {
     res_var, var_gen = next_obj_var(blank_var_gen);
 
-    body = rand_sort([auto_pre_init(v, t) : v, t <- procedure.loc_react_auto_vars]);
+    body = rand_sort([auto_pre_init(v, t) : v t <- procedure.loc_react_auto_vars]);
 
     rel_auto_vars = procedure.loc_rel_auto_vars;
-    semi_ord_rel_auto_vars = topological_sort([v -> set(info.links) : v, info <- rel_auto_vars]);
+    semi_ord_rel_auto_vars = topological_sort([v -> set(info.links) : v info <- rel_auto_vars]);
     ord_rel_auto_vars = join((isort(vs) : vs <- semi_ord_rel_auto_vars));
     body = body & (init_db(v, rel_auto_vars(v).links, rel_auto_vars(v).type) : v <- ord_rel_auto_vars);
 
     // Evaluating the expression
     if procedure.body != () {
-      code, unused_var_1, unused_var_2, var_gen = stmts_opt_code(
+      code, _, _, var_gen = stmts_opt_code(
         procedure.body,
-        [a.var -> a.type : a <~ procedure.args],
+        [a.var -> a.type : a <- procedure.args],
         var_gen,
         context           = procedure,
         typed_vars        = [],
@@ -64,7 +64,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
       body = (body | execute_block(code)) if code != ();
     }
 
-    body = body & rand_sort([auto_cleanup(v, t) : v, t <- procedure.loc_react_auto_vars]);
+    body = body & rand_sort([auto_cleanup(v, t) : v t <- procedure.loc_react_auto_vars]);
     body = body & (cleanup_db(v, rel_auto_vars(v).type) : v <- ord_rel_auto_vars);
 
     debug_entry_instr = push_call_info(procedure.id, (a.var : a <- procedure.args));
@@ -85,7 +85,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
       // type:             fn_type((a.type : a <- procedure.args), (), proc_ret_type),
       loc_vars_types:   [],
       loc_auto_vars:    procedure.loc_react_auto_vars,
-      loc_db_vars:      [v -> info.type : v, info <- procedure.loc_rel_auto_vars],
+      loc_db_vars:      [v -> info.type : v info <- procedure.loc_rel_auto_vars],
       body:             nonempty(body),
       cached:           false
     );
@@ -94,18 +94,18 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
 
   ObjProcDef gen_fn_code(Function func) {
     args = (low_level_arg(v, fn_arg_low_level_repr(t)) : v, t <- func.args);
-    args_surrs = [v -> obj_expr(args(i)) : v, unused_var @ i <~ func.args];
+    args_surrs = [v -> obj_expr(args(i)) : (v, _) @ i <- func.args];
 
     cls_args = (cls(v, arity(t)) : v, t <- func.cls_args);
 
     cached = func.args == () and not is_too_simple_to_be_worth_caching(func.expr);
 
-    env = [v -> t : v, t <~ func.args] & [v -> t : v, t <- func.impl_args];
+    env = [v -> t : (v, t) <- func.args] & [v -> t : v t <- func.impl_args];
 
     ret_val_repr = opt_repr(func.res_type);
 
     let context = func, surrogates = args_surrs, typed_vars = [] {
-      body, ret_val_surr, unused_var_2 = match (func.expr)
+      body, ret_val_surr, _ = match (func.expr)
         do_expr() = do_expr_opt_eval_code(func.expr, ret_val_repr, env, blank_var_gen),
         _         = opt_eval_code(func.expr, env, blank_var_gen);
     }
@@ -155,7 +155,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
 
   [ObjProcDef] dispatch_functions {
     fns_by_name_and_arity = group_by(program.fndefs, family_id($.id));
-    overloaded_fns = [fns : unused_var, fns <- fns_by_name_and_arity, |fns| > 1];
+    overloaded_fns = [fns : _ fns <- fns_by_name_and_arity, |fns| > 1];
     return [dispatch_function(fns) : fns <- overloaded_fns];
   }
 
@@ -174,15 +174,15 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
     rand_cls_args   = rand_fn.cls_args;
     rand_impl_args  = rand_fn.impl_args;
 
-    disp_args = choose_disp_args(((t : unused_var, t <- nonempty(fn.args)) : fn <- rand_sort(fns)), program.typedefs);
+    disp_args = choose_disp_args(((t : _, t <- nonempty(fn.args)) : fn <- rand_sort(fns)), program.typedefs);
 
     low_level_signs = [fn.id -> low_level_sign(fn) : fn <- fns];
-    aggr_sign = aggr_sign([s : unused_var, s <- low_level_signs]);
+    aggr_sign = aggr_sign([s : _ s <- low_level_signs]);
 
     args = (low_level_arg(fn_arg(i), r) : r @ i <- aggr_sign.args);
-    cls_args = (cls(cls_var(i), arity(t)) : unused_var, t @ i <- rand_cls_args);
+    cls_args = (cls(cls_var(i), arity(t)) : _, t @ i <- rand_cls_args);
 
-    aggr_ret_var, unused_var_1 = next_var(aggr_sign.ret_value, blank_var_gen);
+    aggr_ret_var, _ = next_var(aggr_sign.ret_value, blank_var_gen);
 
     cases = [{
       types = (right(fn.args(i)) : i <- disp_args);
@@ -192,7 +192,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
       call_cls_args = (cls_var(j) : j < |rand_cls_args|);
 
       // We can reuse the same seed to generate variables
-      ret_var, unused_var_2 = next_var(sign.ret_value, blank_var_gen);
+      ret_var, _ = next_var(sign.ret_value, blank_var_gen);
 
       code = (
         call_proc(ret_var, fn.id, call_args, call_cls_args),
@@ -235,29 +235,29 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
   [ObjProcDef] aggregate_functions {
     return union([{
       res_procs = [final_value_yield_proc(f), null_value_proc(f)];
-      init_procs = [red_var_init_proc(f, v) : v, unused_var <- f.red_vars];
-      merge_procs = [red_vars_merge_proc(f, v) : v, unused_var <- f.red_vars];
+      init_procs = [red_var_init_proc(f, v) : v _ <- f.red_vars];
+      merge_procs = [red_vars_merge_proc(f, v) : v _ <- f.red_vars];
       return res_procs & init_procs & merge_procs;
     } : f <- program.aggr_fn_defs]);
 
 
     ObjProcArg* extra_args(AggrFunct aggr_fn) = (low_level_arg(v, opt_repr(t)) : v, t <- aggr_fn.extra_args);
 
-    NeType* extra_args_types(AggrFunct aggr_fn) = (t : unused_var, t <- aggr_fn.extra_args);
+    NeType* extra_args_types(AggrFunct aggr_fn) = (t : _, t <- aggr_fn.extra_args);
 
     [SurrExpr -> ObjExpr] extra_surrs(AggrFunct aggr_fn) =
-      [v -> obj_expr(low_level_arg(v, opt_repr(t))) : v, t <~ aggr_fn.extra_args];
+      [v -> obj_expr(low_level_arg(v, opt_repr(t))) : (v, t) <- aggr_fn.extra_args];
 
-    [StdVar -> NeType] extra_env(AggrFunct aggr_fn) = [v -> t : v, t <~ aggr_fn.extra_args];
+    [StdVar -> NeType] extra_env(AggrFunct aggr_fn) = [v -> t : (v, t) <- aggr_fn.extra_args];
 
 
     ObjProcDef final_value_yield_proc(AggrFunct aggr_fn) {
       repr = opt_repr(aggr_fn.type);
-      env = [v -> info.type : v, info <- aggr_fn.red_vars];
+      env = [v -> info.type : v info <- aggr_fn.red_vars];
       red_vars = ord_red_vars(aggr_fn);
       args_types = (aggr_fn.red_vars(v).type : v <- red_vars);
       args = (low_level_arg(v, opt_repr(args_types(i))) : v @ i <- red_vars);
-      surrs = [v -> obj_expr(args(i)) : v @ i <~ red_vars];
+      surrs = [v -> obj_expr(args(i)) : v @ i <- red_vars];
       body = proc_body(aggr_fn.final_value, repr, surrs & extra_surrs(aggr_fn), env & extra_env(aggr_fn));
       return obj_proc_def(
         name:             final_value_yield(aggr_fn.id),
@@ -331,7 +331,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
       var_repr = opt_repr(var_type);
       var1, var2, aggr_expr = info.merge_op;
       args = (low_level_arg(v, var_repr) : v <- (var1, var2));
-      surrs = [v -> obj_expr(args(i)) : v @ i <~ (var1, var2)];
+      surrs = [v -> obj_expr(args(i)) : v @ i <- (var1, var2)];
       env = [var1 -> var_type, var2 -> var_type];
       body = proc_body(aggr_expr, var_repr, surrs & extra_surrs(aggr_fn), env & extra_env(aggr_fn));
       return obj_proc_def(
@@ -354,7 +354,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
 
     Instr+ proc_body(Expr expr, AnyLowLevelRepr repr, [SurrExpr -> ObjExpr] surrs, [StdVar -> Type] env) {
       let context = :null_context, surrogates = surrs, typed_vars = [] {
-        body, surr, unused_var = match (expr)
+        body, surr, _ = match (expr)
           do_expr() = do_expr_opt_eval_code(expr, repr, env, blank_var_gen),
           _         = opt_eval_code(expr, env, blank_var_gen);
       }
@@ -368,11 +368,11 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
 implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptions {
   [NeType] rel_auto_runtime_checked_types(Database db) {
     exprs_types = retrieve_from_nested_exprs(db, retrieve_types);
-    method_args_types = [t : m <- db.methods, t, unused_var <~ m.args];
+    method_args_types = [t : m <- db.methods, (t, _) <- m.args];
     msg_type = [ne_union_type([h.type : h <- db.handlers]) if db.handlers != []];
     msg_args_types = [t : h <- db.handlers, t <- runtime_checked_types(h)];
-    memb_vars_types = [info.type : unused_var, info <- db.state_vars];
-    rel_vars_types = [t : unused_var, info <- db.rel_vars, t <~ info.signature];
+    memb_vars_types = [info.type : _ info <- db.state_vars];
+    rel_vars_types = [t : _ info <- db.rel_vars, t <- info.signature];
     return union([exprs_types, method_args_types, msg_type, msg_args_types, memb_vars_types, rel_vars_types]);
 
 
@@ -392,13 +392,13 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
 
 
   [NeType] runtime_checked_root_types =
-    [low_level_repr_type(r) : unused_var, rs <- optimized_tagged_records, r <~ rs] &
+    [low_level_repr_type(r) : _ rs <- optimized_tagged_records, r <- rs] &
     union([retrieve_types(fd.expr) : fd <- program.fndefs]) &
     union([retrieve_from_nested_exprs(pd.body, retrieve_types) : pd <- program.proc_defs]) &
     union([rel_auto_runtime_checked_types(db) : db <- program.data_bases]) &
     union([retrieve_from_nested_exprs(a, retrieve_types) : a <- program.auto_defs]) &
-    [info.type : a <- program.auto_defs, unused_var, info <- a.inputs] &
-    [t : a <- program.auto_defs, m <- a.methods, t, unused_var <~ m.args] &
+    [info.type : a <- program.auto_defs, _ info <- a.inputs] &
+    [t : a <- program.auto_defs, m <- a.methods, (t, _) <- m.args] &
     [deep_state_type(a) : a <- program.auto_defs];
 
 

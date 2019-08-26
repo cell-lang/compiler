@@ -169,7 +169,7 @@ implicit typedefs : [TypeName -> NeType], inst_type_vars : Bool {
     if subtype :: ParTypeSymbol and supertype :: ParTypeSymbol {
       ## ONE OF THE TWO CHECKS HERE IS REDUNDANT, AS THE GENERIC LOGIC SHOULD BE
       ## ABLE TO HANDLE THE CASE WHERE ONLY ONE OF THE TWO TYPE SYMBOLS IS PARAMETRIC
-      if (t <~ subtype.params : is_param_type(t)) or (t <~ supertype.params : is_param_type(t))
+      if (t <- subtype.params : is_param_type(t)) or (t <- supertype.params : is_param_type(t))
         return subset_if(subtype, type_ref(supertype));
     }
     return if subtype != supertype then subset_if(subtype, type_ref(supertype)) else [];
@@ -240,9 +240,9 @@ implicit typedefs : [TypeName -> NeType], inst_type_vars : Bool {
   SubsetCond tuple_type_shallow_subset_conds(NeType+ subtype_fields, NeType supertype) =
     match (supertype)
       tuple_type(fts?)  = if |subtype_fields| == |fts|
-                              then all_conds([shallow_subset_conds(ft1, ft2) : ft1, ft2 <~ zip(subtype_fields, fts)])
+                              then all_conds([shallow_subset_conds(ft1, ft2) : (ft1, ft2) <- zip(subtype_fields, fts)])
                               else not_a_subset,
-      ne_seq_type()     = all_conds([shallow_subset_conds(ft, supertype.elem_type) : ft <~ subtype_fields]),
+      ne_seq_type()     = all_conds([shallow_subset_conds(ft, supertype.elem_type) : ft <- subtype_fields]),
       _                 = not_a_subset;
 
 
@@ -267,7 +267,7 @@ implicit typedefs : [TypeName -> NeType], inst_type_vars : Bool {
 
 
     SubsetCond subset_conds(NeType+ subtypes, NeType+ supertypes) =
-      all_conds([shallow_subset_conds(subtype, supertype) : subtype, supertype <~ zip(subtypes, supertypes)]);
+      all_conds([shallow_subset_conds(subtype, supertype) : (subtype, supertype) <- zip(subtypes, supertypes)]);
   }
 
 
@@ -285,8 +285,8 @@ implicit typedefs : [TypeName -> NeType], inst_type_vars : Bool {
   SubsetCond record_shallow_subset_conds(RecordTypeFields fs1, RecordTypeFields fs2) {
     labels_1 = keys(fs1);
     labels_2 = keys(fs2);
-    mandatory_labels_1 = [l : l, f <- fs1, not f.optional];
-    mandatory_labels_2 = [l : l, f <- fs2, not f.optional];
+    mandatory_labels_1 = [l : l f <- fs1, not f.optional];
+    mandatory_labels_2 = [l : l f <- fs2, not f.optional];
     optional_labels_1  = labels_1 - mandatory_labels_1;
     optional_labels_2  = labels_2 - mandatory_labels_2;
 
@@ -307,8 +307,8 @@ implicit typedefs : [TypeName -> NeType], inst_type_vars : Bool {
 
     // No particular requirement for optional labels in the supertype
 
-    label_type_map_1 = [l -> f.type : l, f <- fs1];
-    label_type_map_2 = [l -> f.type : l, f <- fs2];
+    label_type_map_1 = [l -> f.type : l f <- fs1];
+    label_type_map_2 = [l -> f.type : l f <- fs2];
 
     return all_conds([shallow_subset_conds(label_type_map_1[l], label_type_map_2[l]) : l <- labels_1]);
   }
@@ -325,7 +325,7 @@ implicit typedefs : [TypeName -> NeType], inst_type_vars : Bool {
 
 
   SubsetCond record_bin_rel_shallow_subset_conds(RecordTypeFields record_fields, [+(NeType, NeType)] signatures) =
-    all_conds([relation_shallow_subset_conds((symb_type(l), f.type), signatures) : l, f <- record_fields]);
+    all_conds([relation_shallow_subset_conds((symb_type(l), f.type), signatures) : l f <- record_fields]);
 
 
   ## THINK ABOUT THIS ONE, AND ONCE YOU UNDERSTAND IT (IF IT IS CORRECT), COMMENT IT
@@ -433,9 +433,9 @@ Bool is_integer_subset(IntType subtype, IntType supertype) =
 
 //     // Tuple types
 //     tuple_type(fts1?),    tuple_type(fts2?)   = if |fts1| == |fts2|
-//                                                   then all_conds([shallow_subset_conds_ref(ft1, ft2) : ft1, ft2 <~ zip(fts1, fts2)])
+//                                                   then all_conds([shallow_subset_conds_ref(ft1, ft2) : (ft1, ft2) <- zip(fts1, fts2)])
 //                                                   else not_a_subset,
-//     tuple_type(fts?),     ne_seq_type()       = all_conds([shallow_subset_conds_ref(ft, t2.elem_type) : ft <~ fts]),
+//     tuple_type(fts?),     ne_seq_type()       = all_conds([shallow_subset_conds_ref(ft, t2.elem_type) : ft <- fts]),
 //     tuple_type(),         _                   = not_a_subset,
 
 //     // Tagged types
@@ -459,7 +459,7 @@ Bool is_integer_subset(IntType subtype, IntType supertype) =
 
 
 //     SubsetCond subset_conds(NeType+ subtypes, NeType+ supertypes) =
-//       all_conds([shallow_subset_conds_ref(subtype, supertype) : subtype, supertype <~ zip(subtypes, supertypes)]);
+//       all_conds([shallow_subset_conds_ref(subtype, supertype) : (subtype, supertype) <- zip(subtypes, supertypes)]);
 //   }
 
 
@@ -479,8 +479,8 @@ Bool is_integer_subset(IntType subtype, IntType supertype) =
 //   {
 //     labels_1 = keys(fs1);
 //     labels_2 = keys(fs2);
-//     mandatory_labels_1 = [l : l, f <- fs1, not f.optional];
-//     mandatory_labels_2 = [l : l, f <- fs2, not f.optional];
+//     mandatory_labels_1 = [l : l f <- fs1, not f.optional];
+//     mandatory_labels_2 = [l : l f <- fs2, not f.optional];
 //     optional_labels_1  = labels_1 - mandatory_labels_1;
 //     optional_labels_2  = labels_2 - mandatory_labels_2;
 
@@ -501,13 +501,13 @@ Bool is_integer_subset(IntType subtype, IntType supertype) =
 
 //     // No particular requirement for optional labels in the supertype
 
-//     label_type_map_1 = [l -> f.type : l, f <- fs1];
-//     label_type_map_2 = [l -> f.type : l, f <- fs2];
+//     label_type_map_1 = [l -> f.type : l f <- fs1];
+//     label_type_map_2 = [l -> f.type : l f <- fs2];
 
 //     return all_conds([shallow_subset_conds_ref(label_type_map_1[l], label_type_map_2[l]) : l <- labels_1]);
 //   }
 
 
 //   SubsetCond record_bin_rel_shallow_subset_conds_ref(RecordTypeFields record_fields, [+(NeType, NeType)] signatures) =
-//     all_conds([relation_shallow_subset_conds_ref((symb_type(l), f.type), signatures) : l, f <- record_fields]);
+//     all_conds([relation_shallow_subset_conds_ref((symb_type(l), f.type), signatures) : l f <- record_fields]);
 // }

@@ -54,7 +54,7 @@ implicit context : Context {
 implicit program : Program, typedefs : [TypeName -> NeType] {
   [FnFamilyId -> SgnSet] signatures {
     signatures = merge_values([[family_id(fd.id) -> signature(fd)] : fd <- program.fndefs]);
-    return [id -> preprocess_signatures(ss) : id, ss <- signatures];
+    return [id -> preprocess_signatures(ss) : id ss <- signatures];
   }
 
 
@@ -85,7 +85,7 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
     [DBSymbol -> [MethodFamilyId -> SgnSet]] signatures = [
         a.name -> {
           sgns = merge_values([[family_id(m.id) -> signature(m)] : m <- a.methods]);
-          return [n -> preprocess_signatures(ss) : n, ss <- sgns];
+          return [n -> preprocess_signatures(ss) : n ss <- sgns];
         }
       : a <- program.data_bases
     ];
@@ -98,7 +98,7 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
     [AutoSymbol -> [(MethodSymbol, Nat) -> SgnSet]] signatures = [
         a.name -> {
           sgns = merge_values([[(m.name, |m.args|) -> signature(m)] : m <- a.methods]);
-          return [n -> preprocess_signatures(ss) : n, ss <- sgns];
+          return [n -> preprocess_signatures(ss) : n ss <- sgns];
         }
       : a <- program.auto_defs
     ];
@@ -113,13 +113,13 @@ implicit program : Program, context : Context {
 
   [PlainFnFamilyId -> [+ClsType]] constraints =
     match (context)
-      function()  = merge_values([[fn_family_id(n, arity(s)) -> s] : n, ss <- context.constrs, s <- ss]),
+      function()  = merge_values([[fn_family_id(n, arity(s)) -> s] : n ss <- context.constrs, s <- ss]),
       _           = [];
 }
 
 
 [ClsVar -> ClsType] closures(Context context) =
-  function()      = [v -> t : v, t <~ context.cls_args],
+  function()      = [v -> t : (v, t) <- context.cls_args],
   lambda_ctx()    = closures(context.parent),
   _               = [];
 

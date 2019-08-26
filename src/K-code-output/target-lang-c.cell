@@ -15,7 +15,7 @@ CCodeOutput compile_to_c(CompiledPrg prg, Bool include_runtime) {
 
   c_code = c_code & env_decl;
 
-  all_cls_arities = [p.arity : pd <- prg.procs, p <~ pd.args, p != :obj]; ## MAYBE HERE IT WOULD BE BETTER TO DO A NORMAL SORT
+  all_cls_arities = [p.arity : pd <- prg.procs, p <- pd.args, p != :obj]; ## MAYBE HERE IT WOULD BE BETTER TO DO A NORMAL SORT
 
   cls_obj_typedef = generate_cls_obj_typedef(all_cls_arities);
   c_code = c_code & cls_obj_typedef & 4 * ("") if cls_obj_typedef != ();
@@ -38,7 +38,7 @@ CCodeOutput compile_to_c(CompiledPrg prg, Bool include_runtime) {
   ord_static_blocks = (static_blocks_by_name(b, !!) : b <- ord_static_block_names);
 
   // Sorting reactive blocks in topological order
-  react_blocks_dep_map = [b.name -> [t : unused_var, t <- b.nested_auto_vars] : b <- prg.react_blocks];
+  react_blocks_dep_map = [b.name -> [t : _ t <- b.nested_auto_vars] : b <- prg.react_blocks];
   ord_react_blocks_names = join((rand_sort(bs) : bs <- topological_sort(react_blocks_dep_map)));
   react_blocks_by_name = [b.name -> b : b <- prg.react_blocks];
   ord_react_blocks = (react_blocks_by_name(b, !!) : b <- ord_react_blocks_names);
@@ -437,7 +437,7 @@ implicit {
     scalar_vars = vars_to_decl - vector_vars;
 
     vec_vars_by_id = group_by(vector_vars, $.id);
-    new_vec_vars = [vvar(id, nz_nat(max([v.size : v <- vs]))) : id, vs <- vec_vars_by_id];
+    new_vec_vars = [vvar(id, nz_nat(max([v.size : v <- vs]))) : id vs <- vec_vars_by_id];
 
     assert {
       vec_var_ids  = [v.id : v <- vector_vars];

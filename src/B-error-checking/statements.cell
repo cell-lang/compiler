@@ -11,7 +11,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg], actual_ar
       errs = errs & param_type_wf_errors(t, def_type_vars);
     }
     return errs if errs != ();
-    typed_loc_vars = [v : v, unused_var <~ typed_vars];
+    typed_loc_vars = [v : (v, _) <- typed_vars];
     let typed_loc_vars = typed_loc_vars, allow_proc_calls = allow_proc_calls {
       let has_return_value = has_ret_val, stmt_stack = ()
         errs = errs & stmts_wf_errors(stmts, ext_vars, []);
@@ -148,6 +148,22 @@ implicit {
     // type SynCollIter = coll_value_iter(vars: Maybe[StdVar]+, idx_var: StdVar?, src_expr: SynExpr);
     ExprWFError* iter_wf_errors(SynCollIter iter, [DefVar] vars) {
       if not iter.idx_var? and iter.src_expr :: IdChain {
+        symbs = destructure_id_chain(iter.src_expr);
+        resols = resolve_by_priority_as_expr_or_rel_var(symbs, |iter.vars|, vars);
+        if |resols| == 1
+          return ();
+        else if |resols| > 1
+          return (ambiguous_expr(iter.src_expr, resols));
+      }
+      return expr_wf_errors(iter.src_expr, vars);
+    }
+
+
+    // type SynRelIter = rel_iter(vars: Maybe[StdVar]+, src_expr: SynExpr);
+    ExprWFError* iter_wf_errors(SynRelIter iter, [DefVar] vars) {
+      return (wrong_iter_arity(iter.vars)) if |iter.vars| > 3;
+
+      if iter.src_expr :: IdChain {
         symbs = destructure_id_chain(iter.src_expr);
         resols = resolve_by_priority_as_expr_or_rel_var(symbs, |iter.vars|, vars);
         if |resols| == 1
@@ -305,9 +321,9 @@ implicit {
 
 
   ExprWFError* asgn_stmt_local_wf_errors(SynAsgnStmt stmt, [DefVar] ro_vars, [StdVar] rw_vars) {
-    vars = set(stmt.vars);
+    vars = set(values(stmt.vars));
     bad_vars = already_def_vars(vars, ro_vars) & [v : v <- vars, is_already_def_as_auto_or_db_var(bare_id(v))];
-    dupl_vars = duplicates(stmt.vars);
+    dupl_vars = duplicates(values(stmt.vars));
     ## BAD BAD: HERE I'M TREATING AUTOMATON VARIABLES AS IF THEY WERE READ-ONLY SCALAR ONES
     return (ro_vars_asgnm(bad_vars) if bad_vars != []) & (dupl_var_mult_asgnm(v) : v <- rand_sort(dupl_vars));
   }
@@ -325,6 +341,7 @@ implicit {
     for it <- stmt.loops {
       dupl_vars = match (it)
         coll_value_iter() = duplicates(values(it.vars) & (it.idx_var if it.idx_var?)),
+        rel_iter()        |
         filtered_iter()   = [var(v) : v <- duplicates(values(it.vars))],
         range_iter()      = [];
       errs = errs & (dupl_var_mult_asgnm(v) : v <- rand_sort(dupl_vars));
@@ -334,12 +351,14 @@ implicit {
       errs = errs & match (it)
         filtered_iter()   = iter_wf_errors(it),
         coll_value_iter() |
+        rel_iter()        |
         range_iter()      = ();
       new_vars = new_vars & it_vars;
     }
     return errs;
 
 
+    ## WHY IS THIS HERE INSTEAD OF THE OTHER iter_wf_errors(..)?
     ExprWFError* iter_wf_errors(SynFilteredIter iter) {
       free_args_count = count(iter.args, $ == nothing);
       return (wrong_iter_arity(iter.vars, nz_nat(free_args_count)) if |iter.vars| != free_args_count);
@@ -350,8 +369,8 @@ implicit {
   ExprWFError* let_stmt_local_wf_errors(SynLetStmt stmt, [DefVar] ro_vars, [StdVar] rw_vars) {
     ## CHECK THAT THERE ARE NOT DUPLICATES AMONG IMPLICIT ARGUMENTS
     ## AND THAT THERE ARE NOT MUTUAL DEPENDENCIES
-    exprs_errs = join((expr_wf_errors(e, ro_vars & rw_vars) : unused_var, e <- stmt.asgnms));
-    new_impl_args = impl_args & [left(a) : a <~ stmt.asgnms];
+    exprs_errs = join((expr_wf_errors(e, ro_vars & rw_vars) : _, e <- stmt.asgnms));
+    new_impl_args = impl_args & [left(a) : a <- stmt.asgnms];
     let impl_args = new_impl_args, stmt_stack = (stmt_stack | :let)
       body_errs = stmts_wf_errors(stmt.body, ro_vars, rw_vars);
     return exprs_errs & body_errs;
@@ -434,7 +453,7 @@ implicit {
     errs = react_auto_var_errors(var, ro_vars, rw_vars);
     return errs if errs != ();
     auto_def = auto_defs_by_id[auto_var_type(var)];
-    return (unknown_input(input, auto_def) if not (i <~ auto_def.inputs : i.name == input)); ## BAD, LINEAR SEARCH
+    return (unknown_input(input, auto_def) if not (i <- auto_def.inputs : i.name == input)); ## BAD, LINEAR SEARCH
   }
 
 

@@ -1,11 +1,11 @@
 implicit syn_prg : SynPrg {
   WFError* prg_wf_errors {
-    tdefs         = [d : unused_var, ds <- syn_prg.parsed_src_files, d <~ ds, typedef()         ?= d];
-    par_tdefs     = [d : unused_var, ds <- syn_prg.parsed_src_files, d <~ ds, par_typedef()     ?= d];
-    schemas       = [d : unused_var, ds <- syn_prg.parsed_src_files, d <~ ds, schema_def()      ?= d];
-    prot_decls    = [d : unused_var, ds <- syn_prg.parsed_src_files, d <~ ds, prot_decl()       ?= d];
-    tvar_decls    = [d : unused_var, ds <- syn_prg.parsed_src_files, d <~ ds, typevar_decl()    ?= d];
-    aggr_fn_decls = [d : unused_var, ds <- syn_prg.parsed_src_files, d <~ ds, aggr_funct_decl() ?= d];
+    tdefs         = [d : _ ds <- syn_prg.parsed_src_files, d <- ds, typedef()         ?= d];
+    par_tdefs     = [d : _ ds <- syn_prg.parsed_src_files, d <- ds, par_typedef()     ?= d];
+    schemas       = [d : _ ds <- syn_prg.parsed_src_files, d <- ds, schema_def()      ?= d];
+    prot_decls    = [d : _ ds <- syn_prg.parsed_src_files, d <- ds, prot_decl()       ?= d];
+    tvar_decls    = [d : _ ds <- syn_prg.parsed_src_files, d <- ds, typevar_decl()    ?= d];
+    aggr_fn_decls = [d : _ ds <- syn_prg.parsed_src_files, d <- ds, aggr_funct_decl() ?= d];
 
     errs = typedefs_preliminary_wf_errors(tdefs, par_tdefs);
     return rand_sort(errs) if errs != [];
@@ -33,7 +33,7 @@ implicit syn_prg : SynPrg {
     args_errs = join(rand_sort([block_args_wf_errors(b.args) : b <- impl_blocks]));
     return args_errs if args_errs != ();
 
-    impl_block_full_fndefs = [(fd, b.args) : b <- impl_blocks, fd <~ b.fn_defs];
+    impl_block_full_fndefs = [(fd, b.args) : b <- impl_blocks, fd <- b.fn_defs];
     full_fndefs = rand_sort([(fd, ()) : fd <- syn_fn_defs] & impl_block_full_fndefs);
 
     sgn_errs = function_group_signature_wf_errors(full_fndefs);
@@ -65,8 +65,8 @@ implicit syn_prg : SynPrg {
     }
 
     auto_meth_errs = join(rand_sort([auto_method_def_wf_errors(m) : m <- auto_methods]));
-    db_meth_errs = join(rand_sort([db_method_def_wf_errors(db, m) : db, ms <- methods_by_db, m <- ms]));
-    update_errs = join(rand_sort([update_def_wf_errors(db, u) : db, us <- updates_by_db, u <- us]));
+    db_meth_errs = join(rand_sort([db_method_def_wf_errors(db, m) : db ms <- methods_by_db, m <- ms]));
+    update_errs = join(rand_sort([update_def_wf_errors(db, u) : db us <- updates_by_db, u <- us]));
     handler_errs = join(rand_sort([handler_def_wf_errors(h) : h <- handler_defs]));
 
     return rand_sort(standalone_fndef_errs) & impl_block_fndef_errs & rand_sort(proc_def_errs) &
@@ -87,17 +87,17 @@ implicit syn_prg : SynPrg {
 
     // Duplicate aggregate variable names
     vars_names = (v.name : v <- decl.red_vars);
-    dupls = duplicates(vars_names) & [v : v <~ vars_names, taken_names(v)];
+    dupls = duplicates(vars_names) & [v : v <- vars_names, taken_names(v)];
     errs = (errs | dupl_aggr_fn_vars(isort(dupls), decl)) if dupls != [];
     taken_names = taken_names & set(vars_names);
 
     let artifact = :null_artifact, impl_args = [], actual_arg_arity = 0 {
       // Return value expressions
-      res_vars = [var(a) : unused_var, a <~ decl.extra_args] & [var(v.name) : v <~ decl.red_vars];
+      res_vars = [var(a) : (_, a) <- decl.extra_args] & [var(v.name) : v <- decl.red_vars];
       errs = errs & expr_wf_errors(decl.null_value, res_vars) & expr_wf_errors(decl.final_value, res_vars);
 
       // Reduction variables
-      extra_args_vars = [var(a) : unused_var, a <~ decl.extra_args];
+      extra_args_vars = [var(a) : (_, a) <- decl.extra_args];
       init_vars = [var(decl.elt_name)] & extra_args_vars;
       errs = errs & join(({
         type_errs = plain_type_wf_errors(v.type);
@@ -119,10 +119,10 @@ implicit syn_prg : SynPrg {
 
   WFError* db_method_def_wf_errors(Atom db_name, DBMethodDef method) {
     ## WE ARE NOT ALLOWING TYPE VARIABLES (NOR SCHEMAS THEMSELVES) IN A METHOD SIGNATURE FOR NOW
-    errs = join((plain_type_wf_errors(t) : t, unused_var <- method.args));
+    errs = join((plain_type_wf_errors(t) : t, _ <- method.args));
     errs = errs & plain_type_wf_errors(method.ret_type);
 
-    arg_names = (n : unused_var, n <- method.args);
+    arg_names = (n : _, n <- method.args);
     dupl_args = duplicates(arg_names);
     errs = (errs | dupl_par_names([a : a <- dupl_args], [])) if dupl_args != [];
 
@@ -151,9 +151,9 @@ implicit syn_prg : SynPrg {
 
 
   WFError* update_def_wf_errors(Atom db_name, UpdateDef update_def) {
-    errs = join((plain_type_wf_errors(t) : t, unused_var <- update_def.args));
+    errs = join((plain_type_wf_errors(t) : t, _ <- update_def.args));
 
-    args = (v : unused_var, v <- update_def.args);
+    args = (v : _, v <- update_def.args);
     dupl_args = duplicates(args);
     errs = (errs | dupl_par_names([bare_id(a) : a <- dupl_args], [])) if dupl_args != [];
 
@@ -170,10 +170,10 @@ implicit syn_prg : SynPrg {
 
   WFError* auto_method_def_wf_errors(AutoMethodDef method) {
     ## WE ARE NOT ALLOWING TYPE VARIABLES (NOR SCHEMAS) IN A METHOD SIGNATURE FOR NOW
-    errs = join((plain_type_wf_errors(t) : t, unused_var <- method.args));
+    errs = join((plain_type_wf_errors(t) : t, _ <- method.args));
     errs = errs & plain_type_wf_errors(method.ret_type);
 
-    arg_names = (v : unused_var, v <- method.args);
+    arg_names = (v : _, v <- method.args);
     dupl_args = duplicates(arg_names);
     errs = (errs | dupl_par_names([bare_id(a) : a <- dupl_args], [])) if dupl_args != [];
 
@@ -190,7 +190,7 @@ implicit syn_prg : SynPrg {
 
 
   WFError* reactive_autos_wf_errors([BasicTypeSymbol -> [+Nat]] type_arity_map) {
-    errs = [dupl_auto_defs(ds) : unused_var, ds <- group_by(react_auto_defs, $.name), |ds| > 1];
+    errs = [dupl_auto_defs(ds) : _ ds <- group_by(react_auto_defs, $.name), |ds| > 1];
     return rand_sort(errs) if errs != [];
 
     all_autos = [a.name : a <- react_auto_defs];
@@ -203,7 +203,7 @@ implicit syn_prg : SynPrg {
     shallow_deps = [a.name -> [a.parent if a.parent?] : a <- react_auto_defs];
     deep_deps = transitive_closure(shallow_deps);
     ## BAD: THE ps(a) CHECK SHOULD BE ENOUGH TO INFER THAT ps IS NOT EMPTY
-    errs = [auto_inheritance_cycle(nonempty(ps)) : a, ps <- deep_deps, ps(a)];
+    errs = [auto_inheritance_cycle(nonempty(ps)) : a ps <- deep_deps, ps(a)];
     return _isort_(errs) if errs != [];
 
     sorted_auto_ids = topological_sort(shallow_deps);
@@ -245,8 +245,8 @@ implicit syn_prg : SynPrg {
   WFError* function_group_signature_wf_errors((SynFnDef, ImplArgDecl*)* full_fndefs) {
     sgn_errs = values((fndef_signature_wf_errors(fd, nps) : fd, nps <- full_fndefs));
     return sgn_errs if sgn_errs != ();
-    fndefs_by_name_and_arity = merge_values([[(fd.name, arity(fd)) -> fd] : fd, unused_var <~ full_fndefs]);
-    return join(rand_sort([polymorphic_functions_errors(nonempty(rand_sort(fds))) : unused_var, fds <- fndefs_by_name_and_arity]));
+    fndefs_by_name_and_arity = merge_values([[(fd.name, arity(fd)) -> fd] : (fd, _) <- full_fndefs]);
+    return join(rand_sort([polymorphic_functions_errors(nonempty(rand_sort(fds))) : _ fds <- fndefs_by_name_and_arity]));
   }
 
 
@@ -365,10 +365,10 @@ implicit syn_prg : SynPrg {
     );
     return errs if errs != ();
 
-    all_vars = [v.var : v <~ auto_or_db_vars];
+    all_vars = [v.var : v <- auto_or_db_vars];
     db_vars_types = [
       v.var -> db_defs_by_id(t, !!)
-      : v <~ auto_or_db_vars, t = db_symbol(v.type), db_defs_by_id(t, *)
+      : v <- auto_or_db_vars, t = db_symbol(v.type), db_defs_by_id(t, *)
     ];
     errs = join(({
       is_static = db_vars_types(v.var, *);
@@ -393,7 +393,7 @@ implicit syn_prg : SynPrg {
     return () if body == ();
 
     args_info = proc_args_info(proc_def.name);
-    vars = [var(a.var) : a @ i <~ proc_def.args, args_info(i) == :value_arg];
+    vars = [var(a.var) : a @ i <- proc_def.args, args_info(i) == :value_arg];
     has_ret_val = proc_def.res_type != nothing;
     let artifact = proc_def, impl_args = [], actual_arg_arity = 0
       errs = root_stmt_block_wf_errors(body, (), vars, has_ret_val, true);
@@ -405,13 +405,13 @@ implicit syn_prg : SynPrg {
 
   // [FnSymbol -> [Nat -> (Nat*, [+[ImplArg]])]] create_global_functions_map((SynFnDef, ImplArgDecl*)* full_fndefs) {
   //   fndefs_by_name = group_by(full_fndefs, left($).name);
-  //   return [n -> create_polymorphic_function_map(fds) : n, fds <- fndefs_by_name];
+  //   return [n -> create_polymorphic_function_map(fds) : n fds <- fndefs_by_name];
 
 
   //   [Nat -> (Nat*, [+[ImplArg]])] create_polymorphic_function_map([+(SynFnDef, ImplArgDecl*)] full_fndefs) {
   //     fndefs_by_arity = group_by(full_fndefs, arity(left($)));
   //     // return (a => {fndef_sgn_info(left(fd), right(fd)) : fd <- fds} : fds @ a <- fndefs_by_arity);
-  //     return [a -> fndefs_sgn_info(fds) : a, fds <- fndefs_by_arity];
+  //     return [a -> fndefs_sgn_info(fds) : a fds <- fndefs_by_arity];
   //   }
 
 
@@ -425,7 +425,7 @@ implicit syn_prg : SynPrg {
 
   //   (Nat*, [ImplArg]) fndef_sgn_info(SynFnDef fndef, ImplArgDecl* impl_args) {
   //     pos_pars_info = (arity(p) : p <- fndef.args);
-  //     impl_args_info = [a.name : a <~ impl_args];
+  //     impl_args_info = [a.name : a <- impl_args];
   //     return (pos_pars_info, impl_args_info);
   //   }
   // }
@@ -437,8 +437,8 @@ implicit syn_prg : SynPrg {
 implicit type_arity_map : [BasicTypeSymbol -> [+Nat]], schemas : [Atom -> SchemaDef], tdefs : [Typedef], par_tdefs : [ParTypedef] {
   WFError* protocols_wf_errors([ProtDecl] prot_decls) {
     // The same protocol type cannot appear in more than one protocol declaration
-    prots_by_type = merge_values([[t -> p] : p <- prot_decls, t <~ p.types]);
-    errs = [protocol_redef(t, ps) : t, ps <- prots_by_type, |ps| > 1];
+    prots_by_type = merge_values([[t -> p] : p <- prot_decls, t <- p.types]);
+    errs = [protocol_redef(t, ps) : t ps <- prots_by_type, |ps| > 1];
     return rand_sort(errs) if errs != [];
 
     return rand_sort([protocol_errors(p, es) : p <- prot_decls, es = protocol_wf_errors(p), es != ()]);
@@ -460,10 +460,10 @@ implicit type_arity_map : [BasicTypeSymbol -> [+Nat]], schemas : [Atom -> Schema
       return errs if errs != ();
 
       // No polymorphic methods (methods with same name but different arities are OK)
-      errs = [dupl_prot_methods(rand_sort(ms)) : unused_var, ms <- group_by(prot_decl.methods, ($(0), |$(1)|)), |ms| > 1];
+      errs = [dupl_prot_methods(rand_sort(ms)) : _ ms <- group_by(prot_decl.methods, ($(0), |$(1)|)), |ms| > 1];
       return rand_sort(errs) if errs != [];
 
-      prot_types = [t : t <~ prot_decl.types];
+      prot_types = [t : t <- prot_decl.types];
       return join((prot_method_errors(id, ats, rt, prot_types) : id, ats, rt <- prot_decl.methods));
     }
 
@@ -480,7 +480,7 @@ implicit type_arity_map : [BasicTypeSymbol -> [+Nat]], schemas : [Atom -> Schema
 
 
 [WFError] typevar_decls_wf_errors([TypeVarDecl] tvar_decls, [ProtDecl] prot_decls) {
-  prot_types_map = [t -> set(pd.types) : pd <- prot_decls, t <~ pd.types];
+  prot_types_map = [t -> set(pd.types) : pd <- prot_decls, t <- pd.types];
   return [typevar_decl_errs(d, es) : d <- tvar_decls, es = typevar_decl_wf_errors(d, prot_types_map), es != ()];
 
 

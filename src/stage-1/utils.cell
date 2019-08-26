@@ -2,13 +2,13 @@
     ptrn_var()      = [ptrn.var] & syn_new_vars(ptrn.ptrn),
     ptrn_tuple(ps?) = seq_union((syn_new_vars(p) : p <- ps)),
     ptrn_tag_obj()  = syn_new_vars(ptrn.tag) & syn_new_vars(ptrn.obj),
-    ptrn_union(ps?) = intersection([syn_new_vars(p) : p <~ ps]),
+    ptrn_union(ps?) = intersection([syn_new_vars(p) : p <- ps]),
     _               = [];
 
 
 [StdVar] syn_new_vars(SynStmt stmt) =
-  assignment_stmt()         = set(stmt.vars),
-  if_stmt()                 = { bodies = [b.body : b <~ stmt.branches] & [stmt.else];
+  assignment_stmt()         = set(values(stmt.vars)),
+  if_stmt()                 = { bodies = [b.body : b <- stmt.branches] & [stmt.else];
                                 return intersection([syn_new_vars(ss) : ss <- bodies, syn_may_fall_through(ss)]);
                               },
   let_stmt()                = syn_new_vars(stmt.body),
@@ -24,10 +24,10 @@
 
 
 [StdVar] syn_new_vars(SynClause clause) =
-  iter_clause()         = set(clause.vars),
-  seq_clause()          = [var(value(v)) : v <~ (clause.vars | clause.idx_var), v != nothing],
+  iter_clause()         = [var(value(v)) : v <- clause.vars, v != nothing],
+  seq_clause()          = [var(value(v)) : v <- (clause.vars | clause.idx_var), v != nothing],
   and_clause(cs?)       = seq_union((syn_new_vars(c) : c <- cs)),
-  or_clause(cs?)        = intersection([syn_new_vars(c) : c <~ cs]),
+  or_clause(cs?)        = intersection([syn_new_vars(c) : c <- cs]),
   match_clause()        = syn_new_vars(clause.ptrn),
   asgnm_clause()        = [clause.var],
   filter_clause()       = [];
@@ -35,7 +35,8 @@
 
 [StdVar] syn_new_vars(SynIter iter) =
   coll_value_iter() = set(values(iter.vars)) & [iter.idx_var if iter.idx_var?],
-  filtered_iter()   = [var(value(s)) : s <~ iter.vars, s != nothing],
+  rel_iter()        |
+  filtered_iter()   = [var(value(s)) : s <- iter.vars, s != nothing],
   range_iter()      = [iter.var if iter.var?];
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -142,15 +143,15 @@ NeType desugar_type(SynType type, (<SynTypeRef, SynTypeVar> -> NeType) desugar) 
     ne_seq_type()       = ne_seq_type(desugar_type(type.elem_type, desugar)),
     ne_set_type()       = ne_set_type(desugar_type(type.elem_type, desugar)),
     ne_map_type()       = ne_map_type(desugar_type(type.key_type, desugar), desugar_type(type.value_type, desugar)),
-    ne_bin_rel_type()   = ne_bin_rel_type_nonvoid([(desugar_type(t, desugar) : t <- s) : s <~ type.signatures]),
-    ne_tern_rel_type()  = ne_tern_rel_type_nonvoid([(desugar_type(t, desugar) : t <- s) : s <~ type.signatures]),
-    record_type(fs?)    = ne_record_type([f.label -> (type: desugar_type(f.type, desugar), optional: f.optional) : f <~ fs]),
+    ne_bin_rel_type()   = ne_bin_rel_type_nonvoid([(desugar_type(t, desugar) : t <- s) : s <- type.signatures]),
+    ne_tern_rel_type()  = ne_tern_rel_type_nonvoid([(desugar_type(t, desugar) : t <- s) : s <- type.signatures]),
+    record_type(fs?)    = ne_record_type([f.label -> (type: desugar_type(f.type, desugar), optional: f.optional) : f <- fs]),
     tuple_type(ts?)     = ne_tuple_type((desugar_type(t, desugar) : t <- ts)),
     tag_obj_type()      = { tag_type = type.tag_type;
                             fail if not tag_type :: TagType; ## BAD: HANDLE THE ERROR
                             return tag_obj_type(tag_type, desugar_type(type.obj_type, desugar));
                           },
-    union_type(ts?)     = ne_union_type([desugar_type(t, desugar) : t <~ ts]);
+    union_type(ts?)     = ne_union_type([desugar_type(t, desugar) : t <- ts]);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -202,7 +203,7 @@ NeType desugar_type(SynType type, (<SynTypeRef, SynTypeVar> -> NeType) desugar) 
 [TypeName -> Symbol+] create_fields_order_map([Typedef] tdefs, [ParTypedef] par_tdefs) {
   type_map = [type_name(td.name, 0) -> fields_order(td.type) : td <- tdefs];
   par_type_map = [type_name(td.name, |td.params|) -> fields_order(td.type) : td <- par_tdefs];
-  return [tn -> value(fs) : tn, fs <- type_map | tn, fs <- par_type_map, fs != nothing];
+  return [tn -> value(fs) : tn fs <- type_map | tn fs <- par_type_map, fs != nothing];
 
   Maybe[Symbol+] fields_order(SynType type) =
     record_type(fs?)  = just((_untag_(f.label) : f <- fs)),
@@ -338,8 +339,8 @@ ReactAutoDef resolve_inheritance(ReactAutoDef child, [AutoSymbol -> ReactAutoDef
   return child if not child.parent?;
   parent = resolved_autos_by_id[auto_symbol(child.parent)];
 
-  overriding_ids = [rule_id(d) : d <~ child.rules & child.consts];
-  overriding_state_vars_ids = [d.name : d <~ child.state_vars];
+  overriding_ids = [rule_id(d) : d <- child.rules & child.consts];
+  overriding_state_vars_ids = [d.name : d <- child.state_vars];
 
   inherited_inputs = (i : i <- parent.inputs, not overriding_ids(i.name));
   inherited_state_vars = (v : v <- parent.state_vars, not overriding_state_vars_ids(v.name));

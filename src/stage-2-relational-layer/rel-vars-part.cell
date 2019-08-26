@@ -48,7 +48,7 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
           for v, s <- isort(split_rel_vars) {
             // For each relvar in the split set, we compute a partial signature for the target,
             // and then select only the relvars in the target set that overlap with it
-            src_vars_types = [value(a) -> s(i) : a @ i <~ key.source_args, a != nothing];
+            src_vars_types = [value(a) -> s(i) : a @ i <- key.source_args, a != nothing];
             tgt_sgn = (apply(a, src_vars_types($)) : a @ i <- key.target_args);
             tgt_rel_vars = [tv : tv <- key.target_rel_vars, signature_overlaps_partial_signature(rel_vars(tv), tgt_sgn)];
             fail if tgt_rel_vars == []; ## CAN THIS ACTUALLY HAPPEN?
@@ -88,8 +88,8 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
 
       // Types of the variables by target
       vars_types_by_target = [
-        v -> nonempty_map([value(a) -> s(i) : a @ i <~ key.target_args, a != nothing])
-        : v, s <- target_sgns
+        v -> nonempty_map([value(a) -> s(i) : a @ i <- key.target_args, a != nothing])
+        : v s <- target_sgns
       ];
 
       // Indexes of the argument that are different for each target
@@ -97,7 +97,7 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
       for a @ i <- key.source_args {
         if a != nothing {
           symb = value(a);
-          types_by_target = [v -> ts(symb) : v, ts <- vars_types_by_target];
+          types_by_target = [v -> ts(symb) : v ts <- vars_types_by_target];
           types = nonempty(values(types_by_target));
           a_type = an_elem(types);
           if (t <- types : not is_eq(t, a_type))
@@ -115,7 +115,7 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
       src_rel_var = key.source_rel_var;
       source_sgn = rel_vars(src_rel_var);
       src_type = source_sgn(diff_idx);
-      overlapping_types_by_target = [v -> t : v, t <- types_by_target, not are_ptype_disjoint(t, src_type)];
+      overlapping_types_by_target = [v -> t : v t <- types_by_target, not are_ptype_disjoint(t, src_type)];
 
       // If the source can reach only one of the targets, then there's no need to split anything
       // We just do a "pretend" split that doesn't split anything
@@ -138,7 +138,7 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
       // Splitting the source relvar
       split_rel_vars = [
         split_rel_var(src_rel_var, i) -> (if j == diff_idx then t else ot : ot @ j <- source_sgn)
-        : t @ i <~ nonempty(ord_types)
+        : t @ i <- nonempty(ord_types)
       ];
 
       return just((src_rel_var, split_rel_vars));

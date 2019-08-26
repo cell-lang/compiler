@@ -26,7 +26,7 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
 
 
     [RelVar] columnar_relvars(Database rel_auto) {
-      candidates = [logical_rel_var(v) : v, info <- rel_auto.rel_vars, is_candidate_column(info)];
+      candidates = [logical_rel_var(v) : v info <- rel_auto.rel_vars, is_candidate_column(info)];
       usages = relvars_usages;
       auto_id = rel_auto.name;
       return [v : v <- candidates, not usages(rel_auto.name, v, (false, true))];
@@ -93,7 +93,7 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
   rel_var_size_expr()   |
   relvar_memb_test()    |
   relvar_lookup()       = [(expr.rel_var, (a != nothing : a <- expr.args))] &
-                          union([relvars_usages(value(a)) : a <~ expr.args, a != nothing]),
+                          union([relvars_usages(value(a)) : a <- expr.args, a != nothing]),
   do_expr()             = search_stmts(expr.body, relvars_usages($)),
   _                     = search_nested(expr, relvars_usages($), relvars_usages($));
 
@@ -102,7 +102,7 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
   expr_usages = search_exprs(stmt, relvars_usages($), relvars_usages($));
   stmt_usages = match (stmt)
     delete_stmt()     = [(stmt.var, (a != nothing : a <- stmt.args))] &
-                        union([relvars_usages(value(a)) : a <~ stmt.args, a != nothing]),
+                        union([relvars_usages(value(a)) : a <- stmt.args, a != nothing]),
     foreach_stmt()    = relvars_usages(stmt.iter) & search_stmts(stmt.body, relvars_usages($)),
     _                 = search_nested(stmt, relvars_usages($));
   return expr_usages & stmt_usages;
@@ -111,7 +111,7 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
 
 [(AnyRelVar, Bool+)] relvars_usages(Clause clause) =
   relvar_clause() = [(clause.rel_var, (a != nothing : a <- clause.args))] &
-                    union([relvars_usages(value(a)) : a <~ clause.args, a != nothing]),
+                    union([relvars_usages(value(a)) : a <- clause.args, a != nothing]),
   and_clause()    |
   or_clause()     = relvars_usages(clause.left) & relvars_usages(clause.right),
   _               = search_exprs(clause, relvars_usages($));
@@ -119,6 +119,6 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
 
 [(AnyRelVar, Bool+)] relvars_usages(Iter iter) =
   coll_value_iter()   = relvars_usages(iter.src_expr),
-  rel_subset_iter()   = union([relvars_usages(value(a)) : a <~ iter.args, a != nothing]),
+  rel_subset_iter()   = union([relvars_usages(value(a)) : a <- iter.args, a != nothing]),
   rel_var_iter()      = [(iter.rel_var, (a != nothing : a <- iter.args))] &
-                        union([relvars_usages(value(a)) : a <~ iter.args, a != nothing]);
+                        union([relvars_usages(value(a)) : a <- iter.args, a != nothing]);

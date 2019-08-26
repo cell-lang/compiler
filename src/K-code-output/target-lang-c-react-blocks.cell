@@ -36,7 +36,7 @@ implicit {
     cleanup_decl = (cleanup_sgn & ";");
     cleanup_proc = ({cleanup_sgn & " {"}) & indent_lines(cleanup_body) & ("}");
 
-    all_loc_vars = vars_to_declare(block.apply_code) & union([vars_to_declare(c) : id, c <- block.nodes_update_code]);
+    all_loc_vars = vars_to_declare(block.apply_code) & union([vars_to_declare(c) : id c <- block.nodes_update_code]);
     aux_vars = [v : v <- all_loc_vars, v :: AuxVar] & [curr_time if has_time_rules];
     aux_name_str = aux_struct_c_name(block.name);
     aux_decls = ({"struct " & aux_name_str & " {"}) & indent_lines((var_decl(v) : v <- rand_sort(aux_vars))) & ("};");
@@ -58,24 +58,24 @@ implicit {
         lines = gen_vars_decls(c);
         lines = (lines | "") if lines != ();
         return lines & compile_to_c(c, nothing);
-      } : id, c <- block.nodes_update_code
+      } : id c <- block.nodes_update_code
     ];
     time_arg = if has_time_rules then ", int64 " & to_c_var_decl_name(curr_time) else "";
     update_node_sngs = [
       id -> "void " & node_update_method_name(block.name, id) &
             "(" & name_str & " *self" & time_arg & ", " & aux_name_str & " *self_aux, ENV &env)"
-      : id, unused_var <- block.nodes_update_code
+      : id _ <- block.nodes_update_code
     ];
-    update_node_decls = rand_sort([s & ";" : unused_var, s <- update_node_sngs]);
+    update_node_decls = rand_sort([s & ";" : _ s <- update_node_sngs]);
     update_node_procs_unsorted = [
       ({update_node_sngs[id] & " {"}) & indent_lines(update_node_bodies[id]) & ("}")
-      : id, unused_var <- block.nodes_update_code
+      : id _ <- block.nodes_update_code
     ];
     update_node_procs = join(intermix(rand_sort(update_node_procs_unsorted), ("", "")));
 
     queue_methods_decls_and_impls = [
       gen_queue_update_method(block.name, id, method.body, method.args)
-      : id, method <- block.queue_update_code
+      : id method <- block.queue_update_code
     ];
     queue_methods_decls, queue_methods_impls = unzip(rand_sort(queue_methods_decls_and_impls));
     queue_methods_impls = join(intermix(queue_methods_impls, ("", "")));
@@ -91,7 +91,7 @@ implicit {
     input_decls, input_impls = unzip((gen_input_setter(block.name, id, i, queue_input_updates) : id @ i <- block.ord_inputs));
     input_impls = join(intermix(input_impls, ("", "")));
 
-    method_decls, method_impls = unzip(rand_sort([gen_user_def_method(block.name, id, m.code) : id, m <- block.methods]));
+    method_decls, method_impls = unzip(rand_sort([gen_user_def_method(block.name, id, m.code) : id m <- block.methods]));
     method_impls = join(intermix(method_impls, ("", "")));
 
     const_data = rand_sort([gen_const_data(block.name, c) : c <- block.const_data]);

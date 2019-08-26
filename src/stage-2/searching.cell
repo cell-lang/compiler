@@ -13,16 +13,16 @@
     tern_rel_expr(es?)    = union([seq_union((search_expr(e2) : e2 <- e1.args & (e1.cond if e1.cond?))) : e1 <- es]),
     tag_obj_expr()        = search_expr(expr.tag) & search_expr(expr.obj),
     fn_call()             = union([search_expr(e) : e <- set(expr.args) & values(expr.impl_args)]) &
-                            union([search_ex(e, search_expr, search_clause) : e <~ expr.cls_args]),
+                            union([search_ex(e, search_expr, search_clause) : e <- expr.cls_args]),
     cls_call()            = seq_union((search_expr(p) : p <- expr.args)),
     builtin_call()        = seq_union((search_expr(p) : p <- expr.args)),
     size_expr()           = search_expr(expr.coll),
-    rel_var_size_expr()   = union([search_expr(value(a)) : a <~ expr.args, a != nothing]),
+    rel_var_size_expr()   = union([search_expr(value(a)) : a <- expr.args, a != nothing]),
     unary_pseudo_call()   = search_expr(expr.target) & search_expr(expr.arg),
     rel_memb_test()       = search_expr(expr.rel) & seq_union((search_expr(value(a)) : a <- expr.args, a != nothing)),
     rel_lookup()          = search_expr(expr.rel) & seq_union((search_expr(value(a)) : a <- expr.args, a != nothing)),
     relvar_memb_test()    = seq_union((search_expr(value(a)) : a <- expr.args, a != nothing)),
-    relvar_lookup()       = union([search_expr(value(a)) : a <~ expr.args, a != nothing]),
+    relvar_lookup()       = union([search_expr(value(a)) : a <- expr.args, a != nothing]),
     and_expr()            = search_expr(expr.left) & search_expr(expr.right),
     or_expr()             = search_expr(expr.left) & search_expr(expr.right),
     not_expr(e?)          = search_expr(e),
@@ -77,7 +77,7 @@
   loop_stmt(ss?)            = search_exprs(ss, search_expr, search_iter),
   foreach_stmt()            = search_iter(stmt.iter) & search_exprs(stmt.body, search_expr, search_iter),
   for_stmt()                = search_expr(stmt.start_val) & search_expr(stmt.end_val) & search_exprs(stmt.body, search_expr, search_iter),
-  let_stmt()                = union([search_expr(e) : unused_var, e <- stmt.asgnms]) & search_exprs(stmt.body, search_expr, search_iter),
+  let_stmt()                = union([search_expr(e) : _ e <- stmt.asgnms]) & search_exprs(stmt.body, search_expr, search_iter),
   break_stmt                = [],
   fail_stmt()               = [],
   assert_stmt()             = search_expr(stmt.cond) & union([search_expr(v) : v <- stmt.env]), ## NOT SURE ABOUT THIS ONE. THE VARIABLES ARE KEPT ARTIFICIALLY ALIVE...
@@ -102,7 +102,7 @@
 ////////////////////////////////////////////////////////////////////////////////
 
 [T] search_stmts(Statement* stmts, (Statement -> [T]) search_stmt) =
-  union([search_stmt(s) : s <~ stmts]);
+  union([search_stmt(s) : s <- stmts]);
 
 
 [T] search_nested(Statement stmt, (Statement -> [T]) search_stmt) =
@@ -116,19 +116,19 @@
 ////////////////////////////////////////////////////////////////////////////////
 
 [T] search_exprs(Clause cls, (Expr -> [T]) search_expr) =
-  set_clause()      = search_expr(cls.src),
-  rel_clause()      = search_expr(cls.src) & seq_union((search_expr(value(a)) : a <- cls.args, a != nothing)),
-  relvar_clause()   = seq_union((search_expr(value(a)) : a <- cls.args, a != nothing)),
-  seq_clause()      = search_expr(cls.src),
-  and_clause()      = search_exprs(cls.left, search_expr) & search_exprs(cls.right, search_expr),
-  or_clause()       = search_exprs(cls.left, search_expr) & search_exprs(cls.right, search_expr),
-  match_clause()    = search_expr(cls.expr),
-  asgnm_clause()    = search_expr(cls.expr),
-  filter_clause(e?) = search_expr(e);
+  set_or_seq_clause() = search_expr(cls.src),
+  rel_clause()        = search_expr(cls.src) & seq_union((search_expr(value(a)) : a <- cls.args, a != nothing)),
+  relvar_clause()     = seq_union((search_expr(value(a)) : a <- cls.args, a != nothing)),
+  seq_clause()        = search_expr(cls.src),
+  and_clause()        = search_exprs(cls.left, search_expr) & search_exprs(cls.right, search_expr),
+  or_clause()         = search_exprs(cls.left, search_expr) & search_exprs(cls.right, search_expr),
+  match_clause()      = search_expr(cls.expr),
+  asgnm_clause()      = search_expr(cls.expr),
+  filter_clause(e?)   = search_expr(e);
 
 ////////////////////////////////////////////////////////////////////////////////
 
 [T] search_exprs(Iter iter, (Expr -> [T]) search_expr) =
   coll_value_iter()   = search_expr(iter.src_expr),
-  rel_subset_iter()   = search_expr(iter.src_expr) & union([search_expr(a) : a <~ values(iter.args)]),
-  rel_var_iter()      = union([search_expr(a) : a <~ values(iter.args)]);
+  rel_subset_iter()   = search_expr(iter.src_expr) & union([search_expr(a) : a <- values(iter.args)]),
+  rel_var_iter()      = union([search_expr(a) : a <- values(iter.args)]);

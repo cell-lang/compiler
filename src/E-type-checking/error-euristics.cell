@@ -23,17 +23,17 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     return [] if entries == [];
     return [unexpected_coll_expr(exp_type, :rel(3))] if are_ptype_disjoint(exp_type, type_ne_tern_rel);
     exp_args_types = tern_rel_args_supertypes(exp_type);
-    return [] if (t <~ exp_args_types : t == empty_type);
+    return [] if (t <- exp_args_types : t == empty_type);
     return union([{
       if e.cond? {
         errs = typecheck(e.cond, type_bool, env);
         return errs if errs != [];
-        new_env, unused_var = refine_env(e.cond, env);
+        new_env, _ = refine_env(e.cond, env);
       }
       else {
         new_env = env;
       }
-      return union([typecheck(a, exp_args_types(i), new_env) : a @ i <~ e.args]);
+      return union([typecheck(a, exp_args_types(i), new_env) : a @ i <- e.args]);
     } : e <- entries]);
   }
 
@@ -48,7 +48,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
       if e.cond? {
         errs = typecheck(e.cond, type_bool, env);
         return errs if errs != [];
-        new_env, unused_var = refine_env(e.cond, env);
+        new_env, _ = refine_env(e.cond, env);
       }
       else {
         new_env = env;
@@ -125,9 +125,9 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
     [TypeCheckingError] record_expr_and_type_err_msgs(RecordTypeFields type_fields, (SymbObj, Expr, [EnvVar -> Type], Bool)* entries) {
       // Searching first for missing or unexpected fields
-      expr_fields = [e(0) : e <~ entries];
-      unexpected_fields = [l : e <~ entries, l = e(0), not type_fields(l, *)];
-      missing_fields = [l : l, unused_var <- type_fields, not expr_fields(l)];
+      expr_fields = [e(0) : e <- entries];
+      unexpected_fields = [l : e <- entries, l = e(0), not type_fields(l, *)];
+      missing_fields = [l : l _ <- type_fields, not expr_fields(l)];
       if unexpected_fields != [] or missing_fields != []
         return [unexpected_rec_field(f) : f <- unexpected_fields] & [missing_rec_field(f) : f <- missing_fields];
 
@@ -136,7 +136,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
         field_info = type_fields[label];
         return [rec_field_is_mandatory(label) if opt and not field_info.optional] &
                typecheck(expr, field_info.type, env);
-      } : label, expr, env, opt <~ entries]);
+      } : (label, expr, env, opt) <- entries]);
     }
   }
 
@@ -159,7 +159,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     return union([{
       exp_elt_type = restricted_seq_elem_supertype(exp_type, singleton_type(i));
       return if exp_elt_type != empty_type then typecheck(e, exp_elt_type, env) else [];
-    } : e @ i <~ subexprs]);
+    } : e @ i <- subexprs]);
   }
 
 
@@ -172,7 +172,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     return union([{
       exp_elt_type = restricted_seq_elem_supertype(exp_type, singleton_type(i));
       return if exp_elt_type != empty_type then typecheck(e, exp_elt_type, env) else [];
-    } : e @ i <~ exprs]);
+    } : e @ i <- exprs]);
   }
 
 
@@ -318,8 +318,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
   [TypeCheckingError] ne_record_type_err_msgs(RecordTypeFields actual_fields, RecordTypeFields exp_fields) {
     // Searching first for missing or unexpected fields
-    unexpected_fields = [l : l, unused_var <- actual_fields, not exp_fields(l, *)];
-    missing_fields = [l : l, unused_var <- exp_fields, not actual_fields(l, *)];
+    unexpected_fields = [l : l _ <- actual_fields, not exp_fields(l, *)];
+    missing_fields = [l : l _ <- exp_fields, not actual_fields(l, *)];
     if unexpected_fields != [] or missing_fields != []
       return [unexpected_rec_field(f) : f <- unexpected_fields] & [missing_rec_field(f) : f <- missing_fields];
 
@@ -330,7 +330,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
         rec_field_is_mandatory(l) if f.optional and not exp_field.optional,
         unexpected_rec_field_type(l, f.type, exp_field.type) if not is_subset(f.type, exp_field.type)
       ];
-    } : l, f <- actual_fields]);
+    } : l f <- actual_fields]);
   }
 
 

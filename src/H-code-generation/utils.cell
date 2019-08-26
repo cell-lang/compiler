@@ -21,7 +21,7 @@ Nat+ choose_disp_args(NeType++ types, [TypeName -> Type] typedefs) {
       // sets/types are disjoint. If none of the corresponding pairs are disjoint
       // then you can build a tuple that belongs in both signatures by taking its
       // elements from the intersections of the corresponding pairs of sets/types
-      disjoint = (j <~ arg_idxs : are_disjoint(pts1(j), pts2(j)));
+      disjoint = (j <- arg_idxs : are_disjoint(pts1(j), pts2(j)));
       return false if not disjoint;
     }
     return true;
@@ -56,7 +56,7 @@ Nat+ optimal_dispatch_args([+NeType+] signatures, [TypeName -> Type] typedefs) {
       // you could take a pair that belongs in both non-disjoint
       // signatures and that would belong to both sets of signatures
       for ps1 <- isort(ord_psgns(i1)); ps2 <- isort(ord_psgns(i2)) {
-        disjoint = (j <~ args_idxs : are_disjoint(ps1(j), ps2(j)));
+        disjoint = (j <- args_idxs : are_disjoint(ps1(j), ps2(j)));
         return false if not disjoint;
       }
     }
@@ -189,7 +189,7 @@ VarGen blank_var_gen = counter_set(nz_ctrs: []);
 
 ([T -> Int32Var], VarGen) next_int32_vars(VarGen gen, [T] keys) {
   vars, ret_gen = next_int32_vars(gen, |keys|);
-  return ([k -> vars(i) : k @ i <~ isort(keys)], ret_gen);
+  return ([k -> vars(i) : k @ i <- isort(keys)], ret_gen);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -199,7 +199,7 @@ implicit program : Program {
   ## WHAT'S THE DIFFERENCE BETWEEN THIS AND state_type()? IS IT JUST THE DEPTH?
   ## AND DO I REALLY NEED THIS ONE, OR CAN I MAKE DO WITH JUST state_type()?
   // NeType deep_state_type(Database data_base) {
-  //   state_var_field_types = [object(bare_id(v)) -> info.type : v, info <- data_base.state_vars];
+  //   state_var_field_types = [object(bare_id(v)) -> info.type : v info <- data_base.state_vars];
   //   rel_var_field_types = [
   //       object(bare_id(v)) -> {
   //         sgns = info.signatures;
@@ -208,24 +208,24 @@ implicit program : Program {
   //         return type_tern_rel(sgns, false) if sgns :: [+(NeType, NeType, NeType)];
   //         fail; ## BAD BAD BAD
   //       }
-  //     : v, info <- data_base.rel_vars
+  //     : v info <- data_base.rel_vars
   //   ];
-  //   nested_db_field_types = [object(bare_id(v)) -> deep_state_type(automaton_by_id(s)) : v, s <- data_base.nested_dbs];
+  //   nested_db_field_types = [object(bare_id(v)) -> deep_state_type(automaton_by_id(s)) : v s <- data_base.nested_dbs];
   //   all_field_types = state_var_field_types & rel_var_field_types & nested_db_field_types;
   //   return empty_rel_type if all_field_types == [];
-  //   all_fields = [s -> (type: t, optional: false) : s, t <- all_field_types];
+  //   all_fields = [s -> (type: t, optional: false) : s t <- all_field_types];
   //   return ne_record_type(all_fields);
   // }
 
 
   NeType deep_state_type(Automaton auto) {
-    inputs = [v -> i.type : v, i <- auto.inputs, not i.discrete and not i.volatile];
-    state_vars = [v -> s.type : v, s <- auto.state, not s.volatile];
-    nested_autos = [v -> deep_state_type(automaton_by_id(a.type)) : v, a <- auto.nested_autos, not a.volatile];
+    inputs = [v -> i.type : v i <- auto.inputs, not i.discrete and not i.volatile];
+    state_vars = [v -> s.type : v s <- auto.state, not s.volatile];
+    nested_autos = [v -> deep_state_type(automaton_by_id(a.type)) : v a <- auto.nested_autos, not a.volatile];
 
     fields = inputs & state_vars & nested_autos;
     return empty_rel_type if fields == [];
 
-    return ne_record_type([object(bare_id(v)) -> (type: t, optional: false) : v, t <- fields]);
+    return ne_record_type([object(bare_id(v)) -> (type: t, optional: false) : v t <- fields]);
   }
 }

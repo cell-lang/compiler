@@ -226,7 +226,7 @@ Expr* exprs_cluster(FnCallExpr expr, Nat offset) {
   repl_exprs, cluster = cluster_expr_seqs(exprs, nat(offset+1));
   fail if |repl_exprs| != 2;
   repl_args, repl_impl_args = repl_exprs;
-  impl_args = [n -> repl_impl_args(i) : n @ i <~ impl_args_names];
+  impl_args = [n -> repl_impl_args(i) : n @ i <- impl_args_names];
   call_instr = fn_call(expr.fn_id, repl_args, expr.cls_args, impl_args);
   return (call_instr) & cluster;
 }
@@ -290,9 +290,9 @@ Expr* exprs_cluster(Clause cls, Expr+ exprs, Nat offset, (Clause Expr+ -> Expr) 
   return (or_clause(left_cls_repl, right_cls_repl), right_cluster & left_cluster);
 }
 
-// set_clause(var: StdVar, src: Expr),
-(SetClause, Expr*) cluster_clause(SetClause cls, Nat offset) = (
-  set_clause(cls.var, expr_ref(offset)),
+// set_or_seq_clause(var: StdVar, src: Expr),
+(SetOrSeqClause, Expr*) cluster_clause(SetOrSeqClause cls, Nat offset) = (
+  set_or_seq_clause(cls.var, expr_ref(offset)),
   exprs_cluster(cls.src, offset)
 );
 
@@ -455,7 +455,7 @@ Expr replace_nested(RecExpr expr, (Expr -> Expr) replace) =
                           expr.fn_id,
                           (replace_nested_2(a, replace) : a <- expr.args),
                           expr.cls_args,
-                          [n -> replace(e) : n, e <- expr.impl_args]
+                          [n -> replace(e) : n e <- expr.impl_args]
                         ),
   cls_call()          = cls_call(expr.name, (replace(a) : a <- expr.args)),
   builtin_call()      = builtin_call(expr.name, (replace(a) : a <- expr.args)),
@@ -534,15 +534,15 @@ ClsExpr replace_nested_2(ClsExpr expr, (Expr -> Expr) replace) = cls_expr(expr.a
 
 
 Clause replace_nested(Clause cls, (Expr -> Expr) replace) =
-  set_clause()      = set_clause(cls.var, replace(cls.src)),
-  rel_clause()      = rel_clause(cls.vars, replace(cls.src), (apply(a, replace) : a <- cls.args)),
-  relvar_clause()   = relvar_clause(cls.vars, cls.rel_var, (apply(a, replace) : a <- cls.args)),
-  seq_clause()      = seq_clause(cls.vars, cls.idx_var, replace(cls.src)),
-  and_clause()      = and_clause(replace_nested(cls.left, replace), replace_nested(cls.right, replace)),
-  or_clause()       = or_clause(replace_nested(cls.left, replace), replace_nested(cls.right, replace)),
-  match_clause()    = match_clause(cls.ptrn, replace(cls.expr)),
-  asgnm_clause()    = asgnm_clause(cls.var, replace(cls.expr)),
-  filter_clause(e?) = filter_clause(replace(e));
+  set_or_seq_clause() = set_or_seq_clause(cls.var, replace(cls.src)),
+  rel_clause()        = rel_clause(cls.vars, replace(cls.src), (apply(a, replace) : a <- cls.args)),
+  relvar_clause()     = relvar_clause(cls.vars, cls.rel_var, (apply(a, replace) : a <- cls.args)),
+  seq_clause()        = seq_clause(cls.vars, cls.idx_var, replace(cls.src)),
+  and_clause()        = and_clause(replace_nested(cls.left, replace), replace_nested(cls.right, replace)),
+  or_clause()         = or_clause(replace_nested(cls.left, replace), replace_nested(cls.right, replace)),
+  match_clause()      = match_clause(cls.ptrn, replace(cls.expr)),
+  asgnm_clause()      = asgnm_clause(cls.var, replace(cls.expr)),
+  filter_clause(e?)   = filter_clause(replace(e));
 
 
 Statement+ replace_nested(Statement+ stmts, (Expr -> Expr) replace) = undefined;

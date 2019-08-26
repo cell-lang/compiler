@@ -130,7 +130,7 @@ implicit program           : Program,
   (Instr*, ObjExpr, VarGen) rel_var_size_expr_opt_eval_info(AnyRelVar rel_var, Maybe[Expr]+ args, VarGen init_var_gen) {
     bound_args_idxs = (i : a @ i <- args, a != nothing);
     free_args_idxs = (i : a @ i <- args, a == nothing);
-    arg_idx_bound_arg_idx = [i -> j : i @ j <~ bound_args_idxs];
+    arg_idx_bound_arg_idx = [i -> j : i @ j <- bound_args_idxs];
 
     set_args = (value(a) : a <- args, a != nothing);
     eval_code, args_aliases, var_gen = opt_eval_info(set_args, init_var_gen);
@@ -179,7 +179,7 @@ implicit program           : Program,
   (Instr*, ObjExpr, VarGen) relvar_memb_test_opt_eval_info(AnyRelVar rel_var, Maybe[Expr]+ args, VarGen init_var_gen) {
     bound_args = (value(a) : a <- args, a != nothing);
     bound_args_idxs = (i : a @ i <- args, a != nothing);
-    arg_idx_bound_arg_idx = [i -> j : i @ j <~ bound_args_idxs];
+    arg_idx_bound_arg_idx = [i -> j : i @ j <- bound_args_idxs];
 
     eval_code, args_aliases, var_gen = opt_eval_info(bound_args, init_var_gen);
 
@@ -229,7 +229,7 @@ implicit program           : Program,
     ## IMPLEMENT IMPLEMENT IMPLEMENT
     assert |maybe_args| > 1; // Excluding rel_var(!!)
 
-    args = [i -> value(a) : a @ i <~ maybe_args, a != nothing];
+    args = [i -> value(a) : a @ i <- maybe_args, a != nothing];
     target_idx = first_unused_idx(args);
     arity = nz_nat(|args| + 1);
     args_idxs = ord_idxs(args);
@@ -248,10 +248,10 @@ implicit program           : Program,
     args_eval_code, args_aliases, var_gen = opt_eval_info(ord_args, ret_var_gen);
 
     def_surr_vars, var_gen = next_int32_vars(var_gen, |args|);
-    def_surr_vars_map = [i -> def_surr_vars(j) : i @ j <~ args_idxs];
+    def_surr_vars_map = [i -> def_surr_vars(j) : i @ j <- args_idxs];
 
     // Selecting the candidate tables among those the logical relation is partitioned into
-    args_types = [i -> subexpr_type(e) : i, e <- args];
+    args_types = [i -> subexpr_type(e) : i e <- args];
     return ((), :invalid_var, init_var_gen) if not args_types :: [Nat -> NeType];
     candidate_tables = overlapping_tables(rel_var, maybe_seq(args_types, arity));
 
@@ -390,7 +390,7 @@ implicit program           : Program,
     res_var, ret_var_gen = next_var(low_level_sign.ret_value, init_var_gen);
 
     // Evaluation of the arguments
-    args_eval_code, args_surrs, unused_var = opt_eval_info(expr.args, ret_var_gen);
+    args_eval_code, args_surrs, _ = opt_eval_info(expr.args, ret_var_gen);
 
     // Low-level actual arguments
     low_level_args = (low_level_expr(low_level_sign.args(i), s) : s @ i <- args_surrs);
@@ -418,12 +418,12 @@ implicit program           : Program,
     var_is_first, var_gen = next_bool_var(ret_var_gen);
 
     extra_args_code, extra_args_surrs, var_gen = opt_eval_info(expr.extra_args, var_gen);
-    extra_args_reprs = (opt_repr(t) : unused_var, t <- aggr_fn.extra_args);
+    extra_args_reprs = (opt_repr(t) : _, t <- aggr_fn.extra_args);
     extra_args = (low_level_expr(r, e) : e, r <- zip(extra_args_surrs, extra_args_reprs));
 
     red_vars = aggr_fn.red_vars;
     ord_red_vars = isort(keys(red_vars));
-    red_vars_reprs = [v -> opt_repr(info.type) : v, info <- red_vars];
+    red_vars_reprs = [v -> opt_repr(info.type) : v info <- red_vars];
 
     // For each of the physical representations we've to deal with, we'll set
     // aside a temporary variable to be used to store the result of <expr.expr>
@@ -582,9 +582,9 @@ implicit program           : Program,
       cases = ({
           ptrn = only_unsafe(c.ptrns);
           ptrn_env = generate_env(ptrn, match_expr_type);
-          vars_reprs = [v -> low_level_var(opt_repr(t), v) : v, t <- ptrn_env];
-          surrs = surrogates & [v -> obj_expr(pv) : v, pv <- vars_reprs];
-          code, surr, unused_var = opt_eval_info(c.expr, var_gen, surrogates = surrs);
+          vars_reprs = [v -> low_level_var(opt_repr(t), v) : v t <- ptrn_env];
+          surrs = surrogates & [v -> obj_expr(pv) : v pv <- vars_reprs];
+          code, surr, _ = opt_eval_info(c.expr, var_gen, surrogates = surrs);
           code = (store_result(code, surr, res_var) | exit_block);
           return (ptrn, code, vars_reprs);
         } : c <- expr.cases
@@ -599,9 +599,9 @@ implicit program           : Program,
 
       cases_code = ({
           ptrns_env = merge((generate_env(p, exprs_types(i)) : p @ i <- c.ptrns));
-          vars_reprs = [v -> low_level_var(opt_repr(t), v) : v, t <- ptrns_env];
-          surrs = surrogates & [v -> obj_expr(pv) : v, pv <- vars_reprs];
-          code, surr, unused_var = opt_eval_info(c.expr, var_gen, surrogates = surrs);
+          vars_reprs = [v -> low_level_var(opt_repr(t), v) : v t <- ptrns_env];
+          surrs = surrogates & [v -> obj_expr(pv) : v pv <- vars_reprs];
+          code, surr, _ = opt_eval_info(c.expr, var_gen, surrogates = surrs);
           code = (store_result(code, surr, res_var) | exit_block);
           for p, t, s <- reverse(zip(c.ptrns, exprs_types, exprs_surrs))
             code = opt_ptrn_match_code(p, s, t, code, vars_reprs = vars_reprs);
@@ -702,7 +702,7 @@ implicit program           : Program,
     res_var, ret_var_gen = next_obj_var(init_var_gen);
     code, seq_surr, var_gen = opt_eval_info(seq, ret_var_gen);
     for e @ i <- tail {
-      elt_code, elt_surr, unused_var = opt_eval_info(e, var_gen);
+      elt_code, elt_surr, _ = opt_eval_info(e, var_gen);
       src_seq = if i == 0 then seq_surr else res_var;
       code = (code & elt_code | append_to_seq(res_var, src_seq, elt_surr));
     }
@@ -773,7 +773,7 @@ implicit program           : Program,
   (Instr*, ObjExpr, VarGen) record_opt_eval_info(SymbObj+ labels, Expr+ values, VarGen init_var_gen) {
     var, var_gen = next_obj_var(init_var_gen);
     code, surrs, var_gen = opt_eval_info(values, var_gen);
-    code = (code | mk_record(var, [l -> surrs(i) : l @ i <~ labels]));
+    code = (code | mk_record(var, [l -> surrs(i) : l @ i <- labels]));
     return (code, var, var_gen);
   }
 
@@ -829,7 +829,7 @@ implicit program           : Program,
         // The expression that defines the tagged value is a map expression
         fields = isort(untag(rec_expr));
         keys_types = (subexpr_type(f.key) : f <- fields);
-        if not (t <~ keys_types : not is_symb_singl_type(t)) {
+        if not (t <- keys_types : not is_symb_singl_type(t)) {
           // Every key in the map expression is a known symbol
           labels = (untag(only_symb(t)) : t <- keys_types);
           return direct_opt_rec_eval_info(tag, labels, rec_expr, repr, repr_idx, init_var_gen);
@@ -925,10 +925,16 @@ implicit program           : Program,
 
     vars = expr.vars;
     if |vars| == 1 {
-      var = only(vars);
-      it_var = low_level_var(src_repr, var);
-      surrs = surrogates & [var -> obj_expr(it_var) if var != it_var];
+      maybe_var = only(vars);
       body_code = ();
+      surrs = surrogates;
+      if maybe_var != nothing {
+        var = value(maybe_var);
+        it_var = low_level_var(src_repr, var);
+        surrs = surrs & [var -> obj_expr(it_var) if var != it_var];
+      }
+      else
+        it_var, var_gen = next_obj_var(var_gen);
     }
     else {
       assert src_repr == :object;
@@ -936,10 +942,14 @@ implicit program           : Program,
       ## REMOVE WHEN DONE
       assert vars_types == (restricted_seq_elem_supertype(src_elt_type, singleton_type(i)) : i < |vars|);
       reprs = (opt_repr(t) : t <- vars_types);
-      phys_vars = (low_level_var(reprs(i), v) : v @ i <- vars);
-      surrs = surrogates & [v -> obj_expr(pv) : v @ i <~ vars, pv = phys_vars(i), v != pv];
+      phys_vars = (apply(v, low_level_var(reprs(i), $)) : v @ i <- vars);
+      new_surrs = [
+        value(v) -> obj_expr(value_unsafe(pv))
+        : v @ i <- vars, pv = phys_vars(i), v != pv, v != nothing
+      ];
+      surrs = surrogates & new_surrs;
       it_var, var_gen = next_obj_var(var_gen);
-      body_code = (set_any_var(v, at(it_var, i)) : v @ i <- phys_vars);
+      body_code = (set_any_var(value(v), at(it_var, i)) : v @ i <- phys_vars, v != nothing);
     }
 
     // Index variables
@@ -1042,17 +1052,17 @@ implicit program           : Program,
     }
     code = (code | array_alloc(array_var, cast_int32(size_expr)));
 
-    let surrogates = surrogates & [expr.var -> obj_expr(idx_var)] {
+    let surrogates = surrogates & [value(expr.var) -> obj_expr(idx_var) if expr.var != nothing] {
       if expr.sel_expr? {
         // Creating and initializing the target cursor
         target_idx_var, var_gen = next_int32_var(var_gen);
         code = (code | set_ivar32(target_idx_var, 0));
 
         // Evaluating the condition. No need to save the variable generator
-        cond_eval_code, cond_surr, unused_var = opt_eval_info(expr.sel_expr, var_gen);
+        cond_eval_code, cond_surr, _ = opt_eval_info(expr.sel_expr, var_gen);
 
         // Evaluating the expression that yields a new element
-        eval_code, elt_surr, unused_var = opt_eval_info(expr.expr, var_gen);
+        eval_code, elt_surr, _ = opt_eval_info(expr.expr, var_gen);
 
         // Conditional array write
         write_instr = array_write(array_var, target_idx_var, elt_surr);
@@ -1064,7 +1074,7 @@ implicit program           : Program,
       }
       else {
         // Evaluating the expression that yields a new element
-        eval_code, elt_surr, unused_var = opt_eval_info(expr.expr, var_gen);
+        eval_code, elt_surr, _ = opt_eval_info(expr.expr, var_gen);
 
         // Body code and sequence creation instruction
         write_instr = array_write(array_var, idx_var, elt_surr);
@@ -1093,8 +1103,8 @@ implicit program           : Program,
     cond_eval_code, cond_surr, var_gen = opt_eval_info(expr.cond, init_var_gen);
 
     res_var, var_gen = next_var(repr, var_gen);
-    then_eval_code, unused_var = opt_eval_info(expr.then, res_var, var_gen);
-    else_eval_code, unused_var = opt_eval_info(expr.else, res_var, var_gen);
+    then_eval_code, _ = opt_eval_info(expr.then, res_var, var_gen);
+    else_eval_code, _ = opt_eval_info(expr.else, res_var, var_gen);
 
     eval_code = (cond_eval_code | branch(bool_value(cond_surr), then_eval_code, else_eval_code));
     return (eval_code, obj_expr(res_var), var_gen);
@@ -1123,8 +1133,8 @@ implicit program           : Program,
     // No special case, we need to store the result in a boolean variable
     res_var, ret_var_gen = next_bool_var(init_var_gen);
 
-    left_eval_code, unused_var = opt_eval_info(left, res_var, ret_var_gen);
-    right_eval_code, unused_var = opt_eval_info(right, res_var, ret_var_gen);
+    left_eval_code, _ = opt_eval_info(left, res_var, ret_var_gen);
+    right_eval_code, _ = opt_eval_info(right, res_var, ret_var_gen);
 
     eval_code = (left_eval_code | do_if(res_var, right_eval_code));
     return (eval_code, bool_obj(res_var), var_gen);
@@ -1144,8 +1154,8 @@ implicit program           : Program,
     // No special case, we need to store the result in a boolean variable
     res_var, ret_var_gen = next_bool_var(init_var_gen);
 
-    left_eval_code, unused_var = opt_eval_info(left, res_var, ret_var_gen);
-    right_eval_code, unused_var = opt_eval_info(right, res_var, ret_var_gen);
+    left_eval_code, _ = opt_eval_info(left, res_var, ret_var_gen);
+    right_eval_code, _ = opt_eval_info(right, res_var, ret_var_gen);
 
     eval_code = (left_eval_code | do_if_not(res_var, right_eval_code));
     return (eval_code, bool_obj(res_var), var_gen);
@@ -1225,7 +1235,7 @@ implicit program           : Program,
     ret_var_gen = var_gen;
 
     // Dealing with the important special case of sequences of literal integers
-    if is_subset(elts_type, integer) and not (e <~ elts : is_cond_expr(e)) {
+    if is_subset(elts_type, integer) and not (e <- elts : is_cond_expr(e)) {
       if not (t <- elts_types : t == empty_type or not is_singleton(t)) {
         int_seq = (only_integer(t) : t <- ord_elts_types);
         if int_seqs_ids(int_seq, *) {
@@ -1243,7 +1253,7 @@ implicit program           : Program,
       for e @ i <- elts {
         fail if is_cond_expr(e); ## ANY BETTER WAY TO DO THIS?
         fail if not i :: Int32;
-        elt_eval_code, elt_surr, unused_var = opt_eval_info(e, var_gen);
+        elt_eval_code, elt_surr, _ = opt_eval_info(e, var_gen);
         code = code & (elt_eval_code | array_write(elts_var, i, elt_surr));
       }
       return ((code | mk_seq(seq_var, elts_var, int32(|elts|))), seq_var, ret_var_gen);
@@ -1263,7 +1273,7 @@ implicit program           : Program,
       fail if not i :: Int32; ## ANY BETTER WAY TO DO THIS?
       is_last = i == |elts| - 1;
       if is_cond_expr(e) { // Conditional inclusion expression
-        elt_code, elt_surr, unused_var = opt_eval_info(e.expr, var_gen);
+        elt_code, elt_surr, _ = opt_eval_info(e.expr, var_gen);
         if cond_expr_idx == 0 {
           // If it's the first conditional expression, we statically know the
           // destination array index. After that we need to use the cursor
@@ -1287,7 +1297,7 @@ implicit program           : Program,
         cond_expr_idx = cond_expr_idx + 1;
       }
       else { // Non-conditional expression
-        elt_eval_code, elt_surr, unused_var = opt_eval_info(e, var_gen);
+        elt_eval_code, elt_surr, _ = opt_eval_info(e, var_gen);
         // Until we reach the first conditional element we statically know the
         // destination array index. After that we need to use the cursor variable
         write_code = if cond_expr_idx == 0
@@ -1329,13 +1339,13 @@ implicit program           : Program,
 
     // Non-conditional elements
     for e @ i <- exprs {
-      eval_code, surr, unused_var = opt_eval_info(e, var_gen);
+      eval_code, surr, _ = opt_eval_info(e, var_gen);
       code = (code & eval_code | array_write(elts_var, int32(i), surr));
     }
 
     if |cond_exprs| == 1 {
       // Just one conditional element, no need to have an index variable
-      elt_code, surr, unused_var = opt_eval_info(only(cond_exprs).expr, var_gen);
+      elt_code, surr, _ = opt_eval_info(only(cond_exprs).expr, var_gen);
       elt_code = (elt_code | array_write(elts_var, min_size, surr));
       code = (code | do_if(cond_vars(0), elt_code));
     }
@@ -1343,7 +1353,7 @@ implicit program           : Program,
       // More than one conditional element, we need to keep track of the next array slot
       for e @ i <- cond_exprs {
         cond = cond_vars(i);
-        elt_code, surr, unused_var = opt_eval_info(e.expr, var_gen);
+        elt_code, surr, _ = opt_eval_info(e.expr, var_gen);
         elt_code = (elt_code | array_write(elts_var, if i == 0 then min_size else size_idx_var, surr));
         is_last = i == |cond_exprs| - 1;
         if i == 0 {
@@ -1374,7 +1384,7 @@ implicit program           : Program,
     if not (e <- entries : e.cond?) {
       ord_entries = isort(entries);
       keys_types = (subexpr_type(e.key) : e <- ord_entries);
-      if not (t <~ keys_types : not is_symb_singl_type(t)) {
+      if not (t <- keys_types : not is_symb_singl_type(t)) {
         labels = (only_symb(t) : t <- keys_types);
         if duplicates(labels) == []
           return record_opt_eval_info(labels, (e.value : e <- ord_entries), var_gen);
@@ -1406,7 +1416,7 @@ implicit program           : Program,
 
     // Evaluating of conditions and final array size
     min_size = int32(|uncond_entries|);
-    conds = (c : unused_var_1, unused_var_2, c <- cond_entries);
+    conds = (c : _, _, c <- cond_entries);
     conds_code, cond_vars, size_idx_var, var_gen = conds_eval_info(conds, min_size, var_gen);
 
     // Allocation of destination arrays
@@ -1419,13 +1429,13 @@ implicit program           : Program,
 
     if |cond_entries| == 1 {
       // Just one conditional entry, no need to have an index variable
-      arg1, arg2, unused_var = only(cond_entries);
+      arg1, arg2, _ = only(cond_entries);
       entry_code = write_entry_code(arg1, arg2, col1_var, col2_var, min_size, var_gen);
       code = (code | do_if(cond_vars(0), entry_code));
     }
     else if |cond_entries| > 1 {
       // More than one conditional element, we need to keep track of the next array slot
-      for a1, a2, unused_var @ i <- cond_entries {
+      for a1, a2, _ @ i <- cond_entries {
         cond = cond_vars(i);
         idx = if i == 0 then min_size else size_idx_var;
         entry_code = write_entry_code(a1, a2, col1_var, col2_var, idx, var_gen);
@@ -1452,9 +1462,9 @@ implicit program           : Program,
 
 
     Instr* write_entry_code(Expr arg1, Expr arg2, ArrayVar col1, ArrayVar col2, Int32Expr idx, VarGen var_gen) {
-      eval_code, surr, unused_var = opt_eval_info(arg1, var_gen);
+      eval_code, surr, _ = opt_eval_info(arg1, var_gen);
       arg1_code = (eval_code | array_write(col1, idx, surr));
-      eval_code, surr, unused_var = opt_eval_info(arg2, var_gen);
+      eval_code, surr, _ = opt_eval_info(arg2, var_gen);
       arg2_code = (eval_code | array_write(col2, idx, surr));
       return arg1_code & arg2_code;
     }
@@ -1521,11 +1531,11 @@ implicit program           : Program,
 
     Instr* write_entry_code((Expr, Expr, Expr) args, ArrayVar col1, ArrayVar col2, ArrayVar col3, Int32Expr idx, VarGen var_gen) {
       arg1, arg2, arg3 = args;
-      eval_code, surr, unused_var = opt_eval_info(arg1, var_gen);
+      eval_code, surr, _ = opt_eval_info(arg1, var_gen);
       arg1_code = (eval_code | array_write(col1, idx, surr));
-      eval_code, surr, unused_var = opt_eval_info(arg2, var_gen);
+      eval_code, surr, _ = opt_eval_info(arg2, var_gen);
       arg2_code = (eval_code | array_write(col2, idx, surr));
-      eval_code, surr, unused_var = opt_eval_info(arg3, var_gen);
+      eval_code, surr, _ = opt_eval_info(arg3, var_gen);
       arg3_code = (eval_code | array_write(col3, idx, surr));
       return arg1_code & arg2_code & arg3_code;
     }
@@ -1553,13 +1563,13 @@ implicit program           : Program,
     backup_vars, var_gen = next_obj_vars(ret_var_gen, |ord_impl_args|);
     tear_down_code = (set_var(a, backup_vars(i)) : a @ i <- ord_impl_args);
     set_up_code = join(({
-        eval_code, surr, unused_var = opt_eval_info(expr.impl_args(a, !!), var_gen);
+        eval_code, surr, _ = opt_eval_info(expr.impl_args(a, !!), var_gen);
         return (eval_code | set_var(backup_vars(i), a), set_var(a, surr));
       } : a @ i <- ord_impl_args
     ));
 
     // Evaluation of the arguments
-    args_eval_code, args_surrs, unused_var = opt_eval_info(expr.args, var_gen);
+    args_eval_code, args_surrs, _ = opt_eval_info(expr.args, var_gen);
 
     // Low-level actual arguments
     low_level_args = (low_level_expr(low_level_sign.args(i), s) : s @ i <- args_surrs);
@@ -1751,19 +1761,19 @@ implicit program           : Program,
 
     cls_vars = isort(cls_vars(expr));
 
-    subst_map     = [v -> capt_var(i)     : v @ i <~ ext_vars];
-    cls_subst_map = [v -> capt_cls_var(i) : v @ i <~ cls_vars];
+    subst_map     = [v -> capt_var(i)     : v @ i <- ext_vars];
+    cls_subst_map = [v -> capt_cls_var(i) : v @ i <- cls_vars];
 
     capt_vars     = (eval_var(v, var_subst_map, surrs) : v <- ext_vars);
     capt_cls_vars = (lookup(cls_var_subst_map, v, v) : v <- cls_vars);
 
     args_env = [fn_arg(i) -> type.in_types(i) : i <- range(arity)];
-    capt_env = [v -> env(v, !!) : v <~ ext_vars];
+    capt_env = [v -> env(v, !!) : v <- ext_vars];
     new_env = args_env & capt_env;
 
     new_ctx = lambda_ctx(subst_map, cls_subst_map);
     let context = new_ctx, surrogates = [], typed_vars = []
-      eval_code, surr, unused_var = opt_eval_code(expr, new_env, blank_var_gen);
+      eval_code, surr, _ = opt_eval_code(expr, new_env, blank_var_gen);
     body = (eval_code | ret_val(surr));
 
     return lambda_expr(cls_def(arity, body), capt_context(context), capt_vars, capt_cls_vars);

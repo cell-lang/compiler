@@ -44,7 +44,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
     nv_var, var_gen = next_obj_var(blank_var_gen);
     cases = nonempty((safe_eval_code(e, nv_var, var_gen) : e <- node.exprs) & ((clear_loc_var(nv_var))));
     eval_instr = switch_on_nat(update_source_var(id), cases);
-    eval_instr = try_block(nv_var, (eval_instr)) if (e <~ node.exprs : not is_total(e));
+    eval_instr = try_block(nv_var, (eval_instr)) if (e <- node.exprs : not is_total(e));
     cond = neg(is_eq(var, nv_var));
     body = (set_var(var, nv_var)) &
            (queue_node_update(n) : n <- rand_sort(node.downstream_nodes)) &
@@ -63,7 +63,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
     nv_var, var_gen = next_obj_var(blank_var_gen);
     cases = nonempty((safe_eval_code(e, nv_var, var_gen) : e <- node.exprs) & ((clear_loc_var(nv_var))));
     eval_instr = switch_on_nat(update_source_var(id), cases);
-    eval_instr = try_block(nv_var, (eval_instr)) if (e <~ node.exprs : not is_total(e));
+    eval_instr = try_block(nv_var, (eval_instr)) if (e <- node.exprs : not is_total(e));
     lock_check_instr = if |node.exprs| > 1
       then do_if_not(is_eq(null_locks_count_var(id), 0), set_ivar(update_source_var(id), |node.exprs|))
       else no_op;
@@ -143,8 +143,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
     cond_eval_code = safe_eval_code(node.cond, l0, var_gen);
     cond_eval_code = (try_block(l0, cond_eval_code)) if not is_total(node.cond);
 
-    continuous_signals = rand_sort([v : v, unused_var <- node.signals_state, not is_discrete(v)]);
-    discrete_signals = rand_sort([v : v, unused_var <- node.signals_state, is_discrete(v)]);
+    continuous_signals = rand_sort([v : v _ <- node.signals_state, not is_discrete(v)]);
+    discrete_signals = rand_sort([v : v _ <- node.signals_state, is_discrete(v)]);
 
     if discrete_signals != () {
       signals_cond_is_undef = or((is_null(v) : v <- discrete_signals));

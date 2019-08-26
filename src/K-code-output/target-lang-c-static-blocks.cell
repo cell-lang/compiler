@@ -6,22 +6,22 @@ implicit {
 
   CCodeOutput compile_static_block_to_c(StaticBlock block) {
     links_decls = (to_c_name(l) & " *linked_auto_" & printed(i) & ";" : l @ i <- block.links);
-    state_vars_decls = ["OBJ " & to_c_var_decl_name(v) & ";" : v, unused_var <- block.state_vars];
+    state_vars_decls = ["OBJ " & to_c_var_decl_name(v) & ";" : v _ <- block.state_vars];
     value_store_decls = ["VALUE_STORE " & to_c_var_decl_name(v) & ";" : v <- block.value_stores];
-    table_decls = [table_c_type(t) & " " & to_c_var_decl_name(v) & ";" : v, t <- block.tables];
-    nested_blocks_decls = [to_c_name(t) & " " & to_c_var_decl_name(v) & ";" : v, t <- block.nested_blocks];
+    table_decls = [table_c_type(t) & " " & to_c_var_decl_name(v) & ";" : v t <- block.tables];
+    nested_blocks_decls = [to_c_name(t) & " " & to_c_var_decl_name(v) & ";" : v t <- block.nested_blocks];
 
     memb_decls = links_decls & rand_sort(state_vars_decls) & rand_sort(value_store_decls) & rand_sort(table_decls) & rand_sort(nested_blocks_decls);
     struct_decl = ({"struct " & to_c_name(block.name) & " {"}) & indent_lines(memb_decls) & ("};");
 
-    aux_vars_decls = ["OBJ " & to_c_var_decl_name(pending_state_var(bare_id(v))) & ";" : v, unused_var <- block.state_vars];
-    aux_bool_vars_decls = ["bool " & to_c_var_decl_name(nested_db_spent(v)) & ";" : v, unused_var <- block.nested_blocks];
+    aux_vars_decls = ["OBJ " & to_c_var_decl_name(pending_state_var(bare_id(v))) & ";" : v _ <- block.state_vars];
+    aux_bool_vars_decls = ["bool " & to_c_var_decl_name(nested_db_spent(v)) & ";" : v _ <- block.nested_blocks];
     aux_stores_decls = ["VALUE_STORE_UPDATES " & aux_struct_var_decl_name(vs) & ";" : vs <- block.value_stores];
     aux_tables_decls = [
       pending_updates_var_type(t) & " " & pending_updates_var_decl_name(v) & ";"
-      : v, t <- block.tables
+      : v t <- block.tables
     ];
-    nested_aux_blocks_decls = [aux_struct_c_name(t) & " " & aux_struct_var_decl_name(v) & ";" : v, t <- block.nested_blocks];
+    nested_aux_blocks_decls = [aux_struct_c_name(t) & " " & aux_struct_var_decl_name(v) & ";" : v t <- block.nested_blocks];
     aux_memb_decls = rand_sort(aux_vars_decls) & rand_sort(aux_bool_vars_decls) & rand_sort(aux_stores_decls) &
       rand_sort(aux_tables_decls) & rand_sort(nested_aux_blocks_decls);
     aux_struct_decl = ({"struct " & aux_struct_c_name(block.name) & " {"}) & indent_lines(aux_memb_decls) & ("};");
@@ -54,10 +54,10 @@ implicit {
 
     aux_cleanup_decl, aux_cleanup_impl = aux_struct_cleanup_code(block);
 
-    methods_decls, methods_impls = unzip(rand_sort([gen_user_def_method(block.name, id, m.code) : id, m <- block.methods]));
+    methods_decls, methods_impls = unzip(rand_sort([gen_user_def_method(block.name, id, m.code) : id m <- block.methods]));
     methods_impls = join(intermix(methods_impls, ("", "")));
 
-    updates_decls, updates_impls = unzip(rand_sort([gen_update(block.name, id, b) : id, b <- block.updates_code]));
+    updates_decls, updates_impls = unzip(rand_sort([gen_update(block.name, id, b) : id b <- block.updates_code]));
     updates_impls = join(intermix(updates_impls, ("", "")));
 
     all_decls = (
@@ -194,12 +194,12 @@ implicit {
   (String, String*) updates_check_code(StaticBlock block) {
     tables_check_code = [
       "ok &= " & mk_gen_call(fn_names[arity(t)][t.keys], (), (v), ("&" & pending_updates_var_ref_name(v)))
-      : v, t <- block.tables, t.keys != []
+      : v t <- block.tables, t.keys != []
     ];
 
     nested_blocks_check_code = [
       "ok &= " & mk_gen_call(updates_check_proc_name(t), ("&" & to_c_var_ref_name(v), aux_struct_var_ref_name(v)), (), ())
-      : v, t <- block.nested_blocks
+      : v t <- block.nested_blocks
     ];
 
     body = ("bool ok = true;") & rand_sort(tables_check_code) & rand_sort(nested_blocks_check_code) & ("return ok;");
@@ -240,7 +240,7 @@ implicit {
 
     nested_blocks_copy_code = [
       mk_gen_call(updates_copy_proc_name(t), ("&" & to_c_var_ref_name(v), aux_struct_var_ref_name(v)), (), ())
-      : v, t <- block.nested_blocks
+      : v t <- block.nested_blocks
     ];
 
     body = vars_copy_code & value_stores_copy_code & rand_sort(nested_blocks_copy_code);
@@ -261,12 +261,12 @@ implicit {
     tables_apply_code = [{
         other_args = ({"&" & pending_updates_var_ref_name(v)}) & (to_c_var_ref_name(vs) : vs <- t.value_stores);
         return mk_gen_call(fn_names_by_arity[arity(t)], (), (v), other_args);
-      } : v, t <- block.tables
+      } : v t <- block.tables
     ];
 
     nested_blocks_apply_code = [
       mk_gen_call(updates_apply_proc_name(t), ("&" & to_c_var_ref_name(v), aux_struct_var_ref_name(v)), (), ())
-      : v, t <- block.nested_blocks
+      : v t <- block.nested_blocks
     ];
 
     body = value_stores_apply_code & rand_sort(tables_apply_code) & rand_sort(nested_blocks_apply_code);
@@ -292,12 +292,12 @@ implicit {
     tables_finish_code = [{
         other_args = ({"&" & pending_updates_var_ref_name(v)}) & (to_c_var_ref_name(vs) : vs <- t.value_stores);
         return mk_gen_call(fn_names_by_arity[arity(t)], (), (), other_args);
-      } : v, t <- block.tables
+      } : v t <- block.tables
     ];
 
     nested_blocks_finish_code = [
       mk_gen_call(updates_finish_proc_name(t), ("&" & to_c_var_ref_name(v), aux_struct_var_ref_name(v)), (), ())
-      : v, t <- block.nested_blocks
+      : v t <- block.nested_blocks
     ];
 
     body = vars_copy_code & rand_sort(tables_finish_code) & rand_sort(nested_blocks_finish_code);
@@ -330,12 +330,12 @@ implicit {
 
     tables_init_code = [
       mk_gen_call(fn_names_by_arity[arity(t)], ("&" & pending_updates_var_ref_name(v)), (), ())
-      : v, t <- block.tables
+      : v t <- block.tables
     ];
 
     nested_blocks_init_code = [
       mk_gen_call(aux_struct_init_proc_name(t), ("&" & to_c_var_ref_name(v), aux_struct_var_ref_name(v)), (), ())
-      : v, t <- block.nested_blocks
+      : v t <- block.nested_blocks
     ];
 
     body = init_vars_code & bool_vars_init_code & value_stores_init_code & rand_sort(tables_init_code) &
@@ -362,12 +362,12 @@ implicit {
 
     tables_init_code = [
       mk_gen_call(fn_names_by_arity[arity(t)], ("&" & pending_updates_var_ref_name(v)), (), ())
-      : v, t <- block.tables
+      : v t <- block.tables
     ];
 
     nested_blocks_init_code = [
       mk_gen_call(aux_struct_cleanup_proc_name(t), (aux_struct_var_ref_name(v)), (), ())
-      : v, t <- block.nested_blocks
+      : v t <- block.nested_blocks
     ];
 
     body = value_stores_cleanup_code & rand_sort(tables_init_code) & rand_sort(nested_blocks_init_code);

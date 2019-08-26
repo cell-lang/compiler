@@ -6,7 +6,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
     memb_int_vars = auto_memb_int_vars;
     memb_obj_vars = seq_union((memb_obj_vars(n) : n <- nodes)) & [(id, :blank) : id <- keys(automaton.params)];
 
-    const_data = [time_slots_len(bare_id(a), ls) : a, c <- automaton.time_rules, ls = trigger_times_table(c.time_expr), ls != ()];
+    const_data = [time_slots_len(bare_id(a), ls) : a c <- automaton.time_rules, ls = trigger_times_table(c.time_expr), ls != ()];
 
     pre_init_code     = gen_pre_init_code(memb_bool_vars, memb_int_vars, memb_obj_vars);
     nodes_update_code = merge(([n.id -> gen_node_update_code(n)] : n <- nodes));
@@ -14,11 +14,11 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
     methods           = compiled_methods(automaton.methods);
 
     // Generating cleanup code
-    cleanup_code = join(((release(v), init_memb_var(v, :blank)) : v, unused_var <- rand_sort(memb_obj_vars))) &
-                   rand_sort([auto_cleanup(id, auto.type) : id, auto <- automaton.nested_autos]);
+    cleanup_code = join(((release(v), init_memb_var(v, :blank)) : v, _ <- rand_sort(memb_obj_vars))) &
+                   rand_sort([auto_cleanup(id, auto.type) : id auto <- automaton.nested_autos]);
 
     // Generating methods for queuing updates
-    queue_update_code = [n.id -> queue_update_method(n, nodes_indexes[n.id], item(levels_sizes, n.level)) : n <~ nodes];
+    queue_update_code = [n.id -> queue_update_method(n, nodes_indexes[n.id], item(levels_sizes, n.level)) : n <- nodes];
 
     assert {
       inputs_count = |automaton.inputs|;
@@ -45,11 +45,11 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
       name:                 automaton.name,
       ord_inputs:           sorted_input_ids,
       ord_outputs:          sorted_outputs_ids,
-      input_memb_preds:     [bare_id(i) -> memb_test_preds_map[d.type] : i, d <- automaton.inputs],
-      inputs:               [bare_id(id) -> (type: input.type, discrete: input.discrete) : id, input <- automaton.inputs],
-      outputs:              [bare_id(id) -> (type: output.type, discrete: output.discrete) : id, output <- automaton.outputs],
+      input_memb_preds:     [bare_id(i) -> memb_test_preds_map[d.type] : i d <- automaton.inputs],
+      inputs:               [bare_id(id) -> (type: input.type, discrete: input.discrete) : id input <- automaton.inputs],
+      outputs:              [bare_id(id) -> (type: output.type, discrete: output.discrete) : id output <- automaton.outputs],
       memb_vars:            memb_vars,
-      nested_auto_vars:     [id -> auto.type : id, auto <- automaton.nested_autos],
+      nested_auto_vars:     [id -> auto.type : id auto <- automaton.nested_autos],
       pre_init_code:        pre_init_code,
       cleanup_code:         cleanup_code,
       nodes_update_code:    nodes_update_code,
@@ -70,7 +70,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
     nodes = gen_auto_nodes;
     level_marked_nodes_counts = count_vector((n.level : n <- nodes, needs_initial_update(n)), |levels_sizes|);
     node_specific_vars = seq_union((memb_int_vars(n) : n <- nodes));
-    level_specific_vars = [(update_count_var(l), level_marked_nodes_counts(l)) : s @ l <~ levels_sizes, s > 2];
+    level_specific_vars = [(update_count_var(l), level_marked_nodes_counts(l)) : s @ l <- levels_sizes, s > 2];
     // Not adding the arrays used to store the trigger heaps
     // That is done in the target language code generation phase
     global_time_vars =
@@ -83,7 +83,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
 
 
   [MembIntVectVar] memb_int_vect_vars {
-    vars = [nodes_to_update_vect_var(l, nz_nat(s)) : s @ l <~ levels_sizes, s > 2];
+    vars = [nodes_to_update_vect_var(l, nz_nat(s)) : s @ l <- levels_sizes, s > 2];
     outputs_count = |automaton.outputs|;
     vars = vars & [changed_outputs(outputs_count)] if outputs_count != 0;
     return vars;
@@ -92,7 +92,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
   //////////////////////////////////////////////////////////////////////////////
 
   [MethodId -> CompiledMethod] compiled_methods([ReactMethod] methods) {
-    return merge([compiled(ms) : unused_var, ms <- group_by(methods, ($.name, |$.args|))]);
+    return merge([compiled(ms) : _ ms <- group_by(methods, ($.name, |$.args|))]);
 
 
     [MethodId -> CompiledMethod] compiled([+ReactMethod] methods) {
@@ -107,7 +107,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
       disp_method = compiled_method(
         (nothing : i < arity),
         (ne_union_superset([left(m.args(i)) : m <- methods]) : i < arity),
-        [(memb_test_preds_map[t] : t, unused_var <- m.args) : m <- methods],
+        [(memb_test_preds_map[t] : t, _ <- m.args) : m <- methods],
         ne_union_superset([m.ret_type : m <- methods]),
         gen_dispatch_auto_method_body(automaton.name, sorted_methods)
       );
@@ -118,18 +118,18 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
 
     CompiledMethod compiled(ReactMethod method) =
       compiled_method(
-        (v : unused_var, v <- method.args),
-        (t : t, unused_var <- method.args),
-        [(memb_test_preds_map[t] : t, unused_var <- method.args)],
+        (v : _, v <- method.args),
+        (t : t, _ <- method.args),
+        [(memb_test_preds_map[t] : t, _ <- method.args)],
         method.ret_type,
         gen_code(method)
       );
 
 
     Instr* gen_code(ReactMethod method) {
-      args_env = [if a != nothing then value(a) else fn_arg(i) -> t : t, a @ i <~ method.args];
+      args_env = [if a != nothing then value(a) else fn_arg(i) -> t : (t, a) @ i <- method.args];
       let context = automaton, typed_vars = [], surrogates = []
-        eval_code, surr, unused_var = opt_eval_code(method.expr, args_env & react_auto_env, blank_var_gen);
+        eval_code, surr, _ = opt_eval_code(method.expr, args_env & react_auto_env, blank_var_gen);
       return (eval_code | ret_val(surr));
     }
   }
@@ -146,7 +146,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
     code_2 = (init_memb_var(var, init_val) : var, init_val <- rand_sort(memb_obj_vars));
 
     // Creating the list of node that are initially marked for update
-    marked_nodes = [id : id, n <- nodes_by_id, needs_initial_update(n)];
+    marked_nodes = [id : id n <- nodes_by_id, needs_initial_update(n)];
     assert marked_nodes == [id : v_iv <- memb_bool_vars, (up_to_date_var(id?), iv?) ?= v_iv, not iv];
     marked_nodes_by_level = (intersection(ns, marked_nodes) : ns @ l <- nodes_ids_by_level);
 
@@ -160,7 +160,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
     ## THESE VARIABLES HAVE ALREADY BEEN INITIALIZED TO BLANK, AND THAT'S REDUNDANT
     code_4 = gen_params_init_code;
 
-    code_5 = rand_sort([auto_pre_init(id, auto.type) : id, auto <- automaton.nested_autos]);
+    code_5 = rand_sort([auto_pre_init(id, auto.type) : id auto <- automaton.nested_autos]);
 
     return join((code_0, code_1, code_2, code_3, code_4, code_5));
   }
@@ -219,7 +219,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
 
 
     Instr* add_timer_code(Instr* core_code, IntVar curr_time_var, IntVar a_free_int_var) {
-      time_varying_nodes_by_idx = merge([[i -> a] : a, i <- time_varying_nodes_indexes]);
+      time_varying_nodes_by_idx = merge([[i -> a] : a i <- time_varying_nodes_indexes]);
       assert time_varying_nodes_by_idx == reverse(time_varying_nodes_indexes);
 
       header_code = (
@@ -308,9 +308,9 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
 
 
   Instr* state_is_def_code {
-    inputs = [v : v, i <- automaton.inputs, not i.discrete and not i.volatile];
-    state_vars = [v : v, s <- automaton.state, not s.volatile];
-    nested_autos = [v : v, a <- automaton.nested_autos, not a.volatile];
+    inputs = [v : v i <- automaton.inputs, not i.discrete and not i.volatile];
+    state_vars = [v : v s <- automaton.state, not s.volatile];
+    nested_autos = [v : v a <- automaton.nested_autos, not a.volatile];
 
     input_conds = rand_sort([neg(or(is_null(v), is_blank(v))) : v <- inputs]);
     state_vars_conds = rand_sort([neg(or(is_null(v), is_blank(v))) : v <- state_vars]);
@@ -323,9 +323,9 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
 
 
   Instr* copy_state_code {
-    inputs = [v : v, i <- automaton.inputs, not i.discrete and not i.volatile];
-    state_vars = [v : v, s <- automaton.state, not s.volatile];
-    nested_autos = [v : v, a <- automaton.nested_autos, not a.volatile];
+    inputs = [v : v i <- automaton.inputs, not i.discrete and not i.volatile];
+    state_vars = [v : v s <- automaton.state, not s.volatile];
+    nested_autos = [v : v a <- automaton.nested_autos, not a.volatile];
 
     count = nat(|inputs| + |state_vars| + |nested_autos|);
     return (ret_val(empty_rel)) if count == 0;
@@ -351,9 +351,9 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
 
 
   Instr* set_state_code {
-    inputs = [v : v, i <- automaton.inputs, not i.discrete and not i.volatile];
-    state_vars = [v : v, s <- automaton.state, not s.volatile];
-    nested_autos = [v : v, a <- automaton.nested_autos, not a.volatile];
+    inputs = [v : v i <- automaton.inputs, not i.discrete and not i.volatile];
+    state_vars = [v : v s <- automaton.state, not s.volatile];
+    nested_autos = [v : v a <- automaton.nested_autos, not a.volatile];
 
     count = nat(|inputs| + |state_vars| + |nested_autos|);
     return () if count == 0;
@@ -381,8 +381,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
 
   Instr* gen_params_init_code {
     param_ids = keys(automaton.params);
-    dep_map = [a -> [cast_signal_var(v) : v <- extern_vars(p.value)] : a, p <- automaton.params];
-    assert not (s, ts <- dep_map, t <- ts : not in(t, param_ids));
+    dep_map = [a -> [cast_signal_var(v) : v <- extern_vars(p.value)] : a p <- automaton.params];
+    assert not (s ts <- dep_map, t <- ts : not in(t, param_ids));
     sorted_params = topological_sort(dep_map);
     params_init_code = (
       (safe_eval_code(automaton.params[p].value, p, blank_var_gen) : p <- rand_sort(ps))
@@ -397,8 +397,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
 implicit typedefs : [TypeName -> NeType] {
   Instr* gen_dispatch_auto_method_body(AutoSymbol auto_type, ReactMethod+ methods) {
     assert |methods| > 1;                     // There must be more than one method
-    assert |[m.name : m <~ methods]| == 1;    // All methods must have the same name
-    assert |[|m.args| : m <~ methods]| == 1;  // All methods have the same arity
+    assert |[m.name : m <- methods]| == 1;    // All methods must have the same name
+    assert |[|m.args| : m <- methods]| == 1;  // All methods have the same arity
     assert |head(methods).args| > 0;          // No-argument methods cannot be polymorphic
 
     l0 = lvar(0);
@@ -409,14 +409,14 @@ implicit typedefs : [TypeName -> NeType] {
     name      = a_method.name;
     arity     = |a_method.args|;
 
-    disp_args = choose_disp_args(((t : t, unused_var <- nonempty(m.args)) : m <- methods), typedefs);
+    disp_args = choose_disp_args(((t : t, _ <- nonempty(m.args)) : m <- methods), typedefs);
 
     cases = [{
       types = (left(m.args(j)) : j <- disp_args);
       invoke_method_instr = invoke_auto_method(l0, auto_type, method_id(name, arity, i), (fn_arg(j) : j < arity));
       code = (invoke_method_instr, ret_val(l0));
       return (types, code);
-    } : m @ i <~ methods];
+    } : m @ i <- methods];
 
     code = dynamic_dispatch_code((fn_arg(i) : i <- disp_args), cases);
     return (code | ret_val(l0));
