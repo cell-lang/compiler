@@ -580,9 +580,9 @@ implicit program           : Program,
 
   StmtCompInfo break_stmt_opt_code([EnvVar -> Type] env, VarGen var_gen) {
     exp_surrs = value_unsafe(exp_break_surrs);
-    surrs_to_drop = [v : v e <- surrogates, not exp_surrs(v, *) or exp_surrs(v, !!) != e];
+    surrs_to_drop = [v : v e <- surrogates, not exp_surrs(v, _) or exp_surrs(v, !) != e];
     fail if not surrs_to_drop :: [StdVar];
-    sync_code = (set_var(v, surrogates(v, !!)) : v <- isort(surrs_to_drop));
+    sync_code = (set_var(v, surrogates(v, !)) : v <- isort(surrs_to_drop));
     surrs = remove_keys(surrogates, surrs_to_drop);
     return ((sync_code | break_loop), nothing, [surrs], var_gen);
   }
@@ -607,7 +607,7 @@ implicit program           : Program,
       maybe_var = only(vars);
       if maybe_var != nothing {
         var = value(maybe_var);
-        if typed_vars(var, *) {
+        if typed_vars(var, _) {
           var_type = typed_vars(var);
           if is_subset(var_type, type_seq) {
             decl_elt_type = seq_elem_supertype(var_type);
@@ -1249,14 +1249,14 @@ implicit program           : Program,
     sync_vars = [v : v <- surr_vars, lookup(surrs1, v, v) == lookup(surrs2, v, v)];
     unsync_vars = surr_vars - sync_vars;
     fail if not unsync_vars :: [StdVar];
-    surrs = [v -> surrs1(v, !!) : v <- sync_vars, surrs1(v, *)];
+    surrs = [v -> surrs1(v, !) : v <- sync_vars, surrs1(v, _)];
 
     // Syncronization code
     sync_code_1 = ();
     sync_code_2 = ();
     for v <- isort(unsync_vars) {
-      sync_code_1 = (sync_code_1 | set_var(v, surrs1(v, !!))) if surrs1(v, *);
-      sync_code_2 = (sync_code_2 | set_var(v, surrs2(v, !!))) if surrs2(v, *);
+      sync_code_1 = (sync_code_1 | set_var(v, surrs1(v, !))) if surrs1(v, _);
+      sync_code_2 = (sync_code_2 | set_var(v, surrs2(v, !))) if surrs2(v, _);
     }
 
     return (surrs, sync_code_1, sync_code_2);
@@ -1279,7 +1279,7 @@ implicit program           : Program,
   loop_stable_code(Statement+ stmts, [SurrExpr -> ObjExpr] local_surrs, [EnvVar -> Type] env, VarGen var_gen) {
     ## MAYBE HERE I COULD EXPLICITLY PASS A LIST OF VARIABLES THAT ARE
     ## EXPECTED TO SURVIVE THE LOOP INSTEAD OF TRYING TO FIGURE THAT OUT SOMEHOW
-    surr_vars = [v : v _ <- env, v :: SurrExpr, not local_surrs(v, *)];
+    surr_vars = [v : v _ <- env, v :: SurrExpr, not local_surrs(v, _)];
     entry_surrs = surrogates;
     entry_code = ();
 
@@ -1296,10 +1296,10 @@ implicit program           : Program,
         return (entry_code, body_code, entry_surrs) if exit_surrs == nothing;
         exit_surrs = value(exit_surrs);
         for v <- isort(surr_vars) {
-          assert not entry_surrs(v, *) or (exit_surrs(v, *) and entry_surrs(v, !!) == exit_surrs(v, !!));
-          if not entry_surrs(v, *) and exit_surrs(v, *) {
+          assert not entry_surrs(v, _) or (exit_surrs(v, _) and entry_surrs(v, !) == exit_surrs(v, !));
+          if not entry_surrs(v, _) and exit_surrs(v, _) {
             fail if not v :: StdVar;
-            body_code = (body_code | set_var(v, exit_surrs(v, !!)));
+            body_code = (body_code | set_var(v, exit_surrs(v, !)));
           }
         }
         return (entry_code, body_code, entry_surrs);
@@ -1309,7 +1309,7 @@ implicit program           : Program,
       // by physically storing them into their corresponding variables
       for v <- isort(out_of_sync_vars) {
         fail if not v :: StdVar;
-        entry_code = (entry_code | set_var(v, entry_surrs(v, !!)));
+        entry_code = (entry_code | set_var(v, entry_surrs(v, !)));
       }
       entry_surrs = remove_keys(entry_surrs, out_of_sync_vars);
     }
@@ -1318,9 +1318,9 @@ implicit program           : Program,
     Bool is_out_of_sync(SurrExpr var, ObjExpr entry_surr, Maybe[[SurrExpr -> ObjExpr]] maybe_exit_surrs, [[SurrExpr -> ObjExpr]] break_surrs) {
       if maybe_exit_surrs != nothing {
         exit_surrs = value(maybe_exit_surrs);
-        return true if not exit_surrs(var, *) or exit_surrs(var, !!) != entry_surr;
+        return true if not exit_surrs(var, _) or exit_surrs(var, !) != entry_surr;
       }
-      return (surrs <- break_surrs : not surrs(var, *) or surrs(var, !!) != entry_surr);
+      return (surrs <- break_surrs : not surrs(var, _) or surrs(var, !) != entry_surr);
     }
   }
 }

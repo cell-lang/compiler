@@ -8,7 +8,7 @@ implicit typedefs : [TypeName -> NeType], vars_reprs : [StdVar -> AnyLocVar] {
 
 
   Instr* opt_ptrn_var_match_code(StdVar var, Pattern ptrn, ObjExpr expr, Type type, Instr* eval_code) {
-    amended_eval_code = (set_any_var(vars_reprs(var, !!), expr)) & eval_code;
+    amended_eval_code = (set_any_var(vars_reprs(var, !), expr)) & eval_code;
     return opt_ptrn_match_code(ptrn, expr, type, amended_eval_code);
   }
 
@@ -221,7 +221,7 @@ implicit typedefs : [TypeName -> NeType] {
       destr_cases = ();
       for p, is, rs @ i <- cases {
         ptrns_by_ptype = split_by_ptype(p);
-        if ptrns_by_ptype(:symbols, *) {
+        if ptrns_by_ptype(:symbols, _) {
           else_code = (opt_ptrn_match_code(p, expr, type, is, vars_reprs = rs) | terminate(true));
           break;
         }
@@ -277,10 +277,10 @@ implicit typedefs : [TypeName -> NeType] {
           // Cases that match values tagged with the symbol 'tag'
           restr_cases = ({
             _, eval_code, reprs = cases(i);
-            ps = nonempty([ptrns(ptype, !!) if ptrns(ptype, *), ptrns(:symbols, !!) if ptrns(:symbols, *)]);
+            ps = nonempty([ptrns(ptype, !) if ptrns(ptype, _), ptrns(:symbols, !) if ptrns(:symbols, _)]);
             ptrn = ptrn_union(ps);
             return (ptrn, eval_code, reprs);
-          } : ptrns @ i <- split_ptrns, ptrns(ptype, *) or ptrns(:symbols, *));
+          } : ptrns @ i <- split_ptrns, ptrns(ptype, _) or ptrns(:symbols, _));
 
           case_type = tag_obj_type(symb_type(tag), restricted_untagged_objs_supertype(type, tag));
           tag_is_complete = not may_fall_through(case_type, (p : p, _, _ <- restr_cases));
@@ -310,8 +310,8 @@ implicit typedefs : [TypeName -> NeType] {
         // Cases that match values tagged with any symbol
         default_cases = ({
           _, eval_code, reprs = cases(i);
-          return (ptrns(:symbols, !!), eval_code, reprs);
-        } : ptrns @ i <- split_ptrns, ptrns(:symbols, *));
+          return (ptrns(:symbols, !), eval_code, reprs);
+        } : ptrns @ i <- split_ptrns, ptrns(:symbols, _));
 
         ## HERE THE TYPE OF THE MATCHED EXPRESSION SHOULD BE NARROWED DOWN
         ## BY REMOVING ALL TAGS THAT ARE HANDLED SEPARATELY

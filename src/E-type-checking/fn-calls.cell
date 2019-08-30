@@ -2,7 +2,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   Type fn_call_expr_type(FnFamilyId fn_id, Expr* args, AnyClsExpr* cls_args, [ImplArg -> Expr] impl_args, [EnvVar -> Type] env) {
     // If I already have a matching signature among the constraints, I just need that one
     if constraints != [] and fn_id :: PlainFnFamilyId and args != () and cls_args == () and impl_args == [] {
-      if constraints(fn_id, *) {
+      if constraints(fn_id, _) {
         ret_types = [rs.out_type : rs <- constraints[fn_id], will_dispatch_to(rs, args, env)];
         ## IF THERE IS MORE THAN ONE MATCHING SIGNATURE, I SHOULD SELECT THE MOST
         ## SPECIFIC ONE, OR A SUPERSET OF THE INTERSECTION MAYBE. CERTAINLY NOT
@@ -90,7 +90,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
     // Trying with required functions first
     if constraints != [] and fn_id :: PlainFnFamilyId and impl_args == [] and args != () {
-      if constraints(fn_id, *) {
+      if constraints(fn_id, _) {
         for rs <- rand_sort(constraints[fn_id]) {
           if seq_union((typecheck(a, t, env) : a, t <- zip(args, rs.in_types))) == []
             return [invalid_return_type(rs.out_type, exp_type) if not is_subset(rs.out_type, exp_type)];
@@ -99,7 +99,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     }
 
     // Simple case first. If there's only one signature, we just typecheck that one directly
-    if signatures(fn_id, *) {
+    if signatures(fn_id, _) {
       sgn_set = signatures[fn_id];
       all_sgns = sgn_set.sgns;
       // return typecheck_fn_call(fn_id, only(all_sgns), args, impl_args, exp_type) if |all_sgns| == 1;
@@ -126,10 +126,10 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     // Gathering all the type constraint signatures
     req_sgns = [];
     if fn_id :: PlainFnFamilyId and impl_args == [] and args != ()
-      req_sgns = constraints[fn_id] if constraints(fn_id, *);
+      req_sgns = constraints[fn_id] if constraints(fn_id, _);
 
     // Gathering all "real" function signatures
-    if signatures(fn_id, *) {
+    if signatures(fn_id, _) {
       sgn_set = signatures[fn_id];
       all_sgns = sgn_set.sgns;
       agg_sgns = sgn_set.agg_sgns;
@@ -203,11 +203,11 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
       ## IMPLICIT ARGUMENTS TYPES ARE NOT SUPPOSED TO CONTAIN TYPE VARIABLES ANYMORE,
       ## SO THIS STEP SHOULD BE USELESS...
       inst_type = replace_type_vars(t, type_var_insts);
-      if impl_args(n, *) {
+      if impl_args(n, _) {
         // The implicit argument has been specified as part of the function call
         impl_arg_errs = impl_arg_errs & typecheck(impl_args[n], inst_type, env);
       }
-      else if env(n, *) {
+      else if env(n, _) {
         // The argument has been specified implicitly, as a scalar object
         // The actual parameter is an object, and the formal parameter must be an object too
         // (unless there's a bug in the well-formedness checking code)
@@ -244,7 +244,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
     fn_id = fn_family_id(fn_name, |args_types|);
 
-    constrs = if constraints(fn_id, *) then constraints[fn_id] else [];
+    constrs = if constraints(fn_id, _) then constraints[fn_id] else [];
     for rs <- rand_sort(constrs) {
       if all((is_subset(at, et) : at, et <- zip(args_types, rs.in_types))) {
         err = invalid_prot_method_return_type(fn_name, args_types, ret_type, rs.out_type);
@@ -254,7 +254,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
     assert fn_id == fn_family_id(fn_name, arity(fn_type));
 
-    if signatures(fn_id, *) {
+    if signatures(fn_id, _) {
       sgn_set = signatures[fn_id];
       all_sgns = sgn_set.sgns;
       all_agg_sgns = sgn_set.agg_sgns;

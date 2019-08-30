@@ -47,7 +47,7 @@ implicit syn_prg : SynPrg {
 
     using_blocks_errs = isort([
       using_block_invalid_auto_errs(b)
-      : b <- using_blocks, not db_defs_by_id(db_symbol(b.target), *)
+      : b <- using_blocks, not db_defs_by_id(db_symbol(b.target), _)
     ]);
     return using_blocks_errs if using_blocks_errs != ();
 
@@ -137,13 +137,13 @@ implicit syn_prg : SynPrg {
   WFError* handler_def_wf_errors(HandlerDef handler_def) {
     errs = plain_type_wf_errors(handler_def.type);
     db_symb = db_symbol(handler_def.target);
-    if db_defs_by_id(db_symb, *) {
+    if db_defs_by_id(db_symb, _) {
       body = handler_def.body;
       let artifact = handler_def, impl_args = [], actual_arg_arity = 0
         errs = errs & root_stmt_block_wf_errors(body, (), [var(:this)], false, false) if body != ();
     }
     else {
-      errs = (errs | unknown_auto(db_symb)) if not db_defs_by_id(db_symb, *);
+      errs = (errs | unknown_auto(db_symb)) if not db_defs_by_id(db_symb, _);
     }
 
     return (handler_def_errs(handler_def, errs) if errs != ());
@@ -178,7 +178,7 @@ implicit syn_prg : SynPrg {
     errs = (errs | dupl_par_names([bare_id(a) : a <- dupl_args], [])) if dupl_args != [];
 
     auto_symb = auto_symbol(method.target);
-    if not auto_defs_by_id(auto_symb, *)
+    if not auto_defs_by_id(auto_symb, _)
       return (auto_method_def_errors(method, (errs | unknown_auto(auto_symb))));
     auto_def = auto_defs_by_id[auto_symb];
 
@@ -310,7 +310,7 @@ implicit syn_prg : SynPrg {
     dup_pars = duplicates((a.var : a <- proc_def.args));
 
     errs = (
-      builtin_proc_redef            if builtin_procs_map(name, *),
+      builtin_proc_redef            if builtin_procs_map(name, _),
       wrong_main_proc_arity         if bare_name == :main and arity != 1,
       dupl_par_names(dup_pars, [])  if dup_pars != []
     );
@@ -361,24 +361,24 @@ implicit syn_prg : SynPrg {
     errs = (
       undef_auto_or_db(v.var, v.type)
       : v <- auto_or_db_vars,
-        not db_defs_by_id(db_symbol(v.type), *) and not auto_defs_by_id(auto_symbol(v.type), *)
+        not db_defs_by_id(db_symbol(v.type), _) and not auto_defs_by_id(auto_symbol(v.type), _)
     );
     return errs if errs != ();
 
     all_vars = [v.var : v <- auto_or_db_vars];
     db_vars_types = [
-      v.var -> db_defs_by_id(t, !!)
-      : v <- auto_or_db_vars, t = db_symbol(v.type), db_defs_by_id(t, *)
+      v.var -> db_defs_by_id(t, !)
+      : v <- auto_or_db_vars, t = db_symbol(v.type), db_defs_by_id(t, _)
     ];
     errs = join(({
-      is_static = db_vars_types(v.var, *);
+      is_static = db_vars_types(v.var, _);
       if is_static {
-        var_type = db_vars_types(v.var, !!);
+        var_type = db_vars_types(v.var, !);
         links = var_type.links;
         return (wrong_auto_var_arity(v.var, |v.args|, |links|)) if |links| != |v.args|;
         return join(({
-          return (undef_static_auto_var(a, all_vars(a), false)) if not db_vars_types(a, *);
-          arg_type = db_vars_types(a, !!);
+          return (undef_static_auto_var(a, all_vars(a), false)) if not db_vars_types(a, _);
+          arg_type = db_vars_types(a, !);
           exp_type = links(i);
           return (wrong_auto_arg_type(v.var, a, arg_type.name, exp_type) if arg_type.name != exp_type);
         } : a @ i <- v.args));
@@ -450,11 +450,11 @@ implicit type_arity_map : [BasicTypeSymbol -> [+Nat]], schemas : [Atom -> Schema
       // Protocol type names must not conflict with type or schema names
       errs = join(({
           confl_type_name = type_symbol(t);
-          confl_tdefs = if type_arity_map(confl_type_name, *)
+          confl_tdefs = if type_arity_map(confl_type_name, _)
             then [td : td <- tdefs | td <- par_tdefs, td.name == confl_type_name]
             else [];
           return (prot_type_conflict(t, td) : td <- rand_sort(confl_tdefs)) if confl_tdefs != [];
-          return (prot_schema_conflict(t, schemas[t]) if schemas(t, *));
+          return (prot_schema_conflict(t, schemas[t]) if schemas(t, _));
         } : t <- prot_decl.types
       ));
       return errs if errs != ();
@@ -496,7 +496,7 @@ implicit type_arity_map : [BasicTypeSymbol -> [+Nat]], schemas : [Atom -> Schema
       // Number of types must be the same as the number of variables
       return (wrong_number_of_prot_types) if |pts| != nvars;
       // All protocol types must be defined
-      errs = (undef_prot_type(t) : t <- pts, not prot_types_map(t, *));
+      errs = (undef_prot_type(t) : t <- pts, not prot_types_map(t, _));
       return errs if errs != ();
       // All protocol types must belong to the same protocol
       prot_types = prot_types_map[pts(0)];

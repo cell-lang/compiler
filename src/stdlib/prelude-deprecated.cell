@@ -285,17 +285,17 @@ T only_element_or_def_if_empty([T] set, T default) {
 
 // B (_[_])([A -> B] map, A key) = only([value : value <- map(key, ?)]);
 // B (_[_])([A -> B] map, A key) = only([v : k v <- map, k == key]);
-B (_[_])([A -> B] map, A key) = map(key, !!);
+B (_[_])([A -> B] map, A key) = map(key, !);
 
-B lookup([A -> B] map, A key, B default) = if map(key, *) then map[key] else default;
+B lookup([A -> B] map, A key, B default) = if map(key, _) then map[key] else default;
 
-Maybe[B] maybe_lookup([A -> B] map, A key) = if map(key, *) then just(map[key]) else nothing;
+Maybe[B] maybe_lookup([A -> B] map, A key) = if map(key, _) then just(map[key]) else nothing;
 
 [A -> B] update([A -> B] map, [A -> B] diffs) = [k -> map[k] : k <- keys(map) - keys(diffs)] & diffs;
 
 [A -> B] update([A -> B] map, A key, B new_val) = update(map, [key -> new_val]);
 
-Bool is_key(Any key, [Any -> Any] map) = map(key, *);
+Bool is_key(Any key, [Any -> Any] map) = map(key, _);
 
 []   keys([]) = [];
 [+A] keys([+A -> B] map) = [k : k _ <- map];
@@ -312,7 +312,7 @@ Bool is_key(Any key, [Any -> Any] map) = map(key, *);
 
 [K -> V+] merge_sorted_values([K -> V]* maps) {
   all_keys = seq_union((keys(m) : m <- maps));
-  return [k -> nonempty((m[k] : m <- maps, m(k, *))) : k <- all_keys];
+  return [k -> nonempty((m[k] : m <- maps, m(k, _))) : k <- all_keys];
 }
 
 [A -> B] remove_key([A -> B] m, C kr) = [k -> v : k v <- m, k != kr];
@@ -554,7 +554,7 @@ T reduce(T+ xs, (T T -> T) f) {
 
 [K -> V+] zip_by_key([K -> V]* maps) {
   keys = [k : m <- maps, k _ <- m];
-  return [k -> nonempty((m(k, !!) : m <- maps, m(k, *))) : k <- keys];
+  return [k -> nonempty((m(k, !) : m <- maps, m(k, _))) : k <- keys];
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -674,7 +674,7 @@ Int pow(Int b, Nat e) {
 
 T+ permutate(T+ xs, [+Nat -> Nat] p) {
   assert |xs| == |p|;
-  return (xs(p(!!, i)) : i < |xs|);
+  return (xs(p(!, i)) : i < |xs|);
 }
 
 
@@ -685,13 +685,13 @@ Nat+ ord_idxs([+Nat -> Any] xs) = nonempty(sort_set(keys(xs), $a < $b));
 [+Nat -> Nat] packed_idxs([+Nat -> Any] xs) = [j -> i : i @ j <- ord_idxs(xs)];
 
 () values_ord_by_idx([]) = ();
-T+ values_ord_by_idx([+Nat -> T] xs) = (xs(i, !!) : i <- ord_idxs(xs));
+T+ values_ord_by_idx([+Nat -> T] xs) = (xs(i, !) : i <- ord_idxs(xs));
 
 
 Nat first_unused_idx([Nat -> Any] xs) {
   idx = 0;
   loop {
-    return idx if not xs(idx, *);
+    return idx if not xs(idx, _);
     idx = nat(idx + 1);
   }
 }
@@ -699,7 +699,7 @@ Nat first_unused_idx([Nat -> Any] xs) {
 
 Maybe[T]+ maybe_seq([Nat -> T] map, NzNat arity) {
   assert not (i _ <- map : i >= arity);
-  return (if map(i, *) then just(map(i, !!)) else nothing : i < arity);
+  return (if map(i, _) then just(map(i, !)) else nothing : i < arity);
 }
 
 [Nat -> T] map(Maybe[T]+ xs) = [i -> value(x) : x @ i <- xs, x != nothing];
@@ -921,7 +921,7 @@ Nat next_value(CounterSet[T] ctr_set, T ctr) = lookup(ctr_set.nz_ctrs, ctr, 0);
 
 CounterSet[T] increment(CounterSet[T] ctr_set, T ctr) {
   nz_ctrs = ctr_set.nz_ctrs;
-  new_nz_ctrs = if nz_ctrs(ctr, *)
+  new_nz_ctrs = if nz_ctrs(ctr, _)
     then [c -> nz_nat(n + bit(c == ctr)) : c n <- nz_ctrs]
     else nz_ctrs & [ctr -> 1];
   return counter_set(nz_ctrs: new_nz_ctrs);

@@ -35,13 +35,13 @@ CCodeOutput compile_to_c(CompiledPrg prg, Bool include_runtime) {
   static_blocks_dep_map = [b.name -> values(b.nested_blocks) & set(b.links) : b <- prg.static_blocks];
   ord_static_block_names = join((rand_sort(bs) : bs <- topological_sort(static_blocks_dep_map)));
   static_blocks_by_name = [b.name -> b : b <- prg.static_blocks];
-  ord_static_blocks = (static_blocks_by_name(b, !!) : b <- ord_static_block_names);
+  ord_static_blocks = (static_blocks_by_name(b, !) : b <- ord_static_block_names);
 
   // Sorting reactive blocks in topological order
   react_blocks_dep_map = [b.name -> [t : _ t <- b.nested_auto_vars] : b <- prg.react_blocks];
   ord_react_blocks_names = join((rand_sort(bs) : bs <- topological_sort(react_blocks_dep_map)));
   react_blocks_by_name = [b.name -> b : b <- prg.react_blocks];
-  ord_react_blocks = (react_blocks_by_name(b, !!) : b <- ord_react_blocks_names);
+  ord_react_blocks = (react_blocks_by_name(b, !) : b <- ord_react_blocks_names);
 
   proc_code = compile_to_c(
     rand_sort(prg.procs),

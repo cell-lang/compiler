@@ -2,7 +2,7 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
   [+[RelVar]] required_insertions(DBSymbol rel_auto_id, RelVar rel_var, NeType+ args_types) {
     phys_rel_vars = physical_rel_vars(rel_auto_id, rel_var, args_types);
     fail if phys_rel_vars == [];
-    rel_auto_map = required_insertions_map(rel_auto_id, !!);
+    rel_auto_map = required_insertions_map(rel_auto_id, !);
     return [rel_auto_map(v) : v <- phys_rel_vars];
 
 
@@ -28,13 +28,13 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
 
   Bool is_one_to_one_attribute(DBSymbol rel_auto, PhysRelVar rel_var) {
     ## CHECK THE GENERATED CODE HERE
-    rel_auto_map = slave_master_map(rel_auto, !!);
-    return rel_auto_map(rel_var, *);
+    rel_auto_map = slave_master_map(rel_auto, !);
+    return rel_auto_map(rel_var, _);
   }
 
 
   PhysRelVar master_rel_var(DBSymbol rel_auto, PhysRelVar rel_var) {
-    rel_auto_map = slave_master_map(rel_auto, !!);
+    rel_auto_map = slave_master_map(rel_auto, !);
     return rel_auto_map(rel_var);
   }
 
@@ -46,7 +46,7 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
     [PhysRelVar -> PhysRelVar] slave_master_map(Database rel_auto) {
       std_attrs = [only(k.target_rel_vars), k.source_rel_var : k <- rel_auto.foreign_keys, is_std_attr_key(k)];
       mand_attrs = [k.source_rel_var, only(k.target_rel_vars) : k <- rel_auto.foreign_keys, is_mand_attr_key(k)];
-      return [v -> std_attrs(!!, v) : v info <- rel_auto.rel_vars, is_slave(v, info, std_attrs, mand_attrs)];
+      return [v -> std_attrs(!, v) : v info <- rel_auto.rel_vars, is_slave(v, info, std_attrs, mand_attrs)];
     }
 
 

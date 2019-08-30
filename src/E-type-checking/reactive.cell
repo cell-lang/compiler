@@ -14,14 +14,14 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Automaton
     consts_ids = keys(consts);
     curr_env = expl_consts_types;
     while consts_ids != [] {
-      ready_consts = [c : c <- consts_ids, not (v <- consts_vars[c] : not curr_env(v, *))];
+      ready_consts = [c : c <- consts_ids, not (v <- consts_vars[c] : not curr_env(v, _))];
       return [context -> [auto_typechecking_cycle(context.name, consts_ids)]] if ready_consts == [];
       errs = union([
         typecheck(info.value, if info.type? then info.type else type_any, curr_env)
         : c <- ready_consts, info = consts[c]
       ]);
       return [context -> errs] if errs != [];
-      env_delta = [c -> expr_type(consts[c].value, curr_env) : c <- ready_consts, not curr_env(c, *)];
+      env_delta = [c -> expr_type(consts[c].value, curr_env) : c <- ready_consts, not curr_env(c, _)];
       curr_env = curr_env & env_delta;
       consts_ids = consts_ids - ready_consts;
     }
@@ -40,7 +40,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Automaton
     rule_ids = keys(rules);
     curr_env = curr_env & expl_types;
     while rule_ids != [] {
-      ready_rules = [r : r <- rule_ids, not (v <- rules_vars[r] : not curr_env(v, *))];
+      ready_rules = [r : r <- rule_ids, not (v <- rules_vars[r] : not curr_env(v, _))];
       return [context -> [auto_typechecking_cycle(context.name, rule_ids)]] if ready_rules == [];
       errs = union([typecheck(rules[r], type_any, curr_env) : r <- ready_rules]);
       return [context -> errs] if errs != [];
@@ -56,7 +56,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Automaton
 
     discrete_rules_ids = keys(discrete_rules);
     while discrete_rules_ids != [] {
-      ready_rules = [r : r <- discrete_rules_ids, not (v <- discrete_rules_vars[r] : not curr_env(v, *))];
+      ready_rules = [r : r <- discrete_rules_ids, not (v <- discrete_rules_vars[r] : not curr_env(v, _))];
       return [context -> [auto_typechecking_cycle(context.name, discrete_rules_ids)]] if ready_rules == [];
 
       ## THIS CAUSED THE TYPECHECKER TO CRASH. SEE crash-08.ar FOR DETAILS.
@@ -150,8 +150,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
       consts_ids = keys(consts);
       curr_env = expl_consts_types;
       while consts_ids != [] {
-        ready_consts = [c : c <- consts_ids, not (v <- consts_vars[c] : not curr_env(v, *))];
-        env_delta = [c -> expr_type(consts[c].value, curr_env) : c <- ready_consts, not curr_env(c, *)];
+        ready_consts = [c : c <- consts_ids, not (v <- consts_vars[c] : not curr_env(v, _))];
+        env_delta = [c -> expr_type(consts[c].value, curr_env) : c <- ready_consts, not curr_env(c, _)];
         curr_env = curr_env & env_delta;
         consts_ids = consts_ids - ready_consts;
       }
@@ -170,7 +170,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
       rule_ids = keys(rules);
       curr_env = curr_env & expl_types;
       while rule_ids != [] {
-        ready_rules = [r : r <- rule_ids, not (v <- rules_vars[r] : not curr_env(v, *))];
+        ready_rules = [r : r <- rule_ids, not (v <- rules_vars[r] : not curr_env(v, _))];
         env_delta = [r -> expr_type(rules[r], curr_env) : r <- ready_rules];
         assert disjoint(keys(curr_env), keys(env_delta));
         curr_env = curr_env & env_delta;
@@ -183,7 +183,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
 
       discrete_rules_ids = keys(discrete_rules);
       while discrete_rules_ids != [] {
-        ready_rules = [r : r <- discrete_rules_ids, not (v <- discrete_rules_vars[r] : not curr_env(v, *))];
+        ready_rules = [r : r <- discrete_rules_ids, not (v <- discrete_rules_vars[r] : not curr_env(v, _))];
         env_delta = [id -> union_superset([expr_type(r.value, curr_env) : r <- discrete_rules[id]]) : id <- ready_rules];
         assert disjoint(keys(curr_env), keys(env_delta));
         curr_env = curr_env & env_delta;

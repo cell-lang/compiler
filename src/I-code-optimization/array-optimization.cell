@@ -138,7 +138,7 @@ implicit typedefs : [TypeName -> NeType], loc_vars_types : [StdVar -> NeType] {
       // of the sequence object, either because of an operation that cannot be mapped
       // to an array or because of a unstructered jump, we do that before anything else
       vars = required_insts(instr, pending);
-      assert not (v <- vars : pending_external(v, *));
+      assert not (v <- vars : pending_external(v, _));
       for v <- isort(vars) {
         opt_code = (opt_code | inst_instr(v, pending(v)));
         pending = drop(pending, v);
@@ -158,18 +158,18 @@ implicit typedefs : [TypeName -> NeType], loc_vars_types : [StdVar -> NeType] {
       outcomes = code_outcomes(instr);
       return keys(pending) if outcomes(:breaks_loop) or outcomes(:exits_block);
       affected_vars = affected_std_vars(instr, pending);
-      affected_pending_vars = [v : v <- affected_vars, pending(v, *)];
+      affected_pending_vars = [v : v <- affected_vars, pending(v, _)];
       return affected_pending_vars & pending_vars_used(instr, pending);
     }
 
 
     [StdVar] pending_vars_used(Instr instr, [StdVar -> LowLevelEltRepr] pending) {
       if instr :: <set_rc_var(var: StdVar, value: append_to_seq(seq: StdVar, new_elem: AtomicExpr))> {
-        if instr.var == instr.value.seq and pending(instr.var, *)
+        if instr.var == instr.value.seq and pending(instr.var, _)
           return pending_vars_used(instr.value.new_elem, pending);
       }
       else if instr :: <set_rc_var(var: StdVar, value: update_seq_at(seq: StdVar, idx: IntExpr, value: AtomicExpr))> {
-        if instr.var == instr.value.seq and pending(instr.var, *)
+        if instr.var == instr.value.seq and pending(instr.var, _)
           return pending_vars_used(instr.value.idx, pending) & pending_vars_used(instr.value.value, pending);
       }
 
@@ -178,10 +178,10 @@ implicit typedefs : [TypeName -> NeType], loc_vars_types : [StdVar -> NeType] {
 
 
     [StdVar] pending_vars_used(AnyTypeExpr expr, [StdVar -> LowLevelEltRepr] pending) =
-      var()         = [expr if pending(expr, *)],
-      at()          = {if not pending(expr.seq, *) then pending_vars_used(expr.seq, pending) else []} &
+      var()         = [expr if pending(expr, _)],
+      at()          = {if not pending(expr.seq, _) then pending_vars_used(expr.seq, pending) else []} &
                       pending_vars_used(expr.idx, pending),
-      get_size(e?)  = if not pending(e, *) then pending_vars_used(e, pending) else [],
+      get_size(e?)  = if not pending(e, _) then pending_vars_used(e, pending) else [],
       _             = search_nested(expr, pending_vars_used($, pending));
 
     //////////////////////////////////////////////////////////////////////////////
@@ -201,10 +201,10 @@ implicit typedefs : [TypeName -> NeType], loc_vars_types : [StdVar -> NeType] {
 
     if instr :: <set_var(var: StdVar, value: empty_seq)> {
       var = instr.var;
-      assert not pending_external(var, *) or pending_external(var) == :object;
+      assert not pending_external(var, _) or pending_external(var) == :object;
       var_id = bare_id(var);
       elt_repr = :object;
-      if loc_vars_types(var, *) {
+      if loc_vars_types(var, _) {
         elt_type = seq_elem_supertype(loc_vars_types(var));
         if elt_type != empty_type
           elt_repr = low_level_elt_repr(elt_type);
@@ -213,7 +213,7 @@ implicit typedefs : [TypeName -> NeType], loc_vars_types : [StdVar -> NeType] {
         set_ivar32(shadow_array_size_var(var_id), 0),
         array_alloc(shadow_array_var(var_id, elt_repr), 0)
       );
-      pending_after = if not pending_external(var, *)
+      pending_after = if not pending_external(var, _)
         then put(pending_local, instr.var, elt_repr)
         else pending_local;
       return (instrs, pending_after);
@@ -221,13 +221,13 @@ implicit typedefs : [TypeName -> NeType], loc_vars_types : [StdVar -> NeType] {
 
     if instr :: <set_rc_var(var: StdVar, value: mk_seq_from_array(array: avar(id: Nat, repr: LowLevelEltRepr), size: Int32Expr))> {
       var = instr.var;
-      assert not pending_external(var, *) or pending_external(var) == :object;
+      assert not pending_external(var, _) or pending_external(var) == :object;
       var_id = bare_id(var);
       instrs = (
         set_ivar32(shadow_array_size_var(var_id), instr.value.size),
         array_set_var(shadow_array_var(var_id, instr.value.array.repr), instr.value.array)
       );
-      pending_after = if not pending_external(var, *)
+      pending_after = if not pending_external(var, _)
         then put(pending_local, instr.var, instr.value.array.repr)
         else pending_local;
       return (instrs, pending_after);
@@ -236,7 +236,7 @@ implicit typedefs : [TypeName -> NeType], loc_vars_types : [StdVar -> NeType] {
     if instr :: <set_rc_var(var: StdVar, value: append_to_seq(seq: StdVar, new_elem: AtomicExpr))> {
       var = instr.var;
       value = instr.value;
-      if var == value.seq and pending(var, *) {
+      if var == value.seq and pending(var, _) {
         var_id = bare_id(var);
         var_repr = pending(var);
         rw_new_elem = rewrite_seq_ops(value.new_elem, pending);
@@ -252,7 +252,7 @@ implicit typedefs : [TypeName -> NeType], loc_vars_types : [StdVar -> NeType] {
     if instr :: <set_rc_var(var: StdVar, value: update_seq_at(seq: StdVar, idx: IntExpr, value: AtomicExpr))> {
       var = instr.var;
       value = instr.value;
-      if var == value.seq and pending(var, *) {
+      if var == value.seq and pending(var, _) {
         var_id = bare_id(var);
         idx = value.idx;
         var_repr = pending(var);
@@ -304,7 +304,7 @@ implicit typedefs : [TypeName -> NeType], loc_vars_types : [StdVar -> NeType] {
     }
 
     Instr opt_foreach(ForeachInstr instr, [StdVar -> LowLevelEltRepr] pending) {
-      assert not pending(instr.seq, *);
+      assert not pending(instr.seq, _);
       opt_body = optimize_array_ops(instr.body, pending);
       return foreach(
         seq:        instr.seq,
@@ -324,7 +324,7 @@ implicit typedefs : [TypeName -> NeType], loc_vars_types : [StdVar -> NeType] {
 AnyTypeExpr rewrite_seq_ops(AnyTypeExpr expr, [StdVar -> LowLevelEltRepr] pending) {
   if expr :: <at(seq: StdVar, idx: IntExpr)> {
     seq_var = expr.seq;
-    if pending(seq_var, *) {
+    if pending(seq_var, _) {
       var_id = bare_id(seq_var);
       rw_idx = cast_int_expr(rewrite_nested(expr.idx, rewrite_seq_ops($, pending)));
       return array_at(shadow_array_var(var_id, pending(seq_var)), shadow_array_size_var(var_id), rw_idx);
@@ -333,7 +333,7 @@ AnyTypeExpr rewrite_seq_ops(AnyTypeExpr expr, [StdVar -> LowLevelEltRepr] pendin
 
   if expr :: <get_size(StdVar)> {
     seq_var = untag(expr);
-    if pending(seq_var, *)
+    if pending(seq_var, _)
       return shadow_array_size_var(untag(seq_var));
   }
 
@@ -383,12 +383,12 @@ Bool certainly_includes(LowLevelEltRepr repr, AtomicExpr expr, Bool var_is_expli
 
 implicit loc_vars_types : [StdVar -> NeType] {
   Bool is_affected(StdVar var, RefObjExpr expr, [StdVar -> LowLevelEltRepr] pending) {
-    if pending(var, *) {
+    if pending(var, _) {
       if expr :: <append_to_seq(seq: StdVar, new_elem: AtomicExpr)> {
-        return false if expr.seq == var and certainly_includes(pending(var), expr.new_elem, loc_vars_types(var, *));
+        return false if expr.seq == var and certainly_includes(pending(var), expr.new_elem, loc_vars_types(var, _));
       }
       else if expr :: <update_seq_at(seq: StdVar, idx: IntExpr, value: AtomicExpr)> {
-        assert loc_vars_types(var, *);
+        assert loc_vars_types(var, _);
         return false if expr.seq == var and certainly_includes(pending(var), expr.value, true);
       }
     }

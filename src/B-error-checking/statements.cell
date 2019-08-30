@@ -262,9 +262,9 @@ implicit {
     schema_def = curr_db_def;
     return (rel_auto_has_no_dependees(schema_def)) if schema_def.links == ();
 
-    interface = db_interfaces(db_symbol(schema_def.name), !!);
+    interface = db_interfaces(db_symbol(schema_def.name), !);
     for dependee <- interface.linked_dbs
-      return () if handlers_by_db(dependee, *);
+      return () if handlers_by_db(dependee, _);
 
     return (no_dependee_has_handlers(schema_def));
   }
@@ -288,7 +288,7 @@ implicit {
     interface = db_interfaces[db_symbol(curr_db_def.name)];
     if interface.memb_vars(var)
       return ();
-    else if interface.rel_vars(var, *)
+    else if interface.rel_vars(var, _)
       return (not_a_memb_var(var, curr_db_def));
     else
       return (unknown_memb_var(var, curr_db_def));
@@ -309,7 +309,7 @@ implicit {
   ExprWFError* delete_or_insert_stmt_local_wf_errors(Atom var, NzNat arity) {
     // <var> must be a relational variable of the specified arity in the target database
     interface = db_interfaces[db_symbol(curr_db_def.name)];
-    if interface.rel_vars(var, *) {
+    if interface.rel_vars(var, _) {
       relvar_arity = interface.rel_vars[var];
       return (invalid_rel_var_arity(var, arity, relvar_arity) if arity != relvar_arity);
     }
@@ -393,8 +393,8 @@ implicit {
     var_errs = (ro_vars_asgnm([stmt.res_var]) if stmt.res_var? and already_def(stmt.res_var, ro_vars));
 
     proc_name = stmt.proc_name;
-    if not builtin_procs_map(proc_name, *) {
-      if not proc_defs_by_id(proc_name, *) {
+    if not builtin_procs_map(proc_name, _) {
+      if not proc_defs_by_id(proc_name, _) {
         return (var_errs | undef_proc(stmt));
       }
       else {
@@ -433,8 +433,8 @@ implicit {
       if not expr :: ConstOrVar
         return (actual_argument_not_an_auto_var(expr, proc, idx, db_symbol(rel_auto_type)));
       var_symb = match (expr) const_or_var(s?) = s;
-      if not loc_db_vars(loc_db_var(var_symb), *) {
-        is_auto_var = loc_auto_vars(loc_auto_var(var_symb), *);
+      if not loc_db_vars(loc_db_var(var_symb), _) {
+        is_auto_var = loc_auto_vars(loc_auto_var(var_symb), _);
         is_obj_var = ro_vars(var(var_symb)) or rw_vars(var(var_symb));
         return (undef_static_auto_var(var_symb, is_auto_var, is_obj_var));
       }
@@ -459,8 +459,8 @@ implicit {
 
   ExprWFError* send_msg_ctrl_stmt_local_wf_errors(Atom res_var, Atom db_var, [DefVar] ro_vars, [StdVar] rw_vars) = (
       ro_vars_asgnm([var(res_var)]) if already_def(res_var, ro_vars) or is_already_def_as_auto_or_db_var(res_var),
-      undef_static_auto_var(db_var, loc_auto_vars(loc_auto_var(db_var), *), ro_vars(var(db_var)) or rw_vars(var(db_var)))
-        if not loc_db_vars(loc_db_var(db_var), *)
+      undef_static_auto_var(db_var, loc_auto_vars(loc_auto_var(db_var), _), ro_vars(var(db_var)) or rw_vars(var(db_var)))
+        if not loc_db_vars(loc_db_var(db_var), _)
     );
 
 
@@ -485,18 +485,18 @@ implicit {
   //////////////////////////////////////////////////////////////////////////////
 
   Bool is_already_def_as_auto_or_db_var(Atom var_id) =
-    loc_auto_vars(loc_auto_var(var_id), *)        or
-    nested_auto_vars(nested_auto_var(var_id), *)  or
-    loc_db_vars(loc_db_var(var_id), *);
+    loc_auto_vars(loc_auto_var(var_id), _)        or
+    nested_auto_vars(nested_auto_var(var_id), _)  or
+    loc_db_vars(loc_db_var(var_id), _);
 
 
   ExprWFError* react_auto_var_errors(LocAutoVar var, [DefVar] ro_vars, [StdVar] rw_vars) =
-    (undef_react_auto_var(var, already_def(bare_id(var), ro_vars & rw_vars)) if not loc_auto_vars(var, *));
+    (undef_react_auto_var(var, already_def(bare_id(var), ro_vars & rw_vars)) if not loc_auto_vars(var, _));
 
 
   ExprWFError* auto_var_errors(Atom var_id, [DefVar] ro_vars, [StdVar] rw_vars) = (
     undef_auto_var(var_id, already_def(var_id, ro_vars & rw_vars))
-      if not loc_auto_vars(loc_auto_var(var_id), *) and not loc_db_vars(loc_db_var(var_id), *)
+      if not loc_auto_vars(loc_auto_var(var_id), _) and not loc_db_vars(loc_db_var(var_id), _)
   );
 
 }

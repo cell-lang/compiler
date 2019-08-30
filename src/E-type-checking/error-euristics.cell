@@ -126,7 +126,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     [TypeCheckingError] record_expr_and_type_err_msgs(RecordTypeFields type_fields, (SymbObj, Expr, [EnvVar -> Type], Bool)* entries) {
       // Searching first for missing or unexpected fields
       expr_fields = [e(0) : e <- entries];
-      unexpected_fields = [l : e <- entries, l = e(0), not type_fields(l, *)];
+      unexpected_fields = [l : e <- entries, l = e(0), not type_fields(l, _)];
       missing_fields = [l : l _ <- type_fields, not expr_fields(l)];
       if unexpected_fields != [] or missing_fields != []
         return [unexpected_rec_field(f) : f <- unexpected_fields] & [missing_rec_field(f) : f <- missing_fields];
@@ -318,8 +318,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
   [TypeCheckingError] ne_record_type_err_msgs(RecordTypeFields actual_fields, RecordTypeFields exp_fields) {
     // Searching first for missing or unexpected fields
-    unexpected_fields = [l : l _ <- actual_fields, not exp_fields(l, *)];
-    missing_fields = [l : l _ <- exp_fields, not actual_fields(l, *)];
+    unexpected_fields = [l : l _ <- actual_fields, not exp_fields(l, _)];
+    missing_fields = [l : l _ <- exp_fields, not actual_fields(l, _)];
     if unexpected_fields != [] or missing_fields != []
       return [unexpected_rec_field(f) : f <- unexpected_fields] & [missing_rec_field(f) : f <- missing_fields];
 

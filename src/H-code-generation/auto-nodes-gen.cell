@@ -181,10 +181,10 @@ implicit program : Program, automaton : Automaton {
     dep_nodes = lookup(trigger_down_nodes_map, node_id, []);
     assert disjoint(dep_nodes, [std_block_node_id(id) : id <- state_vars_ids]);
 
-    if automaton.rules(var_id, *)
+    if automaton.rules(var_id, _)
       return derived(node_id, automaton.rules[var_id], dep_nodes, level);
 
-    if automaton.time_rules(var_id, *) {
+    if automaton.time_rules(var_id, _) {
       time_cond = automaton.time_rules[var_id];
       return match (time_cond)
         boolean_time_rule()   = time_varying_node(node_id, time_cond.expr, time_cond.time_expr, :boolean, dep_nodes, level),
@@ -192,7 +192,7 @@ implicit program : Program, automaton : Automaton {
         since_time_rule()     = discrete_time_varying_node(node_id, time_cond.signals, time_cond.time_expr, time_cond.starts_at_time_0, dep_nodes, level);
     }
 
-    if automaton.state(var_id, *) {
+    if automaton.state(var_id, _) {
       return state(
         node_id,
         lookup(state_vars_and_discrete_signals_update_values, core_id, ()),
@@ -237,7 +237,7 @@ implicit program : Program, automaton : Automaton {
 
   AutoNode create_auto_node(NestedAutoNodeId node_id, Nat level) {
     core_id = get_inner_id(node_id);
-    assert automaton.nested_autos(nested_auto_var(core_id), *);
+    assert automaton.nested_autos(nested_auto_var(core_id), _);
     output_dep_nodes = lookup(output_trigger_down_nodes_map, node_id, []);
     ## WHAT DOES THIS ASSERTION DO?
     assert not (o ns <- output_dep_nodes : not disjoint(ns, [std_block_node_id(id) : id <- state_vars_ids]));
@@ -246,7 +246,7 @@ implicit program : Program, automaton : Automaton {
 
 
   AutoNode create_auto_node(NestedAutoInputNodeId node_id, Nat level) {
-    assert automaton.nested_autos(nested_auto_var(node_id.auto), *);
+    assert automaton.nested_autos(nested_auto_var(node_id.auto), _);
     expr = nested_auto_inputs[node_id];
     auto_type = automaton.nested_autos[nested_auto_var(node_id.auto)].type;
     discrete_signals = [v : v <- auto_expr_extern_vars(expr), v :: AnySignalVar, is_discrete(v)];

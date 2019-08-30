@@ -472,7 +472,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
 
   ([EnvVar -> Type], [EnvVar -> Type]) refine_fn_call_env(FnCallExpr expr, [EnvVar -> Type] env) {
-    return (env, env) if not signatures(expr.fn_id, *);
+    return (env, env) if not signatures(expr.fn_id, _);
     sgn_set = signatures[expr.fn_id];
     return (env, env) if not sgn_set.refines_env;
 
@@ -496,7 +496,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
     ([EnvVar -> Type], [EnvVar -> Type]) refine_fn_arg_env(Expr obj, NeType arg_type, [EnvVar -> Type] env) {
       if obj :: EnvVar {
-        var_type = env(obj, !!);
+        var_type = env(obj, !);
         in_type, out_type = branch_types_after_check(var_type, arg_type);
         var_group = var_group(obj);
         env_delta_in = [v -> in_type : v <- var_group];
@@ -653,7 +653,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
     (Type, Type) accessor_test_refine(RecordType type, SymbObj field, Bool look_inside) {
       fields = match (type) ne_record_type(fs?) = fs;
-      return if fields(field, *)
+      return if fields(field, _)
         then (record_type([l -> (type: f.type, optional: l != field and f.optional) : l f <- fields]), type)
         else (empty_type, type);
     }
@@ -1462,8 +1462,8 @@ implicit typedefs : [TypeName -> NeType] {
 
   RecordTypeFields merge_fields(RecordTypeFields fs1, RecordTypeFields fs2) = [
     l -> {
-      return fs2[l] if not fs1(l, *);
-      return fs1[l] if not fs2(l, *);
+      return fs2[l] if not fs1(l, _);
+      return fs1[l] if not fs2(l, _);
       f1 = fs1[l];
       f2 = fs2[l];
       type = union_superset(f1.type, f2.type);
@@ -1660,7 +1660,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
 
   [EnvVar -> Type] seq_update_stmt_update_env(StdVar seq_var, Expr idx, Expr value, [EnvVar -> Type] env) {
-    return env if typed_vars(seq_var, *);
+    return env if typed_vars(seq_var, _);
     new_type = updated_type(env[seq_var], expr_type(value, env));
     return update(env, seq_var, new_type);
 
@@ -1734,7 +1734,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     env_delta = [v -> expr_type(e, env) : v e <- asgnms];
     body_env = update(env, env_delta);
     end_body_env = update_env(body, body_env);
-    return [v -> if asgnms(v, *) then env(v, !!) else t : v t <- end_body_env, not asgnms(v, *) or env(v, *)];
+    return [v -> if asgnms(v, _) then env(v, !) else t : v t <- end_body_env, not asgnms(v, _) or env(v, _)];
   }
 
 

@@ -211,7 +211,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
       ## OR IS IT ALREADY CHECKED DURING TYPECHECKING?
       arity_is_ok = nested_function_exists(precall.symbol, exp_arity);
       if arity_is_ok {
-        args_arities = local_fn_arity_args_arities(precall.symbol, exp_arity, !!);
+        args_arities = local_fn_arity_args_arities(precall.symbol, exp_arity, !);
         fn_ptr_ok = all((a == 0 : a <- args_arities));
       }
       else {
@@ -261,7 +261,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
 
   Maybe[AutoMethodCall] try_resolve_as_expr(PreAutoCall precall) {
     auto_type = if precall.var? then auto_var_type(precall.var) else self_auto_type;
-    if methods_by_automaton(bare_id(auto_type), *) {
+    if methods_by_automaton(bare_id(auto_type), _) {
       methods = methods_by_automaton[bare_id(auto_type)];
       if (m <- methods : m.name == bare_id(precall.method) and m.args == ())
         return just(auto_method_call(var: precall.var if precall.var?, name: precall.method, args: ()));
@@ -272,7 +272,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
 
   Maybe[DBMethodCall] try_resolve_as_expr(PreDBCall precall) {
     db_type = if precall.var? then syn_db_var_type(precall.var) else self_db_type;
-    if methods_by_db(bare_id(db_type), *) {
+    if methods_by_db(bare_id(db_type), _) {
       methods = methods_by_db[bare_id(db_type)];
       if (m <- methods : m.name == bare_id(precall.method) and m.args == ())
         return just(db_method_call(var: precall.var if precall.var?, name: precall.method, args: ()));
@@ -328,7 +328,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
       interface = db_interfaces[target_type];
       if in(field, interface.memb_vars)
         return just(qual_memb_var(target, memb_var(field)));
-      else if interface.rel_vars(field, *)
+      else if interface.rel_vars(field, _)
         return just(qual_rel_var(target, rel_var(field)));
       else if method_ids_by_db_id[bare_id(target_type)](field)
         return just(pre_db_method_call(target, method_symbol(field)));
@@ -348,7 +348,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
     gen_resols = [
       std_var if def_vars(std_var),
       impl_arg if impl_args(impl_arg),
-      pre_fn_call(fn_symb) if top_level_fndefs_by_name_arity(fn_symb, *) or protocol_methods(fn_symb, *)
+      pre_fn_call(fn_symb) if top_level_fndefs_by_name_arity(fn_symb, _) or protocol_methods(fn_symb, _)
     ];
     ctx_resols = resolve_symbol(artifact, symbol);
     return gen_resols & ctx_resols;
@@ -382,7 +382,7 @@ implicit syn_prg : SynPrg {
     internals = auto_internals[auto_symbol(artifact.name)];
     resols = [signal_var(symbol) if in(symbol, internals.memb_vars)];
 
-    if internals.nested_autos(symbol, *) {
+    if internals.nested_autos(symbol, _) {
       auto_type = auto_symbol(internals.nested_autos[symbol]);
       interface = auto_interfaces[auto_type];
       ## BUG BUG BUG: I THINK THERE'S A BUG HERE, WITH signal_var(symbol)
@@ -398,7 +398,7 @@ implicit syn_prg : SynPrg {
     interface = db_interfaces[db_symbol(artifact.name)];
     resols = [
       memb_var(symbol)                          if in(symbol, interface.memb_vars),
-      rel_var(symbol)                           if interface.rel_vars(symbol, *),
+      rel_var(symbol)                           if interface.rel_vars(symbol, _),
       pre_db_method_call(method_symbol(symbol)) if method_ids_by_db_id[artifact.name](symbol)
     ];
     resols = seq_union(({

@@ -17,7 +17,7 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
 
   Database permutate_rel_vars(Database rel_auto) {
     let context = rel_auto {
-      perms = rel_vars_perm_map(rel_auto.name, !!);
+      perms = rel_vars_perm_map(rel_auto.name, !);
 
       rel_vars = [v -> {
         perm = perms(logical_rel_var(v));
@@ -167,7 +167,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context {
 implicit program : Program, typedefs : [TypeName -> NeType], context : Context {
   [+Nat -> Nat] rel_var_args_perm(AnyRelVar rel_var) {
     rel_auto = rel_auto_type(rel_var);
-    perms_map = rel_vars_perm_map(rel_auto, !!);
+    perms_map = rel_vars_perm_map(rel_auto, !);
     return perms_map(unqualified(rel_var));
   }
 }
@@ -194,12 +194,12 @@ implicit program : Program {
       }
       else {
         assert arity == 3;
-        perm = if tern_rel_perm_by_key(keys, *)
-          then tern_rel_perm_by_key(keys, !!)
+        perm = if tern_rel_perm_by_key(keys, _)
+          then tern_rel_perm_by_key(keys, !)
           else [0 -> 0, 1 -> 1, 2 -> 2];
       }
       perm_keys = [[perm(i) : i <- k] : k <- keys];
-      assert keys == [] or valid_keys_by_arity(arity, !!)(perm_keys);
+      assert keys == [] or valid_keys_by_arity(arity, !)(perm_keys);
       return perm;
     }
 

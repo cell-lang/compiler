@@ -227,7 +227,7 @@ implicit program           : Program,
   // relvar_lookup(rel_var: AnyRelVar, args: Maybe[Expr]+)
   (Instr*, ObjExpr, VarGen) relvar_lookup_opt_eval_info(AnyRelVar rel_var, Maybe[Expr]+ maybe_args, VarGen init_var_gen) {
     ## IMPLEMENT IMPLEMENT IMPLEMENT
-    assert |maybe_args| > 1; // Excluding rel_var(!!)
+    assert |maybe_args| > 1; // Excluding rel_var(!)
 
     args = [i -> value(a) : a @ i <- maybe_args, a != nothing];
     target_idx = first_unused_idx(args);
@@ -717,7 +717,7 @@ implicit program           : Program,
     if is_subset(type, integer) and surr :: <int_obj(IntExpr)>
       check_expr = int_memb_check(expand_int_type(type, typedefs), _untag_(surr));
     else
-      check_expr = is_member(memb_test_preds_map(type, !!), surr);
+      check_expr = is_member(memb_test_preds_map(type, !), surr);
 
     return ((code | set_bvar(res_var, check_expr)), obj_expr(res_var), ret_var_gen);
 
@@ -741,14 +741,14 @@ implicit program           : Program,
         tag_obj = only_symb(tag_type);
         tag = untag(tag_obj);
         tag_type = symb_type(tag_obj);
-        opt_types = if optimized_tagged_records_types(tag, *)
-          then optimized_tagged_records_types(tag, !!)
+        opt_types = if optimized_tagged_records_types(tag, _)
+          then optimized_tagged_records_types(tag, !)
           else ();
         for t @ i <- opt_types {
           if is_subset(target_type, tag_obj_type(tag_type, t)) {
             surr = cast_opt_tag_rec(tag, i, surr) if not surr :: OptTagRecVar;
-            fields_reprs = untag(optimized_tagged_records(tag, !!)(i));
-            maybe_field_repr = just(fields_reprs(untag(field), !!).repr);
+            fields_reprs = untag(optimized_tagged_records(tag, !)(i));
+            maybe_field_repr = just(fields_reprs(untag(field), !).repr);
             break;
           }
         }
@@ -784,9 +784,9 @@ implicit program           : Program,
       // The tag is a known symbol
       tag = untag(only_symb(tag_type));
       may_need_conv = false;
-      if optimized_tagged_records(tag, *) {
+      if optimized_tagged_records(tag, _) {
         // There's at least one optimized representation for values with such tag
-        reprs = optimized_tagged_records(tag, !!);
+        reprs = optimized_tagged_records(tag, !);
         obj_expr = expr.obj;
         obj_type = subexpr_type(obj_expr);
         for repr @ repr_idx <- reprs {
@@ -854,7 +854,7 @@ implicit program           : Program,
       var_gen = init_var_gen;
       for f @ i <- isort(untag(rec_expr)) {
         label = labels(i);
-        field = low_level_fields(label, !!);
+        field = low_level_fields(label, !);
 
         if f.cond? {
           cond_code, cond_surr, var_gen = opt_eval_info(f.cond, var_gen);
@@ -1238,8 +1238,8 @@ implicit program           : Program,
     if is_subset(elts_type, integer) and not (e <- elts : is_cond_expr(e)) {
       if not (t <- elts_types : t == empty_type or not is_singleton(t)) {
         int_seq = (only_integer(t) : t <- ord_elts_types);
-        if int_seqs_ids(int_seq, *) {
-          seq_id = int_seqs_ids(int_seq, !!);
+        if int_seqs_ids(int_seq, _) {
+          seq_id = int_seqs_ids(int_seq, !);
           code = (build_const_int_seq(seq_var, seq_id));
           return (code, seq_var, ret_var_gen);
         }
@@ -1563,7 +1563,7 @@ implicit program           : Program,
     backup_vars, var_gen = next_obj_vars(ret_var_gen, |ord_impl_args|);
     tear_down_code = (set_var(a, backup_vars(i)) : a @ i <- ord_impl_args);
     set_up_code = join(({
-        eval_code, surr, _ = opt_eval_info(expr.impl_args(a, !!), var_gen);
+        eval_code, surr, _ = opt_eval_info(expr.impl_args(a, !), var_gen);
         return (eval_code | set_var(backup_vars(i), a), set_var(a, surr));
       } : a @ i <- ord_impl_args
     ));
@@ -1768,7 +1768,7 @@ implicit program           : Program,
     capt_cls_vars = (lookup(cls_var_subst_map, v, v) : v <- cls_vars);
 
     args_env = [fn_arg(i) -> type.in_types(i) : i <- range(arity)];
-    capt_env = [v -> env(v, !!) : v <- ext_vars];
+    capt_env = [v -> env(v, !) : v <- ext_vars];
     new_env = args_env & capt_env;
 
     new_ctx = lambda_ctx(subst_map, cls_subst_map);
@@ -1798,10 +1798,10 @@ ObjExpr eval_var(Var var, [StdVar -> CaptVar] var_subst_map, [SurrExpr -> ObjExp
   // variables in object form, and from that point on its surrogate is
   // not used anymore. In fact, the surrogate should not be passed down at
   // all when a closure is encountered
-  assert not var_subst_map(var, *) or not surrogates(var, *);
+  assert not var_subst_map(var, _) or not surrogates(var, _);
 
-  surr = if var_subst_map(var, *) then var_subst_map[var] else
-         if surrogates(var, *)    then surrogates[var]    else
+  surr = if var_subst_map(var, _) then var_subst_map[var] else
+         if surrogates(var, _)    then surrogates[var]    else
                                        var;
   return surr;
 }

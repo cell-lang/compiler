@@ -62,7 +62,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     return errs if errs != [];
     errs = typecheck(idx, integer, env);
     return errs if errs != [];
-    elt_type = if typed_vars(seq_var, *) then seq_elem_supertype(typed_vars(seq_var)) else type_any;
+    elt_type = if typed_vars(seq_var, _) then seq_elem_supertype(typed_vars(seq_var)) else type_any;
     return typecheck(value, elt_type, env);
   }
 
@@ -332,7 +332,7 @@ implicit typedefs : [TypeName -> NeType] {
     fail if |envs| != 3;
     env0, env1, env2 = envs;
     vars = only([keys(e) : e <- envs]);
-    res = [v -> (e(v, !!) : e <- envs) : v <- vars, not is_subset(env2(v, !!), env1(v, !!))];
+    res = [v -> (e(v, !) : e <- envs) : v <- vars, not is_subset(env2(v, !), env1(v, !))];
     return nonempty_map(res);
   }
 }

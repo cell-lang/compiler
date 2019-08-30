@@ -3,7 +3,7 @@ implicit program : Program {
   Database automaton_by_id(DBSymbol rel_auto_id) = rel_auto_by_id(rel_auto_id);
 
   Database rel_auto_by_id(DBSymbol rel_auto_id) =
-    rel_autos_by_id(rel_auto_id, !!);
+    rel_autos_by_id(rel_auto_id, !);
 }
 
 
@@ -55,7 +55,7 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
 
 
   ValueStoreId table_col_store_id(DBSymbol rel_auto_id, TableVar var, Nat col_idx) {
-    table = tables_by_db(rel_auto_id, !!)(var);
+    table = tables_by_db(rel_auto_id, !)(var);
     return match (table, col_idx)
       table(),    _   = table.value_stores(col_idx),
       column(),   0   = table.value_store;
@@ -72,7 +72,7 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
 
 
   ValueStoreType value_store_type(DBSymbol rel_auto_id, ValueStoreId store_id) {
-    return value_stores_by_rel_auto(rel_auto_id, !!)(store_id);
+    return value_stores_by_rel_auto(rel_auto_id, !)(store_id);
 
     [DBSymbol -> [ValueStoreId -> ValueStoreType]] value_stores_by_rel_auto = [
       a.name -> value_stores(database = a) : a <- program.data_bases
@@ -82,19 +82,19 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
   //////////////////////////////////////////////////////////////////////////////
 
   ## TODO: CHANGE THE NAME IN message_type()
-  Type db_msg_type(DBSymbol type) = msg_type_by_db(type, !!);
+  Type db_msg_type(DBSymbol type) = msg_type_by_db(type, !);
 
 
   [+NeType*] update_signatures(DBSymbol rel_auto_id, UpdateSymbol update_id) =
-    updates_signatures_by_rel_auto_update(rel_auto_id, !!)(update_id);
+    updates_signatures_by_rel_auto_update(rel_auto_id, !)(update_id);
 
 
   [NeType*] update_aggregate_signatures(DBSymbol rel_auto_id, UpdateSymbol update_id) =
-    aggregated_signatures_by_rel_auto_update(rel_auto_id, !!)(update_id);
+    aggregated_signatures_by_rel_auto_update(rel_auto_id, !)(update_id);
 
 
   [NeType+] relvar_aggregated_signatures(DBSymbol rel_auto_id, RelVar rel_var) =
-    aggregated_signatures_by_rel_var(rel_auto_id, !!)(rel_var);
+    aggregated_signatures_by_rel_var(rel_auto_id, !)(rel_var);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

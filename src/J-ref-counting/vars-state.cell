@@ -70,7 +70,7 @@ VarsState vars_state([TrkObjVar -> VarStatus] std_vs, [TrkItVar -> StdObjVar] it
 
   Bool has_cycles(TrkObjVar var, [TrkObjVar -> VarStatus] vars_status, [TrkObjVar] previous_steps) {
     return true if in(var, previous_steps);
-    return false if not vars_status(var, *);
+    return false if not vars_status(var, _);
     status = vars_status[var];
     return false if status == owner or status == inline;
     parent_var = parent_var(status);
@@ -90,10 +90,10 @@ VarsState vars_state([TrkObjVar -> VarStatus] std_vs, [TrkItVar -> StdObjVar] it
 
 [TrkObjVar] tracked_vars(VarsState state) = keys(vars_status(state));
 
-Bool is_tracked(VarsState state, TrkObjVar var) = vars_status(state)(var, *);
+Bool is_tracked(VarsState state, TrkObjVar var) = vars_status(state)(var, _);
 
 Bool is_initialized(VarsState state, StdObjVar var) = if var :: TrkObjVar then is_tracked(state, var) else true;
-Bool is_initialized(VarsState state, TrkItVar var) = it_vars_map(state)(var, *);
+Bool is_initialized(VarsState state, TrkItVar var) = it_vars_map(state)(var, _);
 
 VarStatus var_status(VarsState state, TrkObjVar var) = vars_status(state)[var];
 

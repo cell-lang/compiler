@@ -138,7 +138,7 @@ implicit syn_prg : SynPrg {
 
 
   [AggrFunctDecl] aggr_funct_decls_by_name(Symbol name) {
-    return if aggr_fns_map(name, *) then aggr_fns_map(name, !!) else [];
+    return if aggr_fns_map(name, _) then aggr_fns_map(name, !) else [];
 
     [Symbol -> [+AggrFunctDecl]] aggr_fns_map =
       group_by(aggr_funct_decls, $.name);
@@ -181,7 +181,7 @@ implicit syn_prg : SynPrg {
 
 
   ProtDecl prot_decl_by_type(Atom type_id) {
-    return prot_decls_by_type(type_id, !!);
+    return prot_decls_by_type(type_id, !);
     [Atom -> ProtDecl] prot_decls_by_type = [t -> pd : pd <- prot_decls, t <- pd.types];
   }
 
@@ -190,16 +190,16 @@ implicit syn_prg : SynPrg {
 
 
   [Symbol] proc_auto_args(ProcSymbol proc_id) {
-    args = proc_defs_by_id(proc_id, !!).args;
+    args = proc_defs_by_id(proc_id, !).args;
     args_info = proc_args_info(proc_id);
     return [a.var : a @ i <- args, args_info(i) != :value_arg];
   }
 
 
   ProcArgInfo* proc_args_info(ProcSymbol proc_id) {
-    return if builtin_procs_map(proc_id, *)
-      then (:value_arg : i < left(builtin_procs_map(proc_id, !!)))
-      else signatures(proc_id, !!);
+    return if builtin_procs_map(proc_id, _)
+      then (:value_arg : i < left(builtin_procs_map(proc_id, !)))
+      else signatures(proc_id, !);
 
 
     [ProcSymbol -> ProcArgInfo*] signatures = [
@@ -268,14 +268,14 @@ implicit syn_prg : SynPrg {
 
 
   Bool automaton_is_static(Atom id) =
-    if db_defs_by_id(db_symbol(id), *)      then true       else
-    if auto_defs_by_id(auto_symbol(id), *)  then false      else
+    if db_defs_by_id(db_symbol(id), _)      then true       else
+    if auto_defs_by_id(auto_symbol(id), _)  then false      else
                                                  undefined;
 
 
   Bool automaton_is_reactive(Atom id) =
-    if auto_defs_by_id(auto_symbol(id), *) then true       else
-    if db_defs_by_id(db_symbol(id), *)     then false      else
+    if auto_defs_by_id(auto_symbol(id), _) then true       else
+    if db_defs_by_id(db_symbol(id), _)     then false      else
                                                 undefined;
 
 
@@ -304,9 +304,9 @@ implicit syn_prg : SynPrg {
     resolved = [auto_symbol(a.name) -> () : a <- react_auto_defs, not a.parent?];
     remaining = [a : a <- react_auto_defs, a.parent?];
     loop {
-      newly_resolved = [auto_symbol(a.name) -> (p) & resolved[p] : a <- remaining, p = auto_symbol(a.parent), resolved(p, *)];
+      newly_resolved = [auto_symbol(a.name) -> (p) & resolved[p] : a <- remaining, p = auto_symbol(a.parent), resolved(p, _)];
       break if newly_resolved == [];
-      remaining = [a : a <- remaining, p = auto_symbol(a.parent), not resolved(p, *)];
+      remaining = [a : a <- remaining, p = auto_symbol(a.parent), not resolved(p, _)];
       resolved = resolved & newly_resolved;
     }
     assert remaining == [];
@@ -338,11 +338,11 @@ implicit syn_prg : SynPrg {
 
   ## BAD BAD BAD: THESE TWO FUNCTIONS EXISTS ONLY BECAUSE OF A LIMITATION OF THE TYPECHECKER...
 
-  Bool non_nested_function_exists(FnSymbol fn_symb) = fn_defs_arg_arities(fn_symb, *);
+  Bool non_nested_function_exists(FnSymbol fn_symb) = fn_defs_arg_arities(fn_symb, _);
 
 
   Bool non_nested_function_exists(FnSymbol fn_symb, Nat arity) =
-    fn_defs_arg_arities(fn_symb, *) and fn_defs_arg_arities[fn_symb](arity, *);
+    fn_defs_arg_arities(fn_symb, _) and fn_defs_arg_arities[fn_symb](arity, _);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -623,7 +623,7 @@ implicit syn_prg : SynPrg, artifact : Artifact {
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////
 
-  Bool nested_function_exists(FnSymbol fn_symb, Nat arity) = local_fn_arity_args_arities(fn_symb, arity, *);
+  Bool nested_function_exists(FnSymbol fn_symb, Nat arity) = local_fn_arity_args_arities(fn_symb, arity, _);
 
 
   Nat* arg_arities(PlainFnFamilyId id) =
@@ -635,7 +635,7 @@ implicit syn_prg : SynPrg, artifact : Artifact {
 
 
   Nat* arg_arities(NestedFnFamilyId id) =
-    local_fn_arity_args_arities(id.inner.symbol, id.inner.arity, !!);
+    local_fn_arity_args_arities(id.inner.symbol, id.inner.arity, !);
 
 
   [+[ImplArg]] fn_impl_args(PlainFnFamilyId id) {

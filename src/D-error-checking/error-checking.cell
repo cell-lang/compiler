@@ -167,7 +167,7 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
     return [unsupported_foreign_key_type(key)] if not is_supported;
 
 
-    perm_map = rel_vars_perm_map(database.name, !!);
+    perm_map = rel_vars_perm_map(database.name, !);
     src_perm = perm_map(logical_rel_var(key.source_rel_var));
     src_is_perm = (i j <- src_perm : i != j);
     tgt_perm = only([perm_map(logical_rel_var(r)) : r <- key.target_rel_vars]);
@@ -244,8 +244,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
       ]);
 
       return [
-        if candidate_outputs(id, *) then wrong_output_nature(id, output.discrete) else undefined_output(id)
-        : id output <- automaton.outputs, not candidate_outputs(id, *) or candidate_outputs[id] != output.discrete
+        if candidate_outputs(id, _) then wrong_output_nature(id, output.discrete) else undefined_output(id)
+        : id output <- automaton.outputs, not candidate_outputs(id, _) or candidate_outputs[id] != output.discrete
       ];
     }
 
@@ -329,7 +329,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
       nested_auto = automaton_by_id(type);
       exp_inputs = [bare_id(v) : v _ <- nested_auto.inputs];
       errs  = [invalid_input(id, type, input_id) : input_id _ <- args, not exp_inputs(input_id)] &
-              [undefined_input(id, type, input_id) : input_id <- exp_inputs, not args(input_id, *)];
+              [undefined_input(id, type, input_id) : input_id <- exp_inputs, not args(input_id, _)];
       return errs if errs != [];
       return union([{
           input_is_discrete = nested_auto.inputs[signal_var(input_id)].discrete;

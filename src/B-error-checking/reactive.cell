@@ -4,7 +4,7 @@ implicit syn_prg : SynPrg {
 
     // Checking for conflicts with names of types or static automata
     confl_type_name = type_symbol(name);
-    if type_arity_map(confl_type_name, *) {
+    if type_arity_map(confl_type_name, _) {
       confl_tdefs = rand_sort([td : td <- syn_tdefs | td <- syn_par_tdefs, td.name == confl_type_name]);
       return (auto_type_conflict(name, nonempty(confl_tdefs)));
     }
@@ -51,9 +51,9 @@ implicit syn_prg : SynPrg {
     ExprWFError* conflicts(<PlainRuleDecl, WhenRuleDecl, CondRuleDecl, ForeachRuleDecl> rule, [Atom -> AnyAutoDecl] decls_by_key) {
       ## WHAT IS THIS ASSERT DOING HERE?
       assert match (rule)
-        plain_rule_decl() = rule.discrete or (decls_by_key(rule.name, *) and decls_by_key[rule.name] :: StateVarDecl),
+        plain_rule_decl() = rule.discrete or (decls_by_key(rule.name, _) and decls_by_key[rule.name] :: StateVarDecl),
         when_rule_decl() | cond_rule_decl() | foreach_rule_decl() = true;
-      has_conflict = rule.discrete and decls_by_key(rule.name, *);
+      has_conflict = rule.discrete and decls_by_key(rule.name, _);
       return (conflicting_auto_decls(rule, decls_by_key[rule.name]) if has_conflict);
     }
 
@@ -161,7 +161,7 @@ implicit syn_prg : SynPrg, artifact : ReactAutoDef {
 
   ExprWFError* rule_decl_wf_error(NestedAutoDecl decl) {
     auto_symb = auto_symbol(decl.auto_name);
-    return (unknown_auto(auto_symb)) if not auto_defs_by_id(auto_symb, *);
+    return (unknown_auto(auto_symb)) if not auto_defs_by_id(auto_symb, _);
 
     auto_def = auto_defs_by_id[auto_symb];
     exp_num_of_pos_inputs = |auto_def.pos_inputs|;

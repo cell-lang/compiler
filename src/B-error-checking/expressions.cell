@@ -117,7 +117,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg], actual_ar
     rel_memb_test()     = rel_memb_test_local_wf_errors(expr, def_vars),
     rel_lookup()        = rel_lookup_local_wf_errors(expr, def_vars),
     unary_op_call()     |
-    binary_op_call()    = (undefined_operator(expr) if not top_level_fndefs_by_name_arity(op_symbol(expr.op), *)),
+    binary_op_call()    = (undefined_operator(expr) if not top_level_fndefs_by_name_arity(op_symbol(expr.op), _)),
     impl_args_call()    = impl_args_call_local_wf_errors(expr, def_vars),
     builtin_call()      = (wrong_builtin_arity(expr.name, expr.args) if |expr.args| != builtin_arities[expr.name]),
     rel_var_size_expr() = rel_var_size_expr_wf_errors(expr, def_vars),
@@ -271,7 +271,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg], actual_ar
     return (invalid_signal_copy_context(symbol)) if not artifact_is_auto_def;
 
     interface = auto_interfaces[self_auto_type];
-    is_ok = interface.state_vars(symbol) or (interface.inputs(symbol, *) and not interface.inputs[symbol].discrete);
+    is_ok = interface.state_vars(symbol) or (interface.inputs(symbol, _) and not interface.inputs[symbol].discrete);
     return (not_a_copiable_signal(symbol) if not is_ok);
   }
 
@@ -369,7 +369,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg], actual_ar
     return ();
     ## IMPLEMENT IMPLEMENT IMPLEMENT
     ## HERE I SHOULD ALSO CHECK THAT THE AUTOMATON DOES HAVE THAT SPECIFIC OUTPUT.
-    // return (undef_react_auto_var(var, already_def(bare_id(var), def_vars)) if not auto_vars(var, *));
+    // return (undef_react_auto_var(var, already_def(bare_id(var), def_vars)) if not auto_vars(var, _));
   }
 
 

@@ -21,7 +21,7 @@ implicit syn_prg : SynPrg {
 implicit syn_prg : SynPrg, type_arity_map : [BasicTypeSymbol -> [+Nat]] {
   ExprWFError* schema_wf_errors(SchemaDef db_def) {
     confl_type_name = type_symbol(db_def.name);
-    if type_arity_map(confl_type_name, *) {
+    if type_arity_map(confl_type_name, _) {
       confl_tdefs = rand_sort([td : td <- syn_tdefs | td <- syn_par_tdefs, td.name == confl_type_name]);
       return (schema_def_duplicates_type(db_def, nonempty(confl_tdefs)));
     }
@@ -65,11 +65,11 @@ implicit syn_prg : SynPrg, type_arity_map : [BasicTypeSymbol -> [+Nat]] {
 
   ExprWFError* foreign_key_decl_wf_errors(Symbol name, ForeignKeyDecl key) {
     // Checking that all relations involved exist and have the right arity
-    info = db_interfaces(db_symbol(name), !!);
+    info = db_interfaces(db_symbol(name), !);
     rels = (key.targets | (key.src_rel, key.src_args));
     errs = ();
     for r, as <- rels {
-      if not info.rel_vars(r, *)
+      if not info.rel_vars(r, _)
         errs = (errs | undef_rel_var(key, r));
       else if |as| != info.rel_vars(r)
         errs = (errs | invalid_foreign_key_relvar_arity(key, r));
@@ -113,18 +113,18 @@ implicit syn_prg : SynPrg, type_arity_map : [BasicTypeSymbol -> [+Nat]] {
 
     keys = [set(k) : k <- decl.keys];
     valid_keys = if decl.symmetric
-      then sym_rel_vars_valid_key_sets_by_arity(arity, !!)
-      else valid_key_sets_by_arity(arity, !!);
+      then sym_rel_vars_valid_key_sets_by_arity(arity, !)
+      else valid_key_sets_by_arity(arity, !);
     return (invalid_relvar_keys(decl)) if keys != [] and not valid_keys(keys);
 
     errs = (duplicate_schema_decl(decl, non_overloadable_decls_by_name[decl.name])
-              if non_overloadable_decls_by_name(decl.name, *));
+              if non_overloadable_decls_by_name(decl.name, _));
 
     attributes = sort(decl.attributes, _print_($a.name) < _print_($b.name));
     for arv @ i <- attributes {
       if arv.name == decl.name
         errs = (errs | duplicate_schema_decl(decl, arv));
-      if non_overloadable_decls_by_name(arv.name, *)
+      if non_overloadable_decls_by_name(arv.name, _)
         errs = (errs | duplicate_schema_decl(arv, non_overloadable_decls_by_name[arv.name]));
       if i > 0 and attributes(i-1).name == arv.name
         errs = (errs | duplicate_schema_decl(arv, attributes(i-1)));

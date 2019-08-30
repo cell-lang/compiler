@@ -145,8 +145,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
     res = try_mono_tag_type(type);
     if res != nothing {
       tag, obj_type = value(res);
-      if optimized_tagged_records(tag, *) {
-        for r @ i <- optimized_tagged_records(tag, !!) {
+      if optimized_tagged_records(tag, _) {
+        for r @ i <- optimized_tagged_records(tag, !) {
           rec_type = low_level_repr_type(r);
           return opt_tag_rec_repr(tag, i) if is_subset_wrapper_2(obj_type, rec_type);
         }
@@ -204,9 +204,9 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
 
 
   (FnId, LowLevelSign) low_level_sign(FnFamilyId fn_id, Type* args_types) {
-    for id, s, ts <- signatures_info_by_family_id(fn_id, !!)
+    for id, s, ts <- signatures_info_by_family_id(fn_id, !)
       return (id, s) if not (t @ i <- args_types : not is_subset(t, ts(i)));
-    return (fn_id, aggr_sign_by_fn_family_id(fn_id, !!));
+    return (fn_id, aggr_sign_by_fn_family_id(fn_id, !));
 
 
     [FnFamilyId -> LowLevelSign] aggr_sign_by_fn_family_id =
@@ -233,10 +233,10 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
 
   (MethodId, LowLevelSign) low_level_sign(DBSymbol rel_auto_id, MethodSymbol symbol, Type* args_types) {
     family_id = method_id(symbol, |args_types|);
-    methods = signatures_map(rel_auto_id, !!)(family_id);
+    methods = signatures_map(rel_auto_id, !)(family_id);
     for id, s, ts <- isort(methods)
       return (id, s) if not (t @ i <- args_types : not is_subset(t, ts(i)));
-    return (family_id, aggr_signatures_map(rel_auto_id, !!)(family_id));
+    return (family_id, aggr_signatures_map(rel_auto_id, !)(family_id));
 
 
     [DBSymbol -> [MethodFamilyId -> LowLevelSign]] aggr_signatures_map = [
