@@ -20,6 +20,39 @@ type Record         = [Atom -> Any];
 
 type Stack[T]       = empty_stack, stack(top: T, rest: Stack[T]);
 
+type Opt[T]         = (), (T);
+
+////////////////////////////////////////////////////////////////////////////////
+
+Nat nat(Int n) = if n :: Nat then n else undefined;
+
+Opt[T] opt(Maybe[T]) =
+  just(x?)  = (x),
+  nothing   = ();
+
+Maybe[T] maybe(Opt[T] opt) = if opt != () then just(only(opt)) else nothing;
+
+Maybe[T] maybe_unsafe(T* opt) =
+  if opt == ()  then nothing         else
+  if |opt| == 1 then just(only(opt)) else
+                     undefined;
+
+
+[A] difference([A] s1, [B] s2)    = [e : e <- s1, not s2(e)];
+
+T only((T)) = (x?) = x;
+
+T* intermix(T* seq, T obj) = join(((obj if i != 0, e) : e @ i <- seq));
+
+// [T] union([T]* sets) = [x : s <- sets, x <- s];
+
+
+T only([T] set) {
+  seq = _isort_(set);
+  fail if |seq| != 1;
+  return seq(0);
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 
 <empty_stack> empty_stack = :empty_stack;
@@ -108,12 +141,12 @@ T+        nonempty(T* seq)            = if seq != () then seq else undefined;
 // [] min_by([], (</> -> Int) p) = [];
 // [+T] min_by([+T] xs, (T -> Int) p)
 
-[T] min_by([T] xs, (T -> Int) p) {
-  return [] if xs == [];
-  by_priority = group_by(xs, p);
-  min_priority = min(nonempty(keys(by_priority)));
-  return by_priority[min_priority];
-}
+// [T] min_by_int([T] xs, (T -> Int) p) {
+//   return [] if xs == [];
+//   by_priority = group_by(xs, p);
+//   min_priority = min(nonempty(keys(by_priority)));
+//   return by_priority[min_priority];
+// }
 
 ////////////////////////////////////////////////////////////////////////////////
 
