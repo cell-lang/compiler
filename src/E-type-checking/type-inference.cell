@@ -1653,9 +1653,15 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     read_state_ctrl_stmt()    = read_state_ctrl_stmt_update_env(stmt.res_var, stmt.auto_var, env);
 
 
-  [EnvVar -> Type] read_state_ctrl_stmt_update_env(StdVar res_var, <LocAutoVar, LocDBVar> auto_var, [EnvVar -> Type] env) {
-    state_type = state_type_workaround(automaton_by_id(var_type(auto_var)));
+  [EnvVar -> Type] read_state_ctrl_stmt_update_env(StdVar res_var, LocAutoVar auto_var, [EnvVar -> Type] env) {
+    state_type = state_type(automaton_by_id(var_type(auto_var)));
     return update(env, res_var, type_maybe(state_type));
+  }
+
+
+  [EnvVar -> Type] read_state_ctrl_stmt_update_env(StdVar res_var, LocDBVar auto_var, [EnvVar -> Type] env) {
+    state_type = state_type(automaton_by_id(var_type(auto_var)));
+    return update(env, res_var, state_type);
   }
 
 
