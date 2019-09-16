@@ -742,13 +742,14 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 
     if origin_symmetric or target_symmetric {
       key_type = match (origin_args, target_args)
-        (_),                        (_, _)      = :unary_sym_binary,
-        (_),                        (_, _, _)   = :unary_sym_ternary,
-        (_, _),                     (_)         = :sym_binary_unary,
-        (nothing, nothing, just()), (just())    = ternary_unary(2),
-        (_, _, _),                  (_)         = :sym_ternary_unary,
-        (_, _),                     (_, _, _)   = :sym_binary_sym_ternary,
-        (_, _, _),                  (_, _)      = :sym_ternary_sym_binary;
+        (_),                        (_, _)                      = :unary_sym_binary,
+        (_),                        (nothing, nothing, just())  = unary_ternary(2),
+        (_),                        (_, _, _)                   = :unary_sym_ternary,
+        (_, _),                     (_)                         = :sym_binary_unary,
+        (nothing, nothing, just()), (_)                         = ternary_unary(2),
+        (_, _, _),                  (_)                         = :sym_ternary_unary,
+        (_, _),                     (_, _, _)                   = :sym_binary_sym_ternary,
+        (_, _, _),                  (_, _)                      = :sym_ternary_sym_binary;
     }
     else {
       key_type = match (origin_args, target_args)
