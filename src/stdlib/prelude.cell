@@ -57,6 +57,8 @@ Int xor(Int a, Int b)   = _xor_(a, b);
 
 ////////////////////////////////////////////////////////////////////////////////
 
+Nat nat(Int n) = if n :: Nat then n else undefined;
+
 Nat abs(Int n) = if n :: Nat then n else nat(-n);
 
 Int sum(Int* ns) {
@@ -293,9 +295,6 @@ Nat length(String s) = |_untag_(s)|;
 
 Nat (_[_]) (String str, Int idx) = _untag_(str)(idx);
 
-String (_&_) (String s1, String s2)   = string(_untag_(s1) & _untag_(s2));
-String append(String* ss)             = string(join((_untag_(s) : s <- ss)));
-String append(String* ss, String sep) = string(join(intermix((_untag_(s) : s <- ss), _untag_(sep))));
 String reverse(String s)              = string(reverse(_untag_(s)));
 String substr(String s, Int n, Int m) = string(_slice_(_untag_(s), n, m));
 
@@ -303,3 +302,16 @@ String take(String s, Int count) = string(take(_untag_(s), count));
 String drop(String s, Int count) = string(drop(_untag_(s), count));
 
 String (_*_) (Nat len, String str) = string(len * _untag_(str));
+
+String (_&_) (String s1, String s2)   = string(_untag_(s1) & _untag_(s2));
+String append(String* ss)             = string(join((_untag_(s) : s <- ss)));
+
+String append(String* ss, String sep) {
+  sep_chs = _untag_(sep);
+  chs = ();
+  for s @ i <- ss {
+    chs = _cat_(chs, sep_chs) if i > 0;
+    chs = _cat_(chs, _untag_(s));
+  }
+  return :string(chs);
+}
