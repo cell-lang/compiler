@@ -24,6 +24,25 @@ type Opt[T]         = (), (T);
 
 ////////////////////////////////////////////////////////////////////////////////
 
+() isort([]) = ();
+
+T+ isort([+T] s) {
+  seq = _isort_(s);
+  return if seq != () then seq else undefined;
+}
+
+(A, B)+ isort([+A, B] rel) {
+  seq = isort([(a, b) : a b <- rel]);
+  return if seq != () then seq else undefined;
+}
+
+(A, B, C)+ isort([+A, B, C] rel) {
+  seq = isort([(a, b, c) : a b c <- rel]);
+  return if seq != () then seq else undefined;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
 Opt[T] opt(Maybe[T]) =
   just(x?)  = (x),
   nothing   = ();
@@ -46,7 +65,7 @@ T* intermix(T* seq, T obj) = join(((obj if i != 0, e) : e @ i <- seq));
 
 
 T only([T] set) {
-  seq = _isort_(set);
+  seq = isort(set);
   fail if |seq| != 1;
   return seq(0);
 }
@@ -396,7 +415,7 @@ Bool is_key(Any key, [Any -> Any] map) = map(key, _);
 Bool has_duplicates(Any* s) = duplicates(s) != [];
 
 () rand_sort([])        = ();
-T+ rand_sort([+T] set)  = nonempty(_isort_(set));
+T+ rand_sort([+T] set)  = nonempty(isort(set));
 
 (K, V)* rand_sort_pairs([K -> V] map) = rand_sort([(k, v) : k v <- map]);
 
