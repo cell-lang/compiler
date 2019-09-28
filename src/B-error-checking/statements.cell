@@ -390,60 +390,65 @@ implicit {
 
   ExprWFError* proc_call_stmt_local_wf_errors(SynProcCallStmt stmt, [DefVar] ro_vars, [StdVar] rw_vars) {
     return (proc_call_not_allowed(stmt)) if not allow_proc_calls;
-    var_errs = (ro_vars_asgnm([stmt.res_var]) if stmt.res_var? and already_def(stmt.res_var, ro_vars));
+    return (ro_vars_asgnm([stmt.res_var])) if stmt.res_var? and already_def(stmt.res_var, ro_vars);
 
     proc_name = stmt.proc_name;
     if not builtin_procs_map(proc_name, _) {
-      if not proc_defs_by_id(proc_name, _) {
-        return (var_errs | undef_proc(stmt));
-      }
-      else {
-        proc_def = proc_defs_by_id[proc_name];
-        arity = |proc_def.args|;
-        has_ret_val = proc_def.res_type != nothing;
-        if arity == |stmt.args| {
-          args_info = proc_args_info(proc_name);
-          args_errs = join((
-            match (args_info(i))
-              value_arg           = expr_wf_errors(e, ro_vars & rw_vars),
-              rel_auto_arg(id?)   = rel_auto_arg_errs(e, id, i, proc_name, ro_vars, rw_vars),
-              react_auto_arg(id?) = react_auto_arg_errs(e, id, i, proc_name, ro_vars, rw_vars)
-            : e @ i <- stmt.args
-          ));
-          return args_errs if args_errs != ();
-        }
-      }
+      return (undef_proc(stmt)) if not proc_defs_by_id(proc_name, _);
+      args_info = proc_args_info(proc_name);
+      has_ret_val = proc_defs_by_id(proc_name, !).res_type != nothing;
     }
-    else {
-      arity, has_ret_val = builtin_procs_map[proc_name];
-      errs = join((expr_wf_errors(a, ro_vars & rw_vars) : a <- stmt.args));
-      return errs if errs != ();
-    }
+    else
+      args_info, has_ret_val = builtin_procs_map(proc_name, !);
 
-    proc_errs = (
+    arity = |args_info|;
+
+    errs = (
       wrong_proc_arity(stmt, arity) if |stmt.args| != arity,
       uncaught_ret_val(stmt)        if has_ret_val and not stmt.res_var?,
       proc_has_no_ret_val(stmt)     if not has_ret_val and stmt.res_var?
     );
+    return errs if errs != ();
 
-    return var_errs & proc_errs;
+    return join((
+      match (args_info(i))
+        value_arg           = expr_wf_errors(e, ro_vars & rw_vars),
+        rel_auto_arg        = rel_auto_arg_errs(e, nothing, i, proc_name, ro_vars, rw_vars),
+        rel_auto_arg(id?)   = rel_auto_arg_errs(e, just(id), i, proc_name, ro_vars, rw_vars),
+        react_auto_arg(id?) = react_auto_arg_errs(e, id, i, proc_name, ro_vars, rw_vars)
+      : e @ i <- stmt.args
+    ));
 
 
-    ExprWFError* rel_auto_arg_errs(SynExpr expr, Symbol rel_auto_type, Nat idx, ProcSymbol proc, [DefVar] ro_vars, [StdVar] rw_vars) {
-      if not expr :: ConstOrVar
-        return (actual_argument_not_an_auto_var(expr, proc, idx, db_symbol(rel_auto_type)));
+    ExprWFError* rel_auto_arg_errs(SynExpr expr, Maybe[Symbol] maybe_auto_type, Nat idx, ProcSymbol proc, [DefVar] ro_vars, [StdVar] rw_vars) {
+      if not expr :: ConstOrVar {
+        auto_type = if maybe_auto_type != nothing
+          then db_symbol(value(maybe_auto_type))
+          else :any_rel_auto;
+        return (actual_argument_not_an_auto_var(expr, proc, idx, auto_type));
+      }
       var_symb = match (expr) const_or_var(s?) = s;
-      if not loc_db_vars(loc_db_var(var_symb), _) {
+      auto_var = loc_db_var(var_symb);
+      if not loc_db_vars(auto_var, _) {
         is_auto_var = loc_auto_vars(loc_auto_var(var_symb), _);
         is_obj_var = ro_vars(var(var_symb)) or rw_vars(var(var_symb));
         return (undef_static_auto_var(var_symb, is_auto_var, is_obj_var));
+      }
+      if maybe_auto_type != nothing {
+        actual_auto_type = loc_db_vars(auto_var, !);
+        exp_auto_type = db_symbol(value(maybe_auto_type));
+        return (
+          wrong_auto_type(proc: proc, idx: idx, actual: actual_auto_type, expected: exp_auto_type)
+        ) if actual_auto_type != exp_auto_type;
       }
       return ();
     }
 
 
-    ExprWFError* react_auto_arg_errs(SynExpr expr, Symbol rel_auto_type, Nat idx, ProcSymbol proc, [DefVar] ro_vars, [StdVar] rw_vars) {
-      fail;
+    ExprWFError* react_auto_arg_errs(SynExpr expr, Symbol maybe_auto_type, Nat idx, ProcSymbol proc, [DefVar] ro_vars, [StdVar] rw_vars) {
+      ## CURRENTLY UNIMPLEMENTED, BECAUSE AT THE MOMENT A PROCEDURE IS
+      ## NOT ACCEPTED IF ONE OF ITS ARGUMENTS IS A REACTIVE AUTOMATON
+      return ();
     }
   }
 

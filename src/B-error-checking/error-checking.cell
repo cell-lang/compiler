@@ -198,13 +198,13 @@ implicit syn_prg : SynPrg {
       auto_def_errors(a, (unknown_auto(auto_symbol(a.parent))))
       : a <- react_auto_defs, a.parent?, not all_autos(a.parent)
     ];
-    return _isort_(errs) if errs != [];
+    return isort(errs) if errs != [];
 
     shallow_deps = [a.name -> [a.parent if a.parent?] : a <- react_auto_defs];
     deep_deps = transitive_closure(shallow_deps);
     ## BAD: THE ps(a) CHECK SHOULD BE ENOUGH TO INFER THAT ps IS NOT EMPTY
     errs = [auto_inheritance_cycle(nonempty(ps)) : a ps <- deep_deps, ps(a)];
-    return _isort_(errs) if errs != [];
+    return isort(errs) if errs != [];
 
     sorted_auto_ids = topological_sort(shallow_deps);
 
@@ -217,7 +217,7 @@ implicit syn_prg : SynPrg {
           return [auto_def_errors(auto, es) if es != ()];
         } : id <- ids
       ]);
-      return _isort_(errs) if errs != [];
+      return isort(errs) if errs != [];
 
       layer_autos_by_id = [
         typed_id -> resolve_inheritance(auto_defs_by_id[typed_id], resolved_autos_by_id)

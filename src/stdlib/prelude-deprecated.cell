@@ -20,6 +20,56 @@ type Record         = [Atom -> Any];
 
 type Stack[T]       = empty_stack, stack(top: T, rest: Stack[T]);
 
+type Opt[T]         = (), (T);
+
+////////////////////////////////////////////////////////////////////////////////
+
+() isort([]) = ();
+
+T+ isort([+T] s) {
+  seq = _isort_(s);
+  return if seq != () then seq else undefined;
+}
+
+(A, B)+ isort([+A, B] rel) {
+  seq = isort([(a, b) : a b <- rel]);
+  return if seq != () then seq else undefined;
+}
+
+(A, B, C)+ isort([+A, B, C] rel) {
+  seq = isort([(a, b, c) : a b c <- rel]);
+  return if seq != () then seq else undefined;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+Opt[T] opt(Maybe[T]) =
+  just(x?)  = (x),
+  nothing   = ();
+
+Maybe[T] maybe(Opt[T] opt) = if opt != () then just(only(opt)) else nothing;
+
+Maybe[T] maybe_unsafe(T* opt) =
+  if opt == ()  then nothing         else
+  if |opt| == 1 then just(only(opt)) else
+                     undefined;
+
+
+[A] difference([A] s1, [B] s2)    = [e : e <- s1, not s2(e)];
+
+T only((T)) = (x?) = x;
+
+T* intermix(T* seq, T obj) = join(((obj if i != 0, e) : e @ i <- seq));
+
+// [T] union([T]* sets) = [x : s <- sets, x <- s];
+
+
+T only([T] set) {
+  seq = isort(set);
+  fail if |seq| != 1;
+  return seq(0);
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 
 <empty_stack> empty_stack = :empty_stack;
@@ -108,12 +158,12 @@ T+        nonempty(T* seq)            = if seq != () then seq else undefined;
 // [] min_by([], (</> -> Int) p) = [];
 // [+T] min_by([+T] xs, (T -> Int) p)
 
-[T] min_by([T] xs, (T -> Int) p) {
-  return [] if xs == [];
-  by_priority = group_by(xs, p);
-  min_priority = min(nonempty(keys(by_priority)));
-  return by_priority[min_priority];
-}
+// [T] min_by_int([T] xs, (T -> Int) p) {
+//   return [] if xs == [];
+//   by_priority = group_by(xs, p);
+//   min_priority = min(nonempty(keys(by_priority)));
+//   return by_priority[min_priority];
+// }
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -365,7 +415,7 @@ Bool is_key(Any key, [Any -> Any] map) = map(key, _);
 Bool has_duplicates(Any* s) = duplicates(s) != [];
 
 () rand_sort([])        = ();
-T+ rand_sort([+T] set)  = nonempty(_isort_(set));
+T+ rand_sort([+T] set)  = nonempty(isort(set));
 
 (K, V)* rand_sort_pairs([K -> V] map) = rand_sort([(k, v) : k v <- map]);
 
