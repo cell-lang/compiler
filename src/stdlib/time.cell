@@ -5,7 +5,7 @@ type Weekday = monday, tuesday, wednesday, thursday, friday, saturday, sunday;
 Nat+ non_leap_year_days_per_month = (31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31);
 Nat+ leap_year_days_per_month     = (31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31);
 
-Bool is_leap_year(Int year) = (_mod_(year, 4) == 0 and _mod_(year, 100) != 0) or _mod_(year, 400) == 0;
+Bool is_leap_year(Int year) = _mod_(year, 4) == 0 and (_mod_(year, 100) != 0 or _mod_(year, 400) == 0);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -126,4 +126,61 @@ Maybe[Time] time(Date date, Int hours, Int minutes, Int seconds, Int nanoseconds
     (days_since_epoc > -106752 and days_since_epoc < 106751) or
     (days_since_epoc == -106752 and day_time >= 763145224192) or
     (days_since_epoc ==  106751 and day_time <= 85636854775807);
+}
+
+
+Date day(Time time) {
+  nanosecs = _untag_(time);
+  if nanosecs >= 0 {
+    days_since_epoc = nanosecs / 86400000000000;
+    return :date(days_since_epoc);
+  }
+  else {
+    days_before_epoc = (-(nanosecs + 1) / 86400000000000) + 1;
+    return :date(-days_before_epoc);
+  }
+}
+
+
+<0..23> hour(Time time) {
+  nanosecs = _untag_(time);
+  if nanosecs >= 0
+    hour = _mod_(nanosecs / 3600000000000, 24);
+  else
+    hour = 23 - _mod_((-nanosecs - 1) / 3600000000000, 24);
+  fail if not hour :: <0..23>;
+  return hour;
+}
+
+
+<0..59> minute(Time time) {
+  nanosecs = _untag_(time);
+  if nanosecs >= 0
+    minute = _mod_(nanosecs / 60000000000, 60);
+  else
+    minute = 59 - _mod_((-nanosecs - 1) / 60000000000, 60);
+  fail if not minute :: <0..59>;
+  return minute;
+}
+
+
+<0..59> second(Time time) {
+  nanosecs = _untag_(time);
+  if nanosecs >= 0
+    second = _mod_(nanosecs / 1000000000, 60);
+  else
+    second = 59 - _mod_((-nanosecs - 1) / 1000000000, 60);
+  fail if not second :: <0..59>;
+  return second;
+}
+
+
+<0..999999999> nanosec(Time time) {
+  nanosecs = _untag_(time);
+  if nanosecs >= 0
+    nanosec = _mod_(nanosecs, 1000000000);
+  else
+    nanosec = 999999999 - _mod_(-nanosecs - 1, 1000000000);
+  fail if not nanosec :: <0..999999999>;
+  return nanosec;
 }

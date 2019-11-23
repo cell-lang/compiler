@@ -1710,6 +1710,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
 
   [EnvVar -> Type] loop_stmt_update_env(Statement+ body, [EnvVar -> Type] env) {
+    return env if not update_any_non_local_untyped_variable(body, env, typed_vars);
+
     return unreachable_env(env) if not may_fall_through(body);
     env_post = update_env(body, env);
     return merge_envs([env, env_post, break_env(body, env), break_env(body, env_post)]);
@@ -1717,6 +1719,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
 
   [EnvVar -> Type] foreach_stmt_update_env(Iter iter, Statement+ body, [EnvVar -> Type] env) {
+    return env if not update_any_non_local_untyped_variable(body, env, typed_vars);
+
     loop_vars = loop_vars(iter, env);
     env_0 = env & loop_vars;
     env_1 = update_env(body, env_0);
@@ -1728,6 +1732,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
 
   [EnvVar -> Type] for_stmt_update_env(Maybe[StdVar] maybe_var, Expr start_val, Expr end_val, Bool end_val_incl, Statement+ body, [EnvVar -> Type] env) {
+    return env if not update_any_non_local_untyped_variable(body, env, typed_vars);
+
     var_type = loop_var_type(expr_type(start_val, env), expr_type(end_val, env), end_val_incl);
     env_0 = env & [value(maybe_var) -> var_type if maybe_var != nothing];
     env_1 = update_env(body, env_0);

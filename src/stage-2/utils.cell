@@ -602,6 +602,41 @@ Bool may_fall_through(Statement* stmts) = in(:falls_through, outcomes(stmts));
 
 ////////////////////////////////////////////////////////////////////////////////
 
+Bool update_any_non_local_untyped_variable(Statement* stmts, [EnvVar -> Type] env, [StdVar -> NeType] typed_vars) =
+  (s <- stmts : updates_any_non_local_untyped_variable(s, env, typed_vars));
+
+Bool updates_any_non_local_untyped_variable(Statement stmt, [EnvVar -> Type] env, [StdVar -> NeType] typed_vars) =
+  assignment_stmt()             = (v <- stmt.vars : v != nothing and env(value(v), _) and not typed_vars(value(v), _)),
+  seq_update_stmt()             = env(stmt.seq_var, _) and not typed_vars(stmt.seq_var, _),
+  if_stmt()                     = update_any_non_local_untyped_variable(stmt.body, env, typed_vars) or
+                                  update_any_non_local_untyped_variable(stmt.else, env, typed_vars),
+  loop_stmt(ss?)                = update_any_non_local_untyped_variable(ss, env, typed_vars),
+  foreach_stmt()                = update_any_non_local_untyped_variable(stmt.body, env, typed_vars),
+  for_stmt()                    = update_any_non_local_untyped_variable(stmt.body, env, typed_vars),
+  let_stmt()                    = update_any_non_local_untyped_variable(stmt.body, env, typed_vars),
+  return_stmt                   |
+  return_stmt()                 |
+  break_stmt                    |
+  fail_stmt()                   |
+  assert_stmt()                 |
+  print_stmt()                  |
+  proc_call_stmt()              |
+  send_msg_stmt()               |
+  try_update_stmt()             |
+  set_memb_var_stmt()           |
+  delete_stmt()                 |
+  insert_stmt()                 |
+  update_stmt()                 |
+  set_input_ctrl_stmt()         |
+  clear_input_ctrl_stmt()       |
+  set_elapsed_time_ctrl_stmt()  |
+  apply_ctrl_stmt()             |
+  send_msg_ctrl_stmt()          |
+  restore_state_ctrl_stmt()     |
+  read_state_ctrl_stmt()        = false;
+
+////////////////////////////////////////////////////////////////////////////////
+
 [BuiltIn -> NzNat] builtin_arities = (
   neg:         1,
   add:         2,

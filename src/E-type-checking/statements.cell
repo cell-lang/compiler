@@ -89,6 +89,9 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
 
   [TypeCheckingError] typecheck_loop_stmt(Statement+ body, Type exp_type, [EnvVar -> Type] env) {
+    if not update_any_non_local_untyped_variable(body, env, typed_vars)
+      return typecheck(body, exp_type, env);
+
     out_of_loop_vars = keys(env);
     entry_env = env;
     envs = (env);
@@ -164,8 +167,12 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
 
     [TypeCheckingError] typecheck_loop_body(Statement+ body, [EnvVar -> Type] loop_vars, Type exp_type, [EnvVar -> Type] env) {
-      out_of_loop_vars = keys(env);
       entry_env = env & loop_vars;
+
+      if not update_any_non_local_untyped_variable(body, entry_env, typed_vars)
+        return typecheck(body, exp_type, entry_env);
+
+      out_of_loop_vars = keys(env);
       envs = (env);
       for 2 {
         errs = typecheck(body, exp_type, entry_env);
@@ -192,10 +199,12 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
           end_val_incl
         ) if maybe_var != nothing
     ];
+    entry_env = env & loop_vars;
+
+    if not update_any_non_local_untyped_variable(body, entry_env, typed_vars)
+      return typecheck(body, exp_type, entry_env);
 
     out_of_loop_vars = keys(env);
-
-    entry_env = env & loop_vars;
     envs = (env);
     for 2 {
       errs = typecheck(body, exp_type, entry_env);

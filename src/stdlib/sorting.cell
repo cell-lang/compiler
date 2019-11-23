@@ -1,0 +1,602 @@
+Int* sorti(Int* xs) {
+  ys : Int*;
+  zs : Int*;
+
+  i1  : Int;
+  i2  : Int;
+  j   : Int;
+
+  offset  : Int;
+  end1    : Int;
+  end2    : Int;
+  ord_len : Int;
+
+  y1 : Int;
+  y2 : Int;
+  z1 : Int;
+  z2 : Int;
+
+  flip : Bool;
+
+  ys = (x : x <- xs);
+  zs = (0 : i < |xs|);
+
+  flip = false;
+
+  ord_len = 1;
+  while ord_len < |ys| {
+    // Merging subarrays in ys into zs
+    offset = 0;
+    while offset < |ys| {
+      end1 = offset + ord_len;
+
+      if end1 < |ys| {
+        end2 = end1 + ord_len;
+        end2 = |ys| if end2 > |ys|;
+
+        i1 = offset;
+        i2 = end1;
+        j = offset;
+
+        y1 = ys(i1);
+        y2 = ys(i2);
+
+        while j < end2 {
+          if y1 < y2 {
+            zs(j) := y1;
+            j = j + 1;
+            i1 = i1 + 1;
+            if i1 == end1 {
+              while i2 < end2 {
+                zs(j) := ys(i2);
+                j = j + 1;
+                i2 = i2 + 1;
+              }
+            }
+            else
+              y1 = ys(i1);
+          }
+          else {
+            zs(j) := y2;
+            j = j + 1;
+            i2 = i2 + 1;
+            if i2 == end2 {
+              while i1 < end1 {
+                zs(j) := ys(i1);
+                j = j + 1;
+                i1 = i1 + 1;
+              }
+            }
+            else
+              y2 = ys(i2);
+          }
+        }
+      }
+      else {
+        for i = offset .. |ys|
+          zs(i) := ys(i);
+      }
+
+      offset = offset + 2 * ord_len;
+    }
+    ord_len = 2 * ord_len;
+
+    // Stopping if we're done
+    if ord_len >= |ys| {
+      flip = true;
+      break;
+    }
+
+    // Merging subarrays in zs into ys
+    offset = 0;
+    while offset < |ys| {
+      end1 = offset + ord_len;
+
+      if end1 < |ys| {
+        end2 = end1 + ord_len;
+        end2 = |ys| if end2 > |ys|;
+
+        i1 = offset;
+        i2 = end1;
+        j = offset;
+
+        z1 = zs(i1);
+        z2 = zs(i2);
+
+        while j < end2 {
+          if z1 < z2 {
+            ys(j) := z1;
+            j = j + 1;
+            i1 = i1 + 1;
+            if i1 == end1 {
+              while i2 < end2 {
+                ys(j) := zs(i2);
+                j = j + 1;
+                i2 = i2 + 1;
+              }
+            }
+            else
+              z1 = zs(i1);
+          }
+          else {
+            ys(j) := z2;
+            j = j + 1;
+            i2 = i2 + 1;
+            if i2 == end2 {
+              while i1 < end1 {
+                ys(j) := zs(i1);
+                j = j + 1;
+                i1 = i1 + 1;
+              }
+            }
+            else
+              z2 = zs(i2);
+          }
+        }
+      }
+      else {
+        for i = offset .. |ys|
+          ys(i) := zs(i);
+      }
+      offset = offset + 2 * ord_len;
+    }
+    ord_len = 2 * ord_len;
+  }
+
+  return if flip then zs else ys;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+Float* sortf(Float* xs) {
+  ys : Float*;
+  zs : Float*;
+
+  i1  : Int;
+  i2  : Int;
+  j   : Int;
+
+  offset  : Int;
+  end1    : Int;
+  end2    : Int;
+  ord_len : Int;
+
+  y1 : Float;
+  y2 : Float;
+  z1 : Float;
+  z2 : Float;
+
+  flip : Bool;
+
+
+  ys = (x : x <- xs);
+  zs = (0.0 : i < |xs|);
+
+  flip = false;
+
+  ord_len = 1;
+  while ord_len < |ys| {
+    // Merging subarrays in ys into zs
+    offset = 0;
+    while offset < |ys| {
+      end1 = offset + ord_len;
+
+      if end1 < |ys| {
+        end2 = end1 + ord_len;
+        end2 = |ys| if end2 > |ys|;
+
+        i1 = offset;
+        i2 = end1;
+        j = offset;
+
+        y1 = ys(i1);
+        y2 = ys(i2);
+
+        while j < end2 {
+          if y1 < y2 {
+            zs(j) := y1;
+            j = j + 1;
+            i1 = i1 + 1;
+            if i1 == end1 {
+              while i2 < end2 {
+                zs(j) := ys(i2);
+                j = j + 1;
+                i2 = i2 + 1;
+              }
+            }
+            else
+              y1 = ys(i1);
+          }
+          else {
+            zs(j) := y2;
+            j = j + 1;
+            i2 = i2 + 1;
+            if i2 == end2 {
+              while i1 < end1 {
+                zs(j) := ys(i1);
+                j = j + 1;
+                i1 = i1 + 1;
+              }
+            }
+            else
+              y2 = ys(i2);
+          }
+        }
+      }
+      else {
+        for i = offset .. |ys|
+          zs(i) := ys(i);
+      }
+
+      offset = offset + 2 * ord_len;
+    }
+    ord_len = 2 * ord_len;
+
+    // Stopping if we're done
+    if ord_len >= |ys| {
+      flip = true;
+      break;
+    }
+
+    // Merging subarrays in zs into ys
+    offset = 0;
+    while offset < |ys| {
+      end1 = offset + ord_len;
+
+      if end1 < |ys| {
+        end2 = end1 + ord_len;
+        end2 = |ys| if end2 > |ys|;
+
+        i1 = offset;
+        i2 = end1;
+        j = offset;
+
+        z1 = zs(i1);
+        z2 = zs(i2);
+
+        while j < end2 {
+          if z1 < z2 {
+            ys(j) := z1;
+            j = j + 1;
+            i1 = i1 + 1;
+            if i1 == end1 {
+              while i2 < end2 {
+                ys(j) := zs(i2);
+                j = j + 1;
+                i2 = i2 + 1;
+              }
+            }
+            else
+              z1 = zs(i1);
+          }
+          else {
+            ys(j) := z2;
+            j = j + 1;
+            i2 = i2 + 1;
+            if i2 == end2 {
+              while i1 < end1 {
+                ys(j) := zs(i1);
+                j = j + 1;
+                i1 = i1 + 1;
+              }
+            }
+            else
+              z2 = zs(i2);
+          }
+        }
+      }
+      else {
+        for i = offset .. |ys|
+          ys(i) := zs(i);
+      }
+      offset = offset + 2 * ord_len;
+    }
+    ord_len = 2 * ord_len;
+  }
+
+  return if flip then zs else ys;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+typevar Ord' : Ord;
+
+Ord'* sort(Ord'* xs) {
+  ys : Ord'*;
+  zs : Ord'*;
+
+  i1  : Int;
+  i2  : Int;
+  j   : Int;
+
+  offset  : Int;
+  end1    : Int;
+  end2    : Int;
+  ord_len : Int;
+
+  y1 : Ord';
+  y2 : Ord';
+  z1 : Ord';
+  z2 : Ord';
+
+  flip : Bool;
+
+
+  ys = (x : x <- xs);
+  zs = (x : x <- xs);
+
+  flip = false;
+
+  ord_len = 1;
+  while ord_len < |ys| {
+    // Merging subarrays in ys into zs
+    offset = 0;
+    while offset < |ys| {
+      end1 = offset + ord_len;
+
+      if end1 < |ys| {
+        end2 = end1 + ord_len;
+        end2 = |ys| if end2 > |ys|;
+
+        i1 = offset;
+        i2 = end1;
+        j = offset;
+
+        y1 = ys(i1);
+        y2 = ys(i2);
+
+        while j < end2 {
+          if y1 < y2 {
+            zs(j) := y1;
+            j = j + 1;
+            i1 = i1 + 1;
+            if i1 == end1 {
+              while i2 < end2 {
+                zs(j) := ys(i2);
+                j = j + 1;
+                i2 = i2 + 1;
+              }
+            }
+            else
+              y1 = ys(i1);
+          }
+          else {
+            zs(j) := y2;
+            j = j + 1;
+            i2 = i2 + 1;
+            if i2 == end2 {
+              while i1 < end1 {
+                zs(j) := ys(i1);
+                j = j + 1;
+                i1 = i1 + 1;
+              }
+            }
+            else
+              y2 = ys(i2);
+          }
+        }
+      }
+      else {
+        for i = offset .. |ys|
+          zs(i) := ys(i);
+      }
+
+      offset = offset + 2 * ord_len;
+    }
+    ord_len = 2 * ord_len;
+
+    // Stopping if we're done
+    if ord_len >= |ys| {
+      flip = true;
+      break;
+    }
+
+    // Merging subarrays in zs into ys
+    offset = 0;
+    while offset < |ys| {
+      end1 = offset + ord_len;
+
+      if end1 < |ys| {
+        end2 = end1 + ord_len;
+        end2 = |ys| if end2 > |ys|;
+
+        i1 = offset;
+        i2 = end1;
+        j = offset;
+
+        z1 = zs(i1);
+        z2 = zs(i2);
+
+        while j < end2 {
+          if z1 < z2 {
+            ys(j) := z1;
+            j = j + 1;
+            i1 = i1 + 1;
+            if i1 == end1 {
+              while i2 < end2 {
+                ys(j) := zs(i2);
+                j = j + 1;
+                i2 = i2 + 1;
+              }
+            }
+            else
+              z1 = zs(i1);
+          }
+          else {
+            ys(j) := z2;
+            j = j + 1;
+            i2 = i2 + 1;
+            if i2 == end2 {
+              while i1 < end1 {
+                ys(j) := zs(i1);
+                j = j + 1;
+                i1 = i1 + 1;
+              }
+            }
+            else
+              z2 = zs(i2);
+          }
+        }
+      }
+      else {
+        for i = offset .. |ys|
+          ys(i) := zs(i);
+      }
+      offset = offset + 2 * ord_len;
+    }
+    ord_len = 2 * ord_len;
+  }
+
+  return if flip then zs else ys;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+T* sort(T* xs, (T T -> Bool) lt) {
+  ys : T*;
+  zs : T*;
+
+  i1  : Int;
+  i2  : Int;
+  j   : Int;
+
+  offset  : Int;
+  end1    : Int;
+  end2    : Int;
+  ord_len : Int;
+
+  y1 : T;
+  y2 : T;
+  z1 : T;
+  z2 : T;
+
+  flip : Bool;
+
+
+  ys = (x : x <- xs);
+  zs = (x : x <- xs);
+
+  flip = false;
+
+  ord_len = 1;
+  while ord_len < |ys| {
+    // Merging subarrays in ys into zs
+    offset = 0;
+    while offset < |ys| {
+      end1 = offset + ord_len;
+
+      if end1 < |ys| {
+        end2 = end1 + ord_len;
+        end2 = |ys| if end2 > |ys|;
+
+        i1 = offset;
+        i2 = end1;
+        j = offset;
+
+        y1 = ys(i1);
+        y2 = ys(i2);
+
+        while j < end2 {
+          if lt(y1, y2) {
+            zs(j) := y1;
+            j = j + 1;
+            i1 = i1 + 1;
+            if i1 == end1 {
+              while i2 < end2 {
+                zs(j) := ys(i2);
+                j = j + 1;
+                i2 = i2 + 1;
+              }
+            }
+            else
+              y1 = ys(i1);
+          }
+          else {
+            zs(j) := y2;
+            j = j + 1;
+            i2 = i2 + 1;
+            if i2 == end2 {
+              while i1 < end1 {
+                zs(j) := ys(i1);
+                j = j + 1;
+                i1 = i1 + 1;
+              }
+            }
+            else
+              y2 = ys(i2);
+          }
+        }
+      }
+      else {
+        for i = offset .. |ys|
+          zs(i) := ys(i);
+      }
+
+      offset = offset + 2 * ord_len;
+    }
+    ord_len = 2 * ord_len;
+
+    // Stopping if we're done
+    if ord_len >= |ys| {
+      flip = true;
+      break;
+    }
+
+    // Merging subarrays in zs into ys
+    offset = 0;
+    while offset < |ys| {
+      end1 = offset + ord_len;
+
+      if end1 < |ys| {
+        end2 = end1 + ord_len;
+        end2 = |ys| if end2 > |ys|;
+
+        i1 = offset;
+        i2 = end1;
+        j = offset;
+
+        z1 = zs(i1);
+        z2 = zs(i2);
+
+        while j < end2 {
+          if lt(z1, z2) {
+            ys(j) := z1;
+            j = j + 1;
+            i1 = i1 + 1;
+            if i1 == end1 {
+              while i2 < end2 {
+                ys(j) := zs(i2);
+                j = j + 1;
+                i2 = i2 + 1;
+              }
+            }
+            else
+              z1 = zs(i1);
+          }
+          else {
+            ys(j) := z2;
+            j = j + 1;
+            i2 = i2 + 1;
+            if i2 == end2 {
+              while i1 < end1 {
+                ys(j) := zs(i1);
+                j = j + 1;
+                i1 = i1 + 1;
+              }
+            }
+            else
+              z2 = zs(i2);
+          }
+        }
+      }
+      else {
+        for i = offset .. |ys|
+          ys(i) := zs(i);
+      }
+      offset = offset + 2 * ord_len;
+    }
+    ord_len = 2 * ord_len;
+  }
+
+  return if flip then zs else ys;
+}

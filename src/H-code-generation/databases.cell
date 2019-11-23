@@ -365,9 +365,11 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
             binary_ternary          = (false, ((just(0), just(1), nothing))),
             ternary_binary          = (false, ((just(0), just(1)))),
             unary_sym_binary        = (true,  ((just(0), nothing))),
-            unary_sym_ternary       = (true,  ((just(0), nothing, nothing))),
+            unary_sym_ternary_12    = (true,  ((just(0), nothing, nothing))),
+            unary_sym_ternary_3     = (true,  ((nothing, nothing, just(0)))),
             sym_binary_unary        = (true,  ((just(0)), (just(1)))),
-            sym_ternary_unary       = (true,  ((just(0)), (just(1)))),
+            sym_ternary_unary_12    = (true,  ((just(0)), (just(1)))),
+            sym_ternary_unary_3     = (true,  ((just(2)))), ## NOT AT ALL SURE ABOUT THIS ONE
             sym_binary_sym_ternary  = (true,  ((just(0), just(1), nothing))),
             sym_ternary_sym_binary  = (true,  ((just(0), just(1))));
           return and(
@@ -387,9 +389,11 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
             binary_ternary          = [0, 1],
             ternary_binary          = [0, 1],
             unary_sym_binary        = [0],
-            unary_sym_ternary       = [0],
+            unary_sym_ternary_12    = [0],
+            unary_sym_ternary_3     = [2],
             sym_binary_unary        = [0, 1],
-            sym_ternary_unary       = [0, 1],
+            sym_ternary_unary_12    = [0, 1],
+            sym_ternary_unary_3     = [2],
             sym_binary_sym_ternary  = [0, 1],
             sym_ternary_sym_binary  = [0, 1]
           : fk <- foreign_keys
@@ -743,11 +747,11 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
     if origin_symmetric or target_symmetric {
       key_type = match (origin_args, target_args)
         (_),                        (_, _)                      = :unary_sym_binary,
-        (_),                        (nothing, nothing, just())  = unary_ternary(2),
-        (_),                        (_, _, _)                   = :unary_sym_ternary,
+        (_),                        (nothing, nothing, just())  = :unary_sym_ternary_3,
+        (_),                        (_, _, _)                   = :unary_sym_ternary_12,
         (_, _),                     (_)                         = :sym_binary_unary,
-        (nothing, nothing, just()), (_)                         = ternary_unary(2),
-        (_, _, _),                  (_)                         = :sym_ternary_unary,
+        (nothing, nothing, just()), (_)                         = :sym_ternary_unary_3,
+        (_, _, _),                  (_)                         = :sym_ternary_unary_12,
         (_, _),                     (_, _, _)                   = :sym_binary_sym_ternary,
         (_, _, _),                  (_, _)                      = :sym_ternary_sym_binary;
     }
@@ -793,10 +797,15 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
       ternary_unary(i?)       = [i -> 0],
       binary_ternary          |
       ternary_binary          = [0 -> 0, 1 -> 1],
+
+      sym_ternary_unary_3     = [2 -> 0],
+      unary_sym_ternary_3     = [0 -> 2],
+
+      // Relying on the fact that symmetric columns share the same value store
       unary_sym_binary        |
-      unary_sym_ternary       |
+      unary_sym_ternary_12    |
       sym_binary_unary        |
-      sym_ternary_unary       |
+      sym_ternary_unary_12    |
       sym_binary_sym_ternary  |
       sym_ternary_sym_binary  = [0 -> 0];
 
