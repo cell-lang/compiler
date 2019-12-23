@@ -24,6 +24,31 @@ type Opt[T]         = (), (T);
 
 ////////////////////////////////////////////////////////////////////////////////
 
+Bool intersect([T]* sets) {
+  for s1 @ i1 <- sets {
+    for i2 = i1+1 .. |sets| {
+      s2 = sets(i2);
+      return true if (x <- s1 : s2(x));
+    }
+  }
+  return false;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+T* insert_sep(T* seq, T sep) = insert_seps(seq, (sep));
+
+T* insert_seps(T* seq, T* seps) {
+  new_seq = ();
+  for e @ i <- seq {
+    new_seq = new_seq & seps if i > 0;
+    new_seq = (new_seq | e);
+  }
+  return new_seq;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
 () isort([]) = ();
 
 T+ isort([+T] s) {
