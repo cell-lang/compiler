@@ -214,6 +214,7 @@ implicit {
   ExprWFError* stmt_local_wf_errors(SynStmt stmt, [DefVar] ro_vars, [StdVar] rw_vars) =
     assignment_stmt()         = asgn_stmt_local_wf_errors(stmt, ro_vars, rw_vars),
     return_stmt()             = ret_stmt_local_wf_errors(stmt, true),
+    if_stmt()                 = if_stmt_local_wf_errors(stmt),
     for_stmt()                = for_stmt_local_wf_errors(stmt, ro_vars, rw_vars),
     let_stmt()                = let_stmt_local_wf_errors(stmt, ro_vars, rw_vars),
     seq_update_stmt()         = seq_update_stmt_local_wf_errors(stmt, ro_vars, rw_vars),
@@ -239,9 +240,19 @@ implicit {
     assert_stmt(e?)           = (),
     print_stmt(e?)            = (),
     fail_stmt()               = (),
-    if_stmt()                 = (),
     loop_stmt()               = (),
     inf_loop_stmt(ss?)        = ();
+
+
+  ExprWFError* if_stmt_local_wf_errors(SynIfStmt stmt) {
+    errs = (
+      match (b.cond)
+        seq_expr(es?) = (parens_in_if_stmt_cond(stmt, b.cond) if |es| == 1),
+        _             = ()
+      : b <- stmt.branches
+    );
+    return join(errs);
+  }
 
 
   ExprWFError* break_stmt_local_wf_errors(SynBreakStmt stmt) {
@@ -410,7 +421,7 @@ implicit {
     );
     return errs if errs != ();
 
-    return join((
+    errs = join((
       match (args_info(i))
         value_arg           = expr_wf_errors(e, ro_vars & rw_vars),
         rel_auto_arg        = rel_auto_arg_errs(e, nothing, i, proc_name, ro_vars, rw_vars),
@@ -418,6 +429,15 @@ implicit {
         react_auto_arg(id?) = react_auto_arg_errs(e, id, i, proc_name, ro_vars, rw_vars)
       : e @ i <- stmt.args
     ));
+    return errs if errs != ();
+
+    if stmt.proc_name == proc_symbol(:load) or stmt.proc_name == proc_symbol(:set) {
+      var_symb = match (stmt.args(0)) const_or_var(s?) = s;
+      if in(var_symb, proc_auto_args)
+        return (cannot_set_state_of_auto_arg(var_symb));
+    }
+
+    return ();
 
 
     ExprWFError* rel_auto_arg_errs(SynExpr expr, Maybe[Symbol] maybe_auto_type, Nat idx, ProcSymbol proc, [DefVar] ro_vars, [StdVar] rw_vars) {
@@ -462,18 +482,25 @@ implicit {
   }
 
 
-  ExprWFError* send_msg_ctrl_stmt_local_wf_errors(Atom res_var, Atom db_var, [DefVar] ro_vars, [StdVar] rw_vars) = (
+  ExprWFError* send_msg_ctrl_stmt_local_wf_errors(Atom res_var, Atom db_var, [DefVar] ro_vars, [StdVar] rw_vars) {
+    errs = (
       ro_vars_asgnm([var(res_var)]) if already_def(res_var, ro_vars) or is_already_def_as_auto_or_db_var(res_var),
       undef_static_auto_var(db_var, loc_auto_vars(loc_auto_var(db_var), _), ro_vars(var(db_var)) or rw_vars(var(db_var)))
         if not loc_db_vars(loc_db_var(db_var), _)
     );
+    return errs if errs != ();
+    auto_var = resolve_auto_var(db_var);
+    return (:send_msg_syntax_not_supported_anymore if auto_var :: LocDBVar);
+  }
 
 
   ExprWFError* read_state_ctrl_stmt_local_wf_errors(Atom res_var_id, Atom auto_var_id, [DefVar] ro_vars, [StdVar] rw_vars) {
     errs = auto_var_errors(auto_var_id, ro_vars, rw_vars);
     res_var_already_def = already_def(res_var_id, ro_vars) or is_already_def_as_auto_or_db_var(res_var_id);
     errs = (errs | ro_vars_asgnm([var(res_var_id)])) if res_var_already_def;
-    return errs;
+    return errs if errs != ();
+    auto_var = resolve_auto_var(auto_var_id);
+    return (:read_state_syntax_not_supported_anymore if auto_var :: LocDBVar);
   }
 
 
@@ -481,10 +508,13 @@ implicit {
     errs = auto_var_errors(auto_var_id, ro_vars, rw_vars);
     return errs if errs != ();
     res_var_already_def = already_def(res_var_id, ro_vars) or is_already_def_as_auto_or_db_var(res_var_id);
-    return (
+    errs = (
       ro_vars_asgnm([var(res_var_id)]) if res_var_already_def,
       cannot_set_state_of_auto_arg(auto_var_id) if in(auto_var_id, proc_auto_args)
     );
+    return errs if errs != ();
+    auto_var = resolve_auto_var(auto_var_id);
+    return (:restore_state_syntax_not_supported_anymore if auto_var :: LocDBVar);
   }
 
   //////////////////////////////////////////////////////////////////////////////

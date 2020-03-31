@@ -190,9 +190,11 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     // Let's start with positional closure parameters
     cls_errs = [];
     for arg, type <- zip(cls_args, signature.cls_args) {
-      arg_types = (replace_type_vars(t, type_var_insts) : t <- type.in_types);
-      ret_type = replace_type_vars(type.out_type, type_var_insts);
-      cls_errs = cls_errs & typecheck(arg, arg_types, ret_type, env); ## BUG: I THINK THIS IS BROKEN...
+      if not (t <- type.in_types, v <- get_type_vars(t) : not type_var_insts(v, _)) {
+        arg_types = (replace_type_vars(t, type_var_insts) : t <- type.in_types);
+        ret_type = replace_type_vars(type.out_type, type_var_insts);
+        cls_errs = cls_errs & typecheck(arg, arg_types, ret_type, env); ## BUG: I THINK THIS IS BROKEN...
+      }
     }
 
     // Now implicit parameters
@@ -320,8 +322,9 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
         actual_type = closures[expr];
         errs = [];
         for actual_par_type, formal_par_type <- zip(actual_type.in_types, type.in_types) {
-          if not is_subset(replace_type_vars(formal_par_type, type_var_insts), actual_par_type)
-            errs = errs & [invalid_cls_var_type(expr, type, type_var_insts)];
+          if not (v <- get_type_vars(formal_par_type) : not type_var_insts(v, _))
+            if not is_subset(replace_type_vars(formal_par_type, type_var_insts), actual_par_type)
+              errs = errs & [invalid_cls_var_type(expr, type, type_var_insts)];
         }
         return errs;
       },

@@ -77,14 +77,14 @@ NeType desugar_plain_type(SynType type) =
   );
 
 
-NeType desugar_schema_aware_type(SynType type, [Atom] schemas) =
-  desugar_type(
-    type,
-    match ($)
-      // type_var()                    = undefined,
-      type_ref(type_symbol(a?) ts?) = type_ref(if schemas(a) then schema_type_symbol(a) else ts),
-      type_ref(par_type_symbol())   = desugar_type_ref($, desugar_schema_aware_type($, schemas))
-  );
+// NeType desugar_schema_aware_type(SynType type, [Atom] schemas) =
+//   desugar_type(
+//     type,
+//     match ($)
+//       // type_var()                    = undefined,
+//       type_ref(type_symbol(a?) ts?) = type_ref(if schemas(a) then schema_type_symbol(a) else ts),
+//       type_ref(par_type_symbol())   = desugar_type_ref($, desugar_schema_aware_type($, schemas))
+//   );
 
 
 NeType desugar_par_type_def(SynType type, TypeVar+ sorted_type_vars) =
@@ -395,7 +395,14 @@ Atom+ destructure_id_chain(AccessorChain expr) =
   ];
 
   standard_cases = [s, (:value_arg : i < a), r : s a r <- proc_arity_return];
-  special_cases = [:error, (:rel_auto_arg), true;];
+  special_cases = [
+    :error, (:rel_auto_arg), true;
+    :copy,  (:rel_auto_arg), true;
+    :send,  (:rel_auto_arg, :value_arg), true;
+    :set,   (:rel_auto_arg, :value_arg), true;
+    :save,  (:rel_auto_arg, :value_arg), true;
+    :load,  (:rel_auto_arg, :value_arg), true
+  ];
 
   return [proc_symbol(s) -> (as, r) : s as r <- standard_cases | s as r <- special_cases];
 }

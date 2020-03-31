@@ -1,8 +1,4 @@
-[CoreWFError] core_wf_errors(Program prg) {
-  let program = prg
-    errs = core_wf_errors(program = prg, typedefs = schema_and_typedefs);
-  return errs;
-}
+[CoreWFError] core_wf_errors(Program prg) = core_wf_errors(program = prg, typedefs = prg.typedefs);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -193,6 +189,30 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
       _,                          _                         = true;
 
     return [foreign_key_symmetry_mismatch(key, src_symm)] if not symmetry_is_fine;
+
+    // Checking that the types of the arguments in the source relvars are a
+    // subtype of the types of the corresponding arguments in the target relvar
+
+    ## THIS CHECK WILL LET SOME ERRORS SLIP THROUGH. EXAMPLE:
+    ##   bin_rel(<A, B>, <C, D>)
+    ##   tern_rel(A, C, _)
+    ##   tern_rel(B, D, _)
+    ##   bin_rel(x, y) -> tern_rel(x, y, _)
+
+    src_info = database.rel_vars(key.source_rel_var);
+    src_types = [value(a) -> src_info.signature(i) : a @ i <- key.source_args, a != nothing];
+
+    tgt_types = [
+      value(a) ->
+        ne_union_superset([database.rel_vars(r).signature(i) : r <- key.target_rel_vars])
+      : a @ i <- key.target_args, a != nothing
+    ];
+
+    errs = [
+      target_type_not_a_superset_of_src_type(key, arg, src_type, tgt_types(arg))
+      : arg src_type <- src_types, not is_subset(src_type, tgt_types(arg))
+    ];
+    return errs if errs != [];
 
     ## IS THERE ANYTHING ELSE I'M SUPPOSED TO CHECK HERE?
 

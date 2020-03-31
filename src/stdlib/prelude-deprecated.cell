@@ -1,4 +1,3 @@
-type Int32          = < -2147483648 .. 2147483647 >;
 
 type Atom           = <+>;
 
@@ -797,6 +796,8 @@ Maybe[T]+ maybe_seq([Nat -> T] map, NzNat arity) {
 
 (A*, B*, C*) unzip3((A, B, C)* ts) = ((t(0) : t <- ts), (t(1) : t <- ts), (t(2) : t <- ts));
 
+(A*, B*, C*, D*) unzip4((A, B, C, D)* ts) = ((t(0) : t <- ts), (t(1) : t <- ts), (t(2) : t <- ts), (t(3) : t <- ts));
+
 ////////////////////////////////////////////////////////////////////////////////
 
 ([A], [B]) unzip([(A, B)] ps) = ([p(0) : p <- ps], [p(1) : p <- ps]);
@@ -941,23 +942,13 @@ Nat upper(Nat ch) = if is_lower(ch) then nat(ch - 32) else ch;
 
 Nat* chars(String str)  = string(chs?) = chs;
 
-Bool (_<_) (String str1, String str2) = {
-  chs1 = chars(str1);
-  chs2 = chars(str2);
 
-  len1 = |chs1|;
-  len2 = |chs2|;
-  min_len = min(len1, len2);
-
-  for i < min_len {
-    ch1 = chs1(i);
-    ch2 = chs2(i);
-    return true  if ch1 < ch2;
-    return false if ch1 > ch2;
-  }
-
-  return len1 < len2;
-};
+String right_padded(String str, Nat min_len, Nat char) {
+  padded_str = str;
+  while length(padded_str) < min_len
+    padded_str = padded_str & string((char));
+  return padded_str;
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -1002,3 +993,21 @@ CounterSet[T] increment(CounterSet[T] ctr_set, T ctr) {
 (Nat, CounterSet[T]) claim_next(CounterSet[T] ctr_set, T ctr) = ( next_value(ctr_set, ctr),
                                                                   increment(ctr_set, ctr)
                                                                 );
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+[V] duplicate_values([K -> V] map) = duplicates((v : _, v <- isort(map)));
+
+// [K] non_injective_keys([K -> V] map) {
+//   dup_vals = duplicate_values(map);
+//   return [k : k v <- map, dup_vals(v)];
+// }
+
+// [K -> V] remove_non_injective_keys([K -> V] map) {
+//   keys_to_remove = non_injective_keys(map);
+//   return [k -> v : k v <- map, not keys_to_remove(k)];
+// }
+
+// [[+K]] non_injective_keys_by_value([K -> V] map) =
+//   values(group_by(non_injective_keys(map), map($, !)));

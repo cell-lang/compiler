@@ -34,7 +34,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
     not(e?)               = not_expr(desugar_expr(e, def_vars)),
     eq()                  = eq(desugar_expr(expr.left, def_vars), desugar_expr(expr.right, def_vars)),
     neq()                 = not_expr(eq(desugar_expr(expr.left, def_vars), desugar_expr(expr.right, def_vars))),
-    membership()          = membership(desugar_expr(expr.obj, def_vars), desugar_schema_aware_type(expr.type, schema_names)),
+    membership()          = membership(desugar_expr(expr.obj, def_vars), desugar_plain_type(expr.type)),
     accessor()            = desugar_accessor(expr, def_vars),
     accessor_test()       = desugar_accessor_test(expr.expr, expr.field, def_vars),
     ex_qual()             = desugar_ex_qual_expr(expr.source, expr.cond, def_vars),
@@ -524,6 +524,27 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
           react_auto_args = (react_auto_args | var);
         }
       }
+    }
+
+    // Special case, Copy(..) is not an ordinary builtin procedure
+    if stmt.proc_name == proc_symbol(:copy) {
+      assert args == () and react_auto_args == ();
+      fail if not stmt.res_var?;
+      return read_state_ctrl_stmt(stmt.res_var, only_unsafe(rel_auto_args));
+    }
+
+    // Special case, Set(..) is not an ordinary builtin procedure
+    if stmt.proc_name == proc_symbol(:set) {
+      assert react_auto_args == ();
+      fail if not stmt.res_var?;
+      return restore_state_ctrl_stmt(stmt.res_var, only_unsafe(rel_auto_args), only_unsafe(args));
+    }
+
+    // Special case, Send(..) is not an ordinary builtin procedure
+    if stmt.proc_name == proc_symbol(:send) {
+      assert react_auto_args == ();
+      fail if not stmt.res_var?;
+      return send_msg_ctrl_stmt(stmt.res_var, only_unsafe(rel_auto_args), only_unsafe(args));
     }
 
     return proc_call_stmt(

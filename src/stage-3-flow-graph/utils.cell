@@ -1,15 +1,15 @@
 [<StdVar, LocVar>] std_loc_vars_used(NodeInfo info) {
   return match (info)
-    std_node(is?)           = search_exprs(is, std_loc_vars_used),
+    std_node(is?)           = search_any_exprs(is, std_loc_vars_used),
     branch_node(e?)         = std_loc_vars_used(e),
     nat_switch_node(e?)     = std_loc_vars_used(e),
     symb_switch_node()      = std_loc_vars_used(info.value),
-    set_cls_par_node()      = search_exprs(info.cls, std_loc_vars_used),
+    set_cls_par_node()      = search_any_exprs(info.cls, std_loc_vars_used),
     foreach_node()          = [info.seq];
 
 
   [<StdVar, LocVar>] std_loc_vars_used(AnyTypeExpr expr) =
-    if expr :: <StdVar, LocVar> then [expr] else search_nested(expr, std_loc_vars_used);
+    if expr :: <StdVar, LocVar> then [expr] else search_any_nested(expr, std_loc_vars_used);
 }
 
 

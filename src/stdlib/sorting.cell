@@ -301,9 +301,12 @@ Float* sortf(Float* xs) {
 
 typevar Ord' : Ord;
 
-Ord'* sort(Ord'* xs) {
-  ys : Ord'*;
-  zs : Ord'*;
+
+() sort(()) = ();
+
+Ord'+ sort(Ord'+ xs) {
+  ys : Ord'+;
+  zs : Ord'+;
 
   i1  : Int;
   i2  : Int;
@@ -320,7 +323,6 @@ Ord'* sort(Ord'* xs) {
   z2 : Ord';
 
   flip : Bool;
-
 
   ys = (x : x <- xs);
   zs = (x : x <- xs);
@@ -452,9 +454,11 @@ Ord'* sort(Ord'* xs) {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-T* sort(T* xs, (T T -> Bool) lt) {
-  ys : T*;
-  zs : T*;
+() sort((), (T T -> Bool)) = ();
+
+T+ sort(T+ xs, (T T -> Bool) lt) {
+  ys : T+;
+  zs : T+;
 
   i1  : Int;
   i2  : Int;
@@ -600,3 +604,120 @@ T* sort(T* xs, (T T -> Bool) lt) {
 
   return if flip then zs else ys;
 }
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+typevar Ord1' : Ord;
+typevar Ord2' : Ord;
+typevar Ord3' : Ord;
+typevar Ord4' : Ord;
+
+
+() sort_by((), (T -> Ord)) = ();
+() sort_by((), (T -> Ord1'), (T -> Ord2')) = ();
+() sort_by((), (T -> Ord1'), (T -> Ord2'), (T -> Ord3')) = ();
+() sort_by((), (T -> Ord1'), (T -> Ord2'), (T -> Ord3'), (T -> Ord4')) = ();
+
+
+T+ sort_by(T+ seq, (T -> Ord) key) = sort(seq, key($a) < key($b));
+
+
+T+ sort_by(T+ seq, (T -> Ord1') major_key, (T -> Ord2') minor_key) =
+  sort(seq, {
+    key_a = major_key($a);
+    key_b = major_key($b);
+    return if key_a != key_b then key_a < key_b else minor_key($a) < minor_key($b);
+  });
+
+
+T+ sort_by(T+ seq, (T -> Ord1') key1, (T -> Ord2') key2, (T -> Ord3') key3) =
+  sort(seq, {
+    key_a = key1($a);
+    key_b = key1($b);
+    return key_a < key_b if key_a != key_b;
+    key_a = key2($a);
+    key_b = key2($b);
+    return if key_a != key_b then key_a < key_b else key3($a) < key3($b);
+  });
+
+
+T+ sort_by(T+ seq, (T -> Ord1') key1, (T -> Ord2') key2, (T -> Ord3') key3, (T -> Ord4') key4) =
+  sort(seq, {
+    key_a = key1($a);
+    key_b = key1($b);
+    return key_a < key_b if key_a != key_b;
+    key_a = key2($a);
+    key_b = key2($b);
+    return key_a < key_b if key_a != key_b;
+    key_a = key3($a);
+    key_b = key3($b);
+    return if key_a != key_b then key_a < key_b else key4($a) < key4($b);
+  });
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+T+ serialize([+T] set) {
+  seq = ();
+  for e <- set
+    seq = (seq | e);
+  fail if seq == ();
+  return seq;
+}
+
+(X, Y)+ serialize([+X, Y] rel) = serialize([(x, y) : x y <- rel]);
+
+////////////////////////////////////////////////////////////////////////////////
+
+() sort([]) = ();
+
+Ord+ sort([+Ord] set) = sort(serialize(set));
+
+(Ord, V)+ sort([+Ord -> V] map) = sort_by(serialize(map), $(0));
+
+////////////////////////////////////////////////////////////////////////////////
+
+() sort([], (T T -> Bool)) = ();
+
+T+ sort([+T] set, (T T -> Bool) ord) = sort(serialize(set), ord);
+
+(T, V)+ sort([+T -> V] map, (T T -> Bool) ord) = sort(serialize(map), ord($a(0), $b(0)));
+
+////////////////////////////////////////////////////////////////////////////////
+
+() sort_by([], (T -> Ord)) = ();
+
+T+ sort_by([+T] set, (T -> Ord) key) = sort_by(serialize(set), key);
+
+(T, V)+ sort_by([+T -> V] map, (T -> Ord) key) = sort_by(serialize(map), key($(0)));
+
+////////////////////////////////////////////////////////////////////////////////
+
+() sort_by([], (T -> Ord1'), (T -> Ord2')) = ();
+
+T+ sort_by([+T] set, (T -> Ord1') key1, (T -> Ord2') key2) =
+  sort_by(serialize(set), key1, key2);
+
+(T, V)+ sort_by([+T -> V] map, (T -> Ord1') key1, (T -> Ord2') key2) =
+  sort_by(serialize(map), key1($(0)), key2($(0)));
+
+////////////////////////////////////////////////////////////////////////////////
+
+() sort_by([], (T -> Ord1'), (T -> Ord2'), (T -> Ord3')) = ();
+
+T+ sort_by([+T] set, (T -> Ord1') key1, (T -> Ord2') key2, (T -> Ord3') key3) =
+  sort_by(serialize(set), key1, key2, key3);
+
+(T, V)+ sort_by([+T -> V] map, (T -> Ord1') key1, (T -> Ord2') key2, (T -> Ord3') key3) =
+  sort_by(serialize(map), key1($(0)), key2($(0)), key3($(0)));
+
+////////////////////////////////////////////////////////////////////////////////
+
+() sort_by([], (T -> Ord1'), (T -> Ord2'), (T -> Ord3'), (T -> Ord4')) = ();
+
+T+ sort_by([+T] set, (T -> Ord1') key1, (T -> Ord2') key2, (T -> Ord3') key3, (T -> Ord4') key4) =
+  sort_by(serialize(set), key1, key2, key3, key4);
+
+(T, V)+ sort_by([+T -> V] map, (T -> Ord1') key1, (T -> Ord2') key2, (T -> Ord3') key3, (T -> Ord4') key4) =
+  sort_by(serialize(map), key1($(0)), key2($(0)), key3($(0)), key4($(0)));

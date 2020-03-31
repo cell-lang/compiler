@@ -1,12 +1,14 @@
-[T] search_nested(<Bool, BoolVar>, (AnyTypeExpr -> [T]) search) = [];
+[T] search_any_nested(<Bool, BoolVar>, (AnyTypeExpr -> [T]) search) = [];
 
 
-[T] search_nested(BoolNatOp expr, (AnyTypeExpr -> [T]) search) =
+[T] search_any_nested(BoolNatOp expr, (AnyTypeExpr -> [T]) search) =
   is_symb(e?)             |
   is_int(e?)              |
   is_float(e?)            |
-  is_ne_set(e?)           |
   is_ne_seq(e?)           |
+  is_ne_int_seq(e?)       |
+  is_ne_float_seq(e?)     |
+  is_ne_set(e?)           |
   is_ne_map(e?)           |
   is_ne_bin_rel(e?)       |
   is_ne_tern_rel(e?)      |
@@ -24,12 +26,12 @@
   table_contains()        = union([search(value(a)) : a <- expr.tuple, a != nothing]);
 
 
-[T] search_nested(BoolFnCall expr, (AnyTypeExpr -> [T]) search) =
+[T] search_any_nested(BoolFnCall expr, (AnyTypeExpr -> [T]) search) =
   is_member()     = search(expr.obj),
   state_is_def()  = [];
 
 
-[T] search_nested(CompositeBoolExpr, (AnyTypeExpr -> [T]) search) =
+[T] search_any_nested(CompositeBoolExpr, (AnyTypeExpr -> [T]) search) =
   neg(e?)         = search(e),
   and(es?)        = union([search(e) : e <- es]),
   or(es?)         = union([search(e) : e <- es]),
@@ -38,10 +40,10 @@
 
 ////////////////////////////////////////////////////////////////////////////////
 
-[T] search_nested(<Int, IntConst, IntVar>, (AnyTypeExpr -> [T]) search) = [];
+[T] search_any_nested(<Int, IntConst, IntVar>, (AnyTypeExpr -> [T]) search) = [];
 
 
-[T] search_nested(IntNatOp expr, (AnyTypeExpr -> [T]) search) =
+[T] search_any_nested(IntNatOp expr, (AnyTypeExpr -> [T]) search) =
   get_int_val(e?)         = search(e),
   minus(e?)               = search(e),
   add(e1?, e2?)           |
@@ -62,10 +64,10 @@
 
 ////////////////////////////////////////////////////////////////////////////////
 
-[T] search_nested(Int32Var expr, (AnyTypeExpr -> [T]) search) = [];
+[T] search_any_nested(Int32Var expr, (AnyTypeExpr -> [T]) search) = [];
 
 
-[T] search_nested(Int32NatOp expr, (AnyTypeExpr -> [T]) search) =
+[T] search_any_nested(Int32NatOp expr, (AnyTypeExpr -> [T]) search) =
   bool_to_bit(e?)   |
   get_size(e?)      = search(e),
   get_count()       |
@@ -78,10 +80,10 @@
 
 ////////////////////////////////////////////////////////////////////////////////
 
-[T] search_nested(<FloatLit, FloatVar> expr, (AnyTypeExpr -> [T]) search) = [];
+[T] search_any_nested(<FloatLit, FloatVar> expr, (AnyTypeExpr -> [T]) search) = [];
 
 
-[T] search_nested(FloatNatOp expr, (AnyTypeExpr -> [T]) search) =
+[T] search_any_nested(FloatNatOp expr, (AnyTypeExpr -> [T]) search) =
   float_value(e?)         |
   neg_float(e?)           = search(e),
   add_floats(e1?, e2?)    |
@@ -94,10 +96,10 @@
 
 ////////////////////////////////////////////////////////////////////////////////
 
-[T] search_nested(<InlineObj, StdObjVar> expr, (AnyTypeExpr -> [T]) search) = [];
+[T] search_any_nested(<InlineObj, StdObjVar> expr, (AnyTypeExpr -> [T]) search) = [];
 
 
-[T] search_nested(ObjNatOp expr, (AnyTypeExpr -> [T]) search) =
+[T] search_any_nested(ObjNatOp expr, (AnyTypeExpr -> [T]) search) =
   at()              = search(expr.seq) & search(expr.idx),
   array_at()        = search(expr.size) & search(expr.idx),
   lookup()          = search(expr.rel) & search(expr.key),
@@ -116,14 +118,14 @@
   rand_elem(e?)     = search(e);
 
 
-[T] search_nested(OptTagRecExpr expr, (AnyTypeExpr -> [T]) search) =
+[T] search_any_nested(OptTagRecExpr expr, (AnyTypeExpr -> [T]) search) =
   opt_tag_rec_var()     = [],
   opt_tag_rec_fn_arg()  = [],
   cast_opt_tag_rec()    = search(expr.expr);
 
 ////////////////////////////////////////////////////////////////////////////////
 
-[T] search_nested(RefObjExpr expr, (AnyTypeExpr -> [T]) search) =
+[T] search_any_nested(RefObjExpr expr, (AnyTypeExpr -> [T]) search) =
   mk_set_from_stream()        = [],
   mk_set()                    = search(expr.size),
   mk_set_from_array()         = if expr.size != nothing then search(value(expr.size)) else [],
@@ -161,14 +163,14 @@
 
 ////////////////////////////////////////////////////////////////////////////////
 
-[T] search_exprs(AnyClsVar, (AnyTypeExpr -> [T]) search) = [];
+[T] search_any_exprs(AnyClsVar, (AnyTypeExpr -> [T]) search) = [];
 
 
-[T] search_exprs(LambdaExpr expr, (AnyTypeExpr -> [T]) search) = union([search(e) : e <- expr.capt_vars]);
+[T] search_any_exprs(LambdaExpr expr, (AnyTypeExpr -> [T]) search) = union([search(e) : e <- expr.capt_vars]);
 
 ////////////////////////////////////////////////////////////////////////////////
 
-[T] search_exprs(BasicInstr instr, (AnyTypeExpr -> [T]) search) =
+[T] search_any_exprs(BasicInstr instr, (AnyTypeExpr -> [T]) search) =
   init_stream()             = [],
   append()                  = search(instr.obj),
   array_alloc()             = search(instr.size),
@@ -187,7 +189,7 @@
   set_ivar()                |
   set_ivar32()              |
   set_fvar()                = search(instr.value),
-  set_rc_var()              = search_nested(instr.value, search),
+  set_rc_var()              = search_any_nested(instr.value, search),
   init_memb_var()           = [],
   reset_memb_var()          = [],
   clear_loc_var()           = [],
@@ -196,7 +198,7 @@
   release()                 = undefined,
   print_obj()               = search(instr.obj),
   no_op                     = [],
-  call_proc()               = union([search(e) : e <- instr.args]) & union([search_exprs(c, search) : c <- instr.cls_args]),
+  call_proc()               = union([search(e) : e <- instr.args]) & union([search_any_exprs(c, search) : c <- instr.cls_args]),
   call_cls()                = union([search(e) : e <- instr.args]),
   push_call_info()          = union([search(e) : e <- instr.args]),
   pop_call_info             = [],
@@ -233,34 +235,35 @@
   immediate_insert_tuple()  = union([search(v) : v <- instr.tuple]);
 
 
-[T] search_exprs(JumpInstr instr, (AnyTypeExpr -> [T]) search) =
+[T] search_any_exprs(JumpInstr instr, (AnyTypeExpr -> [T]) search) =
   break_loop    = [],
   exit_block    = [],
   ret_val(e?)   = search(e),
   terminate()   = [];
 
 
-[T] search_exprs(CompInstr instr, (AnyTypeExpr -> [T]) search) =
-  branch()            = search(instr.cond) & search_exprs(instr.when_true, search) & search_exprs(instr.when_false, search),
-  switch_on_nat()     = search(instr.value) & union([search_exprs(c, search) : c <- instr.cases]),
-  symb_switch()       = search(instr.value) & union([search_exprs(right(c), search) : c <- instr.cases]) & search_exprs(instr.else, search),
+[T] search_any_exprs(CompInstr instr, (AnyTypeExpr -> [T]) search) =
+  branch()            = search(instr.cond) & search_any_exprs(instr.when_true, search) & search_any_exprs(instr.when_false, search),
+  switch_on_nat()     = search(instr.value) & union([search_any_exprs(c, search) : c <- instr.cases]),
+  symb_switch()       = search(instr.value) & union([search_any_exprs(right(c), search) : c <- instr.cases]) & search_any_exprs(instr.else, search),
   repeat(is?)         |
-  execute_block(is?)  = search_exprs(is, search),
-  try_block()         = search_exprs(instr.body, search),
-  foreach()           = search(instr.seq) & search(instr.count_var) & search_exprs(instr.body, search);
+  execute_block(is?)  = search_any_exprs(is, search),
+  try_block()         = search_any_exprs(instr.body, search),
+  foreach()           = search(instr.seq) & search(instr.count_var) & search_any_exprs(instr.body, search);
 
 ////////////////////////////////////////////////////////////////////////////////
 
-[T] search_exprs(Instr* instrs, (AnyTypeExpr -> [T]) search) = union([search_exprs(is, search) : is <- instrs]);
+[T] search_any_exprs(Instr* instrs, (AnyTypeExpr -> [T]) search) =
+  union([search_any_exprs(is, search) : is <- instrs]);
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-[T] search_nested(<BasicInstr, JumpInstr> instr, (Instr -> [T]) search_instr, (AnyTypeExpr -> [T]) search_expr) =
-  search_exprs(instr, search_expr);
+[T] search_any_nested(<BasicInstr, JumpInstr> instr, (Instr -> [T]) search_instr, (AnyTypeExpr -> [T]) search_expr) =
+  search_any_exprs(instr, search_expr);
 
 
-[T] search_nested(CompInstr instr, (Instr -> [T]) search_instr, (AnyTypeExpr -> [T]) search_expr) =
+[T] search_any_nested(CompInstr instr, (Instr -> [T]) search_instr, (AnyTypeExpr -> [T]) search_expr) =
   branch()            = search_expr(instr.cond) &
                         union([search_instr(is) : is <- instr.when_true]) &
                         union([search_instr(is) : is <- instr.when_false]),

@@ -44,7 +44,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg], actual_ar
     not(e?)             = expr_wf_errors(e, def_vars),
     eq()                = expr_wf_errors(expr.left, def_vars) & expr_wf_errors(expr.right, def_vars),
     neq()               = expr_wf_errors(expr.left, def_vars) & expr_wf_errors(expr.right, def_vars),
-    membership()        = expr_wf_errors(expr.obj, def_vars) & schema_aware_type_wf_errors(expr.type),
+    membership()        = expr_wf_errors(expr.obj, def_vars) & plain_type_wf_errors(expr.type),
     accessor()          = if expr :: AccessorChain then () else expr_wf_errors(expr.expr, def_vars),
     accessor_test()     = if expr.expr :: IdChain then () else expr_wf_errors(expr.expr, def_vars),
     output_is_def()     = (),
@@ -117,7 +117,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg], actual_ar
     rel_memb_test()     = rel_memb_test_local_wf_errors(expr, def_vars),
     rel_lookup()        = rel_lookup_local_wf_errors(expr, def_vars),
     unary_op_call()     |
-    binary_op_call()    = (undefined_operator(expr) if not top_level_fndefs_by_name_arity(op_symbol(expr.op), _)),
+    binary_op_call()    = op_call_local_wf_errors(expr, def_vars),
     impl_args_call()    = impl_args_call_local_wf_errors(expr, def_vars),
     builtin_call()      = (wrong_builtin_arity(expr.name, expr.args) if |expr.args| != builtin_arities[expr.name]),
     rel_var_size_expr() = rel_var_size_expr_wf_errors(expr, def_vars),
@@ -126,6 +126,13 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg], actual_ar
     match_expr()        = match_expr_local_wf_errors(expr, def_vars),
     output_is_def()     = output_is_def_local_wf_errors(expr.var, expr.output, def_vars),
     _                   = ();
+
+
+  ExprWFError* op_call_local_wf_errors(<SynUnaryOpCall, SynBinaryOpCall> expr, [DefVar] def_vars) {
+    op_symb = op_symbol(expr.op);
+    found = top_level_fndefs_by_name_arity(op_symb, _) or protocol_methods(op_symb, _);
+    return (undefined_operator(expr) if not found);
+  }
 
 
   ExprWFError* aggr_fn_call_wf_errors(SynAggrFnCall expr, [DefVar] def_vars) {

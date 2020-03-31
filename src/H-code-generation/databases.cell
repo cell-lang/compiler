@@ -570,11 +570,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
     return ([], []) if handlers == [];
     sorted_handlers = rand_sort(handlers);
     comp_handlers = merge(([handler_id(i) -> compiled_handler(h)] : h @ i <- sorted_handlers));
-    exported_handlers = [
-      handler_id(i), interface
-      : h @ i <- sorted_handlers, interfaces = interfaces(h),
-        interfaces != nothing, interface <- value(interfaces)
-    ];
+    exported_handlers = [handler_id(i), interface : h @ i <- sorted_handlers, interface <- interfaces(h)];
     dispatcher_body = if |handlers| != 1
       then update_dispatch_code(database.name, sorted_handlers)
       else (try_update(database.name, polymorphic_update_id(only(handlers), 0), (fn_arg(0))), ret_val(0));
@@ -582,64 +578,73 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
     return (comp_handlers & [main_handler -> dispatcher], exported_handlers);
 
 
-    Maybe[[+HandlerWrapper]] interfaces(Handler handler) {
+    [HandlerWrapper] interfaces(Handler handler) {
       if is_symb_singl_type(handler.type) {
         symb = only_symb(handler.type);
-        return just([handler_wrapper(tag: symb, fields: (), msg_inst_code: (), msg_expr: symb)]);
+        wrapper = handler_wrapper(
+          tag:            symb,
+          args:           (),
+          msg_inst_code:  (),
+          msg_expr:       symb
+        );
+        return [wrapper];
       }
 
       res = destructured_tagged_record(handler.type);
       if res != nothing {
         tag, fields, optional = value(res);
-        if (|fields| == 1 or handler.fields_order?) and |optional| <= 1 {
+        if |fields| == 1 or handler.fields_order? {
+          // Calculating the final order of the arguments
           fields_order = if handler.fields_order?
-            then handler.fields_order
+            then (s : s <- handler.fields_order, not optional(object(s))) &
+                 (s : s <- handler.fields_order, optional(object(s)))
             else (_untag_(only(keys(fields))));
 
+          cond_vars = [l -> hidden_var(i) : l @ i <- isort(optional)];
+
           ord_fields = ({
-            field_type = fields(object(l));
-            return (field_type, var(l), memb_test_preds_map(field_type, !));
+            field_symb = object(l);
+            field_type = fields(field_symb);
+            return (
+              field_type,
+              var(l),
+              if optional(field_symb)
+                then just(bvar(bare_id(cond_vars(field_symb))))
+                else nothing,
+              memb_test_preds_map(field_type, !)
+            );
           } : l @ i <- fields_order);
 
-          rec_expr = map_expr([(key: l, value: var(_untag_(l))) : l t <- fields]);
+          rec_expr = map_expr([(
+              key:   l,
+              value: var(s),
+              cond:  cond_vars(l) if optional(l)
+            ) : l t <- fields, s = _untag_(l)
+          ]);
           inst_expr = tag_obj_expr(tag, rec_expr);
 
-          env = [var(_untag_(l)) -> t : l t <- fields];
-          let context = database, surrogates = [], typed_vars = [] {
+          env = [var(_untag_(l)) -> t : l t <- fields] & [cond_vars(l) -> type_bool : l <- optional];
+          surrs = [cond_vars(l) -> obj_expr(bvar(bare_id(cond_vars(l)))) : l <- optional];
+
+          let context = database, surrogates = surrs, typed_vars = [] {
             code, surr, _ = opt_eval_code(inst_expr, env, blank_var_gen);
           }
 
-          wrappers = [handler_wrapper(tag: tag, fields: ord_fields, msg_inst_code: code, msg_expr: surr)];
+          wrapper = handler_wrapper(
+            tag:            tag,
+            args:           ord_fields,
+            msg_inst_code:  code,
+            msg_expr:       surr
+          );
 
-          if optional != [] {
-            opt_field = _untag_(only(optional));
-            fields_order = (f : f <- fields_order, f != opt_field);
-
-            ord_fields = ({
-              field_type = fields(object(l));
-              return (field_type, var(l), memb_test_preds_map(field_type, !));
-            } : l @ i <- fields_order);
-
-            rec_expr = map_expr(nonempty([(key: l, value: var(s)) : l t <- fields, s = _untag_(l), s != opt_field]));
-            inst_expr = tag_obj_expr(tag, rec_expr);
-
-            env = [var(_untag_(l)) -> t : l t <- fields];
-            let context = database, surrogates = [], typed_vars = [] {
-              code, surr, _ = opt_eval_code(inst_expr, env, blank_var_gen);
-            }
-
-            wrapper = handler_wrapper(tag: tag, fields: ord_fields, msg_inst_code: code, msg_expr: surr);
-            wrappers = wrappers & [wrapper];
-          }
-
-          return just(wrappers);
+          return [wrapper];
         }
       }
 
       res = destructured_tagged_tuple(handler.type);
       if res != nothing {
         tag, fields_types = value(res);
-        fields = ((t, hidden_var(i), memb_test_preds_map(t, !)) : t @ i <- fields_types);
+        fields = ((t, hidden_var(i), nothing, memb_test_preds_map(t, !)) : t @ i <- fields_types);
 
         tuple_expr = seq_expr((hidden_var(i) : i < |fields_types|));
         inst_expr = tag_obj_expr(tag, tuple_expr);
@@ -649,7 +654,14 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
           code, surr, _ = opt_eval_code(inst_expr, env, blank_var_gen);
         }
 
-        return just([handler_wrapper(tag: tag, fields: fields, msg_inst_code: code, msg_expr: surr)]);
+        wrapper = handler_wrapper(
+          tag:            tag,
+          args:           fields,
+          msg_inst_code:  code,
+          msg_expr:       surr
+        );
+
+        return [wrapper];
       }
 
       res = destructured_tagged_value(handler.type);
@@ -657,7 +669,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
         tag, inner_type = value(res);
 
         inner_var = hidden_var(0);
-        field = (inner_type, inner_var, memb_test_preds_map(inner_type, !));
+        field = (inner_type, inner_var, nothing, memb_test_preds_map(inner_type, !));
 
         inst_expr = tag_obj_expr(tag, inner_var);
 
@@ -666,10 +678,17 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
           code, surr, _ = opt_eval_code(inst_expr, env, blank_var_gen);
         }
 
-        return just([handler_wrapper(tag: tag, fields: (field), msg_inst_code: code, msg_expr: surr)]);
+        wrapper = handler_wrapper(
+          tag:            tag,
+          args:           (field),
+          msg_inst_code:  code,
+          msg_expr:       surr
+        );
+
+        return [wrapper];
       }
 
-      return nothing;
+      return [];
     }
 
 

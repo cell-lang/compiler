@@ -13,6 +13,7 @@ type NzNat          = <1..*>;
 
 type Bit            = <0..1>;
 type Byte           = <0..255>;
+type Int32          = < -2147483648 .. 2147483647 >;
 
 type String         = string(Nat*);
 type Ascii          = string(<0..127>*);
@@ -204,6 +205,10 @@ Maybe[B] apply(Maybe[A] m, (A -> B) f) =
   just(x?)  = just(f(x)),
   nothing   = nothing;
 
+Maybe[B]* apply(Maybe[A]* ms, (A -> B) f) = (apply(m, f) : m <- ms);
+
+[Maybe[B]] apply([Maybe[A]] ms, (A -> B) f) = [apply(m, f) : m <- ms];
+
 ////////////////////////////////////////////////////////////////////////////////
 
 Success[T] success(T r) = :success(r);
@@ -282,6 +287,20 @@ T any([T] s) {
 
 ////////////////////////////////////////////////////////////////////////////////
 
+[K -> [+V]] by([V] set, (V -> K) key) {
+  map : [K -> [+V]];
+
+  map = [];
+  for v <- set {
+    k = key(v);
+    subset = if map(k, _) then _insert_(map(k), v) else [v];
+    map = _put_(map, k, subset);
+  }
+  return map;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
 T untag(<+>(T)) =
   t?(v?) = v;
 
@@ -313,3 +332,29 @@ String append(String* ss, String sep) {
   }
   return :string(chs);
 }
+
+Bool (_<_)(String str1, String str2) = {
+  chs1 = _untag_(str1);
+  chs2 = _untag_(str2);
+  len1 = |chs1|;
+  len2 = |chs2|;
+  for i < min(len1, len2) {
+    ch1 = chs1(i);
+    ch2 = chs2(i);
+    if ch1 != ch2
+      return ch1 < ch2;
+  }
+  return len1 < len2;
+};
+
+////////////////////////////////////////////////////////////////////////////////
+
+Bool (_<_) (Date d1, Date d2) = untag(d1) <  untag(d2);
+Bool (_>_) (Date d1, Date d2) = untag(d1) >  untag(d2);
+Bool (_<=_)(Date d1, Date d2) = untag(d1) <= untag(d2);
+Bool (_>=_)(Date d1, Date d2) = untag(d1) >= untag(d2);
+
+Bool (_<_) (Time t1, Time t2) = untag(t1) <  untag(t2);
+Bool (_>_) (Time t1, Time t2) = untag(t1) >  untag(t2);
+Bool (_<=_)(Time t1, Time t2) = untag(t1) <= untag(t2);
+Bool (_>=_)(Time t1, Time t2) = untag(t1) >= untag(t2);

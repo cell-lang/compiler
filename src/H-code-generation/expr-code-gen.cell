@@ -1550,7 +1550,7 @@ implicit program           : Program,
     args_types = (subexpr_type(a) : a <- expr.args);
 
     // Actual types of closure arguments
-    cls_types = inst_cls_types(expr.fn_id, args_types, expr.cls_args, env, typed_vars = []);
+    cls_types = inst_cls_args_types(expr.fn_id, args_types, expr.cls_args, env, typed_vars = []);
 
     // Low-level signature of the target function
     fn_id, low_level_sign = low_level_sign(expr.fn_id, args_types);
@@ -1745,13 +1745,13 @@ implicit program           : Program,
          context           : Context,
          options           : CompOptions {
 
-  AnyLambdaExpr opt_comp_cls(AnyClsExpr expr, ClsType type, [EnvVar -> Type] env, [SurrExpr -> ObjExpr] surrs) =
+  AnyLambdaExpr opt_comp_cls(AnyClsExpr expr, Type* args_types, [EnvVar -> Type] env, [SurrExpr -> ObjExpr] surrs) =
     cls_var()   = lookup(cls_var_subst_map, expr, expr),
-    fn_ptr(fn?) = opt_comp_cls(arity(expr), fn_call(fn, (fn_arg(i) : i < arity(expr)), ()), type, env, surrs),
-    cls_expr()  = opt_comp_cls(expr.arity, expr.expr, type, env, surrs);
+    fn_ptr(fn?) = opt_comp_cls(arity(expr), fn_call(fn, (fn_arg(i) : i < arity(expr)), ()), args_types, env, surrs),
+    cls_expr()  = opt_comp_cls(expr.arity, expr.expr, args_types, env, surrs);
 
 
-  AnyLambdaExpr opt_comp_cls(NzNat arity, Expr expr, ClsType type, [EnvVar -> Type] env, [SurrExpr -> ObjExpr] surrs) {
+  AnyLambdaExpr opt_comp_cls(NzNat arity, Expr expr, Type* args_types, [EnvVar -> Type] env, [SurrExpr -> ObjExpr] surrs) {
     loc_vars = set((fn_arg(i) : i < arity));
     ext_vars = isort(extern_vars(expr) - set((fn_arg(i) : i < arity)));
     fail if not ext_vars :: StdVar*;
@@ -1764,7 +1764,7 @@ implicit program           : Program,
     capt_vars     = (eval_var(v, var_subst_map, surrs) : v <- ext_vars);
     capt_cls_vars = (lookup(cls_var_subst_map, v, v) : v <- cls_vars);
 
-    args_env = [fn_arg(i) -> type.in_types(i) : i <- range(arity)];
+    args_env = [fn_arg(i) -> args_types(i) : i <- range(arity)];
     capt_env = [v -> env(v, !) : v <- ext_vars];
     new_env = args_env & capt_env;
 

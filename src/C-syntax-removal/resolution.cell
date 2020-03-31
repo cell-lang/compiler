@@ -445,7 +445,7 @@ implicit syn_prg : SynPrg {
     cls_var = cls_var(symbol);
     fn_symb = fn_symbol(symbol);
 
-    may_be_cls_var = (a <- artifact.fndef.args, cls_arg() ?= a : a.name == symbol);
+    may_be_cls_var = (a <- artifact.fndef.args, cls_arg() ?= a : a.name? and a.name == symbol);
     may_be_loc_fn = (fn <- artifact.fndef.local_fns : fn.name == fn_symb);
 
     return [cls_var if may_be_cls_var, pre_nested_fn_call(fn_symb, artifact.unique_name) if may_be_loc_fn];
@@ -456,7 +456,7 @@ implicit syn_prg : SynPrg {
     cls_var = cls_var(symbol);
     fn_symb = fn_symbol(symbol);
 
-    may_be_cls_var = (a <- artifact.fndef.args, cls_arg() ?= a : a.name == symbol);
+    may_be_cls_var = (a <- artifact.fndef.args, cls_arg() ?= a : a.name? and a.name == symbol);
     may_be_loc_fn = (fn <- artifact.parent_fndef.local_fns : fn.name == fn_symb);
 
     return [cls_var if may_be_cls_var, pre_nested_fn_call(fn_symb, artifact.parent_unique_name) if may_be_loc_fn];

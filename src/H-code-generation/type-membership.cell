@@ -61,7 +61,14 @@ implicit typedefs : [TypeName -> NeType], memb_test_preds : [NeType -> MembTestP
 
 
   Instr+ gen_ne_seq_type_checking_code(Type elem_type, AtomicExpr obj, BoolVar res_var) {
-    return (set_bvar(res_var, is_ne_seq(obj))) if is_type_any(elem_type);
+    if is_type_any(elem_type)
+      return (set_bvar(res_var, is_ne_seq(obj)));
+
+    if is_eq(elem_type, integer)
+      return (set_bvar(res_var, is_ne_int_seq(obj)));
+
+    if is_eq(elem_type, float_type)
+      return (set_bvar(res_var, is_ne_float_seq(obj)));
 
     elem_var, var_gen = next_obj_var(next_var_gen);
     it_var, var_gen = next_seq_it_var(var_gen);

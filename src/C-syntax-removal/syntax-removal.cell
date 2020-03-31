@@ -1,7 +1,7 @@
 implicit syn_prg : SynPrg {
   Program desugared_prg = program(
     typedefs:     typedefs,
-    fndefs:       desugared_fn_defs,
+    fndefs:       desugared_fn_defs & missing_protocol_methods_fake_impls,
     aggr_fn_defs: desugared_aggr_fn_defs,
     proc_defs:    [desugar_proc_def(pd) : pd <- syn_proc_defs],
     auto_defs:    [desugar_automaton(artifact=a) : a <- resolve_inheritance(react_auto_defs)],
@@ -10,6 +10,24 @@ implicit syn_prg : SynPrg {
 
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////
+
+  [Function] missing_protocol_methods_fake_impls {
+    def_fn_sgns = [f.name, |f.args| : d <- ext_syn_fn_defs, f = left(d)];
+    return [fake_impl(n, as, t) : d <- prot_decls, (n, as, t) <- d.methods, not def_fn_sgns(n, |as|)];
+
+
+    Function fake_impl(FnSymbol name, SynType+ args, SynType ret_type) =
+      function(
+        id:         fn_family_id(name, |args|),
+        args:       ((fn_arg(i), type_any) : i < |args|),
+        cls_args:   (),
+        impl_args:  [],
+        res_type:   type_any,
+        expr:       :undefined,
+        constrs:    []
+      );
+  }
+
 
   [AggrFunct] desugared_aggr_fn_defs {
     return [
@@ -70,15 +88,15 @@ implicit syn_prg : SynPrg {
         else if in(symb, react_autos_names)
           react_auto_args = (react_auto_args | (var: loc_auto_var(a.var), type: auto_symbol(symb)));
         else
-          args = (args | (var: var(a.var), type: desugar_schema_aware_type(a.type, schema_names)));
+          args = (args | (var: var(a.var), type: desugar_plain_type(a.type)));
       }
       else {
-        args = (args | (var: var(a.var), type: desugar_schema_aware_type(a.type, schema_names)));
+        args = (args | (var: var(a.var), type: desugar_plain_type(a.type)));
       }
     }
 
     maybe_ret_type = if pd.res_type != nothing
-      then just(desugar_schema_aware_type(value(pd.res_type), schema_names))
+      then just(desugar_plain_type(value(pd.res_type)))
       else nothing;
     body = desugar_stmts(pd.body, [a.var : a <- args], artifact = pd, impl_args = []);
     react_auto_vars = merge(([loc_auto_var(v.var) -> auto_symbol(v.type)] : v <- pd.auto_or_db_vars, automaton_is_reactive(v.type)));
@@ -163,18 +181,20 @@ implicit syn_prg : SynPrg, artifact : Artifact {
     subst_map = merge(([a -> type_var(i)] : a @ i <- sorted_prot_types));
 
     // First order arguments
+    syn_obj_args = (a : a <- syn_args, a :: SynObjArg);
     args = ({
         var = if a.name? then var(a.name) else fn_arg(i);
         type = desugar_arbitrary_type(a.type, subst_map, schema_names);
         return (var, type);
-      } : a @ i <- syn_args, a :: SynObjArg
+      } : a @ i <- syn_obj_args
     );
 
     // Closures
+    syn_cls_args = (a : a <- syn_args, a :: SynClsArg);
     cls_args = ({
         type = desugar_cls_type(a.type, desugar_arbitrary_type($, subst_map, schema_names));
-        return (cls_var(a.name), type);
-      } : a <- syn_args, a :: SynClsArg
+        return (cls_var(if a.name? then a.name else i), type);
+      } : a @ i <- syn_cls_args
     );
 
     // Implicit arguments

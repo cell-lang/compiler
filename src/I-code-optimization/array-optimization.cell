@@ -121,7 +121,7 @@ implicit typedefs : [TypeName -> NeType] {
                           update_seq_at() = [true],
                           _               = []
                       },
-      _             = search_nested(instr, has_update_seq_at_instrs, []);
+      _             = search_any_nested(instr, has_update_seq_at_instrs, []);
   }
 }
 
@@ -173,7 +173,7 @@ implicit typedefs : [TypeName -> NeType], loc_vars_types : [StdVar -> NeType] {
           return pending_vars_used(instr.value.idx, pending) & pending_vars_used(instr.value.value, pending);
       }
 
-      return search_nested(instr, pending_vars_used($, pending), pending_vars_used($, pending));
+      return search_any_nested(instr, pending_vars_used($, pending), pending_vars_used($, pending));
     }
 
 
@@ -182,7 +182,7 @@ implicit typedefs : [TypeName -> NeType], loc_vars_types : [StdVar -> NeType] {
       at()          = {if not pending(expr.seq, _) then pending_vars_used(expr.seq, pending) else []} &
                       pending_vars_used(expr.idx, pending),
       get_size(e?)  = if not pending(e, _) then pending_vars_used(e, pending) else [],
-      _             = search_nested(expr, pending_vars_used($, pending));
+      _             = search_any_nested(expr, pending_vars_used($, pending));
 
     //////////////////////////////////////////////////////////////////////////////
 
@@ -428,5 +428,5 @@ implicit loc_vars_types : [StdVar -> NeType] {
   [StdVar] affected_std_vars(JumpInstr instr, [StdVar -> LowLevelEltRepr] pending) = [];
 
   [StdVar] affected_std_vars(CompInstr instr, [StdVar -> LowLevelEltRepr] pending) =
-    search_nested(instr, affected_std_vars($, pending), []);
+    search_any_nested(instr, affected_std_vars($, pending), []);
 }

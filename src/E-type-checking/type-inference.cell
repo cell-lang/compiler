@@ -842,10 +842,13 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     partial_asgnm_env_updates((just(v) : v <- vars), value_type);
 
 
-  [EnvVar -> Type] merge_envs([EnvVar -> Type] env1, [EnvVar -> Type] env2) {
-    ks = intersection(keys(env1), keys(env2));
-    return [k -> union_superset([env1[k], env2[k]]) : k <- ks];
-  }
+  [EnvVar -> Type] merge_envs([EnvVar -> Type] env1, [EnvVar -> Type] env2) = [
+    v -> {
+      t1 = env1(v);
+      t2 = env2(v);
+      return if t1 != t2 then union_superset(t1, t2) else t1;
+    } : v _ <- env1, env2(v, _)
+  ];
 
 
   [EnvVar -> Type] merge_envs([+[EnvVar -> Type]] envs) {
@@ -1695,8 +1698,24 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     res_env_false = update_env(else_body, if_false_env);
 
     if may_fall_through(body) {
-      if may_fall_through(else_body)
-        return merge_envs(res_env_true, res_env_false);
+      if may_fall_through(else_body) {
+        ext_vars_env = [
+          v -> {
+            then_exit_type = res_env_true(v);
+            else_exit_type = res_env_false(v);
+            return if if_true_env(v) != then_exit_type or if_false_env(v) != else_exit_type
+              then union_superset(then_exit_type, else_exit_type)
+              else t;
+          } : v t <- env
+        ];
+
+        new_vars_env = [
+          v -> union_superset(t, res_env_false(v))
+          : v t <- res_env_true, not env(v, _), res_env_false(v, _)
+        ];
+
+        return ext_vars_env & new_vars_env;
+      }
       else
         return res_env_true;
     }

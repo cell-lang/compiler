@@ -61,7 +61,7 @@ type CodeOutcome = fails, returns, breaks_loop, exits_block, falls_through;
 
   [MembVar] updated_memb_vars(Instr instr) =
     set_var()   = [corresponding_memb_var(instr.var) if instr.var :: PendingStateVar],
-    _           = search_nested(instr, updated_memb_vars, []);
+    _           = search_any_nested(instr, updated_memb_vars, []);
 }
 
 
@@ -73,7 +73,7 @@ type CodeOutcome = fails, returns, breaks_loop, exits_block, falls_through;
     cleanup_value_store()           |
     immediate_insert_or_add_ref()   = undefined,
     lookup_or_queue_insert_value()  = [instr.store],
-    _                               = search_nested(instr, updated_value_stores, []);
+    _                               = search_any_nested(instr, updated_value_stores, []);
 }
 
 
@@ -86,7 +86,7 @@ type CodeOutcome = fails, returns, breaks_loop, exits_block, falls_through;
     immediate_insert_tuple()  = undefined,
     queue_insert_tuple()      = [instr.table_var],
     column_insert_deferred()  = [instr.table_var],
-    _                         = search_nested(instr, table_vars, []);
+    _                         = search_any_nested(instr, table_vars, []);
 }
 
 
@@ -99,7 +99,7 @@ type CodeOutcome = fails, returns, breaks_loop, exits_block, falls_through;
     immediate_insert_tuple()  = undefined,
     queue_deletes()           = [instr.table_var],
     column_insert_deferred()  = [instr.table_var if instr.forced],
-    _                         = search_nested(instr, table_vars, []);
+    _                         = search_any_nested(instr, table_vars, []);
 }
 
 
@@ -109,7 +109,7 @@ type CodeOutcome = fails, returns, breaks_loop, exits_block, falls_through;
 
   [UpdateId] mutators(Instr instr) =
     try_update()  = [instr.update_id],
-    _             = search_nested(instr, mutators, []);
+    _             = search_any_nested(instr, mutators, []);
 }
 
 
@@ -118,7 +118,7 @@ type CodeOutcome = fails, returns, breaks_loop, exits_block, falls_through;
 
   [LinkedDBVar] dependees(Instr instr) =
     send_msg()  = [cast_linked_db_var(instr.db_var)],
-    _           = search_nested(instr, dependees, []);
+    _           = search_any_nested(instr, dependees, []);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

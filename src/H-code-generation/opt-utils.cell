@@ -1,5 +1,5 @@
 implicit program : Program, typedefs : [TypeName -> NeType], context : Context, typed_vars : [StdVar -> NeType] {
-  ClsType* inst_cls_types(FnFamilyId fn_id, Type* args_types, AnyClsExpr* cls_args, [EnvVar -> Type] env) {
+  Type** inst_cls_args_types(FnFamilyId fn_id, Type* args_types, AnyClsExpr* cls_args, [EnvVar -> Type] env) {
     return () if cls_args == ();
 
     _, signature = restricted_signature(fn_id, args_types);
@@ -17,7 +17,16 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     ## IN THE SIGNATURE TO AN EMPTY TYPE
     type_vars_insts = [v -> t : v t <- type_vars_insts, t != empty_type];
 
-    return (replace_type_vars(t, type_vars_insts) : t <- signature.cls_args);
+    return (
+      (safe_replace_type_vars(t, type_vars_insts) : t <- cls_type.in_types)
+      : cls_type <- signature.cls_args
+    );
+
+
+    Type safe_replace_type_vars(NeType type, [TypeVar -> NeType] type_vars_insts) =
+      if (v <- get_type_vars(type) : not type_vars_insts(v, _))
+        then empty_type
+        else replace_type_vars(type, type_vars_insts);
   }
 }
 

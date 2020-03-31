@@ -337,6 +337,47 @@ implicit typedefs : [TypeName -> NeType] {
                               },
 
     _                       = type;
+
+  ////////////////////////////////////////////////////////////////////////////////
+
+  Bool is_recursive(TypeSymbol type_symb) {
+    return reaches(expand_type_ref(type_symb, typedefs), type_symb, []);
+
+
+    Bool reaches(Type type, TypeSymbol type_symb, [TypeSymbol] visited) =
+      empty_type            = false,
+
+      symb_type()           |
+      integer               |
+      low_ints()            |
+      high_ints()           |
+      int_range()           |
+      float_type            |
+      atom_type             |
+      empty_seq_type        |
+      empty_rel_type        = false,
+
+      type_var()            = false,
+
+      type_ref(ts?)         = ts == type_symb or (
+                                not visited(ts) and
+                                reaches(expand_type_ref(ts, typedefs), type_symb, _insert_(visited, ts))
+                              ),
+
+      ne_seq_type()         |
+      ne_set_type()         = reaches(type.elem_type, type_symb, visited),
+
+      ne_map_type()         = reaches(type.key_type, type_symb, visited) or
+                              reaches(type.value_type, type_symb, visited),
+      ne_bin_rel_type()     |
+      ne_tern_rel_type()    = (s <- type.signatures : (t <- s : reaches(t, type_symb, visited))),
+
+      ne_record_type(fs?)   = (_ f <- fs : reaches(f.type, type_symb, visited)),
+      tuple_type(ts?)       = (t <- ts : reaches(t, type_symb, visited)),
+
+      tag_obj_type()        = reaches(type.obj_type, type_symb, visited),
+      union_type(ts?)       = (t <- ts : reaches(t, type_symb, visited));
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -452,10 +493,10 @@ BuiltInType builtin_signature(BuiltIn) =
   tag             = builtin_type((type_tagged_obj),                    atom_type), // The return type is too loose, and it is ignore in the code
   untag           = builtin_type((type_tagged_obj),                    type_any),  // Ditto
 
-  insert          |
+  insert          = builtin_type((type_set_t, type_var(:t)),  type_ne_set_t),
   remove          = builtin_type((type_set_t, type_var(:t)),  type_set_t),
 
-  put             = builtin_type((type_map_t1_t2, type_var(:t1), type_var(:t2)),  type_map_t1_t2),
+  put             = builtin_type((type_map_t1_t2, type_var(:t1), type_var(:t2)),  type_ne_map_t1_t2),
   drop            = builtin_type((type_map_t1_t2, type_var(:t1)),                 type_map_t1_t2),
 
   parse           = builtin_type((type_string),   type_result(type_any, :tuple_type((type_nat, type_nat)))),
@@ -491,9 +532,9 @@ BuiltInType binary_float_pred = builtin_type((float_type, float_type), type_bool
 
 NeType type_seq_t             = type_seq(type_var(:t));
 NeType type_set_t             = type_set(type_var(:t));
+NeType type_ne_set_t          = ne_set_type(type_var(:t));
 NeType type_map_t1_t2         = type_map(type_var(:t1), type_var(:t2));
-
-// Type type_bare_list(Type elem_type) = type_ref(par_type_symbol(builtin_type_symbol(:bare_list), (elem_type)));
+NeType type_ne_map_t1_t2      = ne_map_type(type_var(:t1), type_var(:t2));
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -507,7 +548,10 @@ NeType type_map_t1_t2         = type_map(type_var(:t1), type_var(:t2));
   proc_symbol(:now)         -> ((),                                 just(type_time)),
   proc_symbol(:ticks)       -> ((),                                 just(type_nat)),
   proc_symbol(:exit)        -> ((type_nat),                         nothing),
-  proc_symbol(:error)       -> ((),                                 just(type_string))
+
+  proc_symbol(:error)       -> ((),                                 just(type_string)),
+  proc_symbol(:save)        -> ((type_string),                      just(type_bool)),
+  proc_symbol(:load)        -> ((type_string),                      just(type_bool))
 ];
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -520,4 +564,3 @@ NeType type_dot_access_target =
     type_map(atom_type, type_any),
     tag_obj_type(atom_type, type_map(atom_type, type_any))
   ]);
-

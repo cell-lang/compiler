@@ -591,9 +591,10 @@ implicit program           : Program,
   // proc_call_stmt(res_var: StdVar?, proc_name: ProcSymbol, args: Expr*, rel_auto_args: LocDBVar*, react_auto_args: LocAutoVar*);
   StmtCompInfo proc_call_stmt_opt_code(ProcCallStmt stmt, [EnvVar -> Type] env, VarGen init_var_gen) {
     code, args_surrs, var_gen = opt_eval_code(stmt.args, env, init_var_gen);
+    rel_auto_args = ((v, var_type(v)) : v <- stmt.rel_auto_args);
     call_instr = if stmt.res_var?
-      then call_proc(stmt.res_var, stmt.proc_name, args_surrs, (), stmt.rel_auto_args, stmt.react_auto_args)
-      else call_proc(stmt.proc_name, args_surrs, (), stmt.rel_auto_args, stmt.react_auto_args);
+      then call_proc(stmt.res_var, stmt.proc_name, args_surrs, (), rel_auto_args, stmt.react_auto_args)
+      else call_proc(stmt.proc_name, args_surrs, (), rel_auto_args, stmt.react_auto_args);
     return ((code | call_instr), just(surrogates), [], var_gen);
   }
 

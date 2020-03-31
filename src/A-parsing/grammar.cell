@@ -207,7 +207,7 @@ ParsingRule rule_typevar_decl =
     keyword_typevar,
     comma_sep_seq(rule_type_var),
     rule_colon,
-    pipe_sep_seq(comma_sep_seq(rule_mc_id)),
+    rule_mc_id,
     rule_semicolon
   ));
 
@@ -500,7 +500,7 @@ ParsingRule rule_match_fndef =
 ParsingRule rule_fn_arg =
   rule_choice((
     (:obj,  rule_seq((rule_type, optional_rule(rule_id)))),
-    (:cls,  rule_seq((rule_cls_type, rule_id)))
+    (:cls,  rule_seq((rule_cls_type, optional_rule(rule_id))))
   ));
 
 ParsingRule rule_cls_type =
@@ -883,7 +883,7 @@ ParsingRule rule_iter_clause =
   rep_rule(rule_single_iter_clause, rule_pipe, true, false);
 
 ParsingRule rule_single_iter_clause =
-  rule_seq((rep_rule(rule_opt_id), rule_left_arrow, rule_iter_clause_src));
+  rule_seq((rep_rule_nonempty(rule_opt_id), rule_left_arrow, rule_iter_clause_src));
 
 ParsingRule rule_iter_clause_src = rule_choice(((:proj, rule_projection), (:expr, rule_ref_expr)));
 

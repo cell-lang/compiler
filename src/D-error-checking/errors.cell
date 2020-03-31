@@ -17,6 +17,7 @@ type CoreWFError  = error_cluster(AnyAuto, [+CoreWFError]),
                     unsupported_foreign_key_type(key: ForeignKey),
                     unsupported_combination_of_keys_and_foreign_keys(key: ForeignKey),
                     foreign_key_symmetry_mismatch(key: ForeignKey, src_is_sym: Bool),
+                    target_type_not_a_superset_of_src_type(key: ForeignKey, arg: Symbol, src_type: NeType, tgt_type: NeType),
                     dependency_loop(signal: AnyReactAutoVar, deps: [AnyReactAutoVar]),
                     invalid_auto_var(var: Var, signal: SignalVar, expr: <Expr, TimeRule>),
                     invalid_nested_auto_input_var(var: Var, auto_id: NestedAutoVar, input_id: Atom, expr: Expr),
@@ -44,6 +45,7 @@ CoreWFError no_exact_signature_match(ForeignKey k, RelVar v, NeType+ s, Maybe[Ne
 CoreWFError unsupported_foreign_key_type(ForeignKey k) = unsupported_foreign_key_type(key: k);
 CoreWFError unsupported_combination_of_keys_and_foreign_keys(ForeignKey k) = unsupported_combination_of_keys_and_foreign_keys(key: k);
 CoreWFError foreign_key_symmetry_mismatch(ForeignKey k, Bool s) = foreign_key_symmetry_mismatch(key: k, src_is_sym: s);
+CoreWFError target_type_not_a_superset_of_src_type(ForeignKey k, Symbol a, NeType s, NeType t) = target_type_not_a_superset_of_src_type(key: k, arg: a, src_type: s, tgt_type: t);
 CoreWFError invalid_auto_var(Var v, SignalVar s, <Expr, TimeRule> e) = invalid_auto_var(var: v, signal: s, expr: e);
 CoreWFError dependency_loop(AnyReactAutoVar s, [+AnyReactAutoVar] ds) = dependency_loop(signal: s, deps: ds);
 CoreWFError invalid_nested_auto_input_var(Var v, NestedAutoVar a, Atom i, Expr e) = invalid_nested_auto_input_var(var: v, auto_id: a, input_id: i, expr: e);
@@ -72,6 +74,7 @@ String* error_message(CoreWFError err) =
   unsupported_foreign_key_type()      = unsupported_foreign_key_type_error_message(err.key),
   unsupported_combination_of_keys_and_foreign_keys() = unsupported_combination_of_keys_and_foreign_keys_error_message(err.key),
   foreign_key_symmetry_mismatch()     = foreign_key_symmetry_mismatch_error_message(err.key, err.src_is_sym),
+  target_type_not_a_superset_of_src_type()  = target_type_not_a_superset_of_src_type_error_message(err.key, err.arg, err.src_type, err.tgt_type),
   dependency_loop()                   = dependency_loop_error_message(err.signal, err.deps),
   invalid_auto_var()                  = invalid_auto_var_error_message(err.var, err.signal, err.expr),
   invalid_nested_auto_input_var()     = invalid_nested_auto_input_var_error_message(err.var, err.auto_id, err.input_id, err.expr),
@@ -170,6 +173,15 @@ String* foreign_key_symmetry_mismatch_error_message(ForeignKey key, Bool src_is_
   );
 }
 
+
+String* target_type_not_a_superset_of_src_type_error_message(ForeignKey key, Symbol arg, NeType src_type, NeType tgt_type) {
+  return (
+    "Invalid types for argument " & _print_(arg) & " in foreign key " & user_repr(key),
+    "The type in the source relation is not a subset of the type in the target relation",
+    "  Source type: " & user_repr(src_type),
+    "  Target type: " & user_repr(tgt_type)
+  );
+}
 
 String* recursively_defined_auto_or_db_error_message(AnyAuto auto_or_db) {
   auto_type_str = match (auto_or_db)

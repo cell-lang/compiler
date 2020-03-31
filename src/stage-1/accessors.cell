@@ -79,25 +79,25 @@ Artifact closure_artifact(Artifact artifact) =
 
 ////////////////////////////////////////////////////////////////////////////////
 
-[[+TypeVar -> Atom]] typevar_bindings(TypeVarDecl decl) =
-  [nonempty_map(merge(([type_var(v) -> t] : v, t <- zip(decl.type_vars, types)))) : types <- decl.prot_types];
-
-
 implicit syn_prg : SynPrg {
   [PrgDecl] all_syn_decls {
     return union([process_src_file(ds) : _ ds <- syn_prg.parsed_src_files]);
 
     [PrgDecl] process_src_file(PrgDecl* decls) {
-      decl_set = set(decls);
-      tvar_binds = union([typevar_bindings(d) : d <- decl_set, typevar_decl() ?= d]);
+      tvar_binds = union([
+        [[type_var(v) -> d.prot_type] : v <- d.type_vars]
+        : d <- decls, typevar_decl() ?= d
+      ]);
+
       return [
         match (d)
           syn_fn_def()  = process_fn_def(d, tvar_binds),
           impl_block()  = process_impl_block(d, tvar_binds),
           _             = d
-        : d <- decl_set
+        : d <- decls
       ];
     }
+
 
     SynFnDef process_fn_def(SynFnDef fn_def, [[+TypeVar -> Atom]] tvar_binds) {
       assert fn_def.typevars == [];
@@ -616,8 +616,10 @@ implicit syn_prg : SynPrg, artifact : Artifact {
 
   [ClsVar -> NzNat] cls_vars_arities =
     match (artifact)
-      top_level_fn_def()  = [cls_var(a.name) -> syn_type_arity(a.type) : a <- artifact.fndef.args, cls_arg() ?= a],
-      nested_fn_def()     = [cls_var(a.name) -> syn_type_arity(a.type) : a <- artifact.fndef.args, cls_arg() ?= a],
+      top_level_fn_def()  |
+      nested_fn_def()     = [ cls_var(a.name) -> syn_type_arity(a.type)
+                              : a <- artifact.fndef.args, cls_arg() ?= a, a.name?
+                            ],
       _                   = [];
 
   //////////////////////////////////////////////////////////////////////////////

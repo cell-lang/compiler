@@ -3,6 +3,7 @@ type WFError            = dupl_typedef((AnyTypedef, AnyTypedef)),
                           dupl_impl_arg((ImplArgDecl, ImplArgDecl)),
                           signature_errors(sgn: ImplArgDecl, errors: TypeWFError+),
                           incomp_pos_args(fndefs: (SynFnDef, SynFnDef), arg_indexes: Nat+),
+                          non_identical_cls_types(fndefs: (SynFnDef, SynFnDef), arg_idx: Nat),
                           overlapping_pos_args_types((SynFnDef, SynFnDef)),
                           incomp_impl_args(fd1: SynFnDef, fd2: SynFnDef, nargs1: [Atom], nargs2: [Atom]),
                           fndef_errors(fndef: SynFnDef, errors: FnDefWFError+),
@@ -114,6 +115,7 @@ type ExprSpecWFError    = already_def_var(Var),
                           break_in_let_body(SynBreakStmt),
                           missing_ret_stmt(SynStmt+),
                           unreachable_stmt(SynStmt),
+                          parens_in_if_stmt_cond(SynIfStmt, SynSeqExpr),
 
                           unknown_auto(auto_symb: <AutoSymbol, DBSymbol>),
                           undef_react_auto_var(var: AnyAutoVar, is_other_var_type: Bool),
@@ -149,6 +151,10 @@ type ExprSpecWFError    = already_def_var(Var),
                           actual_argument_not_an_auto_var(expr: SynExpr, proc: ProcSymbol, idx: Nat, type: <any_rel_auto, DBSymbol, AutoSymbol>),
                           wrong_auto_type(proc: ProcSymbol, idx: Nat, actual: <DBSymbol, AutoSymbol>, expected: <any_rel_auto, DBSymbol, AutoSymbol>),
                           cannot_set_state_of_auto_arg(var: Symbol),
+
+                          send_msg_syntax_not_supported_anymore,
+                          read_state_syntax_not_supported_anymore,
+                          restore_state_syntax_not_supported_anymore,
 
                           undef_auto_var(var: Atom, is_data_var: Bool),
 
@@ -192,6 +198,7 @@ WFError typedef_errors(AnyTypedef td, TypeWFError+ errs)        = typedef_errors
 WFError dupl_impl_arg(ImplArgDecl s1, ImplArgDecl s2)           = :dupl_impl_arg((s1, s2));
 WFError signature_errors(ImplArgDecl s, TypeWFError+ es)        = signature_errors(sgn: s, errors: es);
 WFError incomp_pos_args(SynFnDef fd1, SynFnDef fd2, Nat+ is)    = incomp_pos_args(fndefs: (fd1, fd2), arg_indexes: is);
+WFError non_identical_cls_types(SynFnDef fd1, SynFnDef fd2, Nat i)  = non_identical_cls_types(fndefs: (fd1, fd2), arg_idx: i);
 WFError overlapping_pos_args_types(SynFnDef fd1, SynFnDef fd2)  = :overlapping_pos_args_types((fd1, fd2));
 WFError incomp_impl_args(SynFnDef fd1, SynFnDef fd2, [Atom] nas1, [Atom] nas2) = incomp_impl_args(fd1: fd1, fd2: fd2, nargs1: nas1, nargs2: nas2);
 WFError fndef_errors(SynFnDef fd, FnDefWFError+ errs)           = fndef_errors(fndef: fd, errors: errs);
@@ -339,6 +346,7 @@ ExprSpecWFError break_outside_loop(SynBreakStmt s)              = :break_outside
 ExprSpecWFError break_in_let_body(SynBreakStmt s)               = :break_in_let_body(s);
 ExprSpecWFError missing_ret_stmt(SynStmt+ ss)                   = :missing_ret_stmt(ss);
 ExprSpecWFError unreachable_stmt(SynStmt s)                     = :unreachable_stmt(s);
+ExprSpecWFError parens_in_if_stmt_cond(SynIfStmt s, SynSeqExpr e) = :parens_in_if_stmt_cond(s, e);
 
 ExprSpecWFError unknown_auto(<AutoSymbol, DBSymbol> s)            = unknown_auto(auto_symb: s);
 ExprSpecWFError undef_react_auto_var(AnyAutoVar v, Bool b)        = undef_react_auto_var(var: v, is_other_var_type: b);
@@ -460,6 +468,7 @@ Any* anchor_objs(ExprSpecWFError err) =
   break_in_let_body(s?)                   = (s),
   missing_ret_stmt(ss?)                   = (head(ss)),
   unreachable_stmt(s?)                    = (s),
+  parens_in_if_stmt_cond(s?, c?)          = (c),
 
   unknown_auto()                          = (),
   undef_react_auto_var()                  = (),
@@ -492,6 +501,11 @@ Any* anchor_objs(ExprSpecWFError err) =
   unknown_rel_var()                       = (),
   non_relvar_aggr_fns_iter()              = (err.cls),
   cannot_set_state_of_auto_arg()          = (),
+
+  send_msg_syntax_not_supported_anymore      = (),
+  read_state_syntax_not_supported_anymore    = (),
+  restore_state_syntax_not_supported_anymore = (),
+
   actual_argument_not_an_auto_var()       = (),
   wrong_auto_type()                       = (),
 
@@ -564,7 +578,8 @@ String* create_error_msg(WFError err) =
   typedef_errors()                    = typedef_error_msg(err.typedef, err.errors),
   dupl_impl_arg(ss?)                  = dupl_impl_arg_err_msg(left(ss), right(ss)),
   signature_errors()                  = signature_errors_err_msg(err.sgn, err.errors),
-  incomp_pos_args()                   = incomp_pos_pars_err_msg(left(err.fndefs), right(err.fndefs), err.arg_indexes),
+  incomp_pos_args()                   = incomp_pos_args_err_msg(left(err.fndefs), right(err.fndefs), err.arg_indexes),
+  non_identical_cls_types()           = non_identical_cls_types_err_msg(left(err.fndefs), right(err.fndefs), err.arg_idx),
   overlapping_pos_args_types(fds?)    = overlapping_pos_pars_types_err_msg(left(fds), right(fds)),
   incomp_impl_args()                  = incomp_impl_args_err_msg(err.fd1, err.fd2, err.nargs1, err.nargs2),
   fndef_errors()                      = fndef_errs_msg(err.fndef, err.errors),
@@ -618,8 +633,16 @@ String* signature_errors_err_msg(ImplArgDecl sgn, TypeWFError+ errs) =
   (join((create_error_msg(e) : e <- errs)) | "    " & source_code_loc_str(sgn));
 
 
-String* incomp_pos_pars_err_msg(SynFnDef fd1, SynFnDef fd2, Nat+ par_idxs) = (
+String* incomp_pos_args_err_msg(SynFnDef fd1, SynFnDef fd2, Nat+ par_idxs) = (
     "Incompatible argument types in polymorphic function: " & user_name(fd1) & ", arguments: " & append((printed(i) : i <- par_idxs)),
+    "    " & source_code_loc_str(fd1),
+    "    " & source_code_loc_str(fd2)
+  );
+
+
+String* non_identical_cls_types_err_msg(SynFnDef fd1, SynFnDef fd2, Nat arg_idx) = (
+    "Types of closure arguments in polymorphic functions must be identical",
+    "Function " & user_name(fd1) & ", argument " & _print_(arg_idx + 1),
     "    " & source_code_loc_str(fd1),
     "    " & source_code_loc_str(fd2)
   );
@@ -897,6 +920,7 @@ String* basic_err_msg(ExprSpecWFError err) =
   break_in_let_body()         = ("Break statements are not allowed to jump outside the body of an enclosing let block"),
   missing_ret_stmt()          = ("Missing return statement"),
   unreachable_stmt()          = ("Unreachable statement"),
+  parens_in_if_stmt_cond()    = ("The condition of an if statement has to be written without parentheses around it"),
 
   unknown_auto()              = ("Automaton does not exist: " & user_repr(err.auto_symb)),
   undef_react_auto_var()      = ({if err.is_other_var_type then "Not an automaton" else "Undefined"} & " variable: " & user_repr(err.var)),
@@ -956,6 +980,26 @@ String* basic_err_msg(ExprSpecWFError err) =
   unknown_rel_var()           = ("Unknown relational variable: " & _print_(err.var)),
   non_relvar_aggr_fns_iter()  = non_relvar_aggr_fns_iter_err_msg(err.cls),
   cannot_set_state_of_auto_arg()    = cannot_set_state_of_auto_arg_err_msg(err.var),
+
+  send_msg_syntax_not_supported_anymore = (
+    "The old syntax for sending messages to relational automata is not supported anymore.",
+    "Use Send(..) instead:",
+    "  Old syntax: succeeded = instance <- message;",
+    "  New syntax: succeeded = Send(instance, message);"
+  ),
+  read_state_syntax_not_supported_anymore = (
+    "The old syntax for copying the state of a relational automaton is not supported anymore.",
+    "Use Copy(..) instead:",
+    "  Old syntax: state = read instance;",
+    "  New syntax: state = Copy(instance);"
+  ),
+  restore_state_syntax_not_supported_anymore = (
+    "The old syntax for setting the state of a relational automaton is not supported anymore.",
+    "Use Set(..) instead:",
+    "  Old syntax: succeeded = write instance <- state;",
+    "  New syntax: succeeded = Set(instance, state);"
+  ),
+
   actual_argument_not_an_auto_var() = actual_argument_not_an_auto_var_err_msg(err.expr, err.proc, err.idx, err.type),
   wrong_auto_type()           = wrong_auto_type_err_msg(err.proc, err.idx, err.actual, err.expected),
 
@@ -971,9 +1015,9 @@ String* basic_err_msg(ExprSpecWFError err) =
 
 
 String* cannot_set_state_of_auto_arg_err_msg(Symbol var) = (
-  "It is not yet possible to directly set the state of an automaton instance such as " & _print_(var),
-  "that has been passed as an argument to the current procedure. The write instruction",
-  "can at the moment be used only with locally defined automaton instances"
+  "It is not yet possible to set or load the state of an automaton instance (" & _print_(var) & ")",
+  "that has been passed as an argument to the current procedure. This functionality can at",
+  "the moment be used only within the body of the procedure that instantiates the automaton"
 );
 
 

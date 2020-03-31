@@ -3,11 +3,12 @@
 //   (TypeVar => Type*) subset_conds(Type subtype, Type supertype);
 
 implicit typedefs : [TypeName -> NeType] {
-  Bool is_subset(Type subtype, Type supertype) = deep_subset_conds(subtype, supertype, inst_type_vars=false) == [];
+  Bool is_subset(Type subtype, Type supertype) =
+    deep_subset_conds(subtype, supertype, inst_type_vars=false, depth=0) == [];
 
 
   [TypeVar -> [Type]] subset_conds(Type subtype, Type supertype) {
-    cs = deep_subset_conds(subtype, supertype, inst_type_vars=true);
+    cs = deep_subset_conds(subtype, supertype, inst_type_vars=true, depth=0);
     // fail if not cs :: <<subset_when(type_var: TypeVar, inst_type: Type)>*>;
     fail if cs == not_a_subset;
     return merge_values([
@@ -51,7 +52,7 @@ SubsetCond type_var_inst_conds(SubsetCond conds) =
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-implicit typedefs : [TypeName -> NeType], inst_type_vars : Bool {
+implicit typedefs : [TypeName -> NeType], inst_type_vars : Bool, depth : Nat {
   SubsetCond deep_subset_conds(Type subtype, Type supertype) {
     starting_conds = shallow_subset_conds(subtype, supertype);
     return not_a_subset if starting_conds == not_a_subset;
@@ -262,8 +263,17 @@ implicit typedefs : [TypeName -> NeType], inst_type_vars : Bool {
     return [] if all_conds([]);
     return only(all_conds) if |all_conds| == 1;
     var_only_conds = [cs : cs <- all_conds, subtype_conds(cs) == []];
-    return an_elem(var_only_conds) if var_only_conds != []; ## CAN WE IMPROVE ON THIS?
-    return an_elem(all_conds); ## BAD BAD BAD: REALLY REALLY BAD
+    return only(var_only_conds) if |var_only_conds| == 1; ## CAN WE IMPROVE ON THIS?
+
+    if depth == 0 and all_conds :: [[<subset_if(subset: TypeSymbol, superset: Type)>]]
+      for cs <- all_conds {
+        let depth = nat(depth + 1)
+          hold = not (c <- cs : deep_subset_conds(type_ref(c.subset), c.superset) != []);
+        return [] if hold;
+      }
+
+    ## ADD A ONE-OFF FAILURE WARNING
+    return not_a_subset;
 
 
     SubsetCond subset_conds(NeType+ subtypes, NeType+ supertypes) =
@@ -277,8 +287,17 @@ implicit typedefs : [TypeName -> NeType], inst_type_vars : Bool {
     return [] if in([], all_conds);
     return only(all_conds) if |all_conds| == 1;
     var_only_conds = [cs : cs <- all_conds, subtype_conds(cs) == []];
-    return an_elem(var_only_conds) if var_only_conds != []; ## CAN WE IMPROVE ON THIS?
-    return an_elem(all_conds); ## BAD BAD BAD: REALLY REALLY BAD
+    return only(var_only_conds) if |var_only_conds| == 1; ## CAN WE IMPROVE ON THIS?
+
+    if depth == 0 and all_conds :: [[<subset_if(subset: TypeSymbol, superset: Type)>]]
+      for cs <- all_conds {
+        let depth = nat(depth + 1)
+          hold = not (c <- cs : deep_subset_conds(type_ref(c.subset), c.superset) != []);
+        return [] if hold;
+      }
+
+    ## ADD A ONE-OFF FAILURE WARNING
+    return not_a_subset;
   }
 
 

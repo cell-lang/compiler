@@ -95,7 +95,7 @@ Expr* exprs_cluster(RecExprGroup2 expr, Nat offset) =
 
 // map_expr([+(key: Expr, value: Expr, cond: Expr?)]);
 Expr* exprs_cluster(MapExpr expr, Nat offset) =
-  exprs_cluster(
+  exprs_sets_cluster(
     [(e.key, e.value, e.cond if e.cond?) : e <- untag(expr)],
     offset,
     map_expr(nonempty([(key: e(0), value: e(1), cond: e(2) if |e| == 3) : e <- $]))
@@ -104,7 +104,7 @@ Expr* exprs_cluster(MapExpr expr, Nat offset) =
 
 // bin_rel_expr([+(args: (Expr, Expr), cond: Expr?)]);
 Expr* exprs_cluster(BinRelExpr expr, Nat offset) =
-  exprs_cluster(
+  exprs_sets_cluster(
     [e.args & (e.cond if e.cond?) : e <- untag(expr)],
     offset,
     bin_rel_expr(nonempty([(args: (e(0), e(1)), cond: e(2) if |e| == 3) : e <- $]))
@@ -113,7 +113,7 @@ Expr* exprs_cluster(BinRelExpr expr, Nat offset) =
 
 // tern_rel_expr([+(args: (Expr, Expr, Expr), cond: Expr?)]);
 Expr* exprs_cluster(TernRelExpr expr, Nat offset) =
-  exprs_cluster(
+  exprs_sets_cluster(
     [e.args & (e.cond if e.cond?) : e <- untag(expr)],
     offset,
     tern_rel_expr(nonempty([(args: (e(0), e(1), e(2)), cond: e(3) if |e| == 4) : e <- $]))
@@ -333,7 +333,8 @@ Expr* exprs_cluster(Expr* exprs, Nat offset, (Expr* -> Expr) parent_expr) {
 }
 
 
-Expr* exprs_cluster([Expr*] exprs, Nat offset, ([Expr*] -> Expr) parent_expr) {
+## FIND BETTER NAME
+Expr* exprs_sets_cluster([Expr*] exprs, Nat offset, ([Expr*] -> Expr) parent_expr) {
   repl_exprs, cluster = cluster_expr_seqs(isort(exprs), nat(offset+1));
   return (parent_expr(set(repl_exprs))) & cluster;
 }

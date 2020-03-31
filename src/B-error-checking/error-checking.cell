@@ -42,7 +42,7 @@ implicit syn_prg : SynPrg {
     errs = reactive_autos_wf_errors(type_arity_map);
     return errs if errs != ();
 
-    proc_sgn_errs = procedures_signature_wf_errors(syn_proc_defs);
+    proc_sgn_errs = procedures_signature_wf_errors(syn_proc_defs, [s.name : s <- schemas]);
     return proc_sgn_errs if proc_sgn_errs != ();
 
     using_blocks_errs = isort([
@@ -267,7 +267,7 @@ implicit syn_prg : SynPrg {
 
     indirect_type_vars = [];
     for a @ i <- fndef.args {
-      if a :: SynClsArg {
+      if a :: SynClsArg and a.name? {
         in_type_vars = seq_union((syn_type_vars(t) : t <- a.type.in_types));
         undef_type_vars = in_type_vars - direct_type_vars;
         errs = (errs | invalid_cls_type_vars(i, a.name, undef_type_vars)) if undef_type_vars != [];
@@ -286,22 +286,28 @@ implicit syn_prg : SynPrg {
   WFError* polymorphic_functions_errors(SynFnDef+ full_fndefs) {
     for fd1 @ i1 <- full_fndefs ; fd2 <- drop(full_fndefs, i1+1) {
       assert fd1.name == fd2.name and arity(fd1) == arity(fd2);
-      arity_match = (syn_type_arity(a1.type) == syn_type_arity(a2.type) : a1, a2 <- zip(fd1.args, fd2.args));
-      return (incomp_pos_args(fd1, fd2, nonempty((i : b @ i <- arity_match, not b)))) if not all(arity_match);
+      for a1, a2 @ i <- zip(fd1.args, fd2.args) {
+        arity1 = syn_type_arity(a1.type);
+        arity2 = syn_type_arity(a2.type);
+        if arity1 != arity2
+          return (incomp_pos_args(fd1, fd2, (i)));
+        if arity1 > 0 and a1.type != a2.type
+          return (non_identical_cls_types(fd1, fd2, i));
+      }
     }
     return ();
   }
 
 
-  WFError* procedures_signature_wf_errors([SynProcDef] proc_defs) {
-    def_errs = join((proc_signature_wf_errors(pd) : pd <- rand_sort(proc_defs)));
+  WFError* procedures_signature_wf_errors([SynProcDef] proc_defs, [Atom] schemas) {
+    def_errs = join((proc_signature_wf_errors(pd, schemas) : pd <- rand_sort(proc_defs)));
     procs_by_name = group_by(proc_defs, $.name);
     global_errs = rand_sort([same_name_proc_defs(rand_sort(pds)) : pds <- values(procs_by_name), |pds| != 1]);
     return def_errs & global_errs;
   }
 
 
-  WFError* proc_signature_wf_errors(SynProcDef proc_def) {
+  WFError* proc_signature_wf_errors(SynProcDef proc_def, [Atom] schemas) {
     name = proc_def.name;
     bare_name = match (name) proc_symbol(n?) = n;
     arity = arity(proc_def);
@@ -315,8 +321,10 @@ implicit syn_prg : SynPrg {
       dupl_par_names(dup_pars, [])  if dup_pars != []
     );
 
-    errs = errs & join((schema_aware_type_wf_errors(p.type) : p <- proc_def.args));
-    errs = errs & schema_aware_type_wf_errors(value(res_type)) if res_type != nothing;
+    for a <- proc_def.args
+      if not a.type :: <type_ref(type_symbol(Symbol))> or not schemas(bare_id(untag(a.type)))
+        errs = errs & plain_type_wf_errors(a.type);
+    errs = errs & plain_type_wf_errors(value(res_type)) if res_type != nothing;
 
     return (proc_def_errors(proc_def, errs) if errs != ());
   }
@@ -486,23 +494,9 @@ implicit type_arity_map : [BasicTypeSymbol -> [+Nat]], schemas : [Atom -> Schema
 
   TypeVarDeclError* typevar_decl_wf_errors(TypeVarDecl decl, [Atom -> [+Atom]] prot_types_map) {
     dupl_vars = duplicates(decl.type_vars);
-    return (dupl_type_vars(dupl_vars)) if dupl_vars != [];
-
-    nvars = |decl.type_vars|;
-    for pts <- decl.prot_types {
-      // No duplicates among types
-      dupl_types = duplicates(pts);
-      return (dupl_prot_types(dupl_types)) if dupl_types != [];
-      // Number of types must be the same as the number of variables
-      return (wrong_number_of_prot_types) if |pts| != nvars;
-      // All protocol types must be defined
-      errs = (undef_prot_type(t) : t <- pts, not prot_types_map(t, _));
-      return errs if errs != ();
-      // All protocol types must belong to the same protocol
-      prot_types = prot_types_map[pts(0)];
-      return (unrelated_prot_types(pts)) if not subset(set(pts), prot_types);
-    }
-
-    return ();
+    return (
+      dupl_type_vars(dupl_vars) if dupl_vars != [],
+      undef_prot_type(decl.prot_type) if not prot_types_map(decl.prot_type, _)
+    );
   }
 }

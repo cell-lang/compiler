@@ -27,12 +27,12 @@ implicit syn_prg : SynPrg {
     type_wf_errors(type, param_type_wf_errors($, type, type_vars, type_arity_map));
 
   // Schemas, but not protocols nor type variables
-  TypeWFError* schema_aware_type_wf_errors(SynType type) =
-    type_wf_errors(type, schema_aware_type_wf_errors($, type, type_arity_map, schema_names));
+  // TypeWFError* schema_aware_type_wf_errors(SynType type) =
+  //   type_wf_errors(type, schema_aware_type_wf_errors($, type, type_arity_map, schema_names));
 
   // Anything goes
   TypeWFError* arbitrary_type_wf_errors(SynType type) =
-    type_wf_errors(type, arbitrary_type_wf_errors($, type, type_prot_arity_map, schema_names));
+    type_wf_errors(type, arbitrary_type_wf_errors($, type, type_prot_arity_map));
 
   TypeWFError* arbitrary_type_wf_errors(SynClsType type) =
     join((arbitrary_type_wf_errors(t) : t <- type.in_types)) & arbitrary_type_wf_errors(type.out_type);
@@ -55,50 +55,43 @@ TypeWFError* prot_sgn_type_wf_errors(SynType type, [BasicTypeSymbol -> [+Nat]] t
 
 TypeWFError* typedef_type_wf_errors(<SynTypeRef, SynTypeVar> type, [TypeVar] type_vars, [BasicTypeSymbol -> [+Nat]] type_arity_map) =
   type_var()    = (undef_type_var(type) if not type_vars(type)),
-  type_ref(ts?) = type_symb_wf_errors(ts, type_arity_map, [], typedef_type_wf_errors($, type_vars, type_arity_map));
+  type_ref(ts?) = type_symb_wf_errors(ts, type_arity_map, typedef_type_wf_errors($, type_vars, type_arity_map));
 
 
 TypeWFError* plain_type_wf_errors(<SynTypeRef, SynTypeVar> type, SynType root_type, [BasicTypeSymbol -> [+Nat]] type_arity_map) =
   type_var()    = (type_vars_not_allowed(root_type, type)),
-  type_ref(ts?) = type_symb_wf_errors(ts, type_arity_map, [], plain_type_wf_errors($, root_type, type_arity_map));
+  type_ref(ts?) = type_symb_wf_errors(ts, type_arity_map, plain_type_wf_errors($, root_type, type_arity_map));
 
 
 TypeWFError* param_type_wf_errors(<SynTypeRef, SynTypeVar> type, SynType root_type, [TypeVar] type_vars, [BasicTypeSymbol -> [+Nat]] type_arity_map) =
   type_var()    = (undef_type_var(type) if not type_vars(type)),
-  type_ref(ts?) = type_symb_wf_errors(ts, type_arity_map, [], param_type_wf_errors($, root_type, type_vars, type_arity_map));
+  type_ref(ts?) = type_symb_wf_errors(ts, type_arity_map, param_type_wf_errors($, root_type, type_vars, type_arity_map));
 
 
-TypeWFError* schema_aware_type_wf_errors(<SynTypeRef, SynTypeVar> type, SynType root_type, [BasicTypeSymbol -> [+Nat]] type_arity_map, [Atom] schemas) =
-  type_var()    = (type_vars_not_allowed(root_type, type)),
-  type_ref(ts?) = type_symb_wf_errors(ts, type_arity_map, schemas, schema_aware_type_wf_errors($, root_type, type_arity_map, schemas));
+// TypeWFError* schema_aware_type_wf_errors(<SynTypeRef, SynTypeVar> type, SynType root_type, [BasicTypeSymbol -> [+Nat]] type_arity_map, [Atom] schemas) =
+//   type_var()    = (type_vars_not_allowed(root_type, type)),
+//   type_ref(ts?) = type_symb_wf_errors(ts, type_arity_map, schemas, schema_aware_type_wf_errors($, root_type, type_arity_map, schemas));
 
 
 TypeWFError* prot_sgn_type_wf_errors(<SynTypeRef, SynTypeVar> type, SynType root_type, [BasicTypeSymbol -> [+Nat]] type_arity_map, [Atom] protocols) =
   type_var()    = (type_vars_not_allowed(root_type, type)),
   type_ref(ts?) = { is_prot = match (ts) type_symbol(id?) = protocols(id);
                     return () if is_prot;
-                    return type_symb_wf_errors(ts, type_arity_map, [], prot_sgn_type_wf_errors($, root_type, type_arity_map, protocols));
+                    return type_symb_wf_errors(ts, type_arity_map, prot_sgn_type_wf_errors($, root_type, type_arity_map, protocols));
                   };
 
 
-TypeWFError* arbitrary_type_wf_errors(<SynTypeRef, SynTypeVar> type, SynType root_type, [BasicTypeSymbol -> [+Nat]] type_arity_map, [Atom] schemas) =
+TypeWFError* arbitrary_type_wf_errors(<SynTypeRef, SynTypeVar> type, SynType root_type, [BasicTypeSymbol -> [+Nat]] type_arity_map) =
   type_var()    = (),
-  type_ref(ts?) = type_symb_wf_errors(ts, type_arity_map, schemas, arbitrary_type_wf_errors($, root_type, type_arity_map, schemas));
+  type_ref(ts?) = type_symb_wf_errors(ts, type_arity_map, arbitrary_type_wf_errors($, root_type, type_arity_map));
 
 ////////////////////////////////////////////////////////////////////////////////
 
-TypeWFError* type_symb_wf_errors(BasicTypeSymbol type_symb, [BasicTypeSymbol -> [+Nat]] type_arity_map,
-            [Atom] schemas, (<SynTypeRef, SynTypeVar> -> TypeWFError*) wf_errors) {
-
-  bare_id = match (type_symb) type_symbol(id?) = id;
-  is_def = type_arity_map(type_symb, _) or schemas(bare_id);
-  return (undef_type(type_symb) if not is_def);
-}
+TypeWFError* type_symb_wf_errors(BasicTypeSymbol type_symb, [BasicTypeSymbol -> [+Nat]] type_arity_map, (<SynTypeRef, SynTypeVar> -> TypeWFError*)) =
+  (undef_type(type_symb) if not type_arity_map(type_symb, _));
 
 
-TypeWFError* type_symb_wf_errors(SynParTypeSymbol type_symb, [BasicTypeSymbol -> [+Nat]] type_arity_map,
-  [Atom] schemas, (<SynTypeRef, SynTypeVar> -> TypeWFError*) wf_errors) {
-
+TypeWFError* type_symb_wf_errors(SynParTypeSymbol type_symb, [BasicTypeSymbol -> [+Nat]] type_arity_map, (<SynTypeRef, SynTypeVar> -> TypeWFError*) wf_errors) {
   return (undef_type(type_symb.symbol)) if not type_arity_map(type_symb.symbol, _);
   arity = arity(type_symb);
   arities = type_arity_map[type_symb.symbol];

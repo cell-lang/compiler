@@ -141,8 +141,10 @@ type AtomicBoolExpr = Bool, BoolVar;
 type BoolNatOp      = is_symb(ObjExpr),
                       is_int(ObjExpr),
                       is_float(ObjExpr),
-                      is_ne_set(ObjExpr),
                       is_ne_seq(ObjExpr),
+                      is_ne_int_seq(ObjExpr),
+                      is_ne_float_seq(ObjExpr),
+                      is_ne_set(ObjExpr),
                       is_ne_map(ObjExpr),
                       is_ne_bin_rel(ObjExpr),
                       is_ne_tern_rel(ObjExpr),
@@ -325,7 +327,7 @@ type BasicInstr     = init_stream(StreamVar),
                         name:             ObjFnName,
                         args:             AnyTypeExpr*,
                         cls_args:         AnyLambdaExpr*,
-                        rel_auto_args:    LocDBVar*,
+                        rel_auto_args:    (LocDBVar, DBSymbol)*,
                         react_auto_args:  LocAutoVar*
                       ),
                       call_cls(var: WriteObjVar, cls_var: AnyClsVar, args: AtomicExpr+),
@@ -527,7 +529,7 @@ type CompiledUpdate = compiled_update(args_vars: <StdVar, FnArg>*, body: Instr*)
 
 type HandlerWrapper = handler_wrapper(
                         tag:            SymbObj,
-                        fields:         (NeType, AnyLocVar, MembTestPredId)*,
+                        args:           (NeType, StdVar, Maybe[LocBoolVar], MembTestPredId)*, // Optional arguments are at the end of the list
                         msg_inst_code:  Instr*,
                         msg_expr:       ObjExpr
                       );
