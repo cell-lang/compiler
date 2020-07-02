@@ -211,6 +211,7 @@ implicit typedefs : [TypeName -> NeType], loc_vars_types : [StdVar -> NeType] {
       }
       instrs = (
         set_ivar32(shadow_array_size_var(var_id), 0),
+        set_ivar32(shadow_array_capacity_var(var_id), 0),
         array_alloc(shadow_array_var(var_id, elt_repr), 0)
       );
       pending_after = if not pending_external(var, _)
@@ -225,6 +226,7 @@ implicit typedefs : [TypeName -> NeType], loc_vars_types : [StdVar -> NeType] {
       var_id = bare_id(var);
       instrs = (
         set_ivar32(shadow_array_size_var(var_id), instr.value.size),
+        set_ivar32(shadow_array_capacity_var(var_id), instr.value.size),
         array_set_var(shadow_array_var(var_id, instr.value.array.repr), instr.value.array)
       );
       pending_after = if not pending_external(var, _)
@@ -243,6 +245,7 @@ implicit typedefs : [TypeName -> NeType], loc_vars_types : [StdVar -> NeType] {
         rw_instr = array_append(
           shadow_array_var(var_id, var_repr),
           shadow_array_size_var(var_id),
+          shadow_array_capacity_var(var_id),
           low_level_expr(var_repr, obj_expr(rw_new_elem))
         );
         return ((rw_instr), pending_local);
@@ -354,9 +357,10 @@ AnyTypeExpr rewrite_seq_ops(AnyTypeExpr expr, [StdVar -> LowLevelEltRepr] pendin
   _             = [];
 
 [StdVar] associated_std_var(Int32Var) =
-  shadow_surr_var(v?)       = [v],
-  shadow_array_size_var(s?) = [var(s)],
-  _                         = [];
+  shadow_surr_var(v?)           = [v],
+  shadow_array_size_var(s?)     = [var(s)],
+  shadow_array_capacity_var(s?) = [var(s)],
+  _                             = [];
 
 [StdVar] associated_std_var(FloatVar) =
   fvar(<+> s?)  = [var(s)],

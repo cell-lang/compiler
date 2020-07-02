@@ -87,7 +87,10 @@ type IntVar         = LocIntVar,
                       MembIntVar,
                       LocAutoIntVar;
 
-type Int32Var       = ivar32(Nat), shadow_surr_var(StdVar), shadow_array_size_var(Symbol);
+type Int32Var       = ivar32(Nat),
+                      shadow_surr_var(StdVar),
+                      shadow_array_size_var(Symbol),
+                      shadow_array_capacity_var(Symbol);
 
 type LocFloatVar    = fvar(<Symbol, Nat>);
 type FloatFnArg     = float_arg(Nat);
@@ -248,7 +251,7 @@ type AnyTypeExpr    = BoolExpr, IntExpr, Int32Expr, FloatExpr, ObjExpr;
 
 type RefObjExpr     = mk_set_from_stream(stream: StreamVar),
                       mk_set(elems: VecVar, size: IntExpr),
-                      mk_set_from_array(array: ArrayVar, size: Maybe[IntExpr]),
+                      mk_set_from_array(array: ArrayVar, size: Int32Expr),
                       mk_seq_from_stream(stream: StreamVar),
                       mk_seq(elems: VecVar, size: IntExpr),
                       mk_seq_from_array(array: ArrayVar, size: Int32Expr),
@@ -257,10 +260,10 @@ type RefObjExpr     = mk_set_from_stream(stream: StreamVar),
                       mk_map(keys: VecVar, values: VecVar, size: IntExpr),
                       mk_bin_rel_from_streams(streams: (StreamVar, StreamVar)),
                       mk_bin_rel(cols: (VecVar, VecVar), size: IntExpr),
-                      mk_bin_rel_from_arrays(col1: ArrayVar, col2: ArrayVar, size: Maybe[IntExpr], is_map: Bool),
+                      mk_bin_rel_from_arrays(col1: ArrayVar, col2: ArrayVar, size: Int32Expr, is_map: Bool),
                       mk_tern_rel_from_streams(streams: (StreamVar, StreamVar, StreamVar)),
                       mk_tern_rel(cols: (VecVar, VecVar, VecVar), size: IntExpr),
-                      mk_tern_rel_from_arrays(col1: ArrayVar, col2: ArrayVar, col3: ArrayVar, size: Maybe[IntExpr]),
+                      mk_tern_rel_from_arrays(col1: ArrayVar, col2: ArrayVar, col3: ArrayVar, size: Int32Expr),
                       mk_tagged_obj(tag: AtomicExpr, obj: AtomicExpr),
                       mk_record(fields: [+SymbObj -> AtomicExpr]),
                       inst_opt_tag_rec(tag: Symbol, repr_idx: Nat),
@@ -291,7 +294,7 @@ type BasicInstr     = init_stream(StreamVar),
 
                       array_alloc(var: ArrayVar, size: Int32Expr),
                       array_write(var: ArrayVar, idx: Int32Expr, value: AnyTypeExpr),
-                      array_append(array_var: ArrayVar, size_var: Int32Var, value: AnyTypeExpr),
+                      array_append(array_var: ArrayVar, size_var: Int32Var, capacity_var: Int32Var, value: AnyTypeExpr),
                       array_set_var(target: ArrayVar, source: ArrayVar),
 
                       write_rec_field(var: LocOptTagRecVar, label: Symbol, value: AnyTypeExpr, optional: Bool),

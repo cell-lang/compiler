@@ -40,9 +40,10 @@ LocIntVar ivar(<Symbol, Nat> id)  = :ivar(id);
 IntFnArg  int_arg(Nat id)         = :int_arg(id);
 LocIntVar int_arg(Symbol id)      = :ivar(id);
 
-Int32Var ivar32(Nat n)                    = :ivar32(n);
-Int32Var shadow_surr_var(StdVar v)        = :shadow_surr_var(v);
-Int32Var shadow_array_size_var(Symbol s)  = :shadow_array_size_var(s);
+Int32Var ivar32(Nat n)                        = :ivar32(n);
+Int32Var shadow_surr_var(StdVar v)            = :shadow_surr_var(v);
+Int32Var shadow_array_size_var(Symbol s)      = :shadow_array_size_var(s);
+Int32Var shadow_array_capacity_var(Symbol s)  = :shadow_array_capacity_var(s);
 
 MembIntVar update_source_var(Atom n)                            = :update_source_var(n);
 MembIntVar null_locks_count_var(Atom id)                        = :null_locks_count_var(id);
@@ -277,10 +278,9 @@ FloatNatOp square_root(FloatExpr value)             = :square_root(value);
 FloatNatOp int_to_float(IntExpr value)              = :int_to_float(value);
 
 
-RefObjExpr mk_set(StreamVar s)                  = mk_set_from_stream(stream: s);
-RefObjExpr mk_set(VecVar es, IntExpr s)         = mk_set(elems: es, size: s);
-RefObjExpr mk_set(ArrayVar a)                   = mk_set_from_array(array: a, size: nothing);
-RefObjExpr mk_set(ArrayVar a, Maybe[IntExpr] s) = mk_set_from_array(array: a, size: s);
+RefObjExpr mk_set(StreamVar s)              = mk_set_from_stream(stream: s);
+RefObjExpr mk_set(VecVar es, IntExpr s)     = mk_set(elems: es, size: s);
+RefObjExpr mk_set(ArrayVar a, Int32Expr s)  = mk_set_from_array(array: a, size: s);
 
 RefObjExpr mk_seq(StreamVar s)              = mk_seq_from_stream(stream: s);
 RefObjExpr mk_seq(VecVar es, IntExpr s)     = mk_seq(elems: es, size: s);
@@ -293,11 +293,11 @@ RefObjExpr mk_map(VecVar ks, VecVar vs, IntExpr s)  = mk_map(keys: ks, values: v
 
 RefObjExpr mk_rel(StreamVar s1, StreamVar s2) = mk_bin_rel_from_streams(streams: (s1, s2));
 RefObjExpr mk_bin_rel((VecVar, VecVar) cs, IntExpr s) = mk_bin_rel(cols: cs, size: s);
-RefObjExpr mk_rel(ArrayVar c1, ArrayVar c2, Maybe[IntExpr] s, Bool b) = mk_bin_rel_from_arrays(col1: c1, col2: c2, size: s, is_map: b);
+RefObjExpr mk_rel(ArrayVar c1, ArrayVar c2, Int32Expr s, Bool b) = mk_bin_rel_from_arrays(col1: c1, col2: c2, size: s, is_map: b);
 
 RefObjExpr mk_rel(StreamVar s1, StreamVar s2, StreamVar s3) = mk_tern_rel_from_streams(streams: (s1, s2, s3));
 RefObjExpr mk_tern_rel((VecVar, VecVar, VecVar) cs, IntExpr s) = mk_tern_rel(cols: cs, size: s);
-RefObjExpr mk_rel(ArrayVar c1, ArrayVar c2, ArrayVar c3, Maybe[IntExpr] s) = mk_tern_rel_from_arrays(col1: c1, col2: c2, col3: c3, size: s);
+RefObjExpr mk_rel(ArrayVar c1, ArrayVar c2, ArrayVar c3, Int32Expr s) = mk_tern_rel_from_arrays(col1: c1, col2: c2, col3: c3, size: s);
 
 RefObjExpr mk_tagged_obj(AtomicExpr t, AtomicExpr o) = mk_tagged_obj(tag: t, obj: o);
 
@@ -331,10 +331,9 @@ RefObjExpr read_pending_var(<PendingStateVar, PendingInputVar> sv) = :read_pendi
 
 // Basic instructions
 
-BasicInstr mk_set(WriteObjVar v, StreamVar s)            = set_var(v, mk_set_from_stream(stream: s));
-BasicInstr mk_set(WriteObjVar v, VecVar es, IntExpr s)   = set_var(v, mk_set(elems: es, size: s));
-BasicInstr mk_set(WriteObjVar v, ArrayVar a)             = set_var(v, mk_set_from_array(array: a, size: nothing));
-BasicInstr mk_set(WriteObjVar v, ArrayVar a, IntExpr s)  = set_var(v, mk_set_from_array(array: a, size: just(s)));
+BasicInstr mk_set(WriteObjVar v, StreamVar s)             = set_var(v, mk_set_from_stream(stream: s));
+BasicInstr mk_set(WriteObjVar v, VecVar es, IntExpr s)    = set_var(v, mk_set(elems: es, size: s));
+BasicInstr mk_set(WriteObjVar v, ArrayVar a, Int32Expr s) = set_var(v, mk_set_from_array(array: a, size: s));
 
 BasicInstr mk_seq(WriteObjVar v, StreamVar s)              = set_var(v, mk_seq_from_stream(stream: s));
 BasicInstr mk_seq(WriteObjVar v, VecVar es, IntExpr s)     = set_var(v, mk_seq(elems: es, size: s));
@@ -347,11 +346,11 @@ BasicInstr mk_map(WriteObjVar v, VecVar ks, VecVar vs, IntExpr s)  = set_var(v, 
 
 BasicInstr mk_rel(WriteObjVar v, StreamVar s1, StreamVar s2)       = set_var(v, mk_bin_rel_from_streams(streams: (s1, s2)));
 BasicInstr mk_rel(WriteObjVar v, VecVar c1, VecVar c2, IntExpr s)  = set_var(v, mk_bin_rel(cols: (c1, c2), size: s));
-BasicInstr mk_rel(WriteObjVar v, ArrayVar c1, ArrayVar c2, Bool b) = set_var(v, mk_bin_rel_from_arrays(col1: c1, col2: c2, size: nothing, is_map: b));
+BasicInstr mk_rel(WriteObjVar v, ArrayVar c1, ArrayVar c2, Int32Expr s, Bool b) = set_var(v, mk_bin_rel_from_arrays(col1: c1, col2: c2, size: s, is_map: b));
 
 BasicInstr mk_rel(WriteObjVar v, StreamVar s1, StreamVar s2, StreamVar s3)   = set_var(v, mk_tern_rel_from_streams(streams: (s1, s2, s3)));
 BasicInstr mk_rel(WriteObjVar v, VecVar c1, VecVar c2, VecVar c3, IntExpr s) = set_var(v, mk_tern_rel(cols: (c1, c2, c3), size: s));
-BasicInstr mk_rel(WriteObjVar v, ArrayVar c1, ArrayVar c2, ArrayVar c3)      = set_var(v, mk_tern_rel_from_arrays(col1: c1, col2: c2, col3: c3, size: nothing));
+BasicInstr mk_rel(WriteObjVar v, ArrayVar c1, ArrayVar c2, ArrayVar c3, Int32Expr s) = set_var(v, mk_tern_rel_from_arrays(col1: c1, col2: c2, col3: c3, size: s));
 
 BasicInstr mk_tagged_obj(WriteObjVar v, AtomicExpr t, AtomicExpr o) = set_var(v, mk_tagged_obj(t, o));
 
@@ -391,7 +390,7 @@ BasicInstr read_pending_var(WriteObjVar tv, <PendingStateVar, PendingInputVar> s
 
 BasicInstr array_alloc(ArrayVar v, Int32Expr n) = array_alloc(var: v, size: n);
 BasicInstr array_write(ArrayVar v, Int32Expr i, ObjExpr e) = array_write(var: v, idx: i, value: low_level_expr(v.repr, e));
-BasicInstr array_append(ArrayVar v, Int32Var s, AnyTypeExpr e) = array_append(array_var: v, size_var: s, value: e);
+BasicInstr array_append(ArrayVar v, Int32Var s, Int32Var c, AnyTypeExpr e) = array_append(array_var: v, size_var: s, capacity_var: c, value: e);
 BasicInstr array_set_var(ArrayVar t, ArrayVar s) = array_set_var(target: t, source: s);
 
 BasicInstr write_rec_field(LocOptTagRecVar v, Symbol s, AnyTypeExpr e, Bool b) = write_rec_field(var: v, label: s, value: e, optional: b);

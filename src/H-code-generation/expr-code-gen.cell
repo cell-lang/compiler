@@ -1467,10 +1467,10 @@ implicit program           : Program,
     // Evaluating of conditions and final array size
     min_size = int32(|exprs|);
     conds = (e.cond : e <- cond_exprs);
-    conds_code, cond_vars, size_idx_var, var_gen = conds_eval_info(conds, min_size, var_gen);
+    conds_code, cond_vars, size_var, var_gen = conds_eval_info(conds, min_size, var_gen);
 
     // Allocation of destination array
-    size_expr = if cond_exprs == () then min_size else size_idx_var;
+    size_expr = if cond_exprs == () then min_size else size_var;
     code = (array_alloc(elts_var, size_expr));
 
     // Non-conditional elements
@@ -1487,6 +1487,7 @@ implicit program           : Program,
     }
     else if |cond_exprs| > 1 {
       // More than one conditional element, we need to keep track of the next array slot
+      size_idx_var, var_gen = next_int32_var(var_gen);
       for e @ i <- cond_exprs {
         cond = cond_vars(i);
         elt_code, surr, _ = opt_eval_info(e.expr, var_gen);
@@ -1505,10 +1506,10 @@ implicit program           : Program,
     }
 
     // Creation of the set object
-    code = (code | mk_set(set_obj_var, elts_var));
+    code = (code | mk_set(set_obj_var, elts_var, size_expr));
 
     // Checking for the empty sequence/set case, if all expression are conditional
-    code = (branch(is_eq(size_idx_var, 0), (set_var(set_obj_var, empty_rel)), code)) if min_size == 0;
+    code = (branch(is_eq(size_var, 0), (set_var(set_obj_var, empty_rel)), code)) if min_size == 0;
 
     return (conds_code & code, set_obj_var, ret_var_gen);
   }
@@ -1553,10 +1554,10 @@ implicit program           : Program,
     // Evaluating of conditions and final array size
     min_size = int32(|uncond_entries|);
     conds = (c : _, _, c <- cond_entries);
-    conds_code, cond_vars, size_idx_var, var_gen = conds_eval_info(conds, min_size, var_gen);
+    conds_code, cond_vars, size_var, var_gen = conds_eval_info(conds, min_size, var_gen);
 
     // Allocation of destination arrays
-    size_expr = if cond_entries == () then min_size else size_idx_var;
+    size_expr = if cond_entries == () then min_size else size_var;
     code = (array_alloc(col1_var, size_expr), array_alloc(col2_var, size_expr));
 
     // Non-conditional elements
@@ -1571,6 +1572,7 @@ implicit program           : Program,
     }
     else if |cond_entries| > 1 {
       // More than one conditional element, we need to keep track of the next array slot
+      size_idx_var, var_gen = next_int32_var(var_gen);
       for a1, a2, _ @ i <- cond_entries {
         cond = cond_vars(i);
         idx = if i == 0 then min_size else size_idx_var;
@@ -1589,10 +1591,10 @@ implicit program           : Program,
     }
 
     // Creation of the map object
-    code = (code | mk_rel(rel_obj_var, col1_var, col2_var, is_map));
+    code = (code | mk_rel(rel_obj_var, col1_var, col2_var, size_expr, is_map));
 
     // Checking for the empty sequence/set case, if all expression are conditional
-    code = (branch(is_eq(size_idx_var, 0), (set_var(rel_obj_var, empty_rel)), code)) if min_size == 0;
+    code = (branch(is_eq(size_var, 0), (set_var(rel_obj_var, empty_rel)), code)) if min_size == 0;
 
     return (conds_code & code, rel_obj_var, ret_var_gen);
 
@@ -1621,10 +1623,10 @@ implicit program           : Program,
     // Evaluating of conditions and final array size
     min_size = int32(|uncond_entries|);
     conds = (e.cond : e <- cond_entries);
-    conds_code, cond_vars, size_idx_var, var_gen = conds_eval_info(conds, min_size, var_gen);
+    conds_code, cond_vars, size_var, var_gen = conds_eval_info(conds, min_size, var_gen);
 
     // Allocation of destination arrays
-    size_expr = if cond_entries == () then min_size else size_idx_var;
+    size_expr = if cond_entries == () then min_size else size_var;
     code = (array_alloc(v, size_expr) : v <- (col1_var, col2_var, col3_var));
 
     // Non-conditional elements
@@ -1639,6 +1641,7 @@ implicit program           : Program,
     }
     else if |cond_entries| > 1 {
       // More than one conditional element, we need to keep track of the next array slot
+      size_idx_var, var_gen = next_int32_var(var_gen);
       for e @ i <- cond_entries {
         cond = cond_vars(i);
         idx = if i == 0 then min_size else size_idx_var;
@@ -1657,10 +1660,10 @@ implicit program           : Program,
     }
 
     // Creation of the map object
-    code = (code | mk_rel(rel_obj_var, col1_var, col2_var, col3_var));
+    code = (code | mk_rel(rel_obj_var, col1_var, col2_var, col3_var, size_expr));
 
     // Checking for the empty sequence/set case, if all expression are conditional
-    code = (branch(is_eq(size_idx_var, 0), (set_var(rel_obj_var, empty_rel)), code)) if min_size == 0;
+    code = (branch(is_eq(size_var, 0), (set_var(rel_obj_var, empty_rel)), code)) if min_size == 0;
 
     return (conds_code & code, rel_obj_var, ret_var_gen);
 
