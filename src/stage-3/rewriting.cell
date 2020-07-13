@@ -175,9 +175,11 @@ RefObjExpr rewrite_nested(RefObjExpr expr, (AnyTypeExpr -> AnyTypeExpr) rewrite)
   mk_set_from_stream()        = expr,
   mk_set()                    = mk_set(expr.elems, cast_int_expr(rewrite(expr.size))),
   mk_set_from_array()         = mk_set(expr.array, cast_int32_expr(rewrite(expr.size))),
-  mk_seq_from_stream()        = expr,
-  mk_seq()                    = mk_seq(expr.elems, cast_int_expr(rewrite(expr.size))),
-  mk_seq_from_array()         = mk_seq(expr.array, cast_int32_expr(rewrite(expr.size))),
+  mk_seq()                    = mk_seq(
+                                  array:    expr.array,
+                                  size:     cast_int32_expr(rewrite(expr.size)),
+                                  capacity: cast_int32_expr(rewrite(expr.capacity)) if expr.capacity?
+                                ),
   build_const_int_seq()       = expr,
   mk_map_from_streams()       = expr,
   mk_map()                    = mk_map(expr.keys, expr.values, cast_int_expr(rewrite(expr.size))),
