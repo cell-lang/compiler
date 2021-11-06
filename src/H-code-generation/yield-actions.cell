@@ -76,14 +76,256 @@ implicit program           : Program,
     yield_value_action()    = yield_value_action_opt_code(action, var_gen),
     set_yield_action()      = set_yield_action_opt_code(action, var_gen),
     rel_yield_action()      = rel_yield_action_opt_code(action, var_gen),
-    relvar_yield_action()   = if is_columnar_relvar(action.relvar)
-                                then columnar_relvar_yield_action_opt_code(action, var_gen)
-                                else relvar_yield_action_opt_code(action, var_gen),
+    relvar_yield_action()   = if is_columnar_relvar(action.relvar) then
+                                columnar_relvar_yield_action_opt_code(action, var_gen)
+                              else if is_ternary_slave_column(action.relvar) then
+                                ternary_slave_column_yield_action_opt_code(action, var_gen)
+                              else
+                                relvar_yield_action_opt_code(action, var_gen),
     seq_yield_action()      = seq_yield_action_opt_code(action, var_gen),
     match_yield_action()    = match_yield_action_opt_code(action, var_gen),
     let_yield_action()      = let_yield_action_opt_code(action, var_gen),
     cond_yield_action()     = cond_yield_action_opt_code(action, var_gen),
     yield_actions(as?)      = join((yield_action_opt_code(a, var_gen) : a <- as));
+
+
+  // relvar_yield_action(vars: StdVar+, relvar: AnyRelVar, args: Maybe[Expr]+, next: YieldAction)
+  Instr* ternary_slave_column_yield_action_opt_code(RelVarYieldAction action, VarGen var_gen) {
+    fail if |action.args| != 3;
+
+    vars = action.vars;
+    relvar = action.relvar;
+    a0, a1, a2 = action.args;
+    next = action.next;
+
+    return match (a0, a1, a2)
+      nothing,    nothing,    nothing   = full_relvar_iter_code(vars, relvar, next, var_gen), // a b c <- relvar
+      nothing,    just(e?),   nothing   = relvar_by_one_arg_iter_code(vars, relvar, e, 1, next, var_gen), // a c <- relvar(?, b, ?)
+      just(e?),   nothing,    nothing   = relvar_by_one_arg_iter_code(vars, relvar, e, 0, next, var_gen), // b c <- relvar(a, ?, ?)
+      just(e0?),  just(e1?),  nothing   = relvar_by_first_and_second_arg_iter_code(vars, relvar, e0, e1, next, var_gen), // c <- relvar(a, b, ?)
+      _,          _,          _         = undefined;
+
+
+
+    Instr* full_relvar_iter_code(Maybe[StdVar]+ vars, AnyRelVar relvar, YieldAction next_action, VarGen init_var_gen) {
+      assert |vars| == 3;
+
+      surr_var_01, var_gen = next_int32_var(init_var_gen);
+      surr_var_0, var_gen = next_int32_var(var_gen);
+      surr_var_1, var_gen = next_int32_var(var_gen);
+
+      // Selecting the candidate tables among those the logical relation is partitioned into
+      // In this specific case, that means all of them
+      candidate_tables = overlapping_tables(relvar, (nothing, nothing, nothing));
+
+      code = ();
+
+      // Iterating through all candidate tables
+      for tv <- isort(candidate_tables) {
+        sign = table_signature(tv);
+        reprs = (low_level_repr(t) : t <- sign);
+        ll_vars = (apply(v, low_level_var(reprs(i), $)) : v @ i <- vars);
+
+        store_ids = (table_col_store_id(tv, i) : i <- (0, 1));
+        store_types = (value_store_type(rel_auto_type(relvar), unqualified(id)) : id <- store_ids);
+        store_ids = (substitute(id) : id <- store_ids);
+
+        col_repr = column_repr(sign(2));
+        it_var, var_gen = next_slave_column_it_var(var_gen, col_repr); ## DO WE NEED TO USE A DIFFERENT ITERATOR VAR EVERY TIME? SEE ALSO ANALOGUES DOWN BELOW
+
+        master_table = substitute(master_table(tv));
+        vars_setup_code = (
+          set_ivar32(surr_var_01, get_unknown_arg(it_var, 0)),
+          set_ivar32(surr_var_0, get_arg_by_assoc_surr(master_table, 0, surr_var_01)) if ll_vars(0) != nothing,
+          set_ivar32(surr_var_1, get_arg_by_assoc_surr(master_table, 1, surr_var_01)) if ll_vars(1) != nothing,
+          surr_to_decoded_value(value_unsafe(ll_vars(0)), store_ids(0), store_types(0), surr_var_0) if ll_vars(0) != nothing,
+          surr_to_decoded_value(value_unsafe(ll_vars(1)), store_ids(1), store_types(1), surr_var_1) if ll_vars(1) != nothing,
+          set_any_var(value_unsafe(ll_vars(2)), column_lookup(substitute(tv), surr_var_01, col_repr)) if ll_vars(2) != nothing
+        );
+
+        new_surrs = [value(v) -> obj_expr(value_unsafe(ll_vars(i))) : v @ i <- vars, v != nothing];
+        next_action_surrs = surrogates & new_surrs;
+        action_code = yield_action_opt_code(next_action, var_gen, surrogates = next_action_surrs);
+
+        loop_code = (break_if(is_out_of_range(it_var))) & vars_setup_code & action_code & (move_forward(it_var));
+
+        table_code = (
+          get_table_iter(it_var, substitute(tv), (nothing : i < 3)),
+          repeat(nonempty(loop_code))
+        );
+
+        code = code & table_code;
+      }
+
+      return code;
+    }
+
+
+    Instr* relvar_by_one_arg_iter_code(Maybe[StdVar]+ vars, AnyRelVar relvar, Expr bound_arg, <0..1> bound_arg_idx, YieldAction next, VarGen init_var_gen) {
+      // b c <- relvar(a, ?, ?)
+      fail if |vars| != 2;
+
+      free_arg_idx = if bound_arg_idx == 0 then 1 else 0;
+
+      free_arg_var, value_var = vars;
+
+      assoc_surr_var, var_gen = next_int32_var(init_var_gen);
+      bound_surr_var, var_gen = next_int32_var(var_gen);
+      free_surr_var, var_gen = next_int32_var(var_gen);
+
+      it_var, var_gen = next_table_it_var(var_gen, 2, false);
+
+      bound_arg_eval_code, bound_arg_alias, var_gen = opt_eval_info(bound_arg, var_gen);
+
+      bound_arg_type = subexpr_type(bound_arg);
+      return (terminate(true)) if bound_arg_type == empty_type;
+
+      // Selecting the candidate tables among those the logical relation is partitioned into
+      candidate_tables = overlapping_tables(relvar, (just(bound_arg_type), nothing, nothing));
+
+      code = bound_arg_eval_code;
+      for tv <- candidate_tables {
+        master_table = master_table(tv);
+
+        sign = table_signature(tv);
+        free_arg_repr = low_level_repr(sign(free_arg_idx));
+        value_repr = low_level_repr(sign(2));
+        ll_free_arg_var = apply(free_arg_var, low_level_var(free_arg_repr, $));
+        ll_value_var = apply(value_var, low_level_var(value_repr, $));
+
+        bound_arg_store_id = table_col_store_id(tv, bound_arg_idx);
+        free_arg_store_id = table_col_store_id(tv, free_arg_idx);
+        assert bound_arg_store_id == table_col_store_id(master_table, bound_arg_idx) and free_arg_store_id == table_col_store_id(master_table, free_arg_idx);
+
+        bound_arg_store_type = value_store_type(rel_auto_type(relvar), unqualified(bound_arg_store_id));
+        free_arg_store_type = value_store_type(rel_auto_type(relvar), unqualified(free_arg_store_id));
+
+        bound_arg_store_id = substitute(bound_arg_store_id);
+        free_arg_store_id = substitute(free_arg_store_id);
+
+        new_surrs = [
+          value(free_arg_var) -> obj_expr(value_unsafe(ll_free_arg_var)) if free_arg_var != nothing,
+          value(value_var) -> obj_expr(value_unsafe(ll_value_var)) if value_var != nothing
+        ];
+        next_action_surrs = surrogates & new_surrs;
+        action_code = yield_action_opt_code(next, var_gen, surrogates = next_action_surrs);
+
+        code = code & (
+          set_ivar32(bound_surr_var, value_to_surr(bound_arg_store_id, value_store_encoded_expr(bound_arg_store_type, bound_arg_alias))),
+          do_if_not(
+            is_eq(bound_surr_var, -1),
+            ( get_table_iter(it_var, substitute(master_table), (just(bound_surr_var), nothing)),
+              repeat((
+                break_if(is_out_of_range(it_var)),
+
+                set_ivar32(free_surr_var, get_unknown_arg(it_var, 0)),
+                set_ivar32(assoc_surr_var, get_assoc_surr(substitute(master_table), (bound_surr_var, free_surr_var))),
+                do_if(
+                  table_contains(substitute(tv), (just(assoc_surr_var), nothing), false),
+                  ( surr_to_decoded_value(value(ll_free_arg_var), free_arg_store_id, free_arg_store_type, free_surr_var) if ll_free_arg_var != nothing,
+                    set_any_var(
+                      value(ll_value_var),
+                      column_lookup(substitute(tv), assoc_surr_var, column_repr(sign(2)))
+                    ) if ll_value_var != nothing
+                  ) & action_code
+                ),
+
+                move_forward(it_var)
+              ))
+            )
+          )
+        );
+      }
+
+      return code;
+    }
+
+
+
+    Instr* relvar_by_first_and_second_arg_iter_code(Maybe[StdVar]+ vars, AnyRelVar relvar, Expr arg_0, Expr arg_1, YieldAction next, VarGen init_var_gen) {
+      value_var = only_unsafe(vars);
+
+      surr_var_01, var_gen = next_int32_var(init_var_gen);
+      surr_var_0, var_gen = next_int32_var(var_gen);
+      surr_var_1, var_gen = next_int32_var(var_gen);
+
+      args_eval_code, args_aliases, var_gen = opt_eval_info((arg_0, arg_1), var_gen);
+
+      arg_0_type = subexpr_type(arg_0);
+      arg_1_type = subexpr_type(arg_1);
+      return (terminate(true)) if arg_0_type == empty_type or arg_1_type == empty_type;
+
+      // Selecting the candidate tables among those the logical relation is partitioned into
+      candidate_tables = overlapping_tables(relvar, (just(arg_0_type), just(arg_1_type), nothing));
+
+      cases = [{
+        master_table = master_table(tv);
+
+        sign = table_signature(tv);
+        value_repr = low_level_repr(sign(2));
+        ll_value_var = apply(value_var, low_level_var(value_repr, $));
+
+        store_0_id = table_col_store_id(tv, 0);
+        store_1_id = table_col_store_id(tv, 1);
+        assert store_0_id == table_col_store_id(master_table, 0) and store_1_id == table_col_store_id(master_table, 1);
+
+        store_0_type = value_store_type(rel_auto_type(relvar), unqualified(store_0_id));
+        store_1_type = value_store_type(rel_auto_type(relvar), unqualified(store_1_id));
+
+        store_0_id = substitute(store_0_id);
+        store_1_id = substitute(store_1_id);
+
+        new_surrs = [value(value_var) -> obj_expr(value_unsafe(ll_value_var)) if value_var != nothing];
+        next_action_surrs = surrogates & new_surrs;
+        action_code = yield_action_opt_code(next, var_gen, surrogates = next_action_surrs);
+
+        code = (
+          set_ivar32(surr_var_0, value_to_surr(store_0_id, value_store_encoded_expr(store_0_type, args_aliases(0)))),
+          do_if_not(
+            is_eq(surr_var_0, -1),
+            ( set_ivar32(surr_var_1, value_to_surr(store_1_id, value_store_encoded_expr(store_1_type, args_aliases(1)))),
+              do_if_not(
+                is_eq(surr_var_1, -1),
+                ( set_ivar32(surr_var_01, get_assoc_surr(substitute(master_table), (surr_var_0, surr_var_1))),
+                  do_if_not(
+                    is_eq(surr_var_01, -1),
+                    do_if(
+                      table_contains(substitute(tv), (just(surr_var_01), nothing), false),
+                      ( set_any_var(
+                          value(ll_value_var),
+                          column_lookup(substitute(tv), surr_var_01, column_repr(sign(2)))
+                        ) if ll_value_var != nothing
+                      ) & action_code
+
+                      // ( set_any_var(
+                      //     value(ll_value_var),
+                      //     column_lookup(substitute(tv), surr_var_01, column_repr(sign(2)))
+                      //   ),
+                      //   do_if_not(
+                      //     is_null_value(ll_value_var),
+                      //     action_code
+                      //   )
+                      // )
+
+                    )
+                  )
+                )
+              )
+            )
+          )
+        );
+
+        return ((sign(0), sign(1)), code);
+      } : tv <- candidate_tables];
+
+      iter_code = if |cases| != 1
+        ## BUG BUG BUG: CAN I ACTUALLY DO THIS OR ARE THERE EDGE CASES THAT MAY CAUSE IT TO FAIL?
+        then (execute_block(dynamic_dispatch_code(args_aliases, cases)))
+        else right(only(cases));
+
+      return args_eval_code & iter_code;
+    }
+  }
 
 
   // relvar_yield_action(vars: StdVar+, relvar: AnyRelVar, args: Maybe[Expr]+, next: YieldAction)
@@ -182,7 +424,7 @@ implicit program           : Program,
         it_var, var_gen = next_column_it_var(var_gen, col_repr);
 
         vars_setup_code = (
-          set_ivar32(surr_var_0, get_col_index(it_var)),
+          set_ivar32(surr_var_0, get_unknown_arg(it_var, 0)),
           surr_to_decoded_value(value(ll_var_0), store_id, store_type, surr_var_0) if ll_var_0 != nothing,
           set_any_var(value(ll_var_1), column_lookup(substitute(tv), surr_var_0, col_repr)) if ll_var_1 != nothing
         );

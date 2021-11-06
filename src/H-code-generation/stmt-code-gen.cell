@@ -72,12 +72,18 @@ implicit program           : Program,
     try_update_stmt()     = try_update_stmt_opt_code(stmt.name, stmt.args, env, var_gen),
     set_memb_var_stmt()   = set_memb_var_stmt_opt_code(stmt.var, stmt.value, env, var_gen),
     delete_stmt()         = delete_stmt_opt_code(stmt.var, stmt.args, env, var_gen),
-    insert_stmt()         = if is_columnar_relvar(stmt.var)
-                              then columnar_relvar_insert_stmt_opt_code(stmt.var, stmt.args, false, env, var_gen)
-                              else insert_stmt_opt_code(stmt.var, stmt.args, env, var_gen),
-    update_stmt()         = if is_columnar_relvar(stmt.var)
-                              then columnar_relvar_insert_stmt_opt_code(stmt.var, stmt.args, true, env, var_gen)
-                              else update_stmt_opt_code(stmt.var, stmt.args, env, var_gen),
+    insert_stmt()         = if is_columnar_relvar(stmt.var) then
+                              columnar_relvar_insert_stmt_opt_code(stmt.var, stmt.args, false, env, var_gen)
+                            else if is_ternary_slave_column(stmt.var) then
+                              ternary_slave_column_insert_stmt_opt_code(stmt.var, stmt.args, false, env, var_gen)
+                            else
+                              insert_stmt_opt_code(stmt.var, stmt.args, env, var_gen),
+    update_stmt()         = if is_columnar_relvar(stmt.var) then
+                              columnar_relvar_insert_stmt_opt_code(stmt.var, stmt.args, true, env, var_gen)
+                            else if is_ternary_slave_column(stmt.var) then
+                              ternary_slave_column_insert_stmt_opt_code(stmt.var, stmt.args, true, env, var_gen)
+                            else
+                              update_stmt_opt_code(stmt.var, stmt.args, env, var_gen),
 
     set_input_ctrl_stmt()         = set_input_ctrl_stmt_opt_code(stmt.var, stmt.input, stmt.value, env, var_gen),
     clear_input_ctrl_stmt()       = clear_input_ctrl_stmt_opt_code(stmt.var, stmt.input, env, var_gen),
@@ -135,19 +141,21 @@ implicit program           : Program,
       }
     }
 
+    assoc_surr_var, var_gen = next_int32_var(var_gen);
+
     fail if args_aliases == () or args_surrs == ();
 
     phys_rel_vars = overlapping_phys_rel_vars(rel_var, args_types);
     rel_auto = cast_database(context);
     for v <- isort(phys_rel_vars) {
-      table_code = delete_code(table_var(v), args_aliases, args_surrs, args_types, symmetric);
+      table_code = delete_code(table_var(v), args_aliases, args_surrs, args_types, assoc_surr_var, symmetric);
       attrs = [a : a <- rel_auto.attr_map(v, ?)];
       attr_args_aliases = (args_aliases | nothing);
       attr_args_surrs = (args_surrs | nothing);
       attr_args_types = (args_types | nothing);
       for a <- isort(attrs) {
         assert arity(a) == arity(rel_var) + 1;
-        table_code = table_code & delete_code(table_var(a), attr_args_aliases, attr_args_surrs, attr_args_types, symmetric);
+        table_code = table_code & delete_code(table_var(a), attr_args_aliases, attr_args_surrs, attr_args_types, assoc_surr_var, symmetric);
       }
       code = code & table_code;
     }
@@ -155,14 +163,12 @@ implicit program           : Program,
     return (code, just(surrogates), [], init_var_gen);
 
 
-    Instr* delete_code(TableVar table_var, Maybe[ObjExpr]+ args_aliases, Maybe[Int32Var]+ args_surrs, Maybe[Type]+ args_types, Bool symmetric) {
+    Instr* delete_code(TableVar table_var, Maybe[ObjExpr]+ args_aliases, Maybe[Int32Var]+ args_surrs, Maybe[Type]+ args_types, Int32Var assoc_surr_var, Bool symmetric) {
       if is_columnar_relvar(logical_rel_var(original_rel_var(table_var))) {
         assert not symmetric;
         fail if |args_aliases| != 2;
         arg0, arg1 = args_aliases;
         if arg0 != nothing and arg1 != nothing {
-          column = column_info(table_var);
-
           key_store_id = table_col_store_id(table_var, 0);
           key_store_type = value_store_type(this_db_symbol, key_store_id);
 
@@ -171,7 +177,7 @@ implicit program           : Program,
           key_arg_type = value_unsafe(args_types(0));
 
           has_key_check_expr = table_contains(table_var, (just(key_arg_surr), nothing), false);
-          lookup_expr = column_lookup(table_var, key_arg_surr, column.repr);
+          lookup_expr = column_lookup(table_var, key_arg_surr, column_repr(table_var));
           contains_tuple_check_expr = and_then((
             neg(is_eq(key_arg_surr, -1)),
             has_key_check_expr,
@@ -191,6 +197,53 @@ implicit program           : Program,
           return code;
         }
       }
+
+
+      if is_ternary_slave_column(logical_rel_var(original_rel_var(table_var))) {
+        assert not symmetric;
+        fail if |args_aliases| != 3;
+        arg0, arg1, arg2 = args_aliases;
+        if arg0 != nothing and arg1 != nothing and arg2 != nothing {
+          arg0 = value(arg0);
+          arg1 = value(arg1);
+          arg2 = value(arg2);
+
+          arg_0_surr = value_unsafe(args_surrs(0));
+          arg_1_surr = value_unsafe(args_surrs(1));
+
+          master_table = master_table(table_var);
+
+          store_ids = (table_col_store_id(table_var, i) : i <= 1);
+          stores_types = (value_store_type(this_db_symbol, id) : id <- store_ids);
+
+          code = opt_do_if(
+            and((value_store_guard(stores_types(i), value_unsafe(args_aliases(i)), value_unsafe(args_types(i))) : i <= 1)),
+            ( set_ivar32(arg_0_surr, value_to_surr(store_ids(0), value_store_encoded_expr(stores_types(0), arg0))),
+              do_if_not(
+                is_eq(arg_0_surr, -1),
+                ( set_ivar32(arg_1_surr, value_to_surr(store_ids(1), value_store_encoded_expr(stores_types(1), arg1))),
+                  do_if_not(
+                    is_eq(arg_1_surr, -1),
+                    ( set_ivar32(assoc_surr_var, get_assoc_surr(master_table, (arg_0_surr, arg_1_surr))),
+                      do_if(
+                        and_then((
+                          neg(is_eq(assoc_surr_var, -1)),
+                          table_contains(table_var, (just(assoc_surr_var), nothing), false),
+                          is_eq(arg2, column_lookup(table_var, assoc_surr_var, column_repr(table_var)))
+                        )),
+                        queue_deletes(table_var, (args_surrs(0), args_surrs(1), nothing), symmetric)
+                      )
+                    )
+                  )
+                )
+              )
+            )
+          );
+
+          return code;
+        }
+      }
+
 
       code = (queue_deletes(table_var, nonempty(args_surrs), symmetric));
       for a @ ri <- reverse(args_aliases) {
@@ -323,6 +376,82 @@ implicit program           : Program,
         code = (
           lookup_or_queue_insert_value(surr_var_0, store_id, enc_expr),
           column_insert_deferred(tv, surr_var_0, low_level_expr(col_repr, arg_1_alias), forced),
+          exit_block
+        );
+        return (table_signature(tv), code);
+      } : tv <- candidate_tables];
+
+      code = (args_eval_code | execute_block(dynamic_dispatch_code(args_aliases, cases)));
+
+      return (code, just(surrogates), [], init_var_gen);
+    }
+  }
+
+
+  StmtCompInfo ternary_slave_column_insert_stmt_opt_code(RelVar rel_var, Expr+ args, Bool forced, [EnvVar -> Type] env, VarGen init_var_gen) {
+    fail if |args| != 3;
+    arg_0, arg_1, arg_2 = args;
+
+    arg_0_type = expr_type(arg_0, env);
+    arg_1_type = expr_type(arg_1, env);
+    arg_2_type = expr_type(arg_2, env);
+
+    if arg_0_type == empty_type or arg_1_type == empty_type or arg_2_type == empty_type
+      return ((terminate(true)), just(surrogates), [], init_var_gen);
+
+    args_eval_code, args_aliases, var_gen = opt_eval_code(args, env, init_var_gen);
+    fail if |args_aliases| != 3;
+    arg_0_alias, arg_1_alias, arg_2_alias = args_aliases;
+
+    surr_var_0, var_gen = next_int32_var(var_gen);
+    surr_var_1, var_gen = next_int32_var(var_gen);
+
+    // Selecting the candidate tables among those the logical relation is partitioned into
+    candidate_tables = nonempty(overlapping_tables(rel_var, (just(arg_0_type), just(arg_1_type), just(arg_2_type))));
+
+    assert relvar_keys(rel_var) == [[0, 1]];
+
+    if |candidate_tables| == 1 {
+      // Easy case: there's only one table
+      table_var = only(candidate_tables);
+
+      store_id_0 = table_col_store_id(table_var, 0);
+      store_id_1 = table_col_store_id(table_var, 1);
+      store_type_0 = value_store_type(this_db_symbol, store_id_0);
+      store_type_1 = value_store_type(this_db_symbol, store_id_1);
+
+      enc_expr_0 = value_store_encoded_expr(store_type_0, arg_0_alias);
+      enc_expr_1 = value_store_encoded_expr(store_type_1, arg_1_alias);
+
+      col_repr = column_repr(table_signature(table_var)(2));
+
+      update_code = (
+        lookup_or_queue_insert_value(surr_var_0, store_id_0, enc_expr_0),
+        lookup_or_queue_insert_value(surr_var_1, store_id_1, enc_expr_1),
+        ternary_slave_column_insert_deferred(table_var, (surr_var_0, surr_var_1), low_level_expr(col_repr, arg_2_alias), forced)
+      );
+
+      return (args_eval_code & update_code, just(surrogates), [], init_var_gen);
+    }
+    else {
+      // Choosing the dispatch arguments
+      signatures = [table_signature(tv) : tv <- candidate_tables];
+      disp_args = optimal_dispatch_args(signatures, typedefs);
+
+      cases = [{
+        store_id_0 = table_col_store_id(tv, 0);
+        store_id_1 = table_col_store_id(tv, 1);
+        store_type_0 = value_store_type(this_db_symbol, store_id_0);
+        store_type_1 = value_store_type(this_db_symbol, store_id_1);
+        enc_expr_0 = value_store_encoded_expr(store_type_0, arg_0_alias);
+        enc_expr_1 = value_store_encoded_expr(store_type_1, arg_1_alias);
+
+        col_repr = column_repr(table_signature(tv)(2));
+
+        code = (
+          lookup_or_queue_insert_value(surr_var_0, store_id_0, enc_expr_0),
+          lookup_or_queue_insert_value(surr_var_1, store_id_1, enc_expr_1),
+          ternary_slave_column_insert_deferred(tv, (surr_var_0, surr_var_1), low_level_expr(col_repr, arg_2_alias), forced),
           exit_block
         );
         return (table_signature(tv), code);
@@ -595,7 +724,8 @@ implicit program           : Program,
     call_instr = if stmt.res_var?
       then call_proc(stmt.res_var, stmt.proc_name, args_surrs, (), rel_auto_args, stmt.react_auto_args)
       else call_proc(stmt.proc_name, args_surrs, (), rel_auto_args, stmt.react_auto_args);
-    return ((code | call_instr), just(surrogates), [], var_gen);
+    surrs = if stmt.res_var? then _drop_(surrogates, stmt.res_var) else surrogates;
+    return ((code | call_instr), just(surrs), [], var_gen);
   }
 
 
@@ -1116,7 +1246,7 @@ implicit program           : Program,
         it_var, var_gen = next_column_it_var(init_var_gen, col_repr);
 
         vars_setup_code = (
-          set_ivar32(surr_var_0, get_col_index(it_var)) if var_0 != nothing or var_1 != nothing,
+          set_ivar32(surr_var_0, get_unknown_arg(it_var, 0)) if var_0 != nothing or var_1 != nothing,
           ## WORKAROUND FOR A BUG IN VERSION 0.1 OF THE COMPILER
           { llvar = low_level_vars(value(var_0));
             return surr_to_decoded_value(llvar, store_id, store_type, surr_var_0);

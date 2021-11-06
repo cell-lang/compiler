@@ -29,9 +29,12 @@ Nat+ choose_disp_args(NeType++ types, [TypeName -> Type] typedefs) {
 }
 
 
-// Nat+ optimal_dispatch_args([+[+NeType+]] signatures_sets, [TypeName -> Type] typedefs) {
+## SHOULDN'T WE BE MAKING USE OF THE TYPES OF ACTUAL ARGUMENTS WHEN
+## CHOOSING THE OPTIMAL SET OF DISPATCH ARGUMENTS?
+
 Nat+ optimal_dispatch_args([+NeType+] signatures, [TypeName -> Type] typedefs) {
-  ## THIS IS A HACK, THE FUNCTION WAS ORIGINALLY WRITTEN FOR A MORE GENERAL INPUT
+  ## USED TO BE: Nat+ optimal_dispatch_args([+[+NeType+]] signatures_sets, [TypeName -> Type] typedefs)
+  ## THIS IS A HACK, THE FUNCTION WAS ORIGINALLY WRITTEN FOR THE MORE GENERAL INPUT ABOVE
   signatures_sets = [[s] : s <- signatures];
 
   arity = only([|s| : ss <- signatures_sets, s <- ss]); ## BAD
@@ -141,7 +144,8 @@ Instr surr_to_decoded_value(LocOptTagRecVar var, AnyValueStoreId store_id, Value
 ////////////////////////////////////////////////////////////////////////////////
 
 type GenVarType = obj, int, int32, float, bool, array, tag_rec,
-                  set_it, seq_it, bin_rel_it, tern_rel_it, table_it, column_it, stream, vector;
+                  set_it, seq_it, bin_rel_it, tern_rel_it, table_it,
+                  column_it, slave_column_it, stream, vector;
 
 type VarGen = CounterSet[GenVarType];
 
@@ -173,6 +177,9 @@ VarGen blank_var_gen = counter_set(nz_ctrs: []);
 
 (ColumnItVar, VarGen) next_column_it_var(VarGen gen, ColumnRepr repr) =
   next_var(gen, :column_it, column_it_var($, repr));
+
+(SlaveColumnItVar, VarGen) next_slave_column_it_var(VarGen gen, ColumnRepr repr) =
+  next_var(gen, :slave_column_it, slave_column_it_var($, repr));
 
 (StreamVar,  VarGen) next_stream_var(VarGen gen)                      = next_var(gen, :stream, svar);
 (VecVar,     VarGen) next_vector_var(VarGen gen, NzNat size)          = next_var(gen, :vector, vvar($, size));

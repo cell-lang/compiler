@@ -67,7 +67,10 @@ implicit typedefs : [TypeName -> NeType], vars_reprs : [StdVar -> AnyLocVar] {
   Instr* opt_ptrn_union_match_code([+Pattern] ptrns, ObjExpr expr, Type type, Instr* eval_code) {
     if only([pattern_vars(p) : p <- ptrns]) == [] {
       fallthrough_type = fold(type, ptrns, type_minus_pattern);
-      return (eval_code | terminate(true)) if fallthrough_type == empty_type;
+      return eval_code if fallthrough_type == empty_type;
+      // ADDING A terminate(true) WAS WRONG FOR ALL THE PATTERNS EXCEPT THE LAST ONE IN MULTI-ARGUMENT MATCHES
+      // BECAUSE THE CODE THAT FOLLOWED COULD ALWAYS FALL THROUGH IF ONE OF THE FOLLOWING PATTERNS FAILED TO MATCH
+      // return (eval_code | terminate(true)) if fallthrough_type == empty_type;
     }
 
     ord_ptrns = isort(ptrns);

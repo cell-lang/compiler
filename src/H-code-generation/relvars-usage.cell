@@ -12,6 +12,8 @@
 
 implicit program : Program, typedefs : [TypeName -> NeType], context : Context {
   Bool is_columnar_relvar(AnyRelVar rel_var) = is_columnar_relvar(rel_auto_type(rel_var), unqualified(rel_var));
+
+  Bool is_ternary_slave_column(AnyRelVar rel_var) = is_ternary_slave_column(rel_auto_type(rel_var), unqualified(rel_var));
 }
 
 
@@ -35,6 +37,117 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
 
     Bool is_candidate_column(RelVarInfo info) =
       |info.signature| == 2 and info.keys == [[0]] and not info.symmetric;
+  }
+}
+
+
+implicit program : Program {
+  Bool is_master_relvar(DBSymbol rel_auto_id, PhysRelVar rel_var) {
+    masters_slaves = masters_slaves_relvars;
+    return masters_slaves(rel_auto_id, rel_var, _);
+  }
+
+
+  Bool is_slave_relvar(DBSymbol rel_auto_id, PhysRelVar rel_var) {
+    masters_slaves = masters_slaves_relvars;
+    return masters_slaves(rel_auto_id, _, rel_var);
+  }
+
+
+  Bool is_ternary_slave_column(DBSymbol rel_auto_id, RelVar rel_var) {
+    masters_slaves = masters_ternary_slave_columns;
+    return only([masters_slaves(rel_auto_id, _, prv) : prv <- physical_rel_vars(rel_auto_by_id(rel_auto_id), rel_var)]);
+  }
+
+
+  PhysRelVar master_relvar(DBSymbol rel_auto_id, PhysRelVar slave_relvar) {
+    masters_slaves = masters_slaves_relvars;
+    return only([mrv : mrv <- masters_slaves(rel_auto_id, ?, slave_relvar)]);
+  }
+
+
+  [DBSymbol, PhysRelVar, PhysRelVar] masters_ternary_slave_columns {
+    return [a, m, s : a m s <- masters_slaves_relvars, is_columnar_relvar(a, logical_rel_var(s))];
+
+
+    Bool is_columnar_relvar(DBSymbol rel_auto_id, RelVar slave_relvar) =
+      not (prv <- physical_rel_vars(rel_auto_by_id(rel_auto_id), slave_relvar) : not is_columnar_relvar(rel_auto_id, prv));
+
+
+    Bool is_columnar_relvar(DBSymbol rel_auto_id, PhysRelVar slave_relvar) {
+      rel_auto = rel_auto_by_id(rel_auto_id);
+      relvar_info = rel_auto.rel_vars(slave_relvar);
+      return false if relvar_info.keys != [[0, 1]];
+      usages = relvars_usages(typedefs = program.typedefs);
+      return not (u <- usages(rel_auto_id, logical_rel_var(slave_relvar), ?) : not is_valid_slave_column_usage(u));
+    }
+
+
+    Bool is_valid_slave_column_usage(Bool+ usage) =
+      (false, false, false) |
+      (true,  true,  true)  |
+      (true,  _,     false) |
+      (_,     true,  false) = true,
+      _                     = false;
+  }
+
+
+  [DBSymbol, PhysRelVar, PhysRelVar] masters_slaves_relvars {
+    return [a.name, mrv, srv : a <- program.data_bases, mrv srv <- masters_slaves(a)];
+
+
+    [PhysRelVar, PhysRelVar] masters_slaves(Database rel_auto) {
+      foreign_keys_by_src = [fk.source_rel_var, fk : fk <- rel_auto.foreign_keys];
+      slaves = [r : r info <- rel_auto.rel_vars, is_ternary_slave(r, info, foreign_keys_by_src)];
+      return [master(s, foreign_keys_by_src), s : s <- slaves];
+    }
+
+
+    PhysRelVar master(PhysRelVar slave, [PhysRelVar, ForeignKey] foreign_keys_by_src) =
+      only([only(fk.target_rel_vars) : fk <- foreign_keys_by_src(slave, ?), |fk.target_args| == 2]);
+
+
+    Bool is_ternary_slave(PhysRelVar relvar, RelVarInfo info, [PhysRelVar, ForeignKey] foreign_keys_by_src) {
+      // In order to be implemented as a slave, a ternary relation:
+      //   Must have a single foreign key of the form r3(a, b, _) -> r2(a, b),
+      //   May have another foreign key of the form r3(_, _, c) -> r1(c).
+      //   Must not have any other foreign keys
+      //   May have a key on the first two columns
+      //   May have a key on the third column
+      //   Must not be declared symmetric
+
+      if |info.signature| != 3 or info.symmetric
+        return false;
+
+      if (k <- info.keys : k != [0, 1] and k != [2])
+        return false;
+
+      fks = [fk : fk <- foreign_keys_by_src(relvar, ?)];
+
+      if (fk <- fks : |fk.target_rel_vars| != 1)
+        return false;
+
+      if |fks| == 1
+        return is_ternary_to_binary(only(fks));
+
+      else if |fks| == 2
+        return (fk <- fks : is_ternary_to_binary(fk)) and (fk <- fks : is_ternary_to_unary(fk));
+
+      else
+        return false;
+    }
+
+
+    Bool is_ternary_to_binary(ForeignKey foreign_key) =
+      match (foreign_key.source_args, foreign_key.target_args)
+        (just(s1?), just(s2?), nothing),  (just(t1?), just(t2?))  = s1 == t1 and s2 == t2,
+        _,                                _                       = false;
+
+
+    Bool is_ternary_to_unary(ForeignKey foreign_key) =
+      match (foreign_key.source_args, foreign_key.target_args)
+        (nothing, nothing, just(_)),  (just(_))   = true,
+        _,                            _           = false;
   }
 }
 

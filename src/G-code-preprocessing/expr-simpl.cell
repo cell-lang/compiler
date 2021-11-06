@@ -1,0 +1,103 @@
+implicit program : Program, typedefs : [TypeName -> NeType] {
+  Program post_exprs_simpl_prog =
+    program(
+      typedefs:       program.typedefs,
+      fndefs:         program.fndefs,
+      proc_defs:      [simplify_exprs(p) : p <- program.proc_defs],
+      aggr_fn_defs:   program.aggr_fn_defs,
+      auto_defs:      program.auto_defs,
+      data_bases:     [simplify_exprs(a) : a <- program.data_bases]
+    );
+
+  //////////////////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////
+
+  Database simplify_exprs(Database rel_auto) {
+    let context = rel_auto {
+      methods = [method(m.id, m.args, m.ret_type, simplify_expr(m.expr)) : m <- rel_auto.methods];
+      updates  = [update(u.name, u.args, (simplify_stmt(s) : s <- u.body)) : u <- rel_auto.updates];
+      handlers = [{
+        body = (simplify_stmt(s) : s <- h.body);
+        return handler(type: h.type, body: body, fields_order: h.fields_order if h.fields_order?);
+      } : h <- rel_auto.handlers];
+    }
+
+    return data_base(
+      name:         rel_auto.name,
+      links:        rel_auto.links,
+      state_vars:   rel_auto.state_vars,
+      rel_vars:     rel_auto.rel_vars,
+      attr_map:     rel_auto.attr_map,
+      foreign_keys: rel_auto.foreign_keys,
+      methods:      methods,
+      updates:      updates,
+      handlers:     handlers
+    );
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  Procedure simplify_exprs(Procedure proc) {
+    let context = proc
+      body = (simplify_stmt(s) : s <- proc.body);
+    return procedure(
+      id:                   proc.id,
+      args:                 proc.args,
+      rel_auto_args:        proc.rel_auto_args,
+      react_auto_args:      proc.react_auto_args,
+      res_type:             proc.res_type,
+      loc_rel_auto_vars:    proc.loc_rel_auto_vars,
+      loc_react_auto_vars:  proc.loc_react_auto_vars,
+      body:                 body
+    );
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+implicit program : Program, typedefs : [TypeName -> NeType], context : Context {
+  Expr simplify_expr(Expr expr) =
+    relvar_memb_test()    = simplify_relvar_memb_test(expr),
+    _                     = rewrite_expr(expr, simplify_expr, simplify_clause, simplify_stmt);
+
+
+  Expr simplify_relvar_memb_test(RelVarMembTest expr) {
+    if is_columnar_relvar(expr.rel_var) {
+      args = expr.args;
+      assert |args| == 2;
+      if args :: (Just[Expr], Just[Expr]) {
+        rel_var = expr.rel_var;
+        arg_0, arg_1 = args;
+        return and_expr(
+          relvar_memb_test(rel_var, (arg_0, nothing)),
+          eq(
+            relvar_lookup(rel_var, (arg_0, nothing)),
+            value(arg_1)
+          )
+        );
+      }
+    }
+    else if is_ternary_slave_column(expr.rel_var) {
+      args = expr.args;
+      assert |args| == 3;
+      if args :: (Just[Expr], Just[Expr], Just[Expr]) {
+        rel_var = expr.rel_var;
+        arg_0, arg_1, arg_2 = args;
+        return and_expr(
+          relvar_memb_test(rel_var, (arg_0, arg_1, nothing)),
+          eq(
+            relvar_lookup(rel_var, (arg_0, arg_1, nothing)),
+            value(arg_2)
+          )
+        );
+      }
+    }
+
+    return expr;
+  }
+
+
+  Clause simplify_clause(Clause cls) = rewrite_clause(cls, simplify_expr, simplify_clause);
+  Statement simplify_stmt(Statement stmt) = rewrite_stmt(stmt, simplify_expr, simplify_stmt);
+}

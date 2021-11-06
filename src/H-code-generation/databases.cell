@@ -115,9 +115,12 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
       arity = arity(rel_auto_id, v);
       args_perm = rel_vars_args_perms(v);
 
-      core_loop_code = if is_columnar_relvar(rel_auto_id, v)
-        then column_core_loop_code(rel_auto_id, v, arity, args_vars, surr_vars(0))
-        else table_core_loop_code(rel_auto_id, v, arity, args_vars, surr_vars);
+      core_loop_code = if is_columnar_relvar(rel_auto_id, v) then
+          column_core_loop_code(rel_auto_id, v, arity, args_vars, surr_vars(0))
+        else if is_ternary_slave_column(rel_auto_id, v) then
+          ternary_slave_column_core_loop_code(rel_auto_id, v, arity, args_vars, surr_vars, false)
+        else
+          table_core_loop_code(rel_auto_id, v, arity, args_vars, surr_vars);
 
       signatures = rel_var_signatures(database, v);
 
@@ -198,6 +201,59 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
     }
 
     return core_loop_code;
+  }
+
+
+
+  Instr* ternary_slave_column_core_loop_code(DBSymbol rel_auto_id, RelVar rel_var, NzNat arity, LocVar+ args_vars, Int32Var+ surr_vars, Bool ordered) {
+    // Physical tables the logical relation is partitioned into
+    tables = [table_var(i) : i <- physical_rel_vars(database, rel_var)];
+
+    if |tables| == 1 {
+      core_loop_code = table_var_code(rel_auto_id, only(tables), args_vars, surr_vars, ordered);
+    }
+    else {
+      // Choosing the dispatch arguments
+      signatures = [table_signature(rel_auto_id, tv) : tv <- tables];
+      disp_args_idxs = optimal_dispatch_args(signatures, typedefs);
+      disp_args = (args_vars(i) : i <- disp_args_idxs);
+
+      cases = [{
+        case_code = (table_var_code(rel_auto_id, tv, args_vars, surr_vars, ordered) | exit_block);
+        types = table_signature(rel_auto_id, tv);
+        disp_types = (types(i) : i <- disp_args_idxs);
+        return (disp_types, case_code);
+      } : tv <- tables];
+
+      block_body = dynamic_dispatch_code(disp_args, cases);
+      core_loop_code = (execute_block(block_body));
+    }
+
+    return core_loop_code;
+
+
+    Instr+ table_var_code(DBSymbol rel_auto_id, TableVar table_var, LocVar+ args_vars, Int32Var+ surr_vars, Bool ordered) {
+      master_table = master_table(rel_auto_id, table_var);
+      store_id_0 = table_col_store_id(rel_auto_id, table_var, 0);
+      store_id_1 = table_col_store_id(rel_auto_id, table_var, 1);
+      store_type_0 = value_store_type(rel_auto_id, store_id_0);
+      store_type_1 = value_store_type(rel_auto_id, store_id_1);
+      store_arg_0 = value_store_encoded_expr(store_type_0, args_vars(0));
+      store_arg_1 = value_store_encoded_expr(store_type_1, args_vars(1));
+      col_repr = column_repr(table_signature(rel_auto_id, table_var)(2));
+      actual_surr_vars = (surr_vars(0), surr_vars(1));
+      idx_var = surr_vars(2);
+      return (
+        immediate_insert_or_add_ref(surr_vars(0), store_id_0, store_arg_0),
+        immediate_insert_or_add_ref(surr_vars(1), store_id_1, store_arg_1),
+        do_if_not(
+          table_contains(master_table, (just(v) : v <- actual_surr_vars), false),
+          immediate_insert_tuple(master_table, actual_surr_vars)
+        ) if not ordered,
+        set_ivar32(idx_var, get_assoc_surr(master_table, actual_surr_vars)),
+        column_insert_immediate(table_var, idx_var, low_level_expr(col_repr, args_vars(2)))
+      );
+    }
   }
 
 
@@ -282,9 +338,12 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
       // phys_args_vars = (log_args_vars(args_perm(i)) : i < arity);
       it_var = it_vars[arity]; // Need to use [] instead of () because of the typechecker...
 
-      core_loop_code = if is_columnar_relvar(rel_auto_id, v)
-        then column_core_loop_code(rel_auto_id, v, arity, args_vars, surr_vars(0))
-        else table_core_loop_code(rel_auto_id, v, arity, args_vars, surr_vars);
+      core_loop_code = if is_columnar_relvar(rel_auto_id, v) then
+          column_core_loop_code(rel_auto_id, v, arity, args_vars, surr_vars(0))
+        else if is_ternary_slave_column(rel_auto_id, v) then
+          ternary_slave_column_core_loop_code(rel_auto_id, v, arity, args_vars, surr_vars, true)
+        else
+          table_core_loop_code(rel_auto_id, v, arity, args_vars, surr_vars);
 
       signatures = rel_var_signatures(database, v);
 
@@ -346,16 +405,24 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
       src_is_sym = symmetric(rel_auto_id, rel_var);
 
       surr_vars = (ivar32(i) : i < 3);
+      assoc_surr_var = ivar32(3);
+
       foreign_keys = lookup(phys_keys_by_table, tv, []);
+      assert not (fk <- foreign_keys : fk.origin != tv);
 
       sign = table_signature(rel_auto_id, tv);
 
-      it_var = if is_columnar_relvar(rel_auto_id, logical_rel_var(rel_var))
-        then column_it_var(0, column_repr(sign(1)))
+      it_var = if is_columnar_relvar(rel_auto_id, logical_rel_var(rel_var)) then
+          column_it_var(0, column_repr(sign(1)))
+        else if is_ternary_slave_column(rel_auto_id, logical_rel_var(rel_var)) then
+          slave_column_it_var(0, column_repr(sign(2)))
         else table_it_var(0, arity, src_is_sym);
 
       if foreign_keys != [] {
         conds = ({
+          if fk.type == :binary_ternary and is_ternary_slave_column(rel_auto_id, logical_rel_var(original_rel_var(fk.target)))
+            return table_contains(fk.target, (just(assoc_surr_var), nothing), false);
+
           tgt_is_sym, args_sets = match (fk.type)
             unary_unary             = (false, ((just(0)))),
             unary_binary(i?)        = (false, ((maybe(0, j == i) : j < 2))),
@@ -400,16 +467,32 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
         ]));
 
         assert match (it_var)
-          table_it_var()   = true,
-          column_it_var()  = surr_vars_used == (0);
+          table_it_var()        = true,
+          column_it_var()       = surr_vars_used == (0),
+          slave_column_it_var() = surr_vars_used == (0, 1) or surr_vars_used == (0) or surr_vars_used == (1); ## NOT AT ALL SURE HERE. WHAT IS THIS ASSERTION FOR ANYWAY?
 
         surrs_reads = match (it_var)
-          table_it_var()  = (set_ivar32(surr_vars(i), get_unknown_arg(it_var, i)) : i <- surr_vars_used),
-          column_it_var() = (set_ivar32(surr_vars(0), get_col_index(it_var)));
+          table_it_var()        = (set_ivar32(surr_vars(i), get_unknown_arg(it_var, i)) : i <- surr_vars_used),
+          column_it_var()       = (set_ivar32(surr_vars(0), get_unknown_arg(it_var, 0))),
+          ## ISN'T THIS TOTALLY POINTLESS IF THE TARGET TABLE IS ALSO THE MASTER ONE?
+          ## AND CAN THE TARGET TABLE BE ANYTHING OTHER THAN THE MASTER?
+          slave_column_it_var() = { master = master_table(rel_auto_id, tv);
+                                    return (
+                                      set_ivar32(assoc_surr_var, get_unknown_arg(it_var, 0)),
+                                      set_ivar32(surr_vars(0), get_arg_by_assoc_surr(master, 0, assoc_surr_var)),
+                                      set_ivar32(surr_vars(1), get_arg_by_assoc_surr(master, 1, assoc_surr_var))
+                                    );
+                                  };
+
+        if (fk <- foreign_keys : fk.type == :binary_ternary and is_ternary_slave_column(rel_auto_id, logical_rel_var(original_rel_var(fk.target)))) {
+          assoc_surr_var_read = set_ivar32(assoc_surr_var, get_assoc_surr(tv, (surr_vars(0), surr_vars(1))));
+          surrs_reads = (surrs_reads | assoc_surr_var_read);
+        }
 
         get_iter_instr = match (it_var)
-          table_it_var()  = get_table_iter(it_var, tv, (nothing : i < arity)),
-          column_it_var() = get_column_iter(it_var, tv);
+          table_it_var()        |
+          slave_column_it_var() = get_table_iter(it_var, tv, (nothing : i < arity)),
+          column_it_var()       = get_column_iter(it_var, tv);
 
         code = (code |
           get_iter_instr,
@@ -855,7 +938,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
   }
 
 
-  [TableVar -> <Table, Column>] tables_info {
+  [TableVar -> AnyTable] tables_info {
     auto_id = database.name;
     col_to_vs_map = table_col_value_store_map;
     return [
@@ -865,6 +948,35 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
           signature = info.signature;
           fail if |signature| != 2;
           return column(value_store, column_repr(signature(1)), signature);
+        }
+        else if is_ternary_slave_column(auto_id, logical_rel_var(rv)) {
+          masters_slaves = masters_ternary_slave_columns;
+          master = table_var(masters_slaves(auto_id, !, rv));
+          value_stores = (col_to_vs_map((tv, i)) : i <- (0, 1));
+          signature = info.signature;
+          fail if |signature| != 3;
+          return slave_column(master, value_stores, column_repr(signature(2)), signature);
+        }
+        else if is_master_relvar(auto_id, rv) {
+          signature = info.signature;
+          fail if |signature| != 2;
+          return master_bin_table(
+            (col_to_vs_map((tv, i)) : i <- (0, 1)),
+            info.keys,
+            signature,
+            info.symmetric
+          );
+        }
+        else if is_slave_relvar(auto_id, rv) {
+          signature = info.signature;
+          fail if |signature| != 3;
+          return slave_tern_table(
+            table_var(master_relvar(auto_id, rv)),
+            (col_to_vs_map((tv, i)) : i <- (0, 1, 2)),
+            info.keys,
+            signature,
+            info.symmetric
+          );
         }
         else {
           value_stores = (col_to_vs_map((tv, i)) : i < |info.signature|);

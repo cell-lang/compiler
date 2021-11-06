@@ -81,12 +81,14 @@ type CodeOutcome = fails, returns, breaks_loop, exits_block, falls_through;
   return search_instrs(update.body, table_vars);
 
   [TableVar] table_vars(Instr instr) =
-    init_table()              |
-    cleanup_table()           |
-    immediate_insert_tuple()  = undefined,
-    queue_insert_tuple()      = [instr.table_var],
-    column_insert_deferred()  = [instr.table_var],
-    _                         = search_any_nested(instr, table_vars, []);
+    init_table()                            |
+    cleanup_table()                         |
+    immediate_insert_tuple()                |
+    column_insert_immediate()               = undefined,
+    queue_insert_tuple()                    = [instr.table_var],
+    column_insert_deferred()                = [instr.table_var],
+    ternary_slave_column_insert_deferred()  = [instr.table_var],
+    _                                       = search_any_nested(instr, table_vars, []);
 }
 
 
@@ -94,12 +96,14 @@ type CodeOutcome = fails, returns, breaks_loop, exits_block, falls_through;
   return search_instrs(update.body, table_vars);
 
   [TableVar] table_vars(Instr instr) =
-    init_table()              |
-    cleanup_table()           |
-    immediate_insert_tuple()  = undefined,
-    queue_deletes()           = [instr.table_var],
-    column_insert_deferred()  = [instr.table_var if instr.forced],
-    _                         = search_any_nested(instr, table_vars, []);
+    init_table()                            |
+    cleanup_table()                         |
+    immediate_insert_tuple()                |
+    column_insert_immediate()               = undefined,
+    queue_deletes()                         = [instr.table_var],
+    column_insert_deferred()                = [instr.table_var if instr.forced], ## NOT SURE THERE'S ANY POINT IN DOING THIS
+    ternary_slave_column_insert_deferred()  = [instr.table_var if instr.forced], ## DITTO
+    _                                       = search_any_nested(instr, table_vars, []);
 }
 
 

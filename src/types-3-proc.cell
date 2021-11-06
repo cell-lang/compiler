@@ -101,17 +101,19 @@ type ArrayVar       = avar(id: Nat, repr: LowLevelEltRepr), shadow_array_var(id:
 
 type AnyWriteVar    = LocBoolVar, LocIntVar, FloatVar, LocOptTagRecVar, WriteObjVar;
 
-type StreamVar      = svar(Nat); ## DOES THIS NEED CLEANUP?
+type StreamVar      = svar(Nat);
 
-type SetItVar       = set_it_var(Nat);      ## MUST WORK WITHOUT THE NEED FOR EXPLICIT CLEANUP
-type SeqItVar       = seq_it_var(Nat);      ## DITTO
-type BinRelItVar    = bin_rel_it_var(Nat);  ## DITTO
-type TernRelItVar   = tern_rel_it_var(Nat); ## DITTO
+type SetItVar       = set_it_var(Nat);
+type SeqItVar       = seq_it_var(Nat);
+type BinRelItVar    = bin_rel_it_var(Nat);
+type TernRelItVar   = tern_rel_it_var(Nat);
 
-type TableItVar     = table_it_var(id: Nat, arity: NzNat, symmetric: Bool); ## DITTO
+type TableItVar     = table_it_var(id: Nat, arity: NzNat, symmetric: Bool);
 type ColumnItVar    = column_it_var(id: Nat, repr: ColumnRepr);
+type SlaveColumnItVar = slave_column_it_var(id: Nat, repr: ColumnRepr);
+type AnyTableItVar  = TableItVar, ColumnItVar, SlaveColumnItVar;
 
-type ItVar          = SeqItVar, SetItVar, BinRelItVar, TernRelItVar, TableItVar, ColumnItVar;
+type ItVar          = SeqItVar, SetItVar, BinRelItVar, TernRelItVar, AnyTableItVar;
 
 type AnyVar         = ObjVar, OptTagRecVar, VecVar, ArrayVar, BoolVar, IntVar,
                       Int32Var, FloatVar, ItVar, StreamVar;
@@ -186,8 +188,9 @@ type Int32NatOp     = bool_to_bit(BoolExpr),
                       cast_int32(IntExpr),
                       add32(Int32Expr, Int32Expr),
                       value_to_surr(store: AnyValueStoreId, value: <AtomicExpr, IntExpr>),
-                      get_unknown_arg(iter: TableItVar, arg: <0..2>),
-                      get_col_index(iter: ColumnItVar);
+                      get_unknown_arg(iter: AnyTableItVar, arg: <0..2>),
+                      get_arg_by_assoc_surr(table: AnyTableVar, arg: <0..1>, surr: Int32Var),
+                      get_assoc_surr(table: AnyTableVar, args: (Int32Var, Int32Var));
 
 type FloatNatOp     = float_value(ObjExpr),
                       neg_float(FloatExpr),
@@ -258,24 +261,24 @@ type RefObjExpr     = mk_set_from_stream(stream: StreamVar),
                       mk_tern_rel_from_streams(streams: (StreamVar, StreamVar, StreamVar)),
                       mk_tern_rel(cols: (VecVar, VecVar, VecVar), size: IntExpr),
                       mk_tern_rel_from_arrays(col1: ArrayVar, col2: ArrayVar, col3: ArrayVar, size: Maybe[IntExpr]),
-                      mk_tagged_obj(tag: AtomicExpr, obj: AtomicExpr), // Ownership transfer: <obj>
+                      mk_tagged_obj(tag: AtomicExpr, obj: AtomicExpr),
                       mk_record(fields: [+SymbObj -> AtomicExpr]),
                       inst_opt_tag_rec(tag: Symbol, repr_idx: Nat),
                       get_seq_slice(seq: AtomicExpr, idx_first: IntExpr, len: IntExpr),
-                      append_to_seq(seq: AtomicExpr, new_elem: AtomicExpr), // Ownership transfer: <seq>, <new_elem>
-                      update_seq_at(seq: AtomicExpr, idx: IntExpr, value: AtomicExpr), // Ownership transfer: <value>
+                      append_to_seq(seq: AtomicExpr, new_elem: AtomicExpr),
+                      update_seq_at(seq: AtomicExpr, idx: IntExpr, value: AtomicExpr),
                       join_seqs(left: AtomicExpr, right: AtomicExpr),
                       rev_seq(seq: AtomicExpr),
                       internal_sort(set: AtomicExpr),
                       insert_elt(set: AtomicExpr, elt: AtomicExpr),
                       remove_elt(set: AtomicExpr, elt: AtomicExpr),
-                      set_key_value(map: AtomicExpr, key: AtomicExpr, value: AtomicExpr), ## OWNERSHIP TRANSFER?
+                      set_key_value(map: AtomicExpr, key: AtomicExpr, value: AtomicExpr),
                       drop_key(map: AtomicExpr, key: AtomicExpr),
                       parse_value(value: AtomicExpr),
                       print_value(value: AtomicExpr),
 
                       copy_state(var: AnyDBVar, type: DBSymbol),
-                      copy_rel(tables: [+TableVar -> <Table, Column>], applied_perm: [+Nat -> Nat]),
+                      copy_rel(tables: [+TableVar -> AnyTable], applied_perm: [+Nat -> Nat]),
 
                       copy_persistent_state(var: AnyAutoVar, type: AutoSymbol),
 
@@ -284,7 +287,7 @@ type RefObjExpr     = mk_set_from_stream(stream: StreamVar),
                       read_pending_var(<PendingStateVar, PendingInputVar>);
 
 type BasicInstr     = init_stream(StreamVar),
-                      append(stream: StreamVar, obj: AtomicExpr),  // Ownership transfer: <obj>
+                      append(stream: StreamVar, obj: AtomicExpr),
 
                       array_alloc(var: ArrayVar, size: Int32Expr),
                       array_write(var: ArrayVar, idx: Int32Expr, value: AnyTypeExpr),
@@ -385,16 +388,17 @@ type BasicInstr     = init_stream(StreamVar),
                       // Table instructions
                       init_value_store(store: ValueStoreId),
                       cleanup_value_store(store: ValueStoreId),
-                      init_table(table_var: TableVar, table: <Table, Column>),
-                      cleanup_table(table_var: TableVar, table: <Table, Column>),
+                      init_table(table_var: TableVar, table: AnyTable),
+                      cleanup_table(table_var: TableVar, table: AnyTable),
 
-                      get_table_iter(it_var: TableItVar, table: AnyTableVar, args: Maybe[Int32Var]+),
+                      get_table_iter(it_var: <TableItVar, SlaveColumnItVar>, table: AnyTableVar, args: Maybe[Int32Var]+),
                       get_column_iter(it_var: ColumnItVar, column: AnyTableVar),
                       queue_deletes(table_var: TableVar, args: Maybe[Int32Var]+, symmetric: Bool),
-                      lookup_or_queue_insert_value(res_var: Int32Var, store: ValueStoreId, value: <AtomicExpr, IntExpr>), // Ownership transfer: <value>
+                      lookup_or_queue_insert_value(res_var: Int32Var, store: ValueStoreId, value: <AtomicExpr, IntExpr>),
                       queue_insert_tuple(table_var: TableVar, tuple: Int32Var+),
 
                       column_insert_deferred(table_var: TableVar, key_surr: Int32Var, value: AnyTypeExpr, forced: Bool),
+                      ternary_slave_column_insert_deferred(table_var: TableVar, surrs: (Int32Var, Int32Var), value: AnyTypeExpr, forced: Bool),
 
                       immediate_insert_or_add_ref(res_var: Int32Var, store: ValueStoreId, value: <AtomicExpr, IntExpr>),
                       immediate_insert_tuple(table_var: TableVar, tuple: Int32Var+),
@@ -493,9 +497,33 @@ type Table  = table(
                 symmetric:    Bool
               );
 
-type ColumnRepr = object, int, float;
+type MasterBinTable = master_bin_table(
+                        value_stores: (ValueStoreId, ValueStoreId),
+                        keys:         [[+Nat]],
+                        col_types:    (NeType, NeType),
+                        symmetric:    Bool
+                      );
 
-type Column = column(value_store: ValueStoreId, repr: ColumnRepr, col_types: (NeType, NeType));
+type SlaveTernTable = slave_tern_table(
+                        master:       TableVar,
+                        value_stores: (ValueStoreId, ValueStoreId, ValueStoreId),
+                        keys:         [[+Nat]],
+                        col_types:    (NeType, NeType, NeType),
+                        symmetric:    Bool
+                      );
+
+type ColumnRepr     = object, int, float;
+
+type Column         = column(value_store: ValueStoreId, repr: ColumnRepr, col_types: (NeType, NeType));
+
+type SlaveColumn    = slave_column(
+                        master:       TableVar,
+                        value_stores: (ValueStoreId, ValueStoreId),
+                        repr:         ColumnRepr,
+                        col_types:    (NeType, NeType, NeType)
+                      );
+
+type AnyTable       = Table, Column, MasterBinTable, SlaveTernTable, SlaveColumn;
 
 type ForeignKeyType = unary_unary, unary_binary(<0..1>), unary_ternary(<0..2>),
                       binary_unary(<0..1>), ternary_unary(<0..2>),
@@ -562,7 +590,7 @@ type StaticBlock = static_block(
                     links:                        DBSymbol*,
                     state_vars:                   [MembVar -> NeType],
                     value_stores:                 [ValueStoreId -> ValueStoreType],
-                    tables:                       [TableVar -> <Table, Column>],
+                    tables:                       [TableVar -> AnyTable],
                     insert_checked_foreign_keys:  [BlockForeignKey],
                     delete_checked_foreign_keys:  [BlockForeignKey],
                     init_code:                    Instr*,

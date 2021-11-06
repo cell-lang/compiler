@@ -111,15 +111,16 @@ Int32Expr rewrite_nested(Int32Var expr, (AnyTypeExpr -> AnyTypeExpr) rewrite) =
 
 
 Int32Expr rewrite_nested(Int32NatOp expr, (AnyTypeExpr -> AnyTypeExpr) rewrite) =
-  bool_to_bit(e?)   = bool_to_bit(cast_bool_expr(rewrite(e))),
-  get_size(e?)      = get_size(cast_obj_expr(rewrite(e))),
-  get_count()       = get_count(expr.table, (apply(a, cast_int32_var(rewrite($))) : a <- expr.args), expr.symmetric),
-  table_lookup()    = table_lookup(expr.table, (apply(a, cast_int32_var(rewrite($))) : a <- expr.args), expr.symmetric),
-  cast_int32(e?)    = cast_int32(cast_int_expr(rewrite(e))),
-  add32(e1?, e2?)   = add32(cast_int32_expr(rewrite(e1)), cast_int32_expr(rewrite(e2))),
-  value_to_surr()   = value_to_surr(expr.store, rewrite_nested(expr.value, rewrite)),
-  get_unknown_arg() = expr,
-  get_col_index()   = expr;
+  bool_to_bit(e?)         = bool_to_bit(cast_bool_expr(rewrite(e))),
+  get_size(e?)            = get_size(cast_obj_expr(rewrite(e))),
+  get_count()             = get_count(expr.table, (apply(a, cast_int32_var(rewrite($))) : a <- expr.args), expr.symmetric),
+  table_lookup()          = table_lookup(expr.table, (apply(a, cast_int32_var(rewrite($))) : a <- expr.args), expr.symmetric),
+  cast_int32(e?)          = cast_int32(cast_int_expr(rewrite(e))),
+  add32(e1?, e2?)         = add32(cast_int32_expr(rewrite(e1)), cast_int32_expr(rewrite(e2))),
+  value_to_surr()         = value_to_surr(expr.store, rewrite_nested(expr.value, rewrite)),
+  get_unknown_arg()       = expr,
+  get_arg_by_assoc_surr() = get_arg_by_assoc_surr(expr.table, expr.arg, cast_int32_var(rewrite(expr.surr))),
+  get_assoc_surr()        = get_assoc_surr(expr.table, (cast_int32_var(rewrite(v)) : v <- expr.args));
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -145,22 +146,22 @@ ObjExpr rewrite_nested(<InlineObj, StdObjVar> expr, (AnyTypeExpr -> AnyTypeExpr)
 
 
 ObjExpr rewrite_nested(ObjNatOp expr, (AnyTypeExpr -> AnyTypeExpr) rewrite) =
-  at()              = at(cast_obj_expr(rewrite(expr.seq)), cast_int_expr(rewrite(expr.idx))),
-  array_at()        = array_at(expr.array, cast_int32_var(rewrite(expr.size)), cast_int_expr(rewrite(expr.idx))),
-  lookup()          = lookup(cast_obj_expr(rewrite(expr.rel)), cast_obj_expr(rewrite(expr.key))),
-  lookup_field()    = lookup_field(cast_obj_expr(rewrite(expr.record)), expr.field, expr.repr),
-  get_tag(e?)       = get_tag(cast_obj_expr(rewrite(e))),
-  get_inner_obj(e?) = get_inner_obj(cast_obj_expr(rewrite(e))),
-  bool_obj(e?)      = bool_obj(cast_bool_expr(rewrite(e))),
-  int_obj(e?)       = int_obj(cast_int_expr(rewrite(e))),
-  float_obj(e?)     = float_obj(cast_float_expr(rewrite(e))),
-  get_curr_obj()    = expr,
-  get_curr_arg()    = expr,
-  get_curr_arg()    = expr,
-  surr_to_value()   = surr_to_value(expr.store, cast_int32_var(rewrite(expr.surrogate))),
-  column_lookup()   = column_lookup(expr.var, cast_int32_var(rewrite(expr.key)), expr.repr),
-  get_value()       = expr,
-  rand_elem(e?)     = rand_elem(cast_obj_expr(rewrite(e)));
+  at()                  = at(cast_obj_expr(rewrite(expr.seq)), cast_int_expr(rewrite(expr.idx))),
+  array_at()            = array_at(expr.array, cast_int32_var(rewrite(expr.size)), cast_int_expr(rewrite(expr.idx))),
+  lookup()              = lookup(cast_obj_expr(rewrite(expr.rel)), cast_obj_expr(rewrite(expr.key))),
+  lookup_field()        = lookup_field(cast_obj_expr(rewrite(expr.record)), expr.field, expr.repr),
+  get_tag(e?)           = get_tag(cast_obj_expr(rewrite(e))),
+  get_inner_obj(e?)     = get_inner_obj(cast_obj_expr(rewrite(e))),
+  bool_obj(e?)          = bool_obj(cast_bool_expr(rewrite(e))),
+  int_obj(e?)           = int_obj(cast_int_expr(rewrite(e))),
+  float_obj(e?)         = float_obj(cast_float_expr(rewrite(e))),
+  get_curr_obj()        = expr,
+  get_curr_arg()        = expr,
+  get_curr_arg()        = expr,
+  surr_to_value()       = surr_to_value(expr.store, cast_int32_var(rewrite(expr.surrogate))),
+  column_lookup()       = column_lookup(expr.var, cast_int32_var(rewrite(expr.key)), expr.repr),
+  get_value()           = expr,
+  rand_elem(e?)         = rand_elem(cast_obj_expr(rewrite(e)));
 
 
 ObjExpr rewrite_nested(OptTagRecExpr expr, (AnyTypeExpr -> AnyTypeExpr) rewrite) =
@@ -300,8 +301,10 @@ BasicInstr rewrite_exprs(BasicInstr instr, (AnyTypeExpr -> AnyTypeExpr) rewrite,
   lookup_or_queue_insert_value() = lookup_or_queue_insert_value(instr.res_var, instr.store, cast_int_or_obj_expr(rewrite(instr.value))),
   queue_insert_tuple()      = queue_insert_tuple(instr.table_var, (cast_int32_var(rewrite(v)) : v <- instr.tuple)),
   column_insert_deferred()  = column_insert_deferred(instr.table_var, cast_int32_var(rewrite(instr.key_surr)), rewrite(instr.value), instr.forced),
+  ternary_slave_column_insert_deferred() = ternary_slave_column_insert_deferred(instr.table_var, (cast_int32_var(rewrite(v)) : v <- instr.surrs), rewrite(instr.value), instr.forced),
   immediate_insert_or_add_ref() = immediate_insert_or_add_ref(instr.res_var, instr.store, cast_int_or_obj_expr(rewrite(instr.value))),
-  immediate_insert_tuple()  = immediate_insert_tuple(instr.table_var, (cast_int32_var(rewrite(v)) : v <- instr.tuple));
+  immediate_insert_tuple()  = immediate_insert_tuple(instr.table_var, (cast_int32_var(rewrite(v)) : v <- instr.tuple)),
+  column_insert_immediate() = column_insert_immediate(instr.table_var, cast_int32_var(rewrite(instr.key_surr)), rewrite(instr.value));
 
 
 JumpInstr rewrite_exprs(JumpInstr instr, (AnyTypeExpr -> AnyTypeExpr) rewrite, (RefObjExpr -> RefObjExpr) rewrite_ref) =

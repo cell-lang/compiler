@@ -102,9 +102,12 @@ implicit program           : Program,
     rel_memb_test()     = rel_memb_test_opt_eval_info(expr.rel, expr.args, var_gen),
     rel_lookup()        = rel_lookup_opt_eval_info(expr, var_gen),
     relvar_memb_test()  = relvar_memb_test_opt_eval_info(expr.rel_var, expr.args, var_gen),
-    relvar_lookup()     = if is_columnar_relvar(expr.rel_var)
-                            then columnar_relvar_lookup_opt_eval_info(expr.rel_var, expr.args, var_gen)
-                            else relvar_lookup_opt_eval_info(expr.rel_var, expr.args, var_gen),
+    relvar_lookup()     = if is_columnar_relvar(expr.rel_var) then
+                            columnar_relvar_lookup_opt_eval_info(expr.rel_var, expr.args, var_gen)
+                          else if is_ternary_slave_column(expr.rel_var) then
+                            ternary_slave_column_lookup_opt_eval_info(expr.rel_var, expr.args, var_gen)
+                          else
+                            relvar_lookup_opt_eval_info(expr.rel_var, expr.args, var_gen),
     and_expr()          = and_expr_opt_eval_info(expr.left, expr.right, var_gen),
     or_expr()           = or_expr_opt_eval_info(expr.left, expr.right, var_gen),
     not_expr(e?)        = not_expr_opt_eval_info(e, var_gen),
@@ -185,7 +188,9 @@ implicit program           : Program,
 
     res_var, ret_var_gen = next_bool_var(init_var_gen);
     surr_vars, var_gen = next_int32_vars(ret_var_gen, |bound_args|);
-    it_var, var_gen = next_table_it_var(var_gen, |args|, symmetric(rel_var));
+    master_it_var, var_gen = next_table_it_var(var_gen, 2, false);
+    assoc_surr_var, var_gen = next_int32_var(var_gen);
+    unknown_arg_surr_var, var_gen = next_int32_var(var_gen);
 
     surr_args = (apply(a, surr_vars(arg_idx_bound_arg_idx(i))) : a @ i <- args);
 
@@ -199,7 +204,61 @@ implicit program           : Program,
     code = (eval_code | set_bvar(res_var, false));
     for tv @ i <- isort(candidate_tables) {
       subst_table_var = substitute(tv);
-      table_code = (set_bvar(res_var, table_contains(subst_table_var, surr_args, symmetric)));
+      if is_ternary_slave_column(rel_var) {
+        assert surr_args(2) == nothing;
+        master_table = substitute(master_table(tv));
+        arg_0 = surr_args(0);
+        arg_1 = surr_args(1);
+        master_args = (arg_0, arg_1);
+
+        if arg_0 != nothing {
+          if arg_1 != nothing {
+            table_code = (
+              branch(
+                table_contains(master_table, master_args, symmetric),
+                ( set_ivar32(assoc_surr_var, get_assoc_surr(master_table, (value(arg_0), value(arg_1)))),
+                  set_bvar(res_var, table_contains(subst_table_var, (just(assoc_surr_var), nothing), false))
+                ),
+                (set_bvar(res_var, false))
+              )
+            );
+          }
+          else {
+            table_code = (
+              set_bvar(res_var, false),
+              get_table_iter(master_it_var, master_table, master_args),
+              repeat((
+                break_if(is_out_of_range(master_it_var)),
+                set_ivar32(unknown_arg_surr_var, get_unknown_arg(master_it_var, 0)),
+                set_ivar32(assoc_surr_var, get_assoc_surr(master_table, (value(arg_0), unknown_arg_surr_var))),
+                do_if(
+                  table_contains(subst_table_var, (just(assoc_surr_var), nothing), false),
+                  (set_bvar(res_var, true), break_loop)
+                ),
+                move_forward(master_it_var)
+              ))
+            );
+          }
+        }
+        else {
+          table_code = (
+            set_bvar(res_var, false),
+            get_table_iter(master_it_var, master_table, master_args),
+            repeat((
+              break_if(is_out_of_range(master_it_var)),
+              set_ivar32(unknown_arg_surr_var, get_unknown_arg(master_it_var, 0)),
+              set_ivar32(assoc_surr_var, get_assoc_surr(master_table, (unknown_arg_surr_var, value_unsafe(arg_1)))),
+              do_if(
+                table_contains(subst_table_var, (just(assoc_surr_var), nothing), false),
+                (set_bvar(res_var, true), break_loop)
+              ),
+              move_forward(master_it_var)
+            ))
+          );
+        }
+      }
+      else
+        table_code = (set_bvar(res_var, table_contains(subst_table_var, surr_args, symmetric)));
 
       for e @ j <- reverse(args_aliases) {
         idx = rat(bound_args_idxs, j);
@@ -373,6 +432,83 @@ implicit program           : Program,
       code = arg_eval_code & dynamic_dispatch_code((arg_alias), cases);
       return (code, obj_expr(res_var), ret_var_gen);
     }
+  }
+
+
+  // relvar_lookup(rel_var: AnyRelVar, args: Maybe[Expr]+)
+  (Instr*, ObjExpr, VarGen) ternary_slave_column_lookup_opt_eval_info(AnyRelVar rel_var, Maybe[Expr]+ maybe_args, VarGen init_var_gen) {
+    fail if not maybe_args :: (Just[ExprRef], Just[ExprRef], Nothing);
+
+    arg_0 = value(maybe_args(0));
+    arg_1 = value(maybe_args(1));
+    arg_0_type = subexpr_type(arg_0);
+    arg_1_type = subexpr_type(arg_1);
+    return ((), :invalid_var, init_var_gen) if arg_0_type == empty_type or arg_1_type == empty_type;
+
+    res_type = types(expr_id);
+    res_repr = opt_repr(res_type);
+
+    res_var, ret_var_gen = next_var(res_repr, init_var_gen);
+
+    // Evaluation of arguments
+    args_eval_code, args_aliases, var_gen = opt_eval_info((arg_0, arg_1), ret_var_gen);
+
+    // Argument surrogates
+    exp_arg_0 = expand_subexpr(arg_0);
+    if exp_arg_0 :: StdVar
+      arg_0_surr_var = shadow_surr_var(exp_arg_0);
+    else
+      arg_0_surr_var, var_gen = next_int32_var(var_gen);
+
+    exp_arg_1 = expand_subexpr(arg_1);
+    if exp_arg_1 :: StdVar
+      arg_1_surr_var = shadow_surr_var(exp_arg_1);
+    else
+      arg_1_surr_var, var_gen = next_int32_var(var_gen);
+
+    assoc_surr_var, var_gen = next_int32_var(var_gen);
+
+    // Selecting the candidate tables among those the logical relation is partitioned into
+    candidate_tables = overlapping_tables(rel_var, (just(arg_0_type), just(arg_1_type), nothing));
+
+    cases = [{
+      master_table = master_table(tv);
+
+      arg_0_store_id = table_col_store_id(tv, 0);
+      arg_0_store_type = value_store_type(rel_auto_type(rel_var), unqualified(arg_0_store_id));
+      arg_0_store_id = substitute(arg_0_store_id);
+
+      arg_1_store_id = table_col_store_id(tv, 1);
+      arg_1_store_type = value_store_type(rel_auto_type(rel_var), unqualified(arg_1_store_id));
+      arg_1_store_id = substitute(arg_1_store_id);
+
+      sign = table_signature(tv);
+      col_repr = column_repr(sign(2));
+
+      enc_expr_0 = value_store_encoded_expr(arg_0_store_type, args_aliases(0));
+      enc_expr_1 = value_store_encoded_expr(arg_1_store_type, args_aliases(1));
+
+      code = (
+        set_ivar32(arg_0_surr_var, value_to_surr(arg_0_store_id, enc_expr_0)),
+        check(neg(is_eq(arg_0_surr_var, -1))),
+        set_ivar32(arg_1_surr_var, value_to_surr(arg_1_store_id, enc_expr_1)),
+        check(neg(is_eq(arg_1_surr_var, -1))),
+        set_ivar32(assoc_surr_var, get_assoc_surr(substitute(master_table), (arg_0_surr_var, arg_1_surr_var))),
+        check(neg(is_eq(assoc_surr_var, -1))),
+        set_any_var(res_var, column_lookup(substitute(tv), assoc_surr_var, col_repr))
+      );
+
+      return ((sign(0), sign(1)), code);
+    } : tv <- candidate_tables];
+
+    ## TEST IT WITH POLYMORPHIC TABLES AND WITH CLOSURES
+
+    if |cases| == 1
+      _, lookup_code = only(cases);
+    else
+      lookup_code = dynamic_dispatch_code(args_aliases, cases);
+
+    return (args_eval_code & lookup_code, obj_expr(res_var), ret_var_gen);
   }
 
 

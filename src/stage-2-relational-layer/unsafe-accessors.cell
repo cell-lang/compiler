@@ -90,10 +90,12 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context {
     return nested_value_store_id(table_var.db_var, store_id);
   }
 
-  Column column_info(TableVar var) =
+
+  ColumnRepr column_repr(TableVar var) =
     match (tables_by_db(this_db_symbol, !)(var))
-      column() c? = c,
-      table()     = undefined;
+      column() c?       |
+      slave_column() c? = c.repr,
+      table()           = undefined;
 
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////
@@ -112,5 +114,16 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context {
   [+QualTableVar] overlapping_tables(QualRelVar rel_var, Maybe[NeType]+ args_types) {
     table_vars = overlapping_tables(rel_auto_type(rel_var), rel_var.rel_var, args_types);
     return [qual_table_var(rel_var.db_var, v) : v <- nonempty(table_vars)];
+  }
+
+
+  TableVar master_table(TableVar var) {
+    master_phys_relvar = master_relvar(this_db_symbol, original_rel_var(var));
+    return table_var(master_phys_relvar);
+  }
+
+  QualTableVar master_table(QualTableVar var) {
+    master_phys_relvar = master_relvar(var_type(var.db_var), original_rel_var(var.table_var));
+    return qual_table_var(var.db_var, table_var(master_phys_relvar));
   }
 }

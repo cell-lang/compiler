@@ -46,6 +46,10 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
   }
 
 
+  TableVar master_table(DBSymbol rel_auto_id, TableVar var) =
+    table_var(master_relvar(rel_auto_id, original_rel_var(var)));
+
+
   NeType+ table_signature(DBSymbol rel_auto_id, TableVar table_var) =
     rel_var_signature(rel_auto_id, original_rel_var(table_var));
 
@@ -57,8 +61,11 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
   ValueStoreId table_col_store_id(DBSymbol rel_auto_id, TableVar var, Nat col_idx) {
     table = tables_by_db(rel_auto_id, !)(var);
     return match (table, col_idx)
-      table(),    _   = table.value_stores(col_idx),
-      column(),   0   = table.value_store;
+      table(),              _   = table.value_stores(col_idx),
+      master_bin_table(),   _   = table.value_stores(col_idx),
+      slave_tern_table(),   _   = table.value_stores(col_idx),
+      slave_column(),       _   = table.value_stores(col_idx),
+      column(),             0   = table.value_store;
   }
 
 
@@ -132,7 +139,7 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
 
 
   ## DEPRECATED
-  [DBSymbol -> [TableVar -> <Table, Column>]] tables_by_db = [
+  [DBSymbol -> [TableVar -> AnyTable]] tables_by_db = [
     db.name -> tables_info(database=db) : db <- program.data_bases
   ];
 }

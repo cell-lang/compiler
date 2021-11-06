@@ -39,8 +39,19 @@ Nat arity(UpdateId id) =
   handler_id()  = 1,
   update_id()   = id.arity;
 
-NzNat arity(Table tbl) = nz_nat(|tbl.col_types|);
-NzNat arity(Column column) = 2;
+NzNat arity(Table tbl)      = nz_nat(|tbl.col_types|);
+NzNat arity(MasterBinTable) = 2;
+NzNat arity(SlaveTernTable) = 3;
+NzNat arity(Column)         = 2;
+NzNat arity(SlaveColumn)    = 3;
+
+NzNat arity(TableItVar v)     = v.arity;
+NzNat arity(SlaveColumnItVar) = 3;
+
+////////////////////////////////////////////////////////////////////////////////
+
+// TableVar unqualified(TableVar v) = v;
+// TableVar unqualified(QualTableVar v) = v.table_var;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -49,8 +60,9 @@ PhysRelVar original_rel_var(TableVar var) =
 
 ////////////////////////////////////////////////////////////////////////////////
 
-[[+Nat]] keys(Table table) = table.keys;
+[[+Nat]] keys(<Table, MasterBinTable, SlaveTernTable> table) = table.keys;
 [[+Nat]] keys(Column column) = [[0]];
+[[+Nat]] keys(SlaveColumn column) = [[0, 1]];
 
 ////////////////////////////////////////////////////////////////////////////////
 
