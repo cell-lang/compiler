@@ -64,7 +64,7 @@ BoolExpr rewrite_nested(BoolNatOp expr, (AnyTypeExpr -> AnyTypeExpr) rewrite) =
   is_null(v?)         = is_null(cast_nullable_var(cast_obj_expr(rewrite(v)))),
   has_field()         = has_field(cast_obj_expr(rewrite(expr.record)), expr.field),
   rel_obj_contains()  = rel_obj_contains(cast_obj_expr(rewrite(expr.rel)), (apply(a, cast_obj_expr(rewrite($))) : a <- expr.args)),
-  table_contains()    = table_contains(expr.table, (apply(a, cast_int32_var(rewrite($))) : a <- expr.tuple), expr.symmetric);
+  table_contains()    = table_contains(expr.table_var, expr.table, (apply(a, cast_int32_var(rewrite($))) : a <- expr.tuple), expr.symmetric);
 
 
 BoolExpr rewrite_nested(BoolFnCall expr, (AnyTypeExpr -> AnyTypeExpr) rewrite) =
@@ -113,7 +113,7 @@ Int32Expr rewrite_nested(Int32Var expr, (AnyTypeExpr -> AnyTypeExpr) rewrite) =
 Int32Expr rewrite_nested(Int32NatOp expr, (AnyTypeExpr -> AnyTypeExpr) rewrite) =
   bool_to_bit(e?)         = bool_to_bit(cast_bool_expr(rewrite(e))),
   get_size(e?)            = get_size(cast_obj_expr(rewrite(e))),
-  get_count()             = get_count(expr.table, (apply(a, cast_int32_var(rewrite($))) : a <- expr.args), expr.symmetric),
+  get_count()             = get_count(expr.table_var, expr.table, (apply(a, cast_int32_var(rewrite($))) : a <- expr.args), expr.symmetric),
   table_lookup()          = table_lookup(expr.table, (apply(a, cast_int32_var(rewrite($))) : a <- expr.args), expr.symmetric),
   cast_int32(e?)          = cast_int32(cast_int_expr(rewrite(e))),
   add32(e1?, e2?)         = add32(cast_int32_expr(rewrite(e1)), cast_int32_expr(rewrite(e2))),
@@ -278,7 +278,7 @@ BasicInstr rewrite_exprs(BasicInstr instr, (AnyTypeExpr -> AnyTypeExpr) rewrite,
   cleanup_db()              = instr,
   send_msg()                = send_msg(db_var: instr.db_var, type: instr.type, msg: cast_obj_expr(rewrite(instr.msg)), is_root: instr.is_root, res_var: instr.res_var if instr.res_var?),
   try_update()              = try_update(instr.type, instr.update_id, (cast_obj_expr(rewrite(e)) : e <- instr.args)),
-  set_state()               = set_state(instr.res_var, instr.db_var, instr.dependees, cast_obj_expr(rewrite(instr.state)), instr.type),
+  set_state()               = set_state(instr.res_var, instr.db_var, cast_obj_expr(rewrite(instr.state)), instr.type),
   invoke_auto_method()      = invoke_auto_method(
                                 res_var:    instr.res_var,
                                 auto_var:   instr.auto_var if instr.auto_var?,
@@ -299,13 +299,13 @@ BasicInstr rewrite_exprs(BasicInstr instr, (AnyTypeExpr -> AnyTypeExpr) rewrite,
   cleanup_table()           = instr,
   get_table_iter()          = get_table_iter(instr.it_var, instr.table, (apply(a, cast_int32_var(rewrite($))) : a <- instr.args)),
   get_column_iter()         = get_column_iter(instr.it_var, instr.column),
-  queue_deletes()           = queue_deletes(instr.table_var, (apply(a, cast_int32_var(rewrite($))) : a <- instr.args), instr.symmetric),
+  queue_deletes()           = queue_deletes(instr.table_var, instr.table, (apply(a, cast_int32_var(rewrite($))) : a <- instr.args), instr.symmetric),
   lookup_or_queue_insert_value() = lookup_or_queue_insert_value(instr.res_var, instr.store, cast_int_or_obj_expr(rewrite(instr.value))),
-  queue_insert_tuple()      = queue_insert_tuple(instr.table_var, (cast_int32_var(rewrite(v)) : v <- instr.tuple)),
+  queue_insert_tuple()      = queue_insert_tuple(instr.table_var, instr.table, (cast_int32_var(rewrite(v)) : v <- instr.tuple)),
   column_insert_deferred()  = column_insert_deferred(instr.table_var, cast_int32_var(rewrite(instr.key_surr)), rewrite(instr.value), instr.forced),
   ternary_slave_column_insert_deferred() = ternary_slave_column_insert_deferred(instr.table_var, (cast_int32_var(rewrite(v)) : v <- instr.surrs), rewrite(instr.value), instr.forced),
   immediate_insert_or_add_ref() = immediate_insert_or_add_ref(instr.res_var, instr.store, cast_int_or_obj_expr(rewrite(instr.value))),
-  immediate_insert_tuple()  = immediate_insert_tuple(instr.table_var, (cast_int32_var(rewrite(v)) : v <- instr.tuple)),
+  immediate_insert_tuple()  = immediate_insert_tuple(instr.table_var, instr.table, (cast_int32_var(rewrite(v)) : v <- instr.tuple)),
   column_insert_immediate() = column_insert_immediate(instr.table_var, cast_int32_var(rewrite(instr.key_surr)), rewrite(instr.value));
 
 

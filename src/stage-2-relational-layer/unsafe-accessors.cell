@@ -91,6 +91,10 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context {
   }
 
 
+  AnyTable table_info(TableVar var)     = table_info(this_db_symbol, var);
+  AnyTable table_info(QualTableVar var) = table_info(var_type(var.db_var), var.table_var);
+  AnyTable table_info(CaptTableVar var) = undefined; ## IS THIS ONE EVER NEEDED?
+
   ColumnRepr column_repr(TableVar var) =
     match (tables_by_db(this_db_symbol, !)(var))
       column() c?       |

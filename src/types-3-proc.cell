@@ -164,7 +164,7 @@ type BoolNatOp      = is_symb(ObjExpr),
                       is_null(AnyNullableVar),
                       has_field(record: ObjExpr, field: SymbObj),
                       rel_obj_contains(rel: ObjExpr, args: Maybe[ObjExpr]+),
-                      table_contains(table: AnyTableVar, tuple: Maybe[Int32Var]+, symmetric: Bool);
+                      table_contains(table_var: AnyTableVar, table: AnyTable, tuple: Maybe[Int32Var]+, symmetric: Bool);
 
 type IntNatOp       = get_int_val(ObjExpr),
                       minus(IntExpr),
@@ -186,7 +186,7 @@ type IntNatOp       = get_int_val(ObjExpr),
 
 type Int32NatOp     = bool_to_bit(BoolExpr),
                       get_size(ObjExpr),
-                      get_count(table: AnyTableVar, args: Maybe[Int32Var]+, symmetric: Bool),
+                      get_count(table_var: AnyTableVar, table: AnyTable, args: Maybe[Int32Var]+, symmetric: Bool),
                       table_lookup(table: AnyTableVar, args: Maybe[Int32Var]+, symmetric: Bool),
                       cast_int32(IntExpr),
                       add32(Int32Expr, Int32Expr),
@@ -368,7 +368,7 @@ type BasicInstr     = init_stream(StreamVar),
                       cleanup_db(db_var: AnyDBVar, type: DBSymbol),
                       send_msg(db_var: AnyDBVar, type: DBSymbol, msg: AtomicExpr, is_root: Bool, res_var: BoolVar?),
                       try_update(type: DBSymbol, update_id: UpdateId, args: AtomicExpr*),
-                      set_state(res_var: BoolVar, db_var: LocDBVar, dependees: LocDBVar*, state: AtomicExpr, type: DBSymbol),
+                      set_state(res_var: BoolVar, db_var: LocDBVar, state: AtomicExpr, type: DBSymbol),
 
                       invoke_auto_method(
                         res_var:    WriteObjVar,
@@ -394,15 +394,15 @@ type BasicInstr     = init_stream(StreamVar),
 
                       get_table_iter(it_var: <TableItVar, SlaveColumnItVar>, table: AnyTableVar, args: Maybe[Int32Var]+),
                       get_column_iter(it_var: ColumnItVar, column: AnyTableVar),
-                      queue_deletes(table_var: TableVar, args: Maybe[Int32Var]+, symmetric: Bool),
+                      queue_deletes(table_var: TableVar, table: AnySurrTable, args: Maybe[Int32Var]+, symmetric: Bool),
                       lookup_or_queue_insert_value(res_var: Int32Var, store: ValueStoreId, value: <AtomicExpr, IntExpr>),
-                      queue_insert_tuple(table_var: TableVar, tuple: Int32Var+),
+                      queue_insert_tuple(table_var: TableVar, table: AnySurrTable, tuple: Int32Var+),
 
                       column_insert_deferred(table_var: TableVar, key_surr: Int32Var, value: AnyTypeExpr, forced: Bool),
-                      ternary_slave_column_insert_deferred(table_var: TableVar, surrs: (Int32Var, Int32Var), value: AnyTypeExpr, forced: Bool),
+                      ternary_slave_column_insert_deferred(table_var: TableVar, surrs: (Int32Var, Int32Var), value: AnyTypeExpr, forced: Bool), ## WHY DOES THIS STILL EXIST?
 
                       immediate_insert_or_add_ref(res_var: Int32Var, store: ValueStoreId, value: <AtomicExpr, IntExpr>),
-                      immediate_insert_tuple(table_var: TableVar, tuple: Int32Var+),
+                      immediate_insert_tuple(table_var: TableVar, table: AnySurrTable, tuple: Int32Var+),
                       column_insert_immediate(table_var: TableVar, key_surr: Int32Var, value: AnyTypeExpr);
 
 type JumpInstr      = break_loop,
@@ -524,7 +524,8 @@ type SlaveColumn    = slave_column(
                         col_types:    (NeType, NeType, NeType)
                       );
 
-type AnyTable       = Table, Column, MasterBinTable, SlaveTernTable, SlaveColumn;
+type AnySurrTable   = Table, MasterBinTable, SlaveTernTable;
+type AnyTable       = AnySurrTable, Column, SlaveColumn;
 
 type ForeignKeyType = unary_unary, unary_binary(<0..1>), unary_ternary(<0..2>),
                       binary_unary(<0..1>), ternary_unary(<0..2>),

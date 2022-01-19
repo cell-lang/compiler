@@ -23,6 +23,10 @@ type Opt[T]         = (), (T);
 
 ////////////////////////////////////////////////////////////////////////////////
 
+String append_if_nonempty(String str1, String str2) = if str1 != "" and str2 != "" then str1 & str2 else "";
+
+////////////////////////////////////////////////////////////////////////////////
+
 Bool intersect([T]* sets) {
   for s1 @ i1 <- sets {
     for i2 = i1+1 .. |sets| {
@@ -171,7 +175,9 @@ T+        nonempty(T* seq)            = if seq != () then seq else undefined;
   return new_map;
 }
 
-[A -> B] drop([A -> B] map, A key) = [k -> v : k v <- map, k != key];
+## RESTORE THE FIRST VERSION ONCE _drop_() HAS BEEN IMPLEMENTED
+// [K -> V] drop([K -> V] map, K key) = _drop_(map, key);
+[K -> V] drop([K -> V] map, K key) = if map(key, _) then [k -> v : k v <- map, k != key] else map;
 
 ////////////////////////////////////////////////////////////////////////////////
 

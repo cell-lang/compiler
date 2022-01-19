@@ -68,15 +68,15 @@ Bool may_break(Instr+ loop_body) = in(breaks_loop, code_outcomes(loop_body));
 }
 
 
-[ValueStoreId] updated_value_stores(CompiledUpdate update) {
-  return search_instrs(update.body, updated_value_stores);
+[ValueStoreId] value_stores_with_insertions(CompiledUpdate update) {
+  return search_instrs(update.body, value_stores_with_insertions);
 
-  [ValueStoreId] updated_value_stores(Instr instr) =
+  [ValueStoreId] value_stores_with_insertions(Instr instr) =
     init_value_store()              |
     cleanup_value_store()           |
     immediate_insert_or_add_ref()   = undefined,
     lookup_or_queue_insert_value()  = [instr.store],
-    _                               = search_any_nested(instr, updated_value_stores, []);
+    _                               = search_any_nested(instr, value_stores_with_insertions, []);
 }
 
 
@@ -146,8 +146,8 @@ implicit block : StaticBlock {
   }
 
 
-  [UpdateId, ValueStoreId] updated_value_stores {
-    directly_touched = [id -> updated_value_stores(u) : id u <- block.updates];
+  [UpdateId, ValueStoreId] value_stores_with_insertions {
+    directly_touched = [id -> value_stores_with_insertions(u) : id u <- block.updates];
     deep_call_map = call_graph_transitive_closure;
     indirectly_touched = [s, v : s t <- deep_call_map, v <- directly_touched(t)];
     return [u, s : u ss <- directly_touched, s <- ss | s <- indirectly_touched(u, ?)];

@@ -131,6 +131,7 @@ implicit program           : Program,
 
 
   (Instr*, ObjExpr, VarGen) rel_var_size_expr_opt_eval_info(AnyRelVar rel_var, Maybe[Expr]+ args, VarGen init_var_gen) {
+    ## THIS SHOULD BE USING int64, NOT int32
     bound_args_idxs = (i : a @ i <- args, a != nothing);
     free_args_idxs = (i : a @ i <- args, a == nothing);
     arg_idx_bound_arg_idx = [i -> j : i @ j <- bound_args_idxs];
@@ -153,7 +154,7 @@ implicit program           : Program,
 
     code = (eval_code | set_ivar32(res_var, 0));
     for t @ i <- isort(candidate_tables) {
-      count_expr = get_count(substitute(t), surr_args, symmetric);
+      count_expr = get_count(substitute(t), table_info(t), surr_args, symmetric);
       count_expr = add32(res_var, count_expr) if i > 0;
       table_code = (set_ivar32(res_var, count_expr));
       for e @ j <- reverse(args_aliases) {
@@ -204,6 +205,7 @@ implicit program           : Program,
     code = (eval_code | set_bvar(res_var, false));
     for tv @ i <- isort(candidate_tables) {
       subst_table_var = substitute(tv);
+      target_table_info = table_info(tv);
       if is_ternary_slave_column(rel_var) {
         assert surr_args(2) == nothing;
         master_table = substitute(master_table(tv));
@@ -215,9 +217,9 @@ implicit program           : Program,
           if arg_1 != nothing {
             table_code = (
               branch(
-                table_contains(master_table, master_args, symmetric),
+                table_contains(master_table, table_info(master_table), master_args, symmetric),
                 ( set_ivar32(assoc_surr_var, get_assoc_surr(master_table, (value(arg_0), value(arg_1)))),
-                  set_bvar(res_var, table_contains(subst_table_var, (just(assoc_surr_var), nothing), false))
+                  set_bvar(res_var, table_contains(subst_table_var, target_table_info, (just(assoc_surr_var), nothing), false))
                 ),
                 (set_bvar(res_var, false))
               )
@@ -232,7 +234,7 @@ implicit program           : Program,
                 set_ivar32(unknown_arg_surr_var, get_unknown_arg(master_it_var, 0)),
                 set_ivar32(assoc_surr_var, get_assoc_surr(master_table, (value(arg_0), unknown_arg_surr_var))),
                 do_if(
-                  table_contains(subst_table_var, (just(assoc_surr_var), nothing), false),
+                  table_contains(subst_table_var, target_table_info, (just(assoc_surr_var), nothing), false),
                   (set_bvar(res_var, true), break_loop)
                 ),
                 move_forward(master_it_var)
@@ -249,7 +251,7 @@ implicit program           : Program,
               set_ivar32(unknown_arg_surr_var, get_unknown_arg(master_it_var, 0)),
               set_ivar32(assoc_surr_var, get_assoc_surr(master_table, (unknown_arg_surr_var, value_unsafe(arg_1)))),
               do_if(
-                table_contains(subst_table_var, (just(assoc_surr_var), nothing), false),
+                table_contains(subst_table_var, target_table_info, (just(assoc_surr_var), nothing), false),
                 (set_bvar(res_var, true), break_loop)
               ),
               move_forward(master_it_var)
@@ -258,7 +260,7 @@ implicit program           : Program,
         }
       }
       else
-        table_code = (set_bvar(res_var, table_contains(subst_table_var, surr_args, symmetric)));
+        table_code = (set_bvar(res_var, table_contains(subst_table_var, target_table_info, surr_args, symmetric)));
 
       for e @ j <- reverse(args_aliases) {
         idx = rat(bound_args_idxs, j);

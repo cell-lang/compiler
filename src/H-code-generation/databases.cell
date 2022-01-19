@@ -156,15 +156,18 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 
     if |tables| == 1 {
       table_var = only(tables);
+      table_info = table_info(rel_auto_id, table_var);
+      fail if not table_info :: AnySurrTable;
+
       stores_ids = (table_col_store_id(rel_auto_id, table_var, i) : i < arity);
       stores_types = (value_store_type(rel_auto_id, id) : id <- stores_ids);
       store_args = (value_store_encoded_expr(stores_types(i), args_vars(i)) : i < arity);
 
       store_inserts = (immediate_insert_or_add_ref(surr_vars(i), stores_ids(i), store_args(i)) : i < arity);
-      table_insert = immediate_insert_tuple(table_var, nonempty(take(surr_vars, arity)));
+      table_insert = immediate_insert_tuple(table_var, table_info, nonempty(take(surr_vars, arity)));
       if arity == 2 {
         symmetric = symmetric(rel_auto_id, rel_var);
-        guard_expr = neg(table_contains(table_var, (just(surr_vars(i)) : i < arity), symmetric));
+        guard_expr = neg(table_contains(table_var, table_info, (just(surr_vars(i)) : i < arity), symmetric));
         table_insert = do_if(guard_expr, table_insert);
       }
       core_loop_code = (store_inserts | table_insert);
@@ -176,6 +179,9 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
       disp_args = (args_vars(i) : i <- disp_args_idxs);
 
       cases = [{
+        table_info = table_info(rel_auto_id, tv);
+        fail if not table_info :: AnySurrTable;
+
         stores_ids = (table_col_store_id(rel_auto_id, tv, i) : i < arity);
         stores_types = (value_store_type(rel_auto_id, id) : id <- stores_ids);
         store_args = (value_store_encoded_expr(stores_types(i), args_vars(i)) : i < arity);
@@ -183,10 +189,10 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
         store_inserts = (
           immediate_insert_or_add_ref(surr_vars(i), stores_ids(i), store_args(i)) : i < arity
         );
-        table_insert = immediate_insert_tuple(tv, nonempty(take(surr_vars, arity)));
+        table_insert = immediate_insert_tuple(tv, table_info, nonempty(take(surr_vars, arity)));
         if arity == 2 {
           symmetric = symmetric(rel_auto_id, rel_var);
-          guard_expr = neg(table_contains(tv, (just(surr_vars(i)) : i < arity), symmetric));
+          guard_expr = neg(table_contains(tv, table_info, (just(surr_vars(i)) : i < arity), symmetric));
           table_insert = do_if(guard_expr, table_insert);
         }
         case_code = (store_inserts | table_insert, exit_block);
@@ -234,6 +240,9 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 
     Instr+ table_var_code(DBSymbol rel_auto_id, TableVar table_var, LocVar+ args_vars, Int32Var+ surr_vars, Bool ordered) {
       master_table = master_table(rel_auto_id, table_var);
+      master_table_type = table_info(rel_auto_id, master_table);
+      fail if not master_table_type :: MasterBinTable;
+
       store_id_0 = table_col_store_id(rel_auto_id, table_var, 0);
       store_id_1 = table_col_store_id(rel_auto_id, table_var, 1);
       store_type_0 = value_store_type(rel_auto_id, store_id_0);
@@ -247,8 +256,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
         immediate_insert_or_add_ref(surr_vars(0), store_id_0, store_arg_0),
         immediate_insert_or_add_ref(surr_vars(1), store_id_1, store_arg_1),
         do_if_not(
-          table_contains(master_table, (just(v) : v <- actual_surr_vars), false),
-          immediate_insert_tuple(master_table, actual_surr_vars)
+          table_contains(master_table, master_table_type, (just(v) : v <- actual_surr_vars), false),
+          immediate_insert_tuple(master_table, master_table_type, actual_surr_vars)
         ) if not ordered,
         set_ivar32(idx_var, get_assoc_surr(master_table, actual_surr_vars)),
         column_insert_immediate(table_var, idx_var, low_level_expr(col_repr, args_vars(2)))
@@ -420,8 +429,10 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 
       if foreign_keys != [] {
         conds = ({
+          target_table_info = table_info(rel_auto_id, fk.target);
+
           if fk.type == :binary_ternary and is_ternary_slave_column(rel_auto_id, logical_rel_var(original_rel_var(fk.target)))
-            return table_contains(fk.target, (just(assoc_surr_var), nothing), false);
+            return table_contains(fk.target, target_table_info, (just(assoc_surr_var), nothing), false);
 
           tgt_is_sym, args_sets = match (fk.type)
             unary_unary             = (false, ((just(0)))),
@@ -440,7 +451,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
             sym_binary_sym_ternary  = (true,  ((just(0), just(1), nothing))),
             sym_ternary_sym_binary  = (true,  ((just(0), just(1))));
           return and(
-            (table_contains(fk.target, (apply(a, surr_vars($)) : a <- as), tgt_is_sym) : as <- args_sets)
+            (table_contains(fk.target, target_table_info, (apply(a, surr_vars($)) : a <- as), tgt_is_sym) : as <- args_sets)
           );
         } : fk <- isort(foreign_keys));
 

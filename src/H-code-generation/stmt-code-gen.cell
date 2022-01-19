@@ -176,7 +176,7 @@ implicit program           : Program,
           key_arg_surr = value_unsafe(args_surrs(0));
           key_arg_type = value_unsafe(args_types(0));
 
-          has_key_check_expr = table_contains(table_var, (just(key_arg_surr), nothing), false);
+          has_key_check_expr = table_contains(table_var, table_info(table_var), (just(key_arg_surr), nothing), false);
           lookup_expr = column_lookup(table_var, key_arg_surr, column_repr(table_var));
           contains_tuple_check_expr = and_then((
             neg(is_eq(key_arg_surr, -1)),
@@ -189,7 +189,7 @@ implicit program           : Program,
             ( set_ivar32(key_arg_surr, value_to_surr(key_store_id, value_store_encoded_expr(key_store_type, key_arg_alias))),
               do_if(
                 contains_tuple_check_expr,
-                queue_deletes(table_var, (args_surrs(0), nothing), symmetric)
+                queue_deletes(table_var, table_info(table_var), (args_surrs(0), nothing), symmetric)
               )
             )
           );
@@ -197,7 +197,6 @@ implicit program           : Program,
           return code;
         }
       }
-
 
       if is_ternary_slave_column(logical_rel_var(original_rel_var(table_var))) {
         assert not symmetric;
@@ -228,10 +227,10 @@ implicit program           : Program,
                       do_if(
                         and_then((
                           neg(is_eq(assoc_surr_var, -1)),
-                          table_contains(table_var, (just(assoc_surr_var), nothing), false),
+                          table_contains(table_var, table_info(table_var), (just(assoc_surr_var), nothing), false),
                           is_eq(arg2, column_lookup(table_var, assoc_surr_var, column_repr(table_var)))
                         )),
-                        queue_deletes(table_var, (args_surrs(0), args_surrs(1), nothing), symmetric)
+                        queue_deletes(table_var, table_info(table_var), (args_surrs(0), args_surrs(1), nothing), symmetric)
                       )
                     )
                   )
@@ -244,8 +243,7 @@ implicit program           : Program,
         }
       }
 
-
-      code = (queue_deletes(table_var, nonempty(args_surrs), symmetric));
+      code = (queue_deletes(table_var, table_info(table_var), nonempty(args_surrs), symmetric));
       for a @ ri <- reverse(args_aliases) {
         if a != nothing {
           i = nat(|args_aliases| - ri - 1);
@@ -295,7 +293,7 @@ implicit program           : Program,
         return lookup_or_queue_insert_value(surr_var, store_id, value_store_encoded_expr(store_type, e));
       } : e @ i <- args_aliases);
 
-      insertion_code = (queue_insert_tuple(table_var, surr_vars));
+      insertion_code = (queue_insert_tuple(table_var, table_info(table_var), surr_vars));
       code = args_eval_code & pre_insert_code & insertion_code;
 
       return (code, just(surrogates), [], init_var_gen);
@@ -312,7 +310,7 @@ implicit program           : Program,
         store_type = value_store_type(this_db_symbol, store_id);
         return lookup_or_queue_insert_value(surr_vars(i), store_id, value_store_encoded_expr(store_type, e));
       } : e @ i <- args_aliases);
-      code = (code | queue_insert_tuple(tv, surr_vars), exit_block);
+      code = (code | queue_insert_tuple(tv, table_info(tv), surr_vars), exit_block);
       return (types, code);
     } : tv <- candidate_tables];
 
@@ -497,8 +495,8 @@ implicit program           : Program,
       } : e @ i <- args_aliases);
 
       insertion_code = (
-        (queue_deletes(table_var, as, symmetric) : as <- deletes_args) |
-        queue_insert_tuple(table_var, surr_vars)
+        (queue_deletes(table_var, table_info(table_var), as, symmetric) : as <- deletes_args) |
+        queue_insert_tuple(table_var, table_info(table_var), surr_vars)
       );
       code = args_eval_code & pre_insert_code & insertion_code;
 
@@ -516,8 +514,8 @@ implicit program           : Program,
         store_type = value_store_type(this_db_symbol, store_id);
         return lookup_or_queue_insert_value(surr_vars(i), store_id, value_store_encoded_expr(store_type, e));
       } : e @ i <- args_aliases);
-      code = code & (queue_deletes(tv, as, symmetric) : as <- deletes_args);
-      code = (code | queue_insert_tuple(tv, surr_vars), exit_block);
+      code = code & (queue_deletes(tv, table_info(tv), as, symmetric) : as <- deletes_args);
+      code = (code | queue_insert_tuple(tv, table_info(tv), surr_vars), exit_block);
       return (types, code);
     } : tv <- candidate_tables];
 
@@ -539,6 +537,8 @@ implicit program           : Program,
 
   StmtCompInfo read_state_ctrl_stmt_opt_code(StdVar res_var, LocDBVar db_var, [EnvVar -> Type] env, VarGen var_gen) {
     code = (copy_state(res_var, db_var, var_type(db_var)));
+    ## BUG BUG BUG: res_var HAS TO BE REMOVED FROM surrogates
+    ## THIS BUG IS PROBABLY REPEATED ELSEWHERE
     return (code, just(surrogates), [], var_gen);
   }
 
@@ -546,7 +546,7 @@ implicit program           : Program,
   StmtCompInfo restore_state_ctrl_stmt_opt_code(StdVar res_var, LocDBVar db_var, Expr state, Maybe[Any] stmt_loc, [EnvVar -> Type] env, VarGen init_var_gen) {
     code, surr, _ = opt_eval_code(state, env, init_var_gen);
     res_bvar = low_level_bvar(res_var);
-    code = (code | set_state(res_bvar, db_var, dependees(db_var), surr, var_type(db_var)));
+    code = (code | set_state(res_bvar, db_var, surr, var_type(db_var)));
     surrs = update(surrogates, res_var, bool_obj(res_bvar));
     return (code, just(surrs), [], init_var_gen);
   }
@@ -724,7 +724,7 @@ implicit program           : Program,
     call_instr = if stmt.res_var?
       then call_proc(stmt.res_var, stmt.proc_name, args_surrs, (), rel_auto_args, stmt.react_auto_args)
       else call_proc(stmt.proc_name, args_surrs, (), rel_auto_args, stmt.react_auto_args);
-    surrs = if stmt.res_var? then _drop_(surrogates, stmt.res_var) else surrogates;
+    surrs = if stmt.res_var? then drop(surrogates, stmt.res_var) else surrogates;
     return ((code | call_instr), just(surrs), [], var_gen);
   }
 
@@ -1197,7 +1197,7 @@ implicit program           : Program,
             do_if_not(
               is_eq(key_arg_surr, -1),
               do_if(
-                table_contains(tv, (just(key_arg_surr), nothing), false),
+                table_contains(tv, table_info(tv), (just(key_arg_surr), nothing), false),
                 ( set_any_var(
                     value(low_level_value_var),
                     column_lookup(substitute(tv), key_arg_surr, column_repr(sign(1)))
