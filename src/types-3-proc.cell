@@ -190,7 +190,7 @@ type Int32NatOp     = bool_to_bit(BoolExpr),
                       table_lookup(table: AnyTableVar, args: Maybe[Int32Var]+, symmetric: Bool),
                       cast_int32(IntExpr),
                       add32(Int32Expr, Int32Expr),
-                      value_to_surr(store: AnyValueStoreId, value: <AtomicExpr, IntExpr>),
+                      value_to_surr(store: AnyValueStoreId, store_type: ValueStoreType, value: <AtomicExpr, IntExpr>),
                       get_unknown_arg(iter: AnyTableItVar, arg: <0..2>),
                       get_arg_by_assoc_surr(table: AnyTableVar, arg: <0..1>, surr: Int32Var),
                       get_assoc_surr(table: AnyTableVar, args: (Int32Var, Int32Var));
@@ -219,7 +219,7 @@ type ObjNatOp       = at(seq: ObjExpr, idx: IntExpr),
                       get_curr_obj(<SetItVar, SeqItVar>),
                       get_curr_arg(var: BinRelItVar,  arg: <0..1>),
                       get_curr_arg(var: TernRelItVar, arg: <0..2>),
-                      surr_to_value(store: AnyValueStoreId, surrogate: Int32Var),
+                      surr_to_value(store: AnyValueStoreId, store_type: ValueStoreType, surrogate: Int32Var),
                       column_lookup(var: AnyTableVar, key: Int32Var, repr: ColumnRepr),
                       get_value(var: ColumnItVar), ## WHAT IS THIS FOR? IT'S NOT EVEN USED...
                       rand_elem(ObjExpr); // Non-deterministic (unless applied to a singleton)
@@ -395,13 +395,13 @@ type BasicInstr     = init_stream(StreamVar),
                       get_table_iter(it_var: <TableItVar, SlaveColumnItVar>, table: AnyTableVar, args: Maybe[Int32Var]+),
                       get_column_iter(it_var: ColumnItVar, column: AnyTableVar),
                       queue_deletes(table_var: TableVar, table: AnySurrTable, args: Maybe[Int32Var]+, symmetric: Bool),
-                      lookup_or_queue_insert_value(res_var: Int32Var, store: ValueStoreId, value: <AtomicExpr, IntExpr>),
+                      lookup_or_queue_insert_value(res_var: Int32Var, store: ValueStoreId, store_type: ValueStoreType, value: <AtomicExpr, IntExpr>),
                       queue_insert_tuple(table_var: TableVar, table: AnySurrTable, tuple: Int32Var+),
 
                       column_insert_deferred(table_var: TableVar, key_surr: Int32Var, value: AnyTypeExpr, forced: Bool),
                       ternary_slave_column_insert_deferred(table_var: TableVar, surrs: (Int32Var, Int32Var), value: AnyTypeExpr, forced: Bool), ## WHY DOES THIS STILL EXIST?
 
-                      immediate_insert_or_add_ref(res_var: Int32Var, store: ValueStoreId, value: <AtomicExpr, IntExpr>),
+                      immediate_insert_or_add_ref(res_var: Int32Var, store: ValueStoreId, store_type: ValueStoreType, value: <AtomicExpr, IntExpr>),
                       immediate_insert_tuple(table_var: TableVar, table: AnySurrTable, tuple: Int32Var+),
                       column_insert_immediate(table_var: TableVar, key_surr: Int32Var, value: AnyTypeExpr);
 

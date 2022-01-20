@@ -103,7 +103,7 @@ type PropAtomicExpr   = StdVar, LocVar,
 
 type PropExpr         = PropAtomicExpr, mk_tagged_obj(tag: SymbObj, obj: PropAtomicExpr);
 
-type PropInt32Expr      = value_to_surr(store: AnyValueStoreId, value: <PropAtomicExpr, PropIntExpr>);
+type PropInt32Expr      = value_to_surr(store: AnyValueStoreId, store_type: ValueStoreType, value: <PropAtomicExpr, PropIntExpr>);
 type PropInt32QuasiExpr = value_to_ex_surr(store: ValueStoreId, value: <PropExpr, PropIntExpr>);
 type AnyPropInt32Expr   = PropInt32Expr, PropInt32QuasiExpr;
 
@@ -283,18 +283,18 @@ NodeInfo rewrite_node(NodeInfo node, PropInfo info) =
 <BasicInstr, JumpInstr> rewrite_instr(<BasicInstr, JumpInstr> instr, PropInfo info) {
   return match (instr)
     set_ivar32()                    = rewrite_set_ivar32(instr, instr.var, instr.value, info),
-    lookup_or_queue_insert_value()  = rewrite_lookup_or_queue_insert_value(instr, instr.res_var, instr.store, instr.value, info),
+    lookup_or_queue_insert_value()  = rewrite_lookup_or_queue_insert_value(instr, instr.res_var, instr.store, instr.store_type, instr.value, info),
     _                               = instr;
 
 
-  BasicInstr rewrite_lookup_or_queue_insert_value(BasicInstr instr, Int32Var res_var, ValueStoreId store, <AtomicExpr, IntExpr> value, PropInfo info) {
+  BasicInstr rewrite_lookup_or_queue_insert_value(BasicInstr instr, Int32Var res_var, ValueStoreId store, ValueStoreType store_type, <AtomicExpr, IntExpr> value, PropInfo info) {
     value_copy = value; ## BAD BAD BAD: THIS IS A HACK TO WORK AROUND THE LIMITATIONS OF THE TYPE CHECKER
     return :no_op if value_copy :: <PropExpr, PropIntExpr> and is_ex_surr_of(res_var, store, value_copy, info);
 
     rw_value = rewrite_expr(value, info);
     return instr if rw_value == value;
 
-    rw_instr = lookup_or_queue_insert_value(res_var, store, rw_value);
+    rw_instr = lookup_or_queue_insert_value(res_var, store, store_type, rw_value);
     return match (rw_value)
       surr_to_int_value()   = if rw_value.store == store then set_ivar32(res_var, rw_value.surrogate) else rw_instr,
       _                     = rw_instr;

@@ -167,7 +167,7 @@ implicit program           : Program,
         assert |candidate_tables| > 1 or value_store_guard(store_type, e, arg_type) == true;
         table_code = opt_do_if(
           value_store_guard(store_type, e, arg_type),
-          ( set_ivar32(surr_var, value_to_surr(store_id, value_store_encoded_expr(store_type, e))),
+          ( set_ivar32(surr_var, value_to_surr(store_id, store_type, value_store_encoded_expr(store_type, e))),
             do_if_not(are_eq(int_obj(surr_var), int_obj(-1)), table_code)
           )
         );
@@ -271,7 +271,7 @@ implicit program           : Program,
         surr_var = rat(surr_vars, j);
         table_code = opt_do_if(
           value_store_guard(store_type, e, arg_type),
-          ( set_ivar32(surr_var, value_to_surr(store_id, value_store_encoded_expr(store_type, e))),
+          ( set_ivar32(surr_var, value_to_surr(store_id, store_type, value_store_encoded_expr(store_type, e))),
             do_if_not(are_eq(int_obj(surr_var), int_obj(-1)), table_code)
           )
         );
@@ -353,7 +353,7 @@ implicit program           : Program,
 
         code = opt_do_if(
           value_store_guard(store_type, arg_alias, arg_type),
-          ( set_ivar32(surr_var, value_to_surr(store_id, value_store_encoded_expr(store_type, arg_alias))),
+          ( set_ivar32(surr_var, value_to_surr(store_id, store_type, value_store_encoded_expr(store_type, arg_alias))),
             do_if_not(is_eq(surr_var, -1), code)
           )
         );
@@ -404,7 +404,7 @@ implicit program           : Program,
 
       code = (
         arg_eval_code |
-        set_ivar32(arg_surr_var, value_to_surr(arg_store_id, value_store_encoded_expr(arg_store_type, arg_alias))),
+        set_ivar32(arg_surr_var, value_to_surr(arg_store_id, arg_store_type, value_store_encoded_expr(arg_store_type, arg_alias))),
         check(neg(is_eq(arg_surr_var, -1))),
         set_any_var(res_var, column_lookup(substitute(table), arg_surr_var, col_repr))
       );
@@ -423,7 +423,7 @@ implicit program           : Program,
         enc_expr = value_store_encoded_expr(arg_store_type, arg_alias);
 
         code = (
-          set_ivar32(arg_surr_var, value_to_surr(arg_store_id, enc_expr)),
+          set_ivar32(arg_surr_var, value_to_surr(arg_store_id, arg_store_type, enc_expr)),
           check(neg(is_eq(arg_surr_var, -1))),
           set_any_var(res_var, column_lookup(substitute(tv), arg_surr_var, col_repr))
         );
@@ -491,9 +491,9 @@ implicit program           : Program,
       enc_expr_1 = value_store_encoded_expr(arg_1_store_type, args_aliases(1));
 
       code = (
-        set_ivar32(arg_0_surr_var, value_to_surr(arg_0_store_id, enc_expr_0)),
+        set_ivar32(arg_0_surr_var, value_to_surr(arg_0_store_id, arg_0_store_type, enc_expr_0)),
         check(neg(is_eq(arg_0_surr_var, -1))),
-        set_ivar32(arg_1_surr_var, value_to_surr(arg_1_store_id, enc_expr_1)),
+        set_ivar32(arg_1_surr_var, value_to_surr(arg_1_store_id, arg_1_store_type, enc_expr_1)),
         check(neg(is_eq(arg_1_surr_var, -1))),
         set_ivar32(assoc_surr_var, get_assoc_surr(substitute(master_table), (arg_0_surr_var, arg_1_surr_var))),
         check(neg(is_eq(assoc_surr_var, -1))),

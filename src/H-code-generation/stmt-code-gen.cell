@@ -186,7 +186,7 @@ implicit program           : Program,
 
           code = opt_do_if(
             value_store_guard(key_store_type, key_arg_alias, key_arg_type),
-            ( set_ivar32(key_arg_surr, value_to_surr(key_store_id, value_store_encoded_expr(key_store_type, key_arg_alias))),
+            ( set_ivar32(key_arg_surr, value_to_surr(key_store_id, key_store_type, value_store_encoded_expr(key_store_type, key_arg_alias))),
               do_if(
                 contains_tuple_check_expr,
                 queue_deletes(table_var, table_info(table_var), (args_surrs(0), nothing), symmetric)
@@ -217,10 +217,10 @@ implicit program           : Program,
 
           code = opt_do_if(
             and((value_store_guard(stores_types(i), value_unsafe(args_aliases(i)), value_unsafe(args_types(i))) : i <= 1)),
-            ( set_ivar32(arg_0_surr, value_to_surr(store_ids(0), value_store_encoded_expr(stores_types(0), arg0))),
+            ( set_ivar32(arg_0_surr, value_to_surr(store_ids(0), stores_types(0), value_store_encoded_expr(stores_types(0), arg0))),
               do_if_not(
                 is_eq(arg_0_surr, -1),
-                ( set_ivar32(arg_1_surr, value_to_surr(store_ids(1), value_store_encoded_expr(stores_types(1), arg1))),
+                ( set_ivar32(arg_1_surr, value_to_surr(store_ids(1), stores_types(1), value_store_encoded_expr(stores_types(1), arg1))),
                   do_if_not(
                     is_eq(arg_1_surr, -1),
                     ( set_ivar32(assoc_surr_var, get_assoc_surr(master_table, (arg_0_surr, arg_1_surr))),
@@ -254,7 +254,7 @@ implicit program           : Program,
           arg_surr = value_unsafe(args_surrs(i));
           code = opt_do_if(
             value_store_guard(store_type, arg_alias, arg_type),
-            ( set_ivar32(arg_surr, value_to_surr(store_id, value_store_encoded_expr(store_type, arg_alias))),
+            ( set_ivar32(arg_surr, value_to_surr(store_id, store_type, value_store_encoded_expr(store_type, arg_alias))),
               do_if_not(is_eq(arg_surr, -1), code)
             )
           );
@@ -290,7 +290,7 @@ implicit program           : Program,
         store_id = table_col_store_id(table_var, i);
         store_type = value_store_type(this_db_symbol, store_id);
         surr_var = surr_vars(i);
-        return lookup_or_queue_insert_value(surr_var, store_id, value_store_encoded_expr(store_type, e));
+        return lookup_or_queue_insert_value(surr_var, store_id, store_type, value_store_encoded_expr(store_type, e));
       } : e @ i <- args_aliases);
 
       insertion_code = (queue_insert_tuple(table_var, table_info(table_var), surr_vars));
@@ -308,7 +308,7 @@ implicit program           : Program,
       code = ({
         store_id = table_col_store_id(tv, i);
         store_type = value_store_type(this_db_symbol, store_id);
-        return lookup_or_queue_insert_value(surr_vars(i), store_id, value_store_encoded_expr(store_type, e));
+        return lookup_or_queue_insert_value(surr_vars(i), store_id, store_type, value_store_encoded_expr(store_type, e));
       } : e @ i <- args_aliases);
       code = (code | queue_insert_tuple(tv, table_info(tv), surr_vars), exit_block);
       return (types, code);
@@ -353,7 +353,7 @@ implicit program           : Program,
       col_repr = column_repr(table_signature(table_var)(1));
 
       update_code = (
-        lookup_or_queue_insert_value(surr_var_0, store_id, enc_expr),
+        lookup_or_queue_insert_value(surr_var_0, store_id, store_type, enc_expr),
         column_insert_deferred(table_var, surr_var_0, low_level_expr(col_repr, arg_1_alias), forced)
       );
 
@@ -372,7 +372,7 @@ implicit program           : Program,
         col_repr = column_repr(table_signature(tv)(1));
 
         code = (
-          lookup_or_queue_insert_value(surr_var_0, store_id, enc_expr),
+          lookup_or_queue_insert_value(surr_var_0, store_id, store_type, enc_expr),
           column_insert_deferred(tv, surr_var_0, low_level_expr(col_repr, arg_1_alias), forced),
           exit_block
         );
@@ -424,8 +424,8 @@ implicit program           : Program,
       col_repr = column_repr(table_signature(table_var)(2));
 
       update_code = (
-        lookup_or_queue_insert_value(surr_var_0, store_id_0, enc_expr_0),
-        lookup_or_queue_insert_value(surr_var_1, store_id_1, enc_expr_1),
+        lookup_or_queue_insert_value(surr_var_0, store_id_0, store_type_0, enc_expr_0),
+        lookup_or_queue_insert_value(surr_var_1, store_id_1, store_type_1, enc_expr_1),
         ternary_slave_column_insert_deferred(table_var, (surr_var_0, surr_var_1), low_level_expr(col_repr, arg_2_alias), forced)
       );
 
@@ -447,8 +447,8 @@ implicit program           : Program,
         col_repr = column_repr(table_signature(tv)(2));
 
         code = (
-          lookup_or_queue_insert_value(surr_var_0, store_id_0, enc_expr_0),
-          lookup_or_queue_insert_value(surr_var_1, store_id_1, enc_expr_1),
+          lookup_or_queue_insert_value(surr_var_0, store_id_0, store_type_0, enc_expr_0),
+          lookup_or_queue_insert_value(surr_var_1, store_id_1, store_type_1, enc_expr_1),
           ternary_slave_column_insert_deferred(tv, (surr_var_0, surr_var_1), low_level_expr(col_repr, arg_2_alias), forced),
           exit_block
         );
@@ -491,7 +491,7 @@ implicit program           : Program,
         store_id = table_col_store_id(table_var, i);
         store_type = value_store_type(this_db_symbol, store_id);
         surr_var = surr_vars(i);
-        return lookup_or_queue_insert_value(surr_var, store_id, value_store_encoded_expr(store_type, e));
+        return lookup_or_queue_insert_value(surr_var, store_id, store_type, value_store_encoded_expr(store_type, e));
       } : e @ i <- args_aliases);
 
       insertion_code = (
@@ -512,7 +512,7 @@ implicit program           : Program,
       code = ({
         store_id = table_col_store_id(tv, i);
         store_type = value_store_type(this_db_symbol, store_id);
-        return lookup_or_queue_insert_value(surr_vars(i), store_id, value_store_encoded_expr(store_type, e));
+        return lookup_or_queue_insert_value(surr_vars(i), store_id, store_type, value_store_encoded_expr(store_type, e));
       } : e @ i <- args_aliases);
       code = code & (queue_deletes(tv, table_info(tv), as, symmetric) : as <- deletes_args);
       code = (code | queue_insert_tuple(tv, table_info(tv), surr_vars), exit_block);
@@ -1193,7 +1193,7 @@ implicit program           : Program,
           entry_code = entry_code & entry_code_fixes;
 
           code = (code |
-            set_ivar32(key_arg_surr, value_to_surr(store_id, value_store_encoded_expr(store_type, key_arg_alias))),
+            set_ivar32(key_arg_surr, value_to_surr(store_id, store_type, value_store_encoded_expr(store_type, key_arg_alias))),
             do_if_not(
               is_eq(key_arg_surr, -1),
               do_if(
@@ -1359,7 +1359,7 @@ implicit program           : Program,
           surr_var = rat(surr_vars, i);
           table_code = opt_do_if(
             value_store_guard(store_type, e, arg_type),
-            ( set_ivar32(surr_var, value_to_surr(store_id, value_store_encoded_expr(store_type, e))),
+            ( set_ivar32(surr_var, value_to_surr(store_id, store_type, value_store_encoded_expr(store_type, e))),
               do_if_not(is_eq(surr_var, -1), table_code)
             )
           );

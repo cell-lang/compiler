@@ -117,7 +117,7 @@ Int32Expr rewrite_nested(Int32NatOp expr, (AnyTypeExpr -> AnyTypeExpr) rewrite) 
   table_lookup()          = table_lookup(expr.table, (apply(a, cast_int32_var(rewrite($))) : a <- expr.args), expr.symmetric),
   cast_int32(e?)          = cast_int32(cast_int_expr(rewrite(e))),
   add32(e1?, e2?)         = add32(cast_int32_expr(rewrite(e1)), cast_int32_expr(rewrite(e2))),
-  value_to_surr()         = value_to_surr(expr.store, rewrite_nested(expr.value, rewrite)),
+  value_to_surr()         = value_to_surr(expr.store, expr.store_type, rewrite_nested(expr.value, rewrite)),
   get_unknown_arg()       = expr,
   get_arg_by_assoc_surr() = get_arg_by_assoc_surr(expr.table, expr.arg, cast_int32_var(rewrite(expr.surr))),
   get_assoc_surr()        = get_assoc_surr(expr.table, (cast_int32_var(rewrite(v)) : v <- expr.args));
@@ -158,7 +158,7 @@ ObjExpr rewrite_nested(ObjNatOp expr, (AnyTypeExpr -> AnyTypeExpr) rewrite) =
   get_curr_obj()        = expr,
   get_curr_arg()        = expr,
   get_curr_arg()        = expr,
-  surr_to_value()       = surr_to_value(expr.store, cast_int32_var(rewrite(expr.surrogate))),
+  surr_to_value()       = surr_to_value(expr.store, expr.store_type, cast_int32_var(rewrite(expr.surrogate))),
   column_lookup()       = column_lookup(expr.var, cast_int32_var(rewrite(expr.key)), expr.repr),
   get_value()           = expr,
   rand_elem(e?)         = rand_elem(cast_obj_expr(rewrite(e)));
@@ -300,11 +300,11 @@ BasicInstr rewrite_exprs(BasicInstr instr, (AnyTypeExpr -> AnyTypeExpr) rewrite,
   get_table_iter()          = get_table_iter(instr.it_var, instr.table, (apply(a, cast_int32_var(rewrite($))) : a <- instr.args)),
   get_column_iter()         = get_column_iter(instr.it_var, instr.column),
   queue_deletes()           = queue_deletes(instr.table_var, instr.table, (apply(a, cast_int32_var(rewrite($))) : a <- instr.args), instr.symmetric),
-  lookup_or_queue_insert_value() = lookup_or_queue_insert_value(instr.res_var, instr.store, cast_int_or_obj_expr(rewrite(instr.value))),
+  lookup_or_queue_insert_value() = lookup_or_queue_insert_value(instr.res_var, instr.store, instr.store_type, cast_int_or_obj_expr(rewrite(instr.value))),
   queue_insert_tuple()      = queue_insert_tuple(instr.table_var, instr.table, (cast_int32_var(rewrite(v)) : v <- instr.tuple)),
   column_insert_deferred()  = column_insert_deferred(instr.table_var, cast_int32_var(rewrite(instr.key_surr)), rewrite(instr.value), instr.forced),
   ternary_slave_column_insert_deferred() = ternary_slave_column_insert_deferred(instr.table_var, (cast_int32_var(rewrite(v)) : v <- instr.surrs), rewrite(instr.value), instr.forced),
-  immediate_insert_or_add_ref() = immediate_insert_or_add_ref(instr.res_var, instr.store, cast_int_or_obj_expr(rewrite(instr.value))),
+  immediate_insert_or_add_ref() = immediate_insert_or_add_ref(instr.res_var, instr.store, instr.store_type, cast_int_or_obj_expr(rewrite(instr.value))),
   immediate_insert_tuple()  = immediate_insert_tuple(instr.table_var, instr.table, (cast_int32_var(rewrite(v)) : v <- instr.tuple)),
   column_insert_immediate() = column_insert_immediate(instr.table_var, cast_int32_var(rewrite(instr.key_surr)), rewrite(instr.value));
 

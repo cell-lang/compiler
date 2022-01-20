@@ -108,7 +108,7 @@ implicit typedefs : [TypeName -> NeType] {
 
 Instr surr_to_decoded_value(WriteObjVar var, AnyValueStoreId store_id, ValueStoreType store_type, Int32Var surr) =
   match (store_type)
-    object                  = surr_to_value(var, store_id, surr),
+    object                  = surr_to_value(var, store_id, store_type, surr),
     integer                 = set_var(var, int_obj(surr_to_int_value(store_id, surr))),
     mono_tagged_integer(s?) = set_var(var, mk_tagged_obj(object(s), int_obj(surr_to_int_value(store_id, surr))));
 
@@ -122,21 +122,21 @@ Instr surr_to_decoded_value(IntVar var, AnyValueStoreId store_id, ValueStoreType
 
 Instr surr_to_decoded_value(FloatVar var, AnyValueStoreId store_id, ValueStoreType store_type, Int32Var surr) =
   match (store_type)
-    object                = set_fvar(var, float_value(surr_to_value(store_id, surr))),
+    object                = set_fvar(var, float_value(surr_to_value(store_id, store_type, surr))),
     integer               = undefined,
     mono_tagged_integer() = undefined;
 
 
 Instr surr_to_decoded_value(BoolVar var, AnyValueStoreId store_id, ValueStoreType store_type, Int32Var surr) =
   match (store_type)
-    object                = set_bvar(var, bool_value(surr_to_value(store_id, surr))),
+    object                = set_bvar(var, bool_value(surr_to_value(store_id, store_type, surr))),
     integer               = undefined,
     mono_tagged_integer() = undefined;
 
 
 Instr surr_to_decoded_value(LocOptTagRecVar var, AnyValueStoreId store_id, ValueStoreType store_type, Int32Var surr) =
   match (store_type)
-    object                = set_var(var, surr_to_value(store_id, surr)),
+    object                = set_var(var, surr_to_value(store_id, store_type, surr)),
     integer               = undefined,
     mono_tagged_integer() = undefined;
 

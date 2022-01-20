@@ -165,16 +165,16 @@ IntNatOp rand_nat(ObjExpr e)  = :rand_nat(get_int_val(e));
 IntNatOp rand_nat(IntExpr e)  = :rand_nat(e);
 IntNatOp ticks                = :ticks;
 
-Int32NatOp bool_to_bit(BoolExpr e)                                            = :bool_to_bit(e);
-Int32NatOp get_size(ObjExpr e)                                                = :get_size(e);
-Int32NatOp get_count(AnyTableVar v, AnyTable t, Maybe[Int32Var]+ as, Bool s)  = get_count(table_var: v, table: t, args: as, symmetric: s);
-Int32NatOp table_lookup(AnyTableVar v, Maybe[Int32Var]+ as, Bool s)           = table_lookup(table: v, args: as, symmetric: s);
-Int32NatOp add32(Int32Expr e1, Int32Expr e2)                                  = :add32(e1, e2);
-Int32NatOp value_to_surr(AnyValueStoreId s, <AtomicExpr, IntExpr> e)          = value_to_surr(store: s, value: e);
-Int32NatOp get_unknown_arg(TableItVar v, Nat i)                               = get_unknown_arg(iter: v, arg: if i :: <0..2> then i else undefined);
-Int32NatOp get_unknown_arg(<ColumnItVar, SlaveColumnItVar> v, Nat i)          = get_unknown_arg(iter: v, arg: if i == 0 then 0 else undefined);
-Int32NatOp get_arg_by_assoc_surr(AnyTableVar v, <0..1> a, Int32Var s)         = get_arg_by_assoc_surr(table: v, arg: a, surr: s);
-Int32NatOp get_assoc_surr(AnyTableVar v, (Int32Var, Int32Var) as)             = get_assoc_surr(table: v, args: as);
+Int32NatOp bool_to_bit(BoolExpr e)                                                      = :bool_to_bit(e);
+Int32NatOp get_size(ObjExpr e)                                                          = :get_size(e);
+Int32NatOp get_count(AnyTableVar v, AnyTable t, Maybe[Int32Var]+ as, Bool s)            = get_count(table_var: v, table: t, args: as, symmetric: s);
+Int32NatOp table_lookup(AnyTableVar v, Maybe[Int32Var]+ as, Bool s)                     = table_lookup(table: v, args: as, symmetric: s);
+Int32NatOp add32(Int32Expr e1, Int32Expr e2)                                            = :add32(e1, e2);
+Int32NatOp value_to_surr(AnyValueStoreId s, ValueStoreType t, <AtomicExpr, IntExpr> e)  = value_to_surr(store: s, store_type: t, value: e);
+Int32NatOp get_unknown_arg(TableItVar v, Nat i)                                         = get_unknown_arg(iter: v, arg: if i :: <0..2> then i else undefined);
+Int32NatOp get_unknown_arg(<ColumnItVar, SlaveColumnItVar> v, Nat i)                    = get_unknown_arg(iter: v, arg: if i == 0 then 0 else undefined);
+Int32NatOp get_arg_by_assoc_surr(AnyTableVar v, <0..1> a, Int32Var s)                   = get_arg_by_assoc_surr(table: v, arg: a, surr: s);
+Int32NatOp get_assoc_surr(AnyTableVar v, (Int32Var, Int32Var) as)                       = get_assoc_surr(table: v, args: as);
 
 <Int32Var, Int32NatOp> cast_int32(IntExpr expr) =
   upcast_int32(e?)  = e,
@@ -221,18 +221,18 @@ ObjExpr float_obj(FloatExpr expr) =
   _               = :float_obj(expr);
 
 
-ObjNatOp at(ObjExpr s, IntExpr i)                     = at(seq: s, idx: i);
-ObjNatOp array_at(ArrayVar a, Int32Var s, IntExpr i)  = array_at(array: a, size: s, idx: i);
-ObjNatOp lookup(ObjExpr r, ObjExpr k)                 = lookup(rel: r, key: k);
-ObjNatOp lookup_field(ObjExpr e, SymbObj f)           = lookup_field(record: e, field: f, repr: nothing);
-ObjNatOp get_tag(ObjExpr e)                           = :get_tag(e);
-ObjNatOp get_inner_obj(ObjExpr e)                     = :get_inner_obj(e);
-ObjNatOp get_curr_obj(<SetItVar, SeqItVar> it)        = :get_curr_obj(it);
-ObjNatOp get_curr_arg(BinRelItVar v,  Nat a)          = get_curr_arg(var: v, arg: if a :: <0..1> then a else undefined);
-ObjNatOp get_curr_arg(TernRelItVar v, Nat a)          = get_curr_arg(var: v, arg: if a :: <0..2> then a else undefined);
-ObjNatOp surr_to_value(AnyValueStoreId s, Int32Var v) = surr_to_value(store: s, surrogate: v);
-ObjNatOp column_lookup(AnyTableVar v, Int32Var k, ColumnRepr r) = column_lookup(var: v, key: k, repr: r);
-ObjNatOp rand_elem(ObjExpr s)                         = :rand_elem(s);
+ObjNatOp at(ObjExpr s, IntExpr i)                                       = at(seq: s, idx: i);
+ObjNatOp array_at(ArrayVar a, Int32Var s, IntExpr i)                    = array_at(array: a, size: s, idx: i);
+ObjNatOp lookup(ObjExpr r, ObjExpr k)                                   = lookup(rel: r, key: k);
+ObjNatOp lookup_field(ObjExpr e, SymbObj f)                             = lookup_field(record: e, field: f, repr: nothing);
+ObjNatOp get_tag(ObjExpr e)                                             = :get_tag(e);
+ObjNatOp get_inner_obj(ObjExpr e)                                       = :get_inner_obj(e);
+ObjNatOp get_curr_obj(<SetItVar, SeqItVar> it)                          = :get_curr_obj(it);
+ObjNatOp get_curr_arg(BinRelItVar v,  Nat a)                            = get_curr_arg(var: v, arg: if a :: <0..1> then a else undefined);
+ObjNatOp get_curr_arg(TernRelItVar v, Nat a)                            = get_curr_arg(var: v, arg: if a :: <0..2> then a else undefined);
+ObjNatOp surr_to_value(AnyValueStoreId s, ValueStoreType t, Int32Var v) = surr_to_value(store: s, store_type: t, surrogate: v);
+ObjNatOp column_lookup(AnyTableVar v, Int32Var k, ColumnRepr r)         = column_lookup(var: v, key: k, repr: r);
+ObjNatOp rand_elem(ObjExpr s)                                           = :rand_elem(s);
 
 ObjNatOp lookup_field(ObjExpr e, SymbObj f, Maybe[LowLevelRepr] r) {
   assert e :: OptTagRecExpr or r == nothing;
@@ -382,7 +382,7 @@ BasicInstr copy_rel(WriteObjVar ov, [+TableVar -> AnyTable] ts, [+Nat -> Nat] p)
 
 BasicInstr copy_persistent_state(WriteObjVar rv, AnyAutoVar av, AutoSymbol t) = set_var(rv, copy_persistent_state(var: av, type: t));
 
-BasicInstr surr_to_value(WriteObjVar v, AnyValueStoreId s, Int32Var sv) = set_var(v, surr_to_value(s, sv));
+BasicInstr surr_to_value(WriteObjVar v, AnyValueStoreId s, ValueStoreType t, Int32Var sv) = set_var(v, surr_to_value(s, t, sv));
 
 BasicInstr read_pending_var(WriteObjVar tv, <PendingStateVar, PendingInputVar> sv) = set_var(tv, :read_pending_var(sv));
 
@@ -580,7 +580,8 @@ BasicInstr queue_deletes(TableVar v, AnyTable t, Maybe[Int32Var]+ as, Bool s) {
   return queue_deletes(table_var: v, table: t, args: as, symmetric: s);
 }
 
-BasicInstr lookup_or_queue_insert_value(Int32Var v, ValueStoreId s, <AtomicExpr, IntExpr> e) = lookup_or_queue_insert_value(res_var: v, store: s, value: e);
+BasicInstr lookup_or_queue_insert_value(Int32Var v, ValueStoreId s, ValueStoreType t, <AtomicExpr, IntExpr> e) =
+  lookup_or_queue_insert_value(res_var: v, store: s, store_type: t, value: e);
 
 BasicInstr queue_insert_tuple(TableVar v, AnyTable t, Int32Var+ as) {
   fail if not t :: AnySurrTable;
@@ -593,7 +594,7 @@ BasicInstr column_insert_deferred(TableVar v, Int32Var k, AnyTypeExpr e, Bool f)
 BasicInstr ternary_slave_column_insert_deferred(TableVar v, (Int32Var, Int32Var) ss, AnyTypeExpr e, Bool f) =
   ternary_slave_column_insert_deferred(table_var: v, surrs: ss, value: e, forced: f);
 
-BasicInstr immediate_insert_or_add_ref(Int32Var sv, ValueStoreId s, <AtomicExpr, IntExpr> v) = immediate_insert_or_add_ref(res_var: sv, store: s, value: v);
+BasicInstr immediate_insert_or_add_ref(Int32Var sv, ValueStoreId s, ValueStoreType t, <AtomicExpr, IntExpr> v) = immediate_insert_or_add_ref(res_var: sv, store: s, store_type: t, value: v);
 BasicInstr immediate_insert_tuple(TableVar v, AnySurrTable t, Int32Var+ as) = immediate_insert_tuple(table_var: v, table: t, tuple: as);
 BasicInstr column_insert_immediate(TableVar t, Int32Var k, AnyTypeExpr v) = column_insert_immediate(table_var: t, key_surr: k, value: v);
 

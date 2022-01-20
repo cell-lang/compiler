@@ -163,7 +163,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
       stores_types = (value_store_type(rel_auto_id, id) : id <- stores_ids);
       store_args = (value_store_encoded_expr(stores_types(i), args_vars(i)) : i < arity);
 
-      store_inserts = (immediate_insert_or_add_ref(surr_vars(i), stores_ids(i), store_args(i)) : i < arity);
+      store_inserts = (immediate_insert_or_add_ref(surr_vars(i), stores_ids(i), stores_types(i), store_args(i)) : i < arity);
       table_insert = immediate_insert_tuple(table_var, table_info, nonempty(take(surr_vars, arity)));
       if arity == 2 {
         symmetric = symmetric(rel_auto_id, rel_var);
@@ -187,7 +187,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
         store_args = (value_store_encoded_expr(stores_types(i), args_vars(i)) : i < arity);
 
         store_inserts = (
-          immediate_insert_or_add_ref(surr_vars(i), stores_ids(i), store_args(i)) : i < arity
+          immediate_insert_or_add_ref(surr_vars(i), stores_ids(i), stores_types(i), store_args(i)) : i < arity
         );
         table_insert = immediate_insert_tuple(tv, table_info, nonempty(take(surr_vars, arity)));
         if arity == 2 {
@@ -253,8 +253,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
       actual_surr_vars = (surr_vars(0), surr_vars(1));
       idx_var = surr_vars(2);
       return (
-        immediate_insert_or_add_ref(surr_vars(0), store_id_0, store_arg_0),
-        immediate_insert_or_add_ref(surr_vars(1), store_id_1, store_arg_1),
+        immediate_insert_or_add_ref(surr_vars(0), store_id_0, store_type_0, store_arg_0),
+        immediate_insert_or_add_ref(surr_vars(1), store_id_1, store_type_1, store_arg_1),
         do_if_not(
           table_contains(master_table, master_table_type, (just(v) : v <- actual_surr_vars), false),
           immediate_insert_tuple(master_table, master_table_type, actual_surr_vars)
@@ -277,7 +277,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
       store_arg = value_store_encoded_expr(store_type, args_vars(0));
       col_repr = column_repr(table_signature(rel_auto_id, table_var)(1));
       core_loop_code = (
-        immediate_insert_or_add_ref(key_surr_var, store_id, store_arg),
+        immediate_insert_or_add_ref(key_surr_var, store_id, store_type, store_arg),
         column_insert_immediate(table_var, key_surr_var, low_level_expr(col_repr, args_vars(1)))
       );
     }
@@ -293,7 +293,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
         store_arg = value_store_encoded_expr(store_type, args_vars(0));
         col_repr = column_repr(table_signature(rel_auto_id, tv)(1));
         case_code = (
-          immediate_insert_or_add_ref(key_surr_var, store_id, store_arg),
+          immediate_insert_or_add_ref(key_surr_var, store_id, store_type, store_arg),
           column_insert_immediate(tv, key_surr_var, low_level_expr(col_repr, args_vars(1))),
           exit_block
         );
