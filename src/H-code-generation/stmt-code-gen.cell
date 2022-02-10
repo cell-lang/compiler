@@ -354,7 +354,7 @@ implicit program           : Program,
 
       update_code = (
         lookup_or_queue_insert_value(surr_var_0, store_id, store_type, enc_expr),
-        column_insert_deferred(table_var, surr_var_0, low_level_expr(col_repr, arg_1_alias), forced)
+        column_insert_deferred(table_var, col_repr, surr_var_0, low_level_expr(col_repr, arg_1_alias), forced)
       );
 
       return (args_eval_code & update_code, just(surrogates), [], init_var_gen);
@@ -373,7 +373,7 @@ implicit program           : Program,
 
         code = (
           lookup_or_queue_insert_value(surr_var_0, store_id, store_type, enc_expr),
-          column_insert_deferred(tv, surr_var_0, low_level_expr(col_repr, arg_1_alias), forced),
+          column_insert_deferred(tv, col_repr, surr_var_0, low_level_expr(col_repr, arg_1_alias), forced),
           exit_block
         );
         return (table_signature(tv), code);
@@ -776,7 +776,7 @@ implicit program           : Program,
       types = tuple_field_supertypes(value_type, |vars|);
       reprs = (opt_repr(t) : t <- types);
       phys_vars = (apply(v, low_level_var(reprs(i), $)) : v @ i <- vars);
-      code = code & (set_any_var(value(v), at(surr, i)) : v @ i <- phys_vars, v != nothing);
+      code = code & (set_any_var(value(v), at(surr, i, :object)) : v @ i <- phys_vars, v != nothing);
       surrs = remove_keys(surrogates, set(values(vars)));
       new_surrs = [
         value(v) -> obj_expr(value_unsafe(pv))
@@ -993,7 +993,7 @@ implicit program           : Program,
       phys_vars = [i -> low_level_var(reprs(i), v) : i v <- vars];
       local_surrs = [v -> obj_expr(pv) : i v <- vars, pv = phys_vars(i), v != pv];
       it_var, var_gen = next_obj_var(var_gen);
-      body_code_setup = (set_any_var(v, at(it_var, i)) : i, v <- sort_bin_rel_by_key(phys_vars, $a));
+      body_code_setup = (set_any_var(v, at(it_var, i, :object)) : i, v <- sort_bin_rel_by_key(phys_vars, $a));
     }
 
     // Index variables
@@ -1248,10 +1248,12 @@ implicit program           : Program,
         vars_setup_code = (
           set_ivar32(surr_var_0, get_unknown_arg(it_var, 0)) if var_0 != nothing or var_1 != nothing,
           ## WORKAROUND FOR A BUG IN VERSION 0.1 OF THE COMPILER
+          ## FIX THIS
           { llvar = low_level_vars(value(var_0));
             return surr_to_decoded_value(llvar, store_id, store_type, surr_var_0);
           } if var_0 != nothing,
           ## WORKAROUND FOR A BUG IN VERSION 0.1 OF THE COMPILER
+          ## FIX THIS
           { llvar = low_level_vars(value(var_1));
             return set_any_var(llvar, column_lookup(substitute(tv), surr_var_0, col_repr));
           } if var_1 != nothing
@@ -1298,7 +1300,7 @@ implicit program           : Program,
 
     surr_vars, var_gen = next_int32_vars(var_gen, |set_args|);
     shadow_surr_vars, var_gen = next_int32_vars(var_gen, [i : v @ i <- iter.vars, v != nothing]);
-    it_var, var_gen = next_table_it_var(var_gen, |table_args|, symmetric(iter.rel_var));
+    it_var_id, var_gen = next_table_it_var_id(var_gen);
 
     surr_args = (apply(a, surr_vars(arg_idx_bound_arg_idx(i))) : a @ i <- table_args);
 
@@ -1315,9 +1317,12 @@ implicit program           : Program,
     for tv <- isort(candidate_tables) {
       assert (a <- surr_args : a == nothing);
 
+      table_info = cast_any_surr_table(table_info(tv));
+
       sign = table_signature(tv);
       vars_reprs = [value(v) -> low_level_repr(sign(free_args_idxs(i))) : v @ i <- iter.vars, v != nothing];
       low_level_vars = [v -> low_level_var(r, v) : v r <- vars_reprs];
+      it_var = table_it_var(it_var_id, set(bound_args_idxs), table_info, |table_args|, symmetric);
 
       vars_setup_code = join(({
         shadow_surr_var = shadow_surr_vars(i);
@@ -1346,7 +1351,7 @@ implicit program           : Program,
 
         loop_code = (break_if(is_out_of_range(it_var))) & vars_setup_code & body_code & (move_forward(it_var));
         table_code = (
-          get_table_iter(it_var, substitute(tv), nonempty(surr_args)),
+          get_table_iter(it_var, substitute(tv), table_info, nonempty(surr_args)),
           repeat(nonempty(loop_code))
         );
 

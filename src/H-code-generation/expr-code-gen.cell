@@ -141,7 +141,7 @@ implicit program           : Program,
 
     res_var, ret_var_gen = next_int32_var(init_var_gen);
     surr_vars, var_gen = next_int32_vars(ret_var_gen, |set_args|);
-    it_var, var_gen = next_table_it_var(var_gen, |args|, symmetric(rel_var));
+    // it_var, var_gen = next_table_it_var(var_gen, |args|, symmetric(rel_var));
 
     surr_args = (apply(a, surr_vars(arg_idx_bound_arg_idx(i))) : a @ i <- args);
 
@@ -189,7 +189,7 @@ implicit program           : Program,
 
     res_var, ret_var_gen = next_bool_var(init_var_gen);
     surr_vars, var_gen = next_int32_vars(ret_var_gen, |bound_args|);
-    master_it_var, var_gen = next_table_it_var(var_gen, 2, false);
+    master_it_var_id, var_gen = next_table_it_var_id(var_gen);
     assoc_surr_var, var_gen = next_int32_var(var_gen);
     unknown_arg_surr_var, var_gen = next_int32_var(var_gen);
 
@@ -208,7 +208,9 @@ implicit program           : Program,
       target_table_info = table_info(tv);
       if is_ternary_slave_column(rel_var) {
         assert surr_args(2) == nothing;
-        master_table = substitute(master_table(tv));
+        master_table = master_table(tv);
+        master_table_info = table_info(master_table);
+        master_table = substitute(master_table);
         arg_0 = surr_args(0);
         arg_1 = surr_args(1);
         master_args = (arg_0, arg_1);
@@ -226,9 +228,10 @@ implicit program           : Program,
             );
           }
           else {
+            master_it_var = table_it_var(master_it_var_id, [0], cast_any_surr_table(master_table_info), 2, false);
             table_code = (
               set_bvar(res_var, false),
-              get_table_iter(master_it_var, master_table, master_args),
+              get_table_iter(master_it_var, master_table, cast_any_surr_table(master_table_info), master_args),
               repeat((
                 break_if(is_out_of_range(master_it_var)),
                 set_ivar32(unknown_arg_surr_var, get_unknown_arg(master_it_var, 0)),
@@ -243,9 +246,10 @@ implicit program           : Program,
           }
         }
         else {
+          master_it_var = table_it_var(master_it_var_id, [1], cast_any_surr_table(master_table_info), 2, false);
           table_code = (
             set_bvar(res_var, false),
-            get_table_iter(master_it_var, master_table, master_args),
+            get_table_iter(master_it_var, master_table, cast_any_surr_table(master_table_info), master_args),
             repeat((
               break_if(is_out_of_range(master_it_var)),
               set_ivar32(unknown_arg_surr_var, get_unknown_arg(master_it_var, 0)),
@@ -333,7 +337,7 @@ implicit program           : Program,
       res_store_type = value_store_type(rel_auto_type(rel_var), unqualified(res_store_id));
       res_store_id = substitute(res_store_id);
       code = (
-        set_ivar32(res_surr_var, table_lookup(substitute(tv), maybe_seq(surr_vars_map, arity), symmetric(rel_var))),
+        set_ivar32(res_surr_var, table_lookup(substitute(tv), cast_any_surr_table(table_info(tv)), maybe_seq(surr_vars_map, arity), symmetric(rel_var))),
         do_if_not(is_eq(res_surr_var, -1), (
           surr_to_decoded_value(res_var, res_store_id, res_store_type, res_surr_var),
           exit_block
@@ -1087,7 +1091,7 @@ implicit program           : Program,
       ];
       surrs = surrogates & new_surrs;
       it_var, var_gen = next_obj_var(var_gen);
-      body_code = (set_any_var(value(v), at(it_var, i)) : v @ i <- phys_vars, v != nothing);
+      body_code = (set_any_var(value(v), at(it_var, i, :object)) : v @ i <- phys_vars, v != nothing);
     }
 
     // Index variables
@@ -1310,16 +1314,19 @@ implicit program           : Program,
     target_type = subexpr_type(target);
     return ((terminate), :invalid_var, init_var_gen) if target_type == empty_type;
 
+
     target_eval_code, target_surr, var_gen = opt_eval_info(target, init_var_gen);
     arg_eval_code, arg_surr, var_gen = opt_eval_info(arg, var_gen);
     code = target_eval_code & arg_eval_code;
 
     if is_subset(target_type, type_seq) {
+      elt_type = seq_elem_supertype(target_type);
+      elt_likely_repr = if elt_type != empty_type then low_level_repr(elt_type) else :object;
       type = types(expr_id);
       return ((terminate), :invalid_var, init_var_gen) if type == empty_type;
       repr = opt_repr(type);
       res_var, var_gen = next_var(repr, var_gen);
-      code = (code | set_any_var(res_var, at(target_surr, get_int_val(arg_surr))));
+      code = (code | set_any_var(res_var, at(target_surr, get_int_val(arg_surr), elt_likely_repr)));
       expr_surr = obj_expr(res_var);
     }
     else if is_subset(target_type, type_set) {

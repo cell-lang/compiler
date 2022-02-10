@@ -111,7 +111,9 @@ type SeqItVar       = seq_it_var(Nat);
 type BinRelItVar    = bin_rel_it_var(Nat);
 type TernRelItVar   = tern_rel_it_var(Nat);
 
-type TableItVar     = table_it_var(id: Nat, arity: NzNat, symmetric: Bool);
+type TableType      = unary_table, bin_table, sym_bin_table, master_bin_table, tern_table, sym_12_tern_table, slave_tern_table;
+
+type TableItVar     = table_it_var(id: Nat, set_args: [Nat], table_type: TableType);
 type ColumnItVar    = column_it_var(id: Nat, repr: ColumnRepr);
 type SlaveColumnItVar = slave_column_it_var(id: Nat, repr: ColumnRepr);
 type AnyTableItVar  = TableItVar, ColumnItVar, SlaveColumnItVar;
@@ -187,7 +189,7 @@ type IntNatOp       = get_int_val(ObjExpr),
 type Int32NatOp     = bool_to_bit(BoolExpr),
                       get_size(ObjExpr),
                       get_count(table_var: AnyTableVar, table: AnyTable, args: Maybe[Int32Var]+, symmetric: Bool),
-                      table_lookup(table: AnyTableVar, args: Maybe[Int32Var]+, symmetric: Bool),
+                      table_lookup(table_var: AnyTableVar, table: AnySurrTable, args: Maybe[Int32Var]+, symmetric: Bool),
                       cast_int32(IntExpr),
                       add32(Int32Expr, Int32Expr),
                       value_to_surr(store: AnyValueStoreId, store_type: ValueStoreType, value: <AtomicExpr, IntExpr>),
@@ -207,7 +209,7 @@ type FloatNatOp     = float_value(ObjExpr),
                       // ceiling_op(FloatExpr),
                       int_to_float(IntExpr);
 
-type ObjNatOp       = at(seq: ObjExpr, idx: IntExpr),
+type ObjNatOp       = at(seq: ObjExpr, idx: IntExpr, fast_repr: LowLevelEltRepr),
                       array_at(array: ArrayVar, size: Int32Var, idx: IntExpr),
                       lookup(rel: ObjExpr, key: ObjExpr),
                       lookup_field(record: ObjExpr, field: SymbObj, repr: Maybe[LowLevelRepr]),
@@ -279,7 +281,7 @@ type RefObjExpr     = mk_set_from_stream(stream: StreamVar),
                       print_value(value: AtomicExpr),
 
                       copy_state(var: AnyDBVar, type: DBSymbol),
-                      copy_rel(tables: [+TableVar -> AnyTable], applied_perm: [+Nat -> Nat]),
+                      copy_rel(rel_auto_id: DBSymbol, tables: [+TableVar -> AnyTable], applied_perm: [+Nat -> Nat]),
 
                       copy_persistent_state(var: AnyAutoVar, type: AutoSymbol),
 
@@ -392,18 +394,19 @@ type BasicInstr     = init_stream(StreamVar),
                       init_table(table_var: TableVar, table: AnyTable),
                       cleanup_table(table_var: TableVar, table: AnyTable),
 
-                      get_table_iter(it_var: <TableItVar, SlaveColumnItVar>, table: AnyTableVar, args: Maybe[Int32Var]+),
+                      get_table_iter(it_var: TableItVar, table_var: AnyTableVar, table: AnySurrTable, args: Maybe[Int32Var]+),
+                      get_slave_col_iter(it_var: SlaveColumnItVar, table_var: AnyTableVar, column: SlaveColumn, args: Maybe[Int32Var]+),
                       get_column_iter(it_var: ColumnItVar, column: AnyTableVar),
-                      queue_deletes(table_var: TableVar, table: AnySurrTable, args: Maybe[Int32Var]+, symmetric: Bool),
+                      queue_deletes(table_var: TableVar, table: AnyTable, args: Maybe[Int32Var]+, symmetric: Bool),
                       lookup_or_queue_insert_value(res_var: Int32Var, store: ValueStoreId, store_type: ValueStoreType, value: <AtomicExpr, IntExpr>),
                       queue_insert_tuple(table_var: TableVar, table: AnySurrTable, tuple: Int32Var+),
 
-                      column_insert_deferred(table_var: TableVar, key_surr: Int32Var, value: AnyTypeExpr, forced: Bool),
+                      column_insert_deferred(table_var: TableVar, col_repr: ColumnRepr, key_surr: Int32Var, value: AnyTypeExpr, forced: Bool),
                       ternary_slave_column_insert_deferred(table_var: TableVar, surrs: (Int32Var, Int32Var), value: AnyTypeExpr, forced: Bool), ## WHY DOES THIS STILL EXIST?
 
                       immediate_insert_or_add_ref(res_var: Int32Var, store: ValueStoreId, store_type: ValueStoreType, value: <AtomicExpr, IntExpr>),
                       immediate_insert_tuple(table_var: TableVar, table: AnySurrTable, tuple: Int32Var+),
-                      column_insert_immediate(table_var: TableVar, key_surr: Int32Var, value: AnyTypeExpr);
+                      column_insert_immediate(table_var: TableVar, col_repr: ColumnRepr, key_surr: Int32Var, value: AnyTypeExpr);
 
 type JumpInstr      = break_loop,
                       exit_block,

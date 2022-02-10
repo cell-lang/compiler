@@ -95,7 +95,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
           memb_var()      = set_var(value_var, var),
           rel_var()       = { table_vars = [table_var(v) : v <- physical_rel_vars(database, var)];
                               tables = nonempty_map(select_by_key(tables_info, table_vars));
-                              return copy_rel(value_var, tables, rel_vars_args_perms(var));
+                              return copy_rel(value_var, database.name, tables, rel_vars_args_perms(var));
                             };
         return (set_label_instr, set_value_instr);
       } : var @ i <- all_vars));
@@ -260,7 +260,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
           immediate_insert_tuple(master_table, master_table_type, actual_surr_vars)
         ) if not ordered,
         set_ivar32(idx_var, get_assoc_surr(master_table, actual_surr_vars)),
-        column_insert_immediate(table_var, idx_var, low_level_expr(col_repr, args_vars(2)))
+        column_insert_immediate(table_var, col_repr, idx_var, low_level_expr(col_repr, args_vars(2)))
       );
     }
   }
@@ -278,7 +278,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
       col_repr = column_repr(table_signature(rel_auto_id, table_var)(1));
       core_loop_code = (
         immediate_insert_or_add_ref(key_surr_var, store_id, store_type, store_arg),
-        column_insert_immediate(table_var, key_surr_var, low_level_expr(col_repr, args_vars(1)))
+        column_insert_immediate(table_var, col_repr, key_surr_var, low_level_expr(col_repr, args_vars(1)))
       );
     }
     else {
@@ -294,7 +294,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
         col_repr = column_repr(table_signature(rel_auto_id, tv)(1));
         case_code = (
           immediate_insert_or_add_ref(key_surr_var, store_id, store_type, store_arg),
-          column_insert_immediate(tv, key_surr_var, low_level_expr(col_repr, args_vars(1))),
+          column_insert_immediate(tv, col_repr, key_surr_var, low_level_expr(col_repr, args_vars(1))),
           exit_block
         );
         types = table_signature(rel_auto_id, tv);
@@ -409,6 +409,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 
     code = ();
     for tv <- tables {
+      src_table_info = table_info(rel_auto_id, tv);
       rel_var = original_rel_var(tv);
       arity = arity(rel_auto_id, rel_var);
       src_is_sym = symmetric(rel_auto_id, rel_var);
@@ -425,7 +426,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
           column_it_var(0, column_repr(sign(1)))
         else if is_ternary_slave_column(rel_auto_id, logical_rel_var(rel_var)) then
           slave_column_it_var(0, column_repr(sign(2)))
-        else table_it_var(0, arity, src_is_sym);
+        else table_it_var(0, [], cast_any_surr_table(table_info(rel_auto_id, tv)), arity, src_is_sym);
 
       if foreign_keys != [] {
         conds = ({
@@ -501,8 +502,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
         }
 
         get_iter_instr = match (it_var)
-          table_it_var()        |
-          slave_column_it_var() = get_table_iter(it_var, tv, (nothing : i < arity)),
+          table_it_var()        = get_table_iter(it_var, tv, cast_any_surr_table(src_table_info), (nothing : i < arity)),
+          slave_column_it_var() = get_slave_col_iter(it_var, tv, cast_slave_column(src_table_info), (nothing : i < arity)),
           column_it_var()       = get_column_iter(it_var, tv);
 
         code = (code |

@@ -325,22 +325,33 @@ implicit typedefs : [TypeName -> NeType], loc_vars_types : [StdVar -> NeType] {
 ////////////////////////////////////////////////////////////////////////////////
 
 AnyTypeExpr rewrite_seq_ops(AnyTypeExpr expr, [StdVar -> LowLevelEltRepr] pending) {
-  if expr :: <at(seq: StdVar, idx: IntExpr)> {
-    seq_var = expr.seq;
-    if pending(seq_var, _) {
-      var_id = bare_id(seq_var);
-      rw_idx = cast_int_expr(rewrite_nested(expr.idx, rewrite_seq_ops($, pending)));
-      return array_at(shadow_array_var(var_id, pending(seq_var)), shadow_array_size_var(var_id), rw_idx);
+  return match (expr)
+    at()        = rewrite_at(expr, pending),
+    get_size()  = rewrite_get_size(expr, pending),
+    _           = rewrite_nested(expr, rewrite_seq_ops($, pending));
+
+
+  AnyTypeExpr rewrite_at(<at(seq: ObjExpr, idx: IntExpr, fast_repr: LowLevelEltRepr)> expr, [StdVar -> LowLevelEltRepr] pending) {
+    if expr.seq :: StdVar {
+      seq_var = expr.seq;
+      if pending(seq_var, _) {
+        var_id = bare_id(seq_var);
+        rw_idx = cast_int_expr(rewrite_nested(expr.idx, rewrite_seq_ops($, pending)));
+        return array_at(shadow_array_var(var_id, pending(seq_var)), shadow_array_size_var(var_id), rw_idx);
+      }
     }
+    return rewrite_nested(expr, rewrite_seq_ops($, pending));
   }
 
-  if expr :: <get_size(StdVar)> {
-    seq_var = untag(expr);
-    if pending(seq_var, _)
-      return shadow_array_size_var(untag(seq_var));
-  }
 
-  return rewrite_nested(expr, rewrite_seq_ops($, pending));
+  AnyTypeExpr rewrite_get_size(<get_size(ObjExpr)> expr, [StdVar -> LowLevelEltRepr] pending) {
+    if expr :: <get_size(StdVar)> {
+      seq_var = untag(expr);
+      if pending(seq_var, _)
+        return shadow_array_size_var(untag(seq_var));
+    }
+    return rewrite_nested(expr, rewrite_seq_ops($, pending));
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -85,7 +85,24 @@ SeqItVar seq_it_var(Nat n)          = :seq_it_var(n);
 BinRelItVar bin_rel_it_var(Nat n)   = :bin_rel_it_var(n);
 TernRelItVar tern_rel_it_var(Nat n) = :tern_rel_it_var(n);
 
-TableItVar table_it_var(Nat id, NzNat a, Bool s) = table_it_var(id: id, arity: a, symmetric: s);
+TableItVar table_it_var(Nat id, [Nat] as, AnySurrTable t, NzNat a, Bool s) {
+  assert arity(t) == a;
+  assert t.symmetric == s;
+  return table_it_var(id: id, set_args: as, table_type: table_type(t));
+
+
+  TableType table_type(Table table) =
+    match (arity(table), table.symmetric)
+      1,  false     = :unary_table,
+      2,  false     = :bin_table,
+      2,  true      = :sym_bin_table,
+      3,  false     = :tern_table,
+      3,  true      = :sym_12_tern_table;
+
+  TableType table_type(MasterBinTable) = :master_bin_table;
+  TableType table_type(SlaveTernTable) = :slave_tern_table;
+}
+
 ColumnItVar column_it_var(Nat id, ColumnRepr r) = column_it_var(id: id, repr: r);
 SlaveColumnItVar slave_column_it_var(Nat id, ColumnRepr r) = slave_column_it_var(id: id, repr: r);
 
@@ -168,7 +185,7 @@ IntNatOp ticks                = :ticks;
 Int32NatOp bool_to_bit(BoolExpr e)                                                      = :bool_to_bit(e);
 Int32NatOp get_size(ObjExpr e)                                                          = :get_size(e);
 Int32NatOp get_count(AnyTableVar v, AnyTable t, Maybe[Int32Var]+ as, Bool s)            = get_count(table_var: v, table: t, args: as, symmetric: s);
-Int32NatOp table_lookup(AnyTableVar v, Maybe[Int32Var]+ as, Bool s)                     = table_lookup(table: v, args: as, symmetric: s);
+Int32NatOp table_lookup(AnyTableVar v, AnySurrTable t, Maybe[Int32Var]+ as, Bool s)     = table_lookup(table_var: v, table: t, args: as, symmetric: s);
 Int32NatOp add32(Int32Expr e1, Int32Expr e2)                                            = :add32(e1, e2);
 Int32NatOp value_to_surr(AnyValueStoreId s, ValueStoreType t, <AtomicExpr, IntExpr> e)  = value_to_surr(store: s, store_type: t, value: e);
 Int32NatOp get_unknown_arg(TableItVar v, Nat i)                                         = get_unknown_arg(iter: v, arg: if i :: <0..2> then i else undefined);
@@ -221,7 +238,7 @@ ObjExpr float_obj(FloatExpr expr) =
   _               = :float_obj(expr);
 
 
-ObjNatOp at(ObjExpr s, IntExpr i)                                       = at(seq: s, idx: i);
+ObjNatOp at(ObjExpr s, IntExpr i, LowLevelEltRepr r)                    = at(seq: s, idx: i, fast_repr: r);
 ObjNatOp array_at(ArrayVar a, Int32Var s, IntExpr i)                    = array_at(array: a, size: s, idx: i);
 ObjNatOp lookup(ObjExpr r, ObjExpr k)                                   = lookup(rel: r, key: k);
 ObjNatOp lookup_field(ObjExpr e, SymbObj f)                             = lookup_field(record: e, field: f, repr: nothing);
@@ -321,7 +338,7 @@ RefObjExpr parse_value(AtomicExpr s)  = parse_value(value: s);
 RefObjExpr print_value(AtomicExpr s)  = print_value(value: s);
 
 RefObjExpr copy_state(AnyDBVar dv, DBSymbol t) = copy_state(var: dv, type: t);
-RefObjExpr copy_rel([+TableVar -> AnyTable] ts, [+Nat -> Nat] p) = copy_rel(tables: ts, applied_perm: p);
+RefObjExpr copy_rel(DBSymbol a, [+TableVar -> AnyTable] ts, [+Nat -> Nat] p) = copy_rel(rel_auto_id: a, tables: ts, applied_perm: p);
 
 RefObjExpr copy_persistent_state(AnyAutoVar av, AutoSymbol t) = copy_persistent_state(var: av, type: t);
 
@@ -378,7 +395,7 @@ BasicInstr parse_value(WriteObjVar v, AtomicExpr s)  = set_var(v, parse_value(va
 BasicInstr print_value(WriteObjVar v, AtomicExpr s)  = set_var(v, print_value(value: s));
 
 BasicInstr copy_state(WriteObjVar rv, AnyDBVar dv, DBSymbol t) = set_var(rv, copy_state(var: dv, type: t));
-BasicInstr copy_rel(WriteObjVar ov, [+TableVar -> AnyTable] ts, [+Nat -> Nat] p) = set_var(ov, copy_rel(tables: ts, applied_perm: p));
+BasicInstr copy_rel(WriteObjVar ov, DBSymbol a, [+TableVar -> AnyTable] ts, [+Nat -> Nat] p) = set_var(ov, copy_rel(rel_auto_id: a, tables: ts, applied_perm: p));
 
 BasicInstr copy_persistent_state(WriteObjVar rv, AnyAutoVar av, AutoSymbol t) = set_var(rv, copy_persistent_state(var: av, type: t));
 
@@ -567,18 +584,23 @@ BasicInstr cleanup_value_store(ValueStoreId s) = cleanup_value_store(store: s);
 BasicInstr init_table(TableVar v, AnyTable t)    = init_table(table_var: v, table: t);
 BasicInstr cleanup_table(TableVar v, AnyTable t) = cleanup_table(table_var: v, table: t);
 
-BasicInstr get_table_iter(<TableItVar, SlaveColumnItVar> v, AnyTableVar t, Maybe[Int32Var]+ as) {
+BasicInstr get_table_iter(TableItVar v, AnyTableVar tv, AnySurrTable t, Maybe[Int32Var]+ as) {
   assert (a <- as : a == nothing);
   assert arity(v) == |as|;
-  return get_table_iter(it_var: v, table: t, args: as);
+  return get_table_iter(it_var: v, table_var: tv, table: t, args: as);
+}
+
+BasicInstr get_slave_col_iter(SlaveColumnItVar v, AnyTableVar tv, SlaveColumn c, Maybe[Int32Var]+ as) {
+  assert (a <- as : a == nothing);
+  assert arity(v) == 3;
+  assert |as| == 3;
+  return get_slave_col_iter(it_var: v, table_var: tv, column: c, args: as);
 }
 
 BasicInstr get_column_iter(ColumnItVar v, AnyTableVar c) = get_column_iter(it_var: v, column: c);
 
-BasicInstr queue_deletes(TableVar v, AnyTable t, Maybe[Int32Var]+ as, Bool s) {
-  fail if not t :: AnySurrTable;
-  return queue_deletes(table_var: v, table: t, args: as, symmetric: s);
-}
+BasicInstr queue_deletes(TableVar v, AnyTable t, Maybe[Int32Var]+ as, Bool s) =
+  queue_deletes(table_var: v, table: t, args: as, symmetric: s);
 
 BasicInstr lookup_or_queue_insert_value(Int32Var v, ValueStoreId s, ValueStoreType t, <AtomicExpr, IntExpr> e) =
   lookup_or_queue_insert_value(res_var: v, store: s, store_type: t, value: e);
@@ -588,15 +610,15 @@ BasicInstr queue_insert_tuple(TableVar v, AnyTable t, Int32Var+ as) {
   return queue_insert_tuple(table_var: v, table: t, tuple: as);
 }
 
-BasicInstr column_insert_deferred(TableVar v, Int32Var k, AnyTypeExpr e, Bool f) =
-  column_insert_deferred(table_var: v, key_surr: k, value: e, forced: f);
+BasicInstr column_insert_deferred(TableVar v, ColumnRepr r, Int32Var k, AnyTypeExpr e, Bool f) =
+  column_insert_deferred(table_var: v, col_repr: r, key_surr: k, value: e, forced: f);
 
 BasicInstr ternary_slave_column_insert_deferred(TableVar v, (Int32Var, Int32Var) ss, AnyTypeExpr e, Bool f) =
   ternary_slave_column_insert_deferred(table_var: v, surrs: ss, value: e, forced: f);
 
 BasicInstr immediate_insert_or_add_ref(Int32Var sv, ValueStoreId s, ValueStoreType t, <AtomicExpr, IntExpr> v) = immediate_insert_or_add_ref(res_var: sv, store: s, store_type: t, value: v);
 BasicInstr immediate_insert_tuple(TableVar v, AnySurrTable t, Int32Var+ as) = immediate_insert_tuple(table_var: v, table: t, tuple: as);
-BasicInstr column_insert_immediate(TableVar t, Int32Var k, AnyTypeExpr v) = column_insert_immediate(table_var: t, key_surr: k, value: v);
+BasicInstr column_insert_immediate(TableVar t, ColumnRepr r, Int32Var k, AnyTypeExpr v) = column_insert_immediate(table_var: t, col_repr: r, key_surr: k, value: v);
 
 BasicInstr push_call_info(<FnId, ProcSymbol, MethodSymbol> f, ObjExpr* as) = push_call_info(fn_name: f, args: as);
 BasicInstr pop_call_info = :pop_call_info;

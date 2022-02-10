@@ -45,8 +45,17 @@ NzNat arity(SlaveTernTable) = 3;
 NzNat arity(Column)         = 2;
 NzNat arity(SlaveColumn)    = 3;
 
-NzNat arity(TableItVar v)     = v.arity;
+NzNat arity(TableItVar v)     = arity(v.table_type);
 NzNat arity(SlaveColumnItVar) = 3;
+
+NzNat arity(TableType) =
+  unary_table       = 1,
+  bin_table         = 2,
+  sym_bin_table     = 2,
+  master_bin_table  = 2,
+  tern_table        = 3,
+  sym_12_tern_table = 3,
+  slave_tern_table  = 3;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -78,3 +87,12 @@ MembVar corresponding_memb_var(PendingStateVar) =
 
 Bool has_opt_fields(OptRecRepr) =
   opt_rec_repr(fs?) = (_ f <- fs : f.optional);
+
+////////////////////////////////////////////////////////////////////////////////
+
+AnySurrTable cast_any_surr_table(AnyTable table) =
+  if table :: AnySurrTable then table else undefined;
+
+SlaveColumn cast_slave_column(AnyTable table) =
+  slave_column()  = table,
+  _               = undefined;

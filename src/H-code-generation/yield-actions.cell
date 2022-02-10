@@ -122,6 +122,7 @@ implicit program           : Program,
 
       // Iterating through all candidate tables
       for tv <- isort(candidate_tables) {
+        info = cast_slave_column(table_info(tv));
         sign = table_signature(tv);
         reprs = (low_level_repr(t) : t <- sign);
         ll_vars = (apply(v, low_level_var(reprs(i), $)) : v @ i <- vars);
@@ -150,7 +151,7 @@ implicit program           : Program,
         loop_code = (break_if(is_out_of_range(it_var))) & vars_setup_code & action_code & (move_forward(it_var));
 
         table_code = (
-          get_table_iter(it_var, substitute(tv), (nothing : i < 3)),
+          get_slave_col_iter(it_var, substitute(tv), info, (nothing : i < 3)),
           repeat(nonempty(loop_code))
         );
 
@@ -173,7 +174,7 @@ implicit program           : Program,
       bound_surr_var, var_gen = next_int32_var(var_gen);
       free_surr_var, var_gen = next_int32_var(var_gen);
 
-      it_var, var_gen = next_table_it_var(var_gen, 2, false);
+      it_var_id, var_gen = next_table_it_var_id(var_gen);
 
       bound_arg_eval_code, bound_arg_alias, var_gen = opt_eval_info(bound_arg, var_gen);
 
@@ -186,12 +187,15 @@ implicit program           : Program,
       code = bound_arg_eval_code;
       for tv <- candidate_tables {
         master_table = master_table(tv);
+        master_table_info = cast_any_surr_table(table_info(master_table));
 
         sign = table_signature(tv);
         free_arg_repr = low_level_repr(sign(free_arg_idx));
         value_repr = low_level_repr(sign(2));
         ll_free_arg_var = apply(free_arg_var, low_level_var(free_arg_repr, $));
         ll_value_var = apply(value_var, low_level_var(value_repr, $));
+
+        it_var = table_it_var(it_var_id, [bound_arg_idx], cast_any_surr_table(table_info(tv)), 2, false);
 
         bound_arg_store_id = table_col_store_id(tv, bound_arg_idx);
         free_arg_store_id = table_col_store_id(tv, free_arg_idx);
@@ -214,7 +218,7 @@ implicit program           : Program,
           set_ivar32(bound_surr_var, value_to_surr(bound_arg_store_id, bound_arg_store_type, value_store_encoded_expr(bound_arg_store_type, bound_arg_alias))),
           do_if_not(
             is_eq(bound_surr_var, -1),
-            ( get_table_iter(it_var, substitute(master_table), (just(bound_surr_var), nothing)),
+            ( get_table_iter(it_var, substitute(master_table), master_table_info, (just(bound_surr_var), nothing)),
               repeat((
                 break_if(is_out_of_range(it_var)),
 
@@ -464,7 +468,7 @@ implicit program           : Program,
 
     surr_vars, var_gen = next_int32_vars(var_gen, |set_args|);
     shadow_surr_vars, var_gen = next_int32_vars(var_gen, |action.vars|);
-    it_var, var_gen = next_table_it_var(var_gen, |args|, symmetric(action.relvar));
+    it_var_id, var_gen = next_table_it_var_id(var_gen);
 
     surr_args = (apply(a, surr_vars(arg_idx_bound_arg_idx(i))) : a @ i <- args);
 
@@ -481,9 +485,13 @@ implicit program           : Program,
     for tv <- isort(candidate_tables) {
       assert (a <- surr_args : a == nothing);
 
+      tv_info = cast_any_surr_table(table_info(tv));
+
       sign = table_signature(tv);
       vars_types = (sign(free_args_idxs(i)) : i < |action.vars|);
       low_level_vars = (apply(v, low_level_var(low_level_repr(vars_types(i)), $)) : v @ i <- action.vars);
+
+      it_var = table_it_var(it_var_id, set(bound_args_idxs), tv_info, |args|, symmetric);
 
       vars_setup_code = join(({
         shadow_surr_var = shadow_surr_vars(i);
@@ -505,7 +513,7 @@ implicit program           : Program,
 
       loop_code = (break_if(is_out_of_range(it_var))) & vars_setup_code & action_code & (move_forward(it_var));
       table_code = (
-        get_table_iter(it_var, substitute(tv), nonempty(surr_args)),
+        get_table_iter(it_var, substitute(tv), tv_info, nonempty(surr_args)),
         repeat(nonempty(loop_code))
       );
 
@@ -659,7 +667,7 @@ implicit program           : Program,
           v = value(mv);
           phys_var = low_level_var(reprs(i), v);
           surrs = surrs & [v -> obj_expr(phys_var) if v != phys_var];
-          body = (body | set_any_var(phys_var, at(it_var, i)));
+          body = (body | set_any_var(phys_var, at(it_var, i, :object)));
         }
       }
     }
