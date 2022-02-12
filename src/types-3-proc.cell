@@ -406,7 +406,10 @@ type BasicInstr     = init_stream(StreamVar),
 
                       immediate_insert_or_add_ref(res_var: Int32Var, store: ValueStoreId, store_type: ValueStoreType, value: <AtomicExpr, IntExpr>),
                       immediate_insert_tuple(table_var: TableVar, table: AnySurrTable, tuple: Int32Var+),
-                      column_insert_immediate(table_var: TableVar, mandatory: Bool, col_repr: ColumnRepr, key_surr: Int32Var, value: AnyTypeExpr);
+                      column_insert_immediate(table_var: TableVar, mandatory: Bool, col_repr: ColumnRepr, key_surr: Int32Var, value: AnyTypeExpr),
+
+                      // Instructions that are only used when loading or setting the state of a relational automaton
+                      raise_load_error(deferred: Bool);
 
 type JumpInstr      = break_loop,
                       exit_block,
@@ -605,7 +608,7 @@ type StaticBlock = static_block(
                     copy_state_code:              Instr*,
                     set_state_code:               Instr*,
                     memb_var_check_exprs:         [MembVar -> BoolExpr],
-                    rel_vars_load_code:           [RelVar -> (LocVar+, BoolExpr, Instr+)],
+                    rel_vars_load_code:           [RelVar -> (LocVar+, Instr*, Instr+, Instr*)],
                     foreign_keys_check_code:      Instr*,
                     methods:                      [MethodId -> OptCompMethod],
                     updates:                      [UpdateId -> CompiledUpdate],

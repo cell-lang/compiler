@@ -105,7 +105,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
   }
 
 
-  [RelVar -> (LocVar+, BoolExpr, Instr+)] database_rel_vars_load_code([RelVar -> [+Nat -> Nat]] rel_vars_args_perms) {
+  [RelVar -> (LocVar+, Instr*, Instr+, Instr*)] database_rel_vars_load_code([RelVar -> [+Nat -> Nat]] rel_vars_args_perms) {
     rel_auto_id = database.name;
 
     args_vars = (lvar(i) : i < 3);
@@ -142,10 +142,12 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
       }
 
       type_check_expr = and_then(nonempty(args_types_conds));
+      type_check_instr = do_if_not(type_check_expr, raise_load_error(false));
+      core_loop_code = (type_check_instr) & core_loop_code;
 
       rel_args_vars = (args_vars(args_perm(i)) : i < arity);
 
-      return (rel_args_vars, type_check_expr, nonempty(core_loop_code));
+      return (rel_args_vars, (), nonempty(core_loop_code), ());
     } : v <- logical_rel_vars(database)];
   }
 
