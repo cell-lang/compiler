@@ -159,7 +159,7 @@ ObjExpr rewrite_nested(ObjNatOp expr, (AnyTypeExpr -> AnyTypeExpr) rewrite) =
   get_curr_arg()        = expr,
   get_curr_arg()        = expr,
   surr_to_value()       = surr_to_value(expr.store, expr.store_type, cast_int32_var(rewrite(expr.surrogate))),
-  column_lookup()       = column_lookup(expr.var, cast_int32_var(rewrite(expr.key)), expr.repr),
+  column_lookup()       = column_lookup(expr.var, cast_int32_var(rewrite(expr.key)), expr.mandatory, expr.repr),
   get_value()           = expr,
   rand_elem(e?)         = rand_elem(cast_obj_expr(rewrite(e)));
 
@@ -303,11 +303,11 @@ BasicInstr rewrite_exprs(BasicInstr instr, (AnyTypeExpr -> AnyTypeExpr) rewrite,
   queue_deletes()           = queue_deletes(instr.table_var, instr.table, (apply(a, cast_int32_var(rewrite($))) : a <- instr.args), instr.symmetric),
   lookup_or_queue_insert_value() = lookup_or_queue_insert_value(instr.res_var, instr.store, instr.store_type, cast_int_or_obj_expr(rewrite(instr.value))),
   queue_insert_tuple()      = queue_insert_tuple(instr.table_var, instr.table, (cast_int32_var(rewrite(v)) : v <- instr.tuple)),
-  column_insert_deferred()  = column_insert_deferred(instr.table_var, instr.col_repr, cast_int32_var(rewrite(instr.key_surr)), rewrite(instr.value), instr.forced),
+  column_insert_deferred()  = column_insert_deferred(instr.table_var, instr.mandatory, instr.col_repr, cast_int32_var(rewrite(instr.key_surr)), rewrite(instr.value), instr.forced),
   ternary_slave_column_insert_deferred() = ternary_slave_column_insert_deferred(instr.table_var, (cast_int32_var(rewrite(v)) : v <- instr.surrs), rewrite(instr.value), instr.forced),
   immediate_insert_or_add_ref() = immediate_insert_or_add_ref(instr.res_var, instr.store, instr.store_type, cast_int_or_obj_expr(rewrite(instr.value))),
   immediate_insert_tuple()  = immediate_insert_tuple(instr.table_var, instr.table, (cast_int32_var(rewrite(v)) : v <- instr.tuple)),
-  column_insert_immediate() = column_insert_immediate(instr.table_var, instr.col_repr, cast_int32_var(rewrite(instr.key_surr)), rewrite(instr.value));
+  column_insert_immediate() = column_insert_immediate(instr.table_var, instr.mandatory, instr.col_repr, cast_int32_var(rewrite(instr.key_surr)), rewrite(instr.value));
 
 
 JumpInstr rewrite_exprs(JumpInstr instr, (AnyTypeExpr -> AnyTypeExpr) rewrite, (RefObjExpr -> RefObjExpr) rewrite_ref) =

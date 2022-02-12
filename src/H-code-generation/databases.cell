@@ -260,7 +260,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
           immediate_insert_tuple(master_table, master_table_type, actual_surr_vars)
         ) if not ordered,
         set_ivar32(idx_var, get_assoc_surr(master_table, actual_surr_vars)),
-        column_insert_immediate(table_var, col_repr, idx_var, low_level_expr(col_repr, args_vars(2)))
+        column_insert_immediate(table_var, column_is_mandatory(rel_auto_id, table_var), col_repr, idx_var, low_level_expr(col_repr, args_vars(2)))
       );
     }
   }
@@ -278,7 +278,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
       col_repr = column_repr(table_signature(rel_auto_id, table_var)(1));
       core_loop_code = (
         immediate_insert_or_add_ref(key_surr_var, store_id, store_type, store_arg),
-        column_insert_immediate(table_var, col_repr, key_surr_var, low_level_expr(col_repr, args_vars(1)))
+        column_insert_immediate(table_var, column_is_mandatory(rel_auto_id, table_var), col_repr, key_surr_var, low_level_expr(col_repr, args_vars(1)))
       );
     }
     else {
@@ -294,7 +294,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
         col_repr = column_repr(table_signature(rel_auto_id, tv)(1));
         case_code = (
           immediate_insert_or_add_ref(key_surr_var, store_id, store_type, store_arg),
-          column_insert_immediate(tv, col_repr, key_surr_var, low_level_expr(col_repr, args_vars(1))),
+          column_insert_immediate(tv, column_is_mandatory(rel_auto_id, tv), col_repr, key_surr_var, low_level_expr(col_repr, args_vars(1))),
           exit_block
         );
         types = table_signature(rel_auto_id, tv);
@@ -423,7 +423,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
       sign = table_signature(rel_auto_id, tv);
 
       it_var = if is_columnar_relvar(rel_auto_id, logical_rel_var(rel_var)) then
-          column_it_var(0, column_repr(sign(1)))
+          column_it_var(0, column_is_mandatory(rel_auto_id, tv), column_repr(sign(1)))
         else if is_ternary_slave_column(rel_auto_id, logical_rel_var(rel_var)) then
           slave_column_it_var(0, column_repr(sign(2)))
         else table_it_var(0, [], cast_any_surr_table(table_info(rel_auto_id, tv)), arity, src_is_sym);
@@ -959,7 +959,13 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
           value_store = col_to_vs_map((tv, 0));
           signature = info.signature;
           fail if |signature| != 2;
-          return column(value_store, column_repr(signature(1)), signature);
+          repr = column_repr(signature(1));
+          master_info = bin_rel_only_master_info(auto_id, rv);
+          if master_info != nothing {
+            master, mandatory = value(master_info);
+            return mandatory_column(table_var(master), value_store, repr, signature) if mandatory;
+          }
+          return column(value_store, repr, signature);
         }
         else if is_ternary_slave_column(auto_id, logical_rel_var(rv)) {
           masters_slaves = masters_ternary_slave_columns;

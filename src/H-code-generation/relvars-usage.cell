@@ -14,6 +14,41 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context {
   Bool is_columnar_relvar(AnyRelVar rel_var) = is_columnar_relvar(rel_auto_type(rel_var), unqualified(rel_var));
 
   Bool is_ternary_slave_column(AnyRelVar rel_var) = is_ternary_slave_column(rel_auto_type(rel_var), unqualified(rel_var));
+
+  Bool column_is_mandatory(TableVar table_var)     = column_is_mandatory(this_db_symbol, table_var);
+  Bool column_is_mandatory(QualTableVar table_var) = column_is_mandatory(var_type(table_var.db_var), table_var.table_var);
+}
+
+
+implicit program : Program, typedefs : [TypeName -> NeType] {
+  Bool column_is_mandatory(DBSymbol rel_auto_id, TableVar table_var) =
+    match (bin_rel_only_master_info(rel_auto_id, original_rel_var(table_var)))
+      just(_, m?)   = m,
+      nothing       = false;
+
+
+  Maybe[(PhysRelVar, Bool)] bin_rel_only_master_info(DBSymbol rel_auto_id, PhysRelVar relvar) {
+    return nothing if not is_columnar_relvar(rel_auto_id, logical_rel_var(relvar));
+
+    rel_auto = automaton_by_id(rel_auto_id);
+
+    // type ForeignKey = foreign_key(
+    //                     source_rel_var:   PhysRelVar,
+    //                     source_args:      Maybe[Symbol]+,
+    //                     target_rel_vars:  [+PhysRelVar],
+    //                     target_args:      Maybe[Symbol]+
+    //                   );
+
+    ## IMPLEMENT IMPLEMENT IMPLEMENT: THIS IS SUPER SLOW, IMPLEMENT THE MEMOIZATION
+
+    fks = [fk : fk <- rel_auto.foreign_keys, fk.source_rel_var == relvar];
+    assert not (fk <- fks : |fk.target_rel_vars| != 1);
+    masters = [rv : fk <- fks, rv <- fk.target_rel_vars];
+    return nothing if |masters| != 1;
+    master = only(masters);
+    mandatory = (fk <- rel_auto.foreign_keys : fk.source_rel_var == master and fk.target_rel_vars == [relvar]);
+    return just((master, mandatory));
+  }
 }
 
 

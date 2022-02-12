@@ -97,9 +97,10 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context {
 
   ColumnRepr column_repr(TableVar var) =
     match (tables_by_db(this_db_symbol, !)(var))
-      column() c?       |
-      slave_column() c? = c.repr,
-      table()           = undefined;
+      column() c?           |
+      mandatory_column() c? |
+      slave_column() c?     = c.repr,
+      table()               = undefined;
 
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////

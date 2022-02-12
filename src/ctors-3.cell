@@ -103,7 +103,7 @@ TableItVar table_it_var(Nat id, [Nat] as, AnySurrTable t, NzNat a, Bool s) {
   TableType table_type(SlaveTernTable) = :slave_tern_table;
 }
 
-ColumnItVar column_it_var(Nat id, ColumnRepr r) = column_it_var(id: id, repr: r);
+ColumnItVar column_it_var(Nat id, Bool m, ColumnRepr r) = column_it_var(id: id, mandatory: m, repr: r);
 SlaveColumnItVar slave_column_it_var(Nat id, ColumnRepr r) = slave_column_it_var(id: id, repr: r);
 
 TableVar table_var(PhysRelVar v)        = :table_var(v);
@@ -248,7 +248,7 @@ ObjNatOp get_curr_obj(<SetItVar, SeqItVar> it)                          = :get_c
 ObjNatOp get_curr_arg(BinRelItVar v,  Nat a)                            = get_curr_arg(var: v, arg: if a :: <0..1> then a else undefined);
 ObjNatOp get_curr_arg(TernRelItVar v, Nat a)                            = get_curr_arg(var: v, arg: if a :: <0..2> then a else undefined);
 ObjNatOp surr_to_value(AnyValueStoreId s, ValueStoreType t, Int32Var v) = surr_to_value(store: s, store_type: t, surrogate: v);
-ObjNatOp column_lookup(AnyTableVar v, Int32Var k, ColumnRepr r)         = column_lookup(var: v, key: k, repr: r);
+ObjNatOp column_lookup(AnyTableVar v, Int32Var k, Bool m, ColumnRepr r) = column_lookup(var: v, key: k, mandatory: m, repr: r);
 ObjNatOp rand_elem(ObjExpr s)                                           = :rand_elem(s);
 
 ObjNatOp lookup_field(ObjExpr e, SymbObj f, Maybe[LowLevelRepr] r) {
@@ -610,15 +610,15 @@ BasicInstr queue_insert_tuple(TableVar v, AnyTable t, Int32Var+ as) {
   return queue_insert_tuple(table_var: v, table: t, tuple: as);
 }
 
-BasicInstr column_insert_deferred(TableVar v, ColumnRepr r, Int32Var k, AnyTypeExpr e, Bool f) =
-  column_insert_deferred(table_var: v, col_repr: r, key_surr: k, value: e, forced: f);
+BasicInstr column_insert_deferred(TableVar v, Bool m, ColumnRepr r, Int32Var k, AnyTypeExpr e, Bool f) =
+  column_insert_deferred(table_var: v, mandatory: m, col_repr: r, key_surr: k, value: e, forced: f);
 
 BasicInstr ternary_slave_column_insert_deferred(TableVar v, (Int32Var, Int32Var) ss, AnyTypeExpr e, Bool f) =
   ternary_slave_column_insert_deferred(table_var: v, surrs: ss, value: e, forced: f);
 
 BasicInstr immediate_insert_or_add_ref(Int32Var sv, ValueStoreId s, ValueStoreType t, <AtomicExpr, IntExpr> v) = immediate_insert_or_add_ref(res_var: sv, store: s, store_type: t, value: v);
 BasicInstr immediate_insert_tuple(TableVar v, AnySurrTable t, Int32Var+ as) = immediate_insert_tuple(table_var: v, table: t, tuple: as);
-BasicInstr column_insert_immediate(TableVar t, ColumnRepr r, Int32Var k, AnyTypeExpr v) = column_insert_immediate(table_var: t, col_repr: r, key_surr: k, value: v);
+BasicInstr column_insert_immediate(TableVar t, Bool m, ColumnRepr r, Int32Var k, AnyTypeExpr v) = column_insert_immediate(table_var: t, mandatory: m, col_repr: r, key_surr: k, value: v);
 
 BasicInstr push_call_info(<FnId, ProcSymbol, MethodSymbol> f, ObjExpr* as) = push_call_info(fn_name: f, args: as);
 BasicInstr pop_call_info = :pop_call_info;
@@ -682,7 +682,11 @@ SlaveTernTable slave_tern_table(TableVar m, (ValueStoreId, ValueStoreId, ValueSt
 
 Column column(ValueStoreId s, ColumnRepr r, (NeType, NeType) ts) = column(value_store: s, repr: r, col_types: ts);
 
-SlaveColumn slave_column(TableVar v, (ValueStoreId, ValueStoreId) vs, ColumnRepr r, (NeType, NeType, NeType) ts) = slave_column(master: v, value_stores: vs, repr: r, col_types: ts);
+MandatoryColumn mandatory_column(TableVar m, ValueStoreId s, ColumnRepr r, (NeType, NeType) ts) =
+  mandatory_column(master: m, value_store: s, repr: r, col_types: ts);
+
+SlaveColumn slave_column(TableVar v, (ValueStoreId, ValueStoreId) vs, ColumnRepr r, (NeType, NeType, NeType) ts) =
+  slave_column(master: v, value_stores: vs, repr: r, col_types: ts);
 
 ForeignKeyType unary_binary(Nat i)  = if i :: <0..1> then :unary_binary(i)  else undefined;
 ForeignKeyType unary_ternary(Nat i) = if i :: <0..2> then :unary_ternary(i) else undefined;
