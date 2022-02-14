@@ -150,6 +150,8 @@ BoolNatOp has_field(ObjExpr r, SymbObj f)                 = has_field(record: r,
 BoolNatOp rel_obj_contains(ObjExpr r, Maybe[ObjExpr]+ as) = rel_obj_contains(rel: r, args: as);
 BoolNatOp table_contains(AnyTableVar v, AnyTable t, Maybe[Int32Var]+ vs, Bool b) = table_contains(table_var: v, table: t, tuple: vs, symmetric: b);
 
+BoolNatOp are_eq(Int32Expr e1, Int32Expr e2)  = are_eq(int_obj(e1), int_obj(e2));
+
 ## THESE ARE ALL DEPRECATED AND SHOULD BE REMOVED
 BoolNatOp is_eq(BoolExpr e1, BoolExpr e2)               = are_eq(bool_obj(e1), bool_obj(e2));
 BoolNatOp is_eq(IntExpr e1, IntExpr e2)                 = are_eq(int_obj(e1), int_obj(e2));
@@ -192,6 +194,8 @@ Int32NatOp get_unknown_arg(TableItVar v, Nat i)                                 
 Int32NatOp get_unknown_arg(<ColumnItVar, SlaveColumnItVar> v, Nat i)                    = get_unknown_arg(iter: v, arg: if i == 0 then 0 else undefined);
 Int32NatOp get_arg_by_assoc_surr(AnyTableVar v, <0..1> a, Int32Var s)                   = get_arg_by_assoc_surr(table: v, arg: a, surr: s);
 Int32NatOp get_assoc_surr(AnyTableVar v, (Int32Var, Int32Var) as)                       = get_assoc_surr(table: v, args: as);
+Int32NatOp get_capacity(AnyTableVar v, AnyTable t)                                      = get_capacity(table_var: v, table: t);
+Int32NatOp surr_set_size                                                                = :surr_set_size;
 
 <Int32Var, Int32NatOp> cast_int32(IntExpr expr) =
   upcast_int32(e?)  = e,
@@ -248,7 +252,7 @@ ObjNatOp get_curr_obj(<SetItVar, SeqItVar> it)                          = :get_c
 ObjNatOp get_curr_arg(BinRelItVar v,  Nat a)                            = get_curr_arg(var: v, arg: if a :: <0..1> then a else undefined);
 ObjNatOp get_curr_arg(TernRelItVar v, Nat a)                            = get_curr_arg(var: v, arg: if a :: <0..2> then a else undefined);
 ObjNatOp surr_to_value(AnyValueStoreId s, ValueStoreType t, Int32Var v) = surr_to_value(store: s, store_type: t, surrogate: v);
-ObjNatOp column_lookup(AnyTableVar v, Int32Var k, Bool m, ColumnRepr r) = column_lookup(var: v, key: k, mandatory: m, repr: r);
+ObjNatOp column_lookup(AnyTableVar v, AnyTable t, Int32Var k)           = column_lookup(var: v, column: cast_any_column(t), key: k);
 ObjNatOp rand_elem(ObjExpr s)                                           = :rand_elem(s);
 
 ObjNatOp lookup_field(ObjExpr e, SymbObj f, Maybe[LowLevelRepr] r) {
@@ -597,7 +601,7 @@ BasicInstr get_slave_col_iter(SlaveColumnItVar v, AnyTableVar tv, SlaveColumn c,
   return get_slave_col_iter(it_var: v, table_var: tv, column: c, args: as);
 }
 
-BasicInstr get_column_iter(ColumnItVar v, AnyTableVar c) = get_column_iter(it_var: v, column: c);
+BasicInstr get_column_iter(ColumnItVar iv, AnyTableVar cv, <Column, MandatoryColumn> c) = get_column_iter(it_var: iv, col_var: cv, column: c);
 
 BasicInstr queue_deletes(TableVar v, AnyTable t, Maybe[Int32Var]+ as, Bool s) =
   queue_deletes(table_var: v, table: t, args: as, symmetric: s);
@@ -626,7 +630,12 @@ BasicInstr pop_call_info = :pop_call_info;
 BasicInstr log_runtime_failure(Bool b, String f, NzNat l, Maybe[String] t, (<StdVar, ImplArg>, ObjExpr)* vs) =
   log_runtime_failure(is_assert: b, file: f, line: l, text: t, vars: vs);
 
+BasicInstr resize_mandatory_column(AnyTableVar v, MandatoryColumn c, Int32Expr cc, Int32Expr nc) =
+  resize_mandatory_column(table_var: v, column: c, curr_capacity: cc, new_capacity: nc);
+
 BasicInstr raise_load_error(Bool d) = raise_load_error(deferred: d);
+BasicInstr surr_set_try_insert(Int32Var s, BoolVar r) = surr_set_try_insert(surr: s, was_new: r);
+BasicInstr surr_set_clear = :surr_set_clear;
 
 ////////////////////////////////////////////////////////////////////////////////
 

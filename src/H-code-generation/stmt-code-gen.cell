@@ -176,7 +176,7 @@ implicit program           : Program,
           key_arg_surr = value_unsafe(args_surrs(0));
           key_arg_type = value_unsafe(args_types(0));
 
-          lookup_expr = column_lookup(table_var, key_arg_surr, column_is_mandatory(table_var), column_repr(table_var));
+          lookup_expr = column_lookup(table_var, table_info(table_var), key_arg_surr);
 
           has_key_check_expr = table_contains(table_var, table_info(table_var), (just(key_arg_surr), nothing), false);
           contains_tuple_check_expr = and_then((
@@ -229,7 +229,7 @@ implicit program           : Program,
                         and_then((
                           neg(is_eq(assoc_surr_var, -1)),
                           table_contains(table_var, table_info(table_var), (just(assoc_surr_var), nothing), false),
-                          is_eq(arg2, column_lookup(table_var, assoc_surr_var, false, column_repr(table_var)))
+                          is_eq(arg2, column_lookup(table_var, table_info(table_var), assoc_surr_var))
                         )),
                         queue_deletes(table_var, table_info(table_var), (args_surrs(0), args_surrs(1), nothing), symmetric)
                       )
@@ -1203,7 +1203,7 @@ implicit program           : Program,
                 table_contains(tv, table_info(tv), (just(key_arg_surr), nothing), false),
                 ( set_any_var(
                     value(low_level_value_var),
-                    column_lookup(substitute(tv), key_arg_surr, column_is_mandatory(tv), column_repr(sign(1)))
+                    column_lookup(substitute(tv), table_info(tv), key_arg_surr)
                   ) if low_level_value_var != nothing
                 ) & body_code
               )
@@ -1259,7 +1259,7 @@ implicit program           : Program,
           ## WORKAROUND FOR A BUG IN VERSION 0.1 OF THE COMPILER
           ## FIX THIS
           { llvar = low_level_vars(value(var_1));
-            return set_any_var(llvar, column_lookup(substitute(tv), surr_var_0, mandatory, col_repr));
+            return set_any_var(llvar, column_lookup(substitute(tv), table_info(tv), surr_var_0));
           } if var_1 != nothing
         );
 
@@ -1279,7 +1279,7 @@ implicit program           : Program,
 
           loop_code = (break_if(is_out_of_range(it_var))) & vars_setup_code & body_code & (move_forward(it_var));
           table_code = (
-            get_column_iter(it_var, substitute(tv)),
+            get_column_iter(it_var, substitute(tv), cast_any_bin_col(table_info(tv))),
             repeat(loop_code)
           );
 

@@ -141,7 +141,7 @@ implicit program           : Program,
           set_ivar32(surr_var_1, get_arg_by_assoc_surr(master_table, 1, surr_var_01)) if ll_vars(1) != nothing,
           surr_to_decoded_value(value_unsafe(ll_vars(0)), store_ids(0), store_types(0), surr_var_0) if ll_vars(0) != nothing,
           surr_to_decoded_value(value_unsafe(ll_vars(1)), store_ids(1), store_types(1), surr_var_1) if ll_vars(1) != nothing,
-          set_any_var(value_unsafe(ll_vars(2)), column_lookup(substitute(tv), surr_var_01, column_is_mandatory(tv), col_repr)) if ll_vars(2) != nothing
+          set_any_var(value_unsafe(ll_vars(2)), column_lookup(substitute(tv), table_info(tv), surr_var_01)) if ll_vars(2) != nothing
         );
 
         new_surrs = [value(v) -> obj_expr(value_unsafe(ll_vars(i))) : v @ i <- vars, v != nothing];
@@ -229,7 +229,7 @@ implicit program           : Program,
                   ( surr_to_decoded_value(value(ll_free_arg_var), free_arg_store_id, free_arg_store_type, free_surr_var) if ll_free_arg_var != nothing,
                     set_any_var(
                       value(ll_value_var),
-                      column_lookup(substitute(tv), assoc_surr_var, column_is_mandatory(tv), column_repr(sign(2)))
+                      column_lookup(substitute(tv), table_info(tv), assoc_surr_var)
                     ) if ll_value_var != nothing
                   ) & action_code
                 ),
@@ -297,7 +297,7 @@ implicit program           : Program,
                       table_contains(substitute(tv), table_info(tv), (just(surr_var_01), nothing), false),
                       ( set_any_var(
                           value(ll_value_var),
-                          column_lookup(substitute(tv), surr_var_01, column_is_mandatory(tv), column_repr(sign(2)))
+                          column_lookup(substitute(tv), table_info(tv), surr_var_01)
                         ) if ll_value_var != nothing
                       ) & action_code
 
@@ -380,7 +380,7 @@ implicit program           : Program,
               table_contains(tv, table_info(tv), (just(key_arg_surr), nothing), false),
               ( set_any_var(
                   value(ll_value_var),
-                  column_lookup(substitute(tv), key_arg_surr, column_is_mandatory(tv), column_repr(sign(1)))
+                  column_lookup(substitute(tv), table_info(tv), key_arg_surr)
                 ) if ll_value_var != nothing
               ) & action_code
             )
@@ -432,7 +432,7 @@ implicit program           : Program,
         vars_setup_code = (
           set_ivar32(surr_var_0, get_unknown_arg(it_var, 0)),
           surr_to_decoded_value(value(ll_var_0), store_id, store_type, surr_var_0) if ll_var_0 != nothing,
-          set_any_var(value(ll_var_1), column_lookup(substitute(tv), surr_var_0, mandatory, col_repr)) if ll_var_1 != nothing
+          set_any_var(value(ll_var_1), column_lookup(substitute(tv), table_info(tv), surr_var_0)) if ll_var_1 != nothing
         );
 
         new_surrs = [
@@ -445,7 +445,7 @@ implicit program           : Program,
         loop_code = (break_if(is_out_of_range(it_var))) & vars_setup_code & action_code & (move_forward(it_var));
 
         table_code = (
-          get_column_iter(it_var, substitute(tv)),
+          get_column_iter(it_var, substitute(tv), cast_any_bin_col(table_info(tv))),
           repeat(nonempty(loop_code))
         );
 

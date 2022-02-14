@@ -406,14 +406,11 @@ implicit program           : Program,
       arg_store_type = value_store_type(rel_auto_type(rel_var), unqualified(arg_store_id));
       arg_store_id = substitute(arg_store_id);
 
-      mandatory = column_is_mandatory(table);
-      col_repr = column_repr(table_signature(table)(1));
-
       code = (
         arg_eval_code |
         set_ivar32(arg_surr_var, value_to_surr(arg_store_id, arg_store_type, value_store_encoded_expr(arg_store_type, arg_alias))),
         check(neg(is_eq(arg_surr_var, -1))),
-        set_any_var(res_var, column_lookup(subst_table, arg_surr_var, mandatory, col_repr))
+        set_any_var(res_var, column_lookup(subst_table, table_info(table), arg_surr_var))
       );
 
       return (code, obj_expr(res_var), ret_var_gen);
@@ -426,17 +423,13 @@ implicit program           : Program,
         arg_store_type = value_store_type(rel_auto_type(rel_var), unqualified(arg_store_id));
         arg_store_id = substitute(arg_store_id);
 
-        mandatory = column_is_mandatory(tv);
-
         sign = table_signature(tv);
-        col_repr = column_repr(sign(1));
-
         enc_expr = value_store_encoded_expr(arg_store_type, arg_alias);
 
         code = (
           set_ivar32(arg_surr_var, value_to_surr(arg_store_id, arg_store_type, enc_expr)),
           check(neg(is_eq(arg_surr_var, -1))),
-          set_any_var(res_var, column_lookup(subst_tv, arg_surr_var, mandatory, col_repr))
+          set_any_var(res_var, column_lookup(subst_tv, table_info(tv), arg_surr_var))
         );
 
         return ((sign(0)), code);
@@ -496,7 +489,6 @@ implicit program           : Program,
       arg_1_store_id = substitute(arg_1_store_id);
 
       sign = table_signature(tv);
-      col_repr = column_repr(sign(2));
 
       enc_expr_0 = value_store_encoded_expr(arg_0_store_type, args_aliases(0));
       enc_expr_1 = value_store_encoded_expr(arg_1_store_type, args_aliases(1));
@@ -508,7 +500,7 @@ implicit program           : Program,
         check(neg(is_eq(arg_1_surr_var, -1))),
         set_ivar32(assoc_surr_var, get_assoc_surr(substitute(master_table), (arg_0_surr_var, arg_1_surr_var))),
         check(neg(is_eq(assoc_surr_var, -1))),
-        set_any_var(res_var, column_lookup(substitute(tv), assoc_surr_var, false, col_repr))
+        set_any_var(res_var, column_lookup(substitute(tv), table_info(tv), assoc_surr_var))
       );
 
       return ((sign(0), sign(1)), code);

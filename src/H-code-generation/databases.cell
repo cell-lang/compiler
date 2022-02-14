@@ -115,12 +115,17 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
       arity = arity(rel_auto_id, v);
       args_perm = rel_vars_args_perms(v);
 
-      core_loop_code = if is_columnar_relvar(rel_auto_id, v) then
-          column_core_loop_code(rel_auto_id, v, arity, args_vars, surr_vars(0))
-        else if is_ternary_slave_column(rel_auto_id, v) then
-          ternary_slave_column_core_loop_code(rel_auto_id, v, arity, args_vars, surr_vars, false)
-        else
-          table_core_loop_code(rel_auto_id, v, arity, args_vars, surr_vars);
+      if is_columnar_relvar(rel_auto_id, v) {
+        entry_code, core_loop_code, exit_code = column_core_loop_code(rel_auto_id, v, arity, args_vars, surr_vars(0), false);
+      }
+      else if is_ternary_slave_column(rel_auto_id, v) {
+        entry_code = ();
+        exit_code = ();
+        core_loop_code = ternary_slave_column_core_loop_code(rel_auto_id, v, arity, args_vars, surr_vars, false);
+      }
+      else {
+        entry_code, core_loop_code, exit_code = table_core_loop_code(rel_auto_id, v, arity, args_vars, surr_vars, false);
+      }
 
       signatures = rel_var_signatures(database, v);
 
@@ -147,32 +152,47 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 
       rel_args_vars = (args_vars(args_perm(i)) : i < arity);
 
-      return (rel_args_vars, (), nonempty(core_loop_code), ());
+      return (rel_args_vars, entry_code, nonempty(core_loop_code), exit_code);
     } : v <- logical_rel_vars(database)];
   }
 
 
-  Instr* table_core_loop_code(DBSymbol rel_auto_id, RelVar rel_var, NzNat arity, LocVar+ args_vars, Int32Var+ surr_vars) {
+  (Instr*, Instr*, Instr*) table_core_loop_code(DBSymbol rel_auto_id, RelVar rel_var, NzNat arity, LocVar+ args_vars, Int32Var+ surr_vars, Bool ordered) {
     // Physical tables the logical relation is partitioned into
     tables = [table_var(i) : i <- physical_rel_vars(database, rel_var)];
 
     if |tables| == 1 {
-      table_var = only(tables);
-      table_info = table_info(rel_auto_id, table_var);
-      fail if not table_info :: AnySurrTable;
+      tbl_var = only(tables);
+      tbl_info = cast_any_surr_table(table_info(rel_auto_id, tbl_var));
 
-      stores_ids = (table_col_store_id(rel_auto_id, table_var, i) : i < arity);
+      stores_ids = (table_col_store_id(rel_auto_id, tbl_var, i) : i < arity);
       stores_types = (value_store_type(rel_auto_id, id) : id <- stores_ids);
       store_args = (value_store_encoded_expr(stores_types(i), args_vars(i)) : i < arity);
 
       store_inserts = (immediate_insert_or_add_ref(surr_vars(i), stores_ids(i), stores_types(i), store_args(i)) : i < arity);
-      table_insert = immediate_insert_tuple(table_var, table_info, nonempty(take(surr_vars, arity)));
+      table_insert = immediate_insert_tuple(tbl_var, tbl_info, nonempty(take(surr_vars, arity)));
       if arity == 2 {
         symmetric = symmetric(rel_auto_id, rel_var);
-        guard_expr = neg(table_contains(table_var, table_info, (just(surr_vars(i)) : i < arity), symmetric));
+        guard_expr = neg(table_contains(tbl_var, tbl_info, (just(surr_vars(i)) : i < arity), symmetric));
         table_insert = do_if(guard_expr, table_insert);
       }
       core_loop_code = (store_inserts | table_insert);
+
+      entry_code = ();
+      exit_code = ();
+
+      if arity == 1 {
+        slaves = slave_columns(rel_auto_id, original_rel_var(tbl_var));
+        if slaves != [] {
+          init_cpty_var = ivar32(3);
+          entry_code = (set_ivar32(init_cpty_var, get_capacity(tbl_var, tbl_info)));
+          exit_code = ({
+            tv = table_var(v);
+            table = cast_mandatory_column(table_info(rel_auto_id, tv));
+            return resize_mandatory_column(tv, table, init_cpty_var, get_capacity(tbl_var, tbl_info));
+          } : v <- isort(slaves));
+        }
+      }
     }
     else {
       // Choosing the dispatch arguments
@@ -181,8 +201,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
       disp_args = (args_vars(i) : i <- disp_args_idxs);
 
       cases = [{
-        table_info = table_info(rel_auto_id, tv);
-        fail if not table_info :: AnySurrTable;
+        tbl_info = cast_any_surr_table(table_info(rel_auto_id, tv));
 
         stores_ids = (table_col_store_id(rel_auto_id, tv, i) : i < arity);
         stores_types = (value_store_type(rel_auto_id, id) : id <- stores_ids);
@@ -191,10 +210,10 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
         store_inserts = (
           immediate_insert_or_add_ref(surr_vars(i), stores_ids(i), stores_types(i), store_args(i)) : i < arity
         );
-        table_insert = immediate_insert_tuple(tv, table_info, nonempty(take(surr_vars, arity)));
+        table_insert = immediate_insert_tuple(tv, tbl_info, nonempty(take(surr_vars, arity)));
         if arity == 2 {
           symmetric = symmetric(rel_auto_id, rel_var);
-          guard_expr = neg(table_contains(tv, table_info, (just(surr_vars(i)) : i < arity), symmetric));
+          guard_expr = neg(table_contains(tv, tbl_info, (just(surr_vars(i)) : i < arity), symmetric));
           table_insert = do_if(guard_expr, table_insert);
         }
         case_code = (store_inserts | table_insert, exit_block);
@@ -206,9 +225,28 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 
       block_body = dynamic_dispatch_code(disp_args, cases);
       core_loop_code = (execute_block(block_body));
+
+      entry_code = ();
+      exit_code = ();
+
+      if arity == 1 {
+        for master_var @ i <- isort(tables) {
+          slaves = slave_columns(rel_auto_id, original_rel_var(master_var));
+          if slaves != [] {
+            init_cpty_var = ivar32(nat(3 + i));
+            tbl_info = cast_any_surr_table(table_info(rel_auto_id, master_var));
+            entry_code = (entry_code | set_ivar32(init_cpty_var, get_capacity(master_var, tbl_info)));
+            exit_code = exit_code & ({
+              slave_var = table_var(v);
+              slave_table = cast_mandatory_column(table_info(rel_auto_id, slave_var));
+              return resize_mandatory_column(slave_var, slave_table, init_cpty_var, get_capacity(master_var, tbl_info));
+            } : v <- isort(slaves));
+          }
+        }
+      }
     }
 
-    return core_loop_code;
+    return (entry_code, core_loop_code, exit_code);
   }
 
 
@@ -268,22 +306,61 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
   }
 
 
-  Instr* column_core_loop_code(DBSymbol rel_auto_id, RelVar rel_var, NzNat arity, LocVar+ args_vars, Int32Var key_surr_var) {
+  (Instr*, Instr*, Instr*) column_core_loop_code(DBSymbol rel_auto_id, RelVar rel_var, NzNat arity, LocVar+ args_vars, Int32Var key_surr_var, Bool ordered) {
+    bvar = bvar(0);
+    ivar = ivar32(0);
+
     // Physical tables the logical relation is partitioned into
     tables = [table_var(i) : i <- physical_rel_vars(database, rel_var)];
 
     if |tables| == 1 {
-      table_var = only(tables);
-      store_id = table_col_store_id(rel_auto_id, table_var, 0);
+      tbl_var = only(tables);
+      is_mandatory = column_is_mandatory(rel_auto_id, tbl_var);
+      store_id = table_col_store_id(rel_auto_id, tbl_var, 0);
       store_type = value_store_type(rel_auto_id, store_id);
       store_arg = value_store_encoded_expr(store_type, args_vars(0));
-      col_repr = column_repr(table_signature(rel_auto_id, table_var)(1));
-      core_loop_code = (
-        immediate_insert_or_add_ref(key_surr_var, store_id, store_type, store_arg),
-        column_insert_immediate(table_var, column_is_mandatory(rel_auto_id, table_var), col_repr, key_surr_var, low_level_expr(col_repr, args_vars(1)))
-      );
+      col_repr = column_repr(table_signature(rel_auto_id, tbl_var)(1));
+      core_loop_code = (immediate_insert_or_add_ref(key_surr_var, store_id, store_type, store_arg));
+      if is_mandatory {
+        if not ordered {
+          master = column_master(rel_auto_id, tbl_var);
+          master_table = table_var(master);
+          master_info = table_info(rel_auto_id, master_table);
+          assert |master_info.col_types| == 1;
+
+          core_loop_code = (
+            core_loop_code |
+              do_if_not(
+                table_contains(table_var(master), master_info, (just(key_surr_var)), false),
+                raise_load_error(false)
+              ),
+              surr_set_try_insert(key_surr_var, bvar),
+              do_if_not(bvar, raise_load_error(false))
+          );
+
+          master_size_expr = get_count(master_table, master_info, (nothing), false);
+          entry_code = (do_if(are_eq(master_size_expr, 0), raise_load_error(false)));
+          exit_code = (
+            do_if_not(are_eq(surr_set_size, master_size_expr), raise_load_error(false)),
+            surr_set_clear
+          );
+        }
+        else {
+          entry_code = ();
+          exit_code = ();
+        }
+      }
+      else {
+        entry_code = ();
+        exit_code = ();
+      }
+      insert_stmt = column_insert_immediate(tbl_var, is_mandatory, col_repr, key_surr_var, low_level_expr(col_repr, args_vars(1)));
+      core_loop_code = (core_loop_code | insert_stmt);
     }
     else {
+      ## CHECK CHECK CHECK: NOT SURE THIS ASSERTION ALWAYS HOLDS TRUE
+      assert not (v <- tables : column_is_mandatory(rel_auto_id, v));
+
       // Choosing the dispatch arguments
       signatures = [table_signature(rel_auto_id, tv) : tv <- tables];
       disp_args_idxs = optimal_dispatch_args(signatures, typedefs);
@@ -306,9 +383,11 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 
       block_body = dynamic_dispatch_code(disp_args, cases);
       core_loop_code = (execute_block(block_body));
+      entry_code = ();
+      exit_code = ();
     }
 
-    return core_loop_code;
+    return (entry_code, core_loop_code, exit_code);
   }
 
 
@@ -349,12 +428,17 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
       // phys_args_vars = (log_args_vars(args_perm(i)) : i < arity);
       it_var = it_vars[arity]; // Need to use [] instead of () because of the typechecker...
 
-      core_loop_code = if is_columnar_relvar(rel_auto_id, v) then
-          column_core_loop_code(rel_auto_id, v, arity, args_vars, surr_vars(0))
-        else if is_ternary_slave_column(rel_auto_id, v) then
-          ternary_slave_column_core_loop_code(rel_auto_id, v, arity, args_vars, surr_vars, true)
-        else
-          table_core_loop_code(rel_auto_id, v, arity, args_vars, surr_vars);
+      if is_columnar_relvar(rel_auto_id, v) {
+        entry_code, core_loop_code, exit_code = column_core_loop_code(rel_auto_id, v, arity, args_vars, surr_vars(0), true);
+      }
+      else if is_ternary_slave_column(rel_auto_id, v) {
+        entry_code = ();
+        exit_code = ();
+        core_loop_code = ternary_slave_column_core_loop_code(rel_auto_id, v, arity, args_vars, surr_vars, true);
+      }
+      else {
+        entry_code, core_loop_code, exit_code = table_core_loop_code(rel_auto_id, v, arity, args_vars, surr_vars, true);
+      }
 
       signatures = rel_var_signatures(database, v);
 
@@ -506,7 +590,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
         get_iter_instr = match (it_var)
           table_it_var()        = get_table_iter(it_var, tv, cast_any_surr_table(src_table_info), (nothing : i < arity)),
           slave_column_it_var() = get_slave_col_iter(it_var, tv, cast_slave_column(src_table_info), (nothing : i < arity)),
-          column_it_var()       = get_column_iter(it_var, tv);
+          column_it_var()       = get_column_iter(it_var, tv, cast_any_bin_col(src_table_info));
 
         code = (code |
           get_iter_instr,

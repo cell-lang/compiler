@@ -195,7 +195,10 @@ type Int32NatOp     = bool_to_bit(BoolExpr),
                       value_to_surr(store: AnyValueStoreId, store_type: ValueStoreType, value: <AtomicExpr, IntExpr>),
                       get_unknown_arg(iter: AnyTableItVar, arg: <0..2>),
                       get_arg_by_assoc_surr(table: AnyTableVar, arg: <0..1>, surr: Int32Var),
-                      get_assoc_surr(table: AnyTableVar, args: (Int32Var, Int32Var));
+                      get_assoc_surr(table: AnyTableVar, args: (Int32Var, Int32Var)),
+                      // Operations that are only used when loading or setting the state of a relational automaton
+                      get_capacity(table_var: AnyTableVar, table: AnyTable),
+                      surr_set_size;
 
 type FloatNatOp     = float_value(ObjExpr),
                       neg_float(FloatExpr),
@@ -222,7 +225,7 @@ type ObjNatOp       = at(seq: ObjExpr, idx: IntExpr, fast_repr: LowLevelEltRepr)
                       get_curr_arg(var: BinRelItVar,  arg: <0..1>),
                       get_curr_arg(var: TernRelItVar, arg: <0..2>),
                       surr_to_value(store: AnyValueStoreId, store_type: ValueStoreType, surrogate: Int32Var),
-                      column_lookup(var: AnyTableVar, key: Int32Var, mandatory: Bool, repr: ColumnRepr),
+                      column_lookup(var: AnyTableVar, column: AnyColumn, key: Int32Var),
                       get_value(var: ColumnItVar), ## WHAT IS THIS FOR? IT'S NOT EVEN USED...
                       rand_elem(ObjExpr); // Non-deterministic (unless applied to a singleton)
 
@@ -396,7 +399,7 @@ type BasicInstr     = init_stream(StreamVar),
 
                       get_table_iter(it_var: TableItVar, table_var: AnyTableVar, table: AnySurrTable, args: Maybe[Int32Var]+),
                       get_slave_col_iter(it_var: SlaveColumnItVar, table_var: AnyTableVar, column: SlaveColumn, args: Maybe[Int32Var]+),
-                      get_column_iter(it_var: ColumnItVar, column: AnyTableVar),
+                      get_column_iter(it_var: ColumnItVar, col_var: AnyTableVar, column: <Column, MandatoryColumn>),
                       queue_deletes(table_var: TableVar, table: AnyTable, args: Maybe[Int32Var]+, symmetric: Bool),
                       lookup_or_queue_insert_value(res_var: Int32Var, store: ValueStoreId, store_type: ValueStoreType, value: <AtomicExpr, IntExpr>),
                       queue_insert_tuple(table_var: TableVar, table: AnySurrTable, tuple: Int32Var+),
@@ -409,7 +412,11 @@ type BasicInstr     = init_stream(StreamVar),
                       column_insert_immediate(table_var: TableVar, mandatory: Bool, col_repr: ColumnRepr, key_surr: Int32Var, value: AnyTypeExpr),
 
                       // Instructions that are only used when loading or setting the state of a relational automaton
-                      raise_load_error(deferred: Bool);
+                      resize_mandatory_column(table_var: AnyTableVar, column: MandatoryColumn, curr_capacity: Int32Expr, new_capacity: Int32Expr),
+                      raise_load_error(deferred: Bool),
+                      surr_set_try_insert(surr: Int32Var, was_new: BoolVar),
+                      surr_set_clear;
+
 
 type JumpInstr      = break_loop,
                       exit_block,
@@ -533,7 +540,8 @@ type SlaveColumn    = slave_column(
                       );
 
 type AnySurrTable   = Table, MasterBinTable, SlaveTernTable;
-type AnyTable       = AnySurrTable, Column, MandatoryColumn, SlaveColumn;
+type AnyColumn      = Column, MandatoryColumn, SlaveColumn;
+type AnyTable       = AnySurrTable, AnyColumn;
 
 type ForeignKeyType = unary_unary, unary_binary(<0..1>), unary_ternary(<0..2>),
                       binary_unary(<0..1>), ternary_unary(<0..2>),
@@ -541,7 +549,6 @@ type ForeignKeyType = unary_unary, unary_binary(<0..1>), unary_ternary(<0..2>),
                       unary_sym_binary, unary_sym_ternary_12, unary_sym_ternary_3,
                       sym_binary_unary, sym_ternary_unary_12, sym_ternary_unary_3,
                       sym_binary_sym_ternary, sym_ternary_sym_binary;
-
 
 type BlockForeignKey  = foreign_key(origin: TableVar, target: TableVar, type: ForeignKeyType);
 

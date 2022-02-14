@@ -92,8 +92,30 @@ Bool has_opt_fields(OptRecRepr) =
 ////////////////////////////////////////////////////////////////////////////////
 
 AnySurrTable cast_any_surr_table(AnyTable table) =
-  if table :: AnySurrTable then table else undefined;
+  table()             |
+  master_bin_table()  |
+  slave_tern_table()  = table,
+  _                   = undefined;
+
+AnyColumn cast_any_column(AnyTable table) =
+  column()            |
+  mandatory_column()  |
+  slave_column()      = table,
+  _                   = undefined;
 
 SlaveColumn cast_slave_column(AnyTable table) =
   slave_column()  = table,
   _               = undefined;
+
+<Column, MandatoryColumn> cast_any_bin_col(AnyTable table) =
+  column()            = table,
+  mandatory_column()  = table,
+  _                   = undefined;
+
+MandatoryColumn cast_mandatory_column(AnyTable table) =
+  mandatory_column()  = table,
+  _                   = undefined;
+
+
+True  is_mandatory_column(MandatoryColumn)        = true;
+False is_mandatory_column(<Column, SlaveColumn>)  = false;
