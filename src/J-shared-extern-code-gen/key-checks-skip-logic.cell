@@ -1,0 +1,67 @@
+// Insertions into a raw column are always precedeed by an insertion into its
+// master, and duplicate insertions are also rejected. So it would be enough to
+// check that duplicates are never inserted in the master, but that's not
+// actually done at the moment. An what about a pair of duplicate
+// combined master-slave insertions? That would pose the same problem as
+// a duplicated update: it would violate the update semantics, but not
+// cause crashes or memory leaks or other problems
+
+// All deletes from a raw columns are guarded by a membership check
+// of the key into the master table, so that no delete can actually
+// cause an out-of-bound access into the raw column's array.
+// This check is done during the execution phase, not the apply phase,
+// and is done for both explicit and automatically generated deletion
+// Sample code:
+//     if (unary_table_contains(&target->entity, id))
+//       obj_col_aux_delete_1(&auxiliary->obj_attr, id);
+//
+//     if (unary_table_contains(&target->entity, id)) {
+//       unary_table_aux_delete(&auxiliary->entity, id);
+//       obj_col_aux_delete_1(&auxiliary->obj_attr_1, id);
+//       obj_col_aux_delete_1(&auxiliary->obj_attr_2, id);
+//     }
+// Note though that we still need to deal with duplicate deletions
+// Also, clearing a column is not checked at execution time
+
+// Multiple conflicting updates can be issued, but that would not lead to
+// crashes or memory leaks for OBJ columns, it would just violate a bit the
+// update semantics. They could be maybe checked only in debug mode?
+
+// Updating an attribute of a non-existent or, worse, deleted entity is
+// something that needs to be checked in any case. If the entity has just
+// been deleted we would have to go through the updates of the master table,
+// not just its pre-update content
+
+
+// Applying phase for updates to raw obj colums:
+
+//   Since we already checked for the presence of a matching tuple
+//   during the execution phase, there's nothing more we need to do
+//   Even a duplicate deletion would not cause any problem as long
+//   as unused slots are kept blank.
+//
+//     Release the current value if it's not inline (and therefore also not blank)
+//     Set the value slot to blank if it's not already (or maybe it would be enough to do it only when it's not an inline value?)
+
+
+//   For insertion we would need to check that the corresponding entity
+//   was either not in the pre-update master, or that it was deleted.
+//   We also need to check for conflicting insertions or updates, unless
+//   we decide to violate the semantics of updates a bit
+//
+//     Check that the first argument was not in the master table. Unavoidable, but could be done once for all the attributes (but how?)
+//     If that's not the case, check to see whether it was deleted. Again, this needs to be done once for the master table
+//       and all its mandatory attributes. Can be skipped if there are no deletion to the master
+//     Check to see if the insertion conflicts with other insertions or updates. Can be skipped if this is the only insertions and there are no updates
+//     Copy the new value to the corresponding slot. No need to release anything, or to check for array overflows,
+//       but we need to resize the slave columns whenever the capacity of the master changes (how?)
+
+
+//   For updates we need to check that there are no conflicting insertions or updates,
+//   unless, again, we decide to bend the update semantics a bit
+//
+//     Check for conflicts with other updates or insertions. Can be skipped is this is the only updates and there are no insertions
+//     Read the current value of the target slot and release it if need be. No need to do bound checking here,
+//       foreign keys and syncronized resizing of the master table and its slaves should be enough
+//     Copy the new value to the corresponding slot
+

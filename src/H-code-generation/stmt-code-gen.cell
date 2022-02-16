@@ -148,37 +148,46 @@ implicit program           : Program,
     phys_rel_vars = overlapping_phys_rel_vars(rel_var, args_types);
     rel_auto = cast_database(context);
     for v <- isort(phys_rel_vars) {
-      table_code = delete_code(table_var(v), args_aliases, args_surrs, args_types, assoc_surr_var, symmetric);
+      tbl_var = table_var(v);
+      log_rv = logical_rel_var(v);
       attrs = [a : a <- rel_auto.attr_map(v, ?)];
-      attr_args_aliases = (args_aliases | nothing);
-      attr_args_surrs = (args_surrs | nothing);
-      attr_args_types = (args_types | nothing);
-      for a <- isort(attrs) {
-        assert arity(a) == arity(rel_var) + 1;
-        table_code = table_code & delete_code(table_var(a), attr_args_aliases, attr_args_surrs, attr_args_types, assoc_surr_var, symmetric);
+
+      if is_columnar_relvar(log_rv) {
+        assert not symmetric and attrs == [];
+        table_code = column_delete_code(table_var(v), args_aliases, args_surrs, args_types);
       }
+      else if is_ternary_slave_column(log_rv) {
+        assert not symmetric and attrs == [];
+        table_code = slave_column_delete_code(table_var(v), args_aliases, args_surrs, args_types, assoc_surr_var);
+      }
+      else
+        table_code = table_delete_code(table_var(v), args_aliases, args_surrs, args_types, symmetric, attrs);
+
       code = code & table_code;
     }
 
     return (code, just(surrogates), [], init_var_gen);
 
 
-    Instr* delete_code(TableVar table_var, Maybe[ObjExpr]+ args_aliases, Maybe[Int32Var]+ args_surrs, Maybe[Type]+ args_types, Int32Var assoc_surr_var, Bool symmetric) {
-      if is_columnar_relvar(logical_rel_var(original_rel_var(table_var))) {
-        assert not symmetric;
-        fail if |args_aliases| != 2;
-        arg0, arg1 = args_aliases;
-        if arg0 != nothing and arg1 != nothing {
-          key_store_id = table_col_store_id(table_var, 0);
-          key_store_type = value_store_type(this_db_symbol, key_store_id);
+    Instr* column_delete_code(TableVar table_var, Maybe[ObjExpr]+ args_aliases, Maybe[Int32Var]+ args_surrs, Maybe[Type]+ args_types) {
+      fail if |args_aliases| != 2;
+      arg0, arg1 = args_aliases;
 
-          key_arg_alias = value(arg0);
-          key_arg_surr = value_unsafe(args_surrs(0));
-          key_arg_type = value_unsafe(args_types(0));
+      if arg0 != nothing {
+        tbl_info = table_info(table_var);
 
-          lookup_expr = column_lookup(table_var, table_info(table_var), key_arg_surr);
+        key_store_id = table_col_store_id(table_var, 0);
+        key_store_type = value_store_type(this_db_symbol, key_store_id);
 
-          has_key_check_expr = table_contains(table_var, table_info(table_var), (just(key_arg_surr), nothing), false);
+        key_arg_alias = value(arg0);
+        key_arg_surr = value_unsafe(args_surrs(0));
+        key_arg_type = value_unsafe(args_types(0));
+
+        has_key_check_expr = table_contains(table_var, tbl_info, (args_surrs(0), nothing), false);
+
+        if arg1 != nothing {
+          lookup_expr = column_lookup(table_var, tbl_info, key_arg_surr);
+
           contains_tuple_check_expr = and_then((
             neg(is_eq(key_arg_surr, -1)),
             has_key_check_expr,
@@ -190,7 +199,24 @@ implicit program           : Program,
             ( set_ivar32(key_arg_surr, value_to_surr(key_store_id, key_store_type, value_store_encoded_expr(key_store_type, key_arg_alias))),
               do_if(
                 contains_tuple_check_expr,
-                queue_deletes(table_var, table_info(table_var), (args_surrs(0), nothing), symmetric)
+                queue_deletes(table_var, tbl_info, (args_surrs(0), nothing), false)
+              )
+            )
+          );
+
+          return code;
+        }
+        else if column_is_mandatory(table_var) {
+           assert arg1 == nothing;
+
+          contains_tuple_check_expr = and_then((neg(is_eq(key_arg_surr, -1)), has_key_check_expr));
+
+          code = opt_do_if(
+            value_store_guard(key_store_type, key_arg_alias, key_arg_type),
+            ( set_ivar32(key_arg_surr, value_to_surr(key_store_id, key_store_type, value_store_encoded_expr(key_store_type, key_arg_alias))),
+              do_if(
+                contains_tuple_check_expr,
+                queue_deletes(table_var, tbl_info, (args_surrs(0), nothing), false)
               )
             )
           );
@@ -199,52 +225,71 @@ implicit program           : Program,
         }
       }
 
-      if is_ternary_slave_column(logical_rel_var(original_rel_var(table_var))) {
-        assert not symmetric;
-        fail if |args_aliases| != 3;
-        arg0, arg1, arg2 = args_aliases;
-        if arg0 != nothing and arg1 != nothing and arg2 != nothing {
-          arg0 = value(arg0);
-          arg1 = value(arg1);
-          arg2 = value(arg2);
+      return table_delete_code(table_var, args_aliases, args_surrs, args_types, false, []);
+    }
 
-          arg_0_surr = value_unsafe(args_surrs(0));
-          arg_1_surr = value_unsafe(args_surrs(1));
 
-          master_table = master_table(table_var);
+    Instr* slave_column_delete_code(TableVar table_var, Maybe[ObjExpr]+ args_aliases, Maybe[Int32Var]+ args_surrs, Maybe[Type]+ args_types, Int32Var assoc_surr_var) {
+      fail if |args_aliases| != 3;
+      arg0, arg1, arg2 = args_aliases;
+      if arg0 != nothing and arg1 != nothing and arg2 != nothing {
+        arg0 = value(arg0);
+        arg1 = value(arg1);
+        arg2 = value(arg2);
 
-          store_ids = (table_col_store_id(table_var, i) : i <= 1);
-          stores_types = (value_store_type(this_db_symbol, id) : id <- store_ids);
+        arg_0_surr = value_unsafe(args_surrs(0));
+        arg_1_surr = value_unsafe(args_surrs(1));
 
-          code = opt_do_if(
-            and((value_store_guard(stores_types(i), value_unsafe(args_aliases(i)), value_unsafe(args_types(i))) : i <= 1)),
-            ( set_ivar32(arg_0_surr, value_to_surr(store_ids(0), stores_types(0), value_store_encoded_expr(stores_types(0), arg0))),
-              do_if_not(
-                is_eq(arg_0_surr, -1),
-                ( set_ivar32(arg_1_surr, value_to_surr(store_ids(1), stores_types(1), value_store_encoded_expr(stores_types(1), arg1))),
-                  do_if_not(
-                    is_eq(arg_1_surr, -1),
-                    ( set_ivar32(assoc_surr_var, get_assoc_surr(master_table, (arg_0_surr, arg_1_surr))),
-                      do_if(
-                        and_then((
-                          neg(is_eq(assoc_surr_var, -1)),
-                          table_contains(table_var, table_info(table_var), (just(assoc_surr_var), nothing), false),
-                          is_eq(arg2, column_lookup(table_var, table_info(table_var), assoc_surr_var))
-                        )),
-                        queue_deletes(table_var, table_info(table_var), (args_surrs(0), args_surrs(1), nothing), symmetric)
-                      )
+        master_table = master_table(table_var);
+
+        store_ids = (table_col_store_id(table_var, i) : i <= 1);
+        stores_types = (value_store_type(this_db_symbol, id) : id <- store_ids);
+
+        code = opt_do_if(
+          and((value_store_guard(stores_types(i), value_unsafe(args_aliases(i)), value_unsafe(args_types(i))) : i <= 1)),
+          ( set_ivar32(arg_0_surr, value_to_surr(store_ids(0), stores_types(0), value_store_encoded_expr(stores_types(0), arg0))),
+            do_if_not(
+              is_eq(arg_0_surr, -1),
+              ( set_ivar32(arg_1_surr, value_to_surr(store_ids(1), stores_types(1), value_store_encoded_expr(stores_types(1), arg1))),
+                do_if_not(
+                  is_eq(arg_1_surr, -1),
+                  ( set_ivar32(assoc_surr_var, get_assoc_surr(master_table, (arg_0_surr, arg_1_surr))),
+                    do_if(
+                      and_then((
+                        neg(is_eq(assoc_surr_var, -1)),
+                        table_contains(table_var, table_info(table_var), (just(assoc_surr_var), nothing), false),
+                        is_eq(arg2, column_lookup(table_var, table_info(table_var), assoc_surr_var))
+                      )),
+                      queue_deletes(table_var, table_info(table_var), (args_surrs(0), args_surrs(1), nothing), false)
                     )
                   )
                 )
               )
             )
-          );
+          )
+        );
 
-          return code;
-        }
+        return code;
       }
 
-      code = (queue_deletes(table_var, table_info(table_var), nonempty(args_surrs), symmetric));
+      return table_delete_code(table_var, args_aliases, args_surrs, args_types, false, []);
+    }
+
+
+
+    Instr* table_delete_code(TableVar table_var, Maybe[ObjExpr]+ args_aliases, Maybe[Int32Var]+ args_surrs, Maybe[Type]+ args_types, Bool symmetric, [PhysRelVar] attributes) {
+      tbl_info = table_info(table_var);
+
+      // Deleting from the master table
+      code = (queue_deletes(table_var, tbl_info, args_surrs, symmetric));
+
+      if attributes != [] {
+        // Deleting from the slave attribute tables, if any
+        code = code & (queue_deletes(:table_var(a), table_info(:table_var(a)), (args_surrs | nothing), false) : a <- isort(attributes));
+        // Checking that the master table actually contains a matching entry before queuing the deletions
+        code = (do_if(table_contains(table_var, tbl_info, args_surrs, symmetric), code));
+      }
+
       for a @ ri <- reverse(args_aliases) {
         if a != nothing {
           i = nat(|args_aliases| - ri - 1);
@@ -261,6 +306,7 @@ implicit program           : Program,
           );
         }
       }
+
       return code;
     }
   }
