@@ -194,8 +194,9 @@ type Int32NatOp     = bool_to_bit(BoolExpr),
                       add32(Int32Expr, Int32Expr),
                       value_to_surr(store: AnyValueStoreId, store_type: ValueStoreType, value: <AtomicExpr, IntExpr>),
                       get_unknown_arg(iter: AnyTableItVar, arg: <0..2>),
-                      get_arg_by_assoc_surr(table: AnyTableVar, arg: <0..1>, surr: Int32Var),
-                      get_assoc_surr(table: AnyTableVar, args: (Int32Var, Int32Var)),
+                      get_arg_by_assoc_surr(table_var: AnyTableVar, table_type: MasterBinTable, arg: <0..1>, surr: Int32Var),
+                      get_assoc_surr(table_var: AnyTableVar, table_type: MasterBinTable, args: (Int32Var, Int32Var)),
+                      get_aux_assoc_surr(table_var: TableVar, table: MasterBinTable, args: (Int32Var, Int32Var)), // The tuple may not have been inserted yet
                       // Operations that are only used when loading or setting the state of a relational automaton
                       get_capacity(table_var: AnyTableVar, table: AnyTable),
                       surr_set_size;
@@ -405,7 +406,6 @@ type BasicInstr     = init_stream(StreamVar),
                       queue_insert_tuple(table_var: TableVar, table: AnySurrTable, tuple: Int32Var+),
 
                       column_insert_deferred(table_var: TableVar, mandatory: Bool, col_repr: ColumnRepr, key_surr: Int32Var, value: AnyTypeExpr, forced: Bool),
-                      ternary_slave_column_insert_deferred(table_var: TableVar, surrs: (Int32Var, Int32Var), value: AnyTypeExpr, forced: Bool), ## WHY DOES THIS STILL EXIST?
 
                       immediate_insert_or_add_ref(res_var: Int32Var, store: ValueStoreId, store_type: ValueStoreType, value: <AtomicExpr, IntExpr>),
                       immediate_insert_tuple(table_var: TableVar, table: AnySurrTable, tuple: Int32Var+),

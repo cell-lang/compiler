@@ -280,8 +280,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 
     Instr+ table_var_code(DBSymbol rel_auto_id, TableVar table_var, LocVar+ args_vars, Int32Var+ surr_vars, Bool ordered) {
       master_table = master_table(rel_auto_id, table_var);
-      master_table_type = table_info(rel_auto_id, master_table);
-      fail if not master_table_type :: MasterBinTable;
+      master_table_type = cast_master_bin_table(table_info(rel_auto_id, master_table));
 
       store_id_0 = table_col_store_id(rel_auto_id, table_var, 0);
       store_id_1 = table_col_store_id(rel_auto_id, table_var, 1);
@@ -299,7 +298,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
           table_contains(master_table, master_table_type, (just(v) : v <- actual_surr_vars), false),
           immediate_insert_tuple(master_table, master_table_type, actual_surr_vars)
         ) if not ordered,
-        set_ivar32(idx_var, get_assoc_surr(master_table, actual_surr_vars)),
+        set_ivar32(idx_var, get_assoc_surr(master_table, master_table_type, actual_surr_vars)),
         column_insert_immediate(table_var, column_is_mandatory(rel_auto_id, table_var), col_repr, idx_var, low_level_expr(col_repr, args_vars(2)))
       );
     }
@@ -359,7 +358,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
     }
     else {
       ## CHECK CHECK CHECK: NOT SURE THIS ASSERTION ALWAYS HOLDS TRUE
-      assert not (v <- tables : column_is_mandatory(rel_auto_id, v));
+      ## WHY WAS THIS ASSERTION HERE IN THE FIRST PLACE?
+      // assert not (v <- tables : column_is_mandatory(rel_auto_id, v));
 
       // Choosing the dispatch arguments
       signatures = [table_signature(rel_auto_id, tv) : tv <- tables];
@@ -575,15 +575,16 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
           ## ISN'T THIS TOTALLY POINTLESS IF THE TARGET TABLE IS ALSO THE MASTER ONE?
           ## AND CAN THE TARGET TABLE BE ANYTHING OTHER THAN THE MASTER?
           slave_column_it_var() = { master = master_table(rel_auto_id, tv);
+                                    master_info = cast_master_bin_table(table_info(rel_auto_id, master));
                                     return (
                                       set_ivar32(assoc_surr_var, get_unknown_arg(it_var, 0)),
-                                      set_ivar32(surr_vars(0), get_arg_by_assoc_surr(master, 0, assoc_surr_var)),
-                                      set_ivar32(surr_vars(1), get_arg_by_assoc_surr(master, 1, assoc_surr_var))
+                                      set_ivar32(surr_vars(0), get_arg_by_assoc_surr(master, master_info, 0, assoc_surr_var)),
+                                      set_ivar32(surr_vars(1), get_arg_by_assoc_surr(master, master_info, 1, assoc_surr_var))
                                     );
                                   };
 
         if (fk <- foreign_keys : fk.type == :binary_ternary and is_ternary_slave_column(rel_auto_id, logical_rel_var(original_rel_var(fk.target)))) {
-          assoc_surr_var_read = set_ivar32(assoc_surr_var, get_assoc_surr(tv, (surr_vars(0), surr_vars(1))));
+          assoc_surr_var_read = set_ivar32(assoc_surr_var, get_assoc_surr(tv, cast_master_bin_table(table_info(rel_auto_id, tv)), (surr_vars(0), surr_vars(1))));
           surrs_reads = (surrs_reads | assoc_surr_var_read);
         }
 

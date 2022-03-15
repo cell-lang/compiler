@@ -209,7 +209,7 @@ implicit program           : Program,
       if is_ternary_slave_column(rel_var) {
         assert surr_args(2) == nothing;
         master_table = master_table(tv);
-        master_table_info = table_info(master_table);
+        master_table_info = cast_master_bin_table(table_info(master_table));
         master_table = substitute(master_table);
         arg_0 = surr_args(0);
         arg_1 = surr_args(1);
@@ -220,7 +220,7 @@ implicit program           : Program,
             table_code = (
               branch(
                 table_contains(master_table, table_info(master_table), master_args, symmetric),
-                ( set_ivar32(assoc_surr_var, get_assoc_surr(master_table, (value(arg_0), value(arg_1)))),
+                ( set_ivar32(assoc_surr_var, get_assoc_surr(master_table, master_table_info, (value(arg_0), value(arg_1)))),
                   set_bvar(res_var, table_contains(subst_table_var, target_table_info, (just(assoc_surr_var), nothing), false))
                 ),
                 (set_bvar(res_var, false))
@@ -235,7 +235,7 @@ implicit program           : Program,
               repeat((
                 break_if(is_out_of_range(master_it_var)),
                 set_ivar32(unknown_arg_surr_var, get_unknown_arg(master_it_var, 0)),
-                set_ivar32(assoc_surr_var, get_assoc_surr(master_table, (value(arg_0), unknown_arg_surr_var))),
+                set_ivar32(assoc_surr_var, get_assoc_surr(master_table, master_table_info, (value(arg_0), unknown_arg_surr_var))),
                 do_if(
                   table_contains(subst_table_var, target_table_info, (just(assoc_surr_var), nothing), false),
                   (set_bvar(res_var, true), break_loop)
@@ -253,7 +253,7 @@ implicit program           : Program,
             repeat((
               break_if(is_out_of_range(master_it_var)),
               set_ivar32(unknown_arg_surr_var, get_unknown_arg(master_it_var, 0)),
-              set_ivar32(assoc_surr_var, get_assoc_surr(master_table, (unknown_arg_surr_var, value_unsafe(arg_1)))),
+              set_ivar32(assoc_surr_var, get_assoc_surr(master_table, master_table_info, (unknown_arg_surr_var, value_unsafe(arg_1)))),
               do_if(
                 table_contains(subst_table_var, target_table_info, (just(assoc_surr_var), nothing), false),
                 (set_bvar(res_var, true), break_loop)
@@ -479,6 +479,7 @@ implicit program           : Program,
 
     cases = [{
       master_table = master_table(tv);
+      master_table_info = cast_master_bin_table(table_info(master_table));
 
       arg_0_store_id = table_col_store_id(tv, 0);
       arg_0_store_type = value_store_type(rel_auto_type(rel_var), unqualified(arg_0_store_id));
@@ -498,7 +499,7 @@ implicit program           : Program,
         check(neg(is_eq(arg_0_surr_var, -1))),
         set_ivar32(arg_1_surr_var, value_to_surr(arg_1_store_id, arg_1_store_type, enc_expr_1)),
         check(neg(is_eq(arg_1_surr_var, -1))),
-        set_ivar32(assoc_surr_var, get_assoc_surr(substitute(master_table), (arg_0_surr_var, arg_1_surr_var))),
+        set_ivar32(assoc_surr_var, get_assoc_surr(substitute(master_table), master_table_info, (arg_0_surr_var, arg_1_surr_var))),
         check(neg(is_eq(assoc_surr_var, -1))),
         set_any_var(res_var, column_lookup(substitute(tv), table_info(tv), assoc_surr_var))
       );

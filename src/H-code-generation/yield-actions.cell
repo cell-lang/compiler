@@ -134,11 +134,13 @@ implicit program           : Program,
         col_repr = column_repr(sign(2));
         it_var, var_gen = next_slave_column_it_var(var_gen, col_repr); ## DO WE NEED TO USE A DIFFERENT ITERATOR VAR EVERY TIME? SEE ALSO ANALOGUES DOWN BELOW
 
-        master_table = substitute(master_table(tv));
+        master_table = master_table(tv);
+        master_table_info = cast_master_bin_table(table_info(master_table));
+        master_table = substitute(master_table);
         vars_setup_code = (
           set_ivar32(surr_var_01, get_unknown_arg(it_var, 0)),
-          set_ivar32(surr_var_0, get_arg_by_assoc_surr(master_table, 0, surr_var_01)) if ll_vars(0) != nothing,
-          set_ivar32(surr_var_1, get_arg_by_assoc_surr(master_table, 1, surr_var_01)) if ll_vars(1) != nothing,
+          set_ivar32(surr_var_0, get_arg_by_assoc_surr(master_table, master_table_info, 0, surr_var_01)) if ll_vars(0) != nothing,
+          set_ivar32(surr_var_1, get_arg_by_assoc_surr(master_table, master_table_info, 1, surr_var_01)) if ll_vars(1) != nothing,
           surr_to_decoded_value(value_unsafe(ll_vars(0)), store_ids(0), store_types(0), surr_var_0) if ll_vars(0) != nothing,
           surr_to_decoded_value(value_unsafe(ll_vars(1)), store_ids(1), store_types(1), surr_var_1) if ll_vars(1) != nothing,
           set_any_var(value_unsafe(ll_vars(2)), column_lookup(substitute(tv), table_info(tv), surr_var_01)) if ll_vars(2) != nothing
@@ -187,7 +189,7 @@ implicit program           : Program,
       code = bound_arg_eval_code;
       for tv <- candidate_tables {
         master_table = master_table(tv);
-        master_table_info = cast_any_surr_table(table_info(master_table));
+        master_table_info = cast_master_bin_table(table_info(master_table));
 
         sign = table_signature(tv);
         free_arg_repr = low_level_repr(sign(free_arg_idx));
@@ -223,7 +225,7 @@ implicit program           : Program,
                 break_if(is_out_of_range(it_var)),
 
                 set_ivar32(free_surr_var, get_unknown_arg(it_var, 0)),
-                set_ivar32(assoc_surr_var, get_assoc_surr(substitute(master_table), (bound_surr_var, free_surr_var))),
+                set_ivar32(assoc_surr_var, get_assoc_surr(substitute(master_table), master_table_info, (bound_surr_var, free_surr_var))),
                 do_if(
                   table_contains(substitute(tv), table_info(tv), (just(assoc_surr_var), nothing), false),
                   ( surr_to_decoded_value(value(ll_free_arg_var), free_arg_store_id, free_arg_store_type, free_surr_var) if ll_free_arg_var != nothing,
@@ -264,6 +266,7 @@ implicit program           : Program,
 
       cases = [{
         master_table = master_table(tv);
+        master_table_info = cast_master_bin_table(table_info(master_table));
 
         sign = table_signature(tv);
         value_repr = low_level_repr(sign(2));
@@ -290,7 +293,7 @@ implicit program           : Program,
             ( set_ivar32(surr_var_1, value_to_surr(store_1_id, store_1_type, value_store_encoded_expr(store_1_type, args_aliases(1)))),
               do_if_not(
                 is_eq(surr_var_1, -1),
-                ( set_ivar32(surr_var_01, get_assoc_surr(substitute(master_table), (surr_var_0, surr_var_1))),
+                ( set_ivar32(surr_var_01, get_assoc_surr(substitute(master_table), master_table_info, (surr_var_0, surr_var_1))),
                   do_if_not(
                     is_eq(surr_var_01, -1),
                     do_if(
