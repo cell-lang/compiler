@@ -1742,16 +1742,19 @@ implicit program           : Program,
 
   // builtin_call(name: BuiltIn, args: Expr+);
   (Instr*, ObjExpr, VarGen) builtin_call_opt_eval_info(BuiltinCall expr, VarGen init_var_gen) {
+    // Argument types
+    args_types = (subexpr_type(a) : a <- expr.args);
+
     // Evaluation of the arguments
     args_eval_code, args_surrs, var_gen = opt_eval_info(expr.args, init_var_gen);
 
     // Builtin call
-    code, surr, var_gen = eval_info(expr.name, nonempty(args_surrs), var_gen);
+    code, surr, var_gen = eval_info(expr.name, nonempty(args_surrs), nonempty(args_types), var_gen);
 
     return (args_eval_code & code, surr, var_gen);
 
 
-    (Instr*, ObjExpr, VarGen) eval_info(BuiltIn name, ObjExpr+ args, VarGen init_var_gen) =
+    (Instr*, ObjExpr, VarGen) eval_info(BuiltIn name, ObjExpr+ args, Type+ args_types, VarGen init_var_gen) =
       slice   |
       cat     |
       rev     |
@@ -1762,15 +1765,15 @@ implicit program           : Program,
       drop    |
       parse   |
       print   = { res_var, var_gen = next_obj_var(init_var_gen);
-                  instr = eval_instr(name, args, res_var);
+                  instr = eval_instr(name, args, args_types, res_var);
                   return ((instr), res_var, var_gen);
                 },
       _       = ((), eval_expr(name, args), init_var_gen);
 
 
-    Instr eval_instr(BuiltIn name, ObjExpr+ args, LocVar res_var) =
+    Instr eval_instr(BuiltIn name, ObjExpr+ args, Type+ args_types, LocVar res_var) =
       slice         = get_seq_slice(res_var, args(0), get_int_val(args(1)), get_int_val(args(2))),
-      cat           = join_seqs(res_var, args(0), args(1)),
+      cat           = eval_cat_instr(args(0), args(1), args_types(0), args_types(1), res_var),
       rev           = rev_seq(res_var, args(0)),
       isort         = internal_sort(res_var, args(0)),
       insert        = insert_elt(res_var, args(0), args(1)),
@@ -1779,6 +1782,15 @@ implicit program           : Program,
       drop          = drop_key(res_var, args(0), args(1)),
       parse         = parse_value(res_var, args(0)),
       print         = print_value(res_var, args(0));
+
+
+    Instr eval_cat_instr(ObjExpr left_arg, ObjExpr right_arg, Type left_arg_type, Type right_arg_type, LocVar res_var) {
+      if is_subset(left_arg_type, type_int_seq) and is_subset(right_arg_type, type_int_seq)
+        return join_int_seqs(res_var, left_arg, right_arg);
+      if is_subset(left_arg_type, type_float_seq) and is_subset(right_arg_type, type_float_seq)
+        return join_float_seqs(res_var, left_arg, right_arg);
+      return join_seqs(res_var, left_arg, right_arg);
+    }
 
 
     ObjExpr eval_expr(BuiltIn name, ObjExpr+ args) =

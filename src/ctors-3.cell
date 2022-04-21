@@ -328,8 +328,11 @@ RefObjExpr get_seq_slice(AtomicExpr s, IntExpr f, IntExpr l)  = get_seq_slice(se
 RefObjExpr append_to_seq(AtomicExpr s, AtomicExpr e)          = append_to_seq(seq: s, new_elem: e);
 RefObjExpr update_seq_at(AtomicExpr s, IntExpr i, AtomicExpr v) = update_seq_at(seq: s, idx: i, value: v);
 
-RefObjExpr join_seqs(AtomicExpr l, AtomicExpr r)              = join_seqs(left: l, right: r);
-RefObjExpr rev_seq(AtomicExpr s)                              = rev_seq(seq: s);
+RefObjExpr join_seqs(AtomicExpr l, AtomicExpr r)        = join_seqs(left: l, right: r);
+RefObjExpr join_int_seqs(AtomicExpr l, AtomicExpr r)    = :join_int_seqs(l, r);
+RefObjExpr join_float_seqs(AtomicExpr l, AtomicExpr r)  = :join_float_seqs(l, r);
+
+RefObjExpr rev_seq(AtomicExpr s) = rev_seq(seq: s);
 
 RefObjExpr internal_sort(AtomicExpr s) = internal_sort(set: s);
 
@@ -382,7 +385,10 @@ BasicInstr get_seq_slice(WriteObjVar v, AtomicExpr s, IntExpr f, IntExpr l)  = s
 BasicInstr append_to_seq(WriteObjVar v, AtomicExpr s, AtomicExpr e)          = set_var(v, append_to_seq(seq: s, new_elem: e));
 BasicInstr update_seq_at(WriteObjVar rv, AtomicExpr s, IntExpr i, AtomicExpr v) = set_var(rv, update_seq_at(seq: s, idx: i, value: v));
 
-BasicInstr join_seqs(WriteObjVar v, AtomicExpr l, AtomicExpr r)              = set_var(v, join_seqs(left: l, right: r));
+BasicInstr join_seqs(WriteObjVar v, AtomicExpr l, AtomicExpr r)       = set_var(v, join_seqs(left: l, right: r));
+BasicInstr join_int_seqs(WriteObjVar v, AtomicExpr l, AtomicExpr r)   = set_var(v, :join_int_seqs(l, r));
+BasicInstr join_float_seqs(WriteObjVar v, AtomicExpr l, AtomicExpr r) = set_var(v, :join_float_seqs(l, r));
+
 BasicInstr rev_seq(WriteObjVar v, AtomicExpr s)                              = set_var(v, rev_seq(seq: s));
 
 BasicInstr lookup_field(WriteObjVar v, ObjExpr e, SymbObj f)                        = set_var(v, lookup_field(e, f));
