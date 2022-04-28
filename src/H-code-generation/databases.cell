@@ -2,7 +2,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
   StaticBlock compiled_database([RelVar -> [+Nat -> Nat]] rel_vars_args_perms) {
     methods = compiled_database_methods(database.methods);
     updates = compiled_database_updates(database.updates);
-    handlers, exported_handlers = compiled_database_handlers(database.handlers);
+    handlers, exported_handlers, maybe_dispatch_resolver = compiled_database_handlers(database.handlers);
     msg_types = [h.type : h <- database.handlers];
     msg_memb_pred = if msg_types != [] then just(memb_test_preds_map[ne_union_type(msg_types)]) else nothing;
 
@@ -38,6 +38,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
       foreign_keys_check_code:      database_foreign_keys_check_code,
       methods:                      methods,
       updates:                      handlers & updates,
+      handler_dispatch_resolver:    maybe_dispatch_resolver,
       exported_handlers:            exported_handlers,
       msg_memb_pred:                msg_memb_pred
     );
@@ -748,16 +749,16 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
   }
 
 
-  ([UpdateId -> CompiledUpdate], [UpdateId, HandlerWrapper]) compiled_database_handlers([Handler] handlers) {
-    return ([], []) if handlers == [];
+  ([UpdateId -> CompiledUpdate], [UpdateId, HandlerWrapper], Maybe[CompiledUpdate]) compiled_database_handlers([Handler] handlers) {
+    return ([], [], nothing) if handlers == [];
     sorted_handlers = rand_sort(handlers);
     comp_handlers = merge(([handler_id(i) -> compiled_handler(h)] : h @ i <- sorted_handlers));
     exported_handlers = [handler_id(i), interface : h @ i <- sorted_handlers, interface <- interfaces(h)];
-    dispatcher_body = if |handlers| != 1
-      then update_dispatch_code(database.name, sorted_handlers)
-      else (try_update(database.name, polymorphic_update_id(only(handlers), 0), (fn_arg(0))), ret_val(0));
-    dispatcher = compiled_update((fn_arg(0)), dispatcher_body);
-    return (comp_handlers & [main_handler -> dispatcher], exported_handlers);
+    dispatch_resol_code =  if |handlers| > 1
+      then msg_handler_resol_code(database.name, sorted_handlers)
+      else (ret_val(int32(0)));
+    dispatch_resolver = compiled_update((fn_arg(0)), dispatch_resol_code);
+    return (comp_handlers, exported_handlers, just(dispatch_resolver));
 
 
     [HandlerWrapper] interfaces(Handler handler) {
@@ -1125,41 +1126,31 @@ implicit typedefs : [TypeName -> NeType] {
   // }
 
 
-  Instr* update_dispatch_code(DBSymbol db_type, <Update+, Handler+> updates) {
+  Instr* update_dispatch_code(DBSymbol db_type, Update+ updates) {
     assert |updates| > 1;
     assert |[name(u) : u <- updates]| == 1;   // All updates must have the same name
     assert |[arity(u) : u <- updates]| == 1;  // All updates have the same arity
     assert arity(head(updates)) > 0;          // No-argument updates cannot be polymorphic
 
-    i0 = ivar32(0);
-    count = |updates|;
-
-    an_update = head(updates);
-    name      = name(an_update);
-    arity     = arity(an_update);
-
-    are_handlers = match (an_update)
-      handler() = true,
-      update()  = false;
-
-    args_types = (
-      match (u)
-        update()  = (t : t, _ <- nonempty(u.args)),
-        handler() = (u.type)
-      : u <- updates
-    );
-
+    arity = arity(head(updates));
+    args_types = ((t : t, _ <- nonempty(u.args)) : u <- updates);
     disp_args = choose_disp_args(args_types, typedefs);
 
     cases = [{
       types = (args_types(i)(j) : j <- disp_args);
-      try_update_instr = try_update(db_type, polymorphic_update_id(u, i), (fn_arg(j) : j < arity));
-      code = (try_update_instr, set_ivar32(i0, int32(i)) if are_handlers, exit_block);
+      try_update_instr = try_update(db_type, update_id(u.name, arity, i), (fn_arg(j) : j < arity));
+      code = (try_update_instr, exit_block);
       return (types, code);
     } : u @ i <- updates];
 
     code = dynamic_dispatch_code((fn_arg(i) : i <- disp_args), cases);
-    return (execute_block(code), ret_val(i0) if are_handlers);
+    return (execute_block(code));
+  }
+
+
+  Instr* msg_handler_resol_code(DBSymbol db_type, Handler+ handlers) {
+    cases = [((h.type), (ret_val(int32(i)))) : h @ i <- handlers];
+    return dynamic_dispatch_code((fn_arg(0)), cases);
   }
 }
 
