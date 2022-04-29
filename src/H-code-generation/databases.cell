@@ -1,7 +1,7 @@
 implicit program : Program, typedefs : [TypeName -> NeType], database : Database, options : CompOptions {
   StaticBlock compiled_database([RelVar -> [+Nat -> Nat]] rel_vars_args_perms) {
     methods = compiled_database_methods(database.methods);
-    updates = compiled_database_updates(database.updates);
+    // updates = compiled_database_updates(database.updates);
     handlers, exported_handlers, maybe_dispatch_resolver = compiled_database_handlers(database.handlers);
     msg_types = [h.type : h <- database.handlers];
     msg_memb_pred = if msg_types != [] then just(memb_test_preds_map[ne_union_type(msg_types)]) else nothing;
@@ -37,7 +37,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
       rel_vars_load_code:           database_rel_vars_load_code(rel_vars_args_perms),
       foreign_keys_check_code:      database_foreign_keys_check_code,
       methods:                      methods,
-      updates:                      handlers & updates,
+      handlers:                     handlers,
       handler_dispatch_resolver:    maybe_dispatch_resolver,
       exported_handlers:            exported_handlers,
       msg_memb_pred:                msg_memb_pred
@@ -708,56 +708,56 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
   }
 
 
-  [UpdateId -> CompiledUpdate] compiled_database_updates([Update] updates) {
-    return merge([compiled_updates(ms) : _ ms <- group_by(updates, ($.name, |$.args|))]);
+  // [UpdateId -> CompiledUpdate] compiled_database_updates([Update] updates) {
+  //   return merge([compiled_updates(ms) : _ ms <- group_by(updates, ($.name, |$.args|))]);
 
 
-    [UpdateId -> CompiledUpdate] compiled_updates([+Update] updates) {
-      an_update = an_elem(updates);
-      name = an_update.name;
-      arity = |an_update.args|;
-      return [update_id(name, arity) -> compiled_update(an_update)] if |updates| == 1;
-      sorted_updates = rand_sort(updates);
-      comp_updates = merge(([update_id(m.name, arity, i) -> compiled_update(m)] : m @ i <- sorted_updates));
-      dispatcher_code = update_dispatch_code(database.name, sorted_updates);
-      dispatcher = compiled_update((fn_arg(i) : i < arity), dispatcher_code);
-      return comp_updates & [update_id(name, arity) -> dispatcher];
-    }
+  //   [UpdateId -> CompiledUpdate] compiled_updates([+Update] updates) {
+  //     an_update = an_elem(updates);
+  //     name = an_update.name;
+  //     arity = |an_update.args|;
+  //     return [update_id(name, arity) -> compiled_update(an_update)] if |updates| == 1;
+  //     sorted_updates = rand_sort(updates);
+  //     comp_updates = merge(([update_id(m.name, arity, i) -> compiled_update(m)] : m @ i <- sorted_updates));
+  //     dispatcher_code = update_dispatch_code(database.name, sorted_updates);
+  //     dispatcher = compiled_update((fn_arg(i) : i < arity), dispatcher_code);
+  //     return comp_updates & [update_id(name, arity) -> dispatcher];
+  //   }
 
 
-    CompiledUpdate compiled_update(Update update) =
-      compiled_update((v : _, v <- update.args), update_body(update));
+  //   CompiledUpdate compiled_update(Update update) =
+  //     compiled_update((v : _, v <- update.args), update_body(update));
 
 
-    Instr* update_body(Update update) {
-      // Compiling the body of the update
-      return () if update.body == ();
+  //   Instr* update_body(Update update) {
+  //     // Compiling the body of the update
+  //     return () if update.body == ();
 
-      code, _, _, _ = stmts_opt_code(
-        update.body,
-        [v -> t : (t, v) <- update.args],
-        blank_var_gen,
-        context           = database,
-        typed_vars        = [],
-        surrogates        = [],
-        exp_break_surrs   = nothing,
-        result_var        = :invalid_var
-      );
+  //     code, _, _, _ = stmts_opt_code(
+  //       update.body,
+  //       [v -> t : (t, v) <- update.args],
+  //       blank_var_gen,
+  //       context           = database,
+  //       typed_vars        = [],
+  //       surrogates        = [],
+  //       exp_break_surrs   = nothing,
+  //       result_var        = :invalid_var
+  //     );
 
-      return (execute_block(nonempty(code)));
-    }
-  }
+  //     return (execute_block(nonempty(code)));
+  //   }
+  // }
 
 
-  ([UpdateId -> CompiledUpdate], [UpdateId, HandlerWrapper], Maybe[CompiledUpdate]) compiled_database_handlers([Handler] handlers) {
+  ([HandlerId -> CompiledHandler], [HandlerId, HandlerWrapper], Maybe[(FnArg, Instr*)]) compiled_database_handlers([Handler] handlers) {
     return ([], [], nothing) if handlers == [];
     sorted_handlers = rand_sort(handlers);
-    comp_handlers = merge(([handler_id(i) -> compiled_handler(h)] : h @ i <- sorted_handlers));
+    comp_handlers = merge(([handler_id(i) -> compiled_handler(handler_body(h))] : h @ i <- sorted_handlers));
     exported_handlers = [handler_id(i), interface : h @ i <- sorted_handlers, interface <- interfaces(h)];
     dispatch_resol_code =  if |handlers| > 1
       then msg_handler_resol_code(database.name, sorted_handlers)
       else (ret_val(int32(0)));
-    dispatch_resolver = compiled_update((fn_arg(0)), dispatch_resol_code);
+    dispatch_resolver = (fn_arg(0), dispatch_resol_code);
     return (comp_handlers, exported_handlers, just(dispatch_resolver));
 
 
@@ -873,9 +873,6 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 
       return [];
     }
-
-
-    CompiledUpdate compiled_handler(Handler handler) = compiled_update((var(:this)), handler_body(handler));
 
 
     Instr* handler_body(Handler handler) {
@@ -1016,6 +1013,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 }
 
 
+
 implicit program : Program, typedefs : [TypeName -> NeType], database : Database { ## program IS NOT REALLY NEEDED, BUT THE TYPECHECKER...
   [ValueStoreId -> ValueStoreType] value_stores = [
     vs -> {
@@ -1126,26 +1124,26 @@ implicit typedefs : [TypeName -> NeType] {
   // }
 
 
-  Instr* update_dispatch_code(DBSymbol db_type, Update+ updates) {
-    assert |updates| > 1;
-    assert |[name(u) : u <- updates]| == 1;   // All updates must have the same name
-    assert |[arity(u) : u <- updates]| == 1;  // All updates have the same arity
-    assert arity(head(updates)) > 0;          // No-argument updates cannot be polymorphic
+  // Instr* update_dispatch_code(DBSymbol db_type, Update+ updates) {
+  //   assert |updates| > 1;
+  //   assert |[name(u) : u <- updates]| == 1;   // All updates must have the same name
+  //   assert |[arity(u) : u <- updates]| == 1;  // All updates have the same arity
+  //   assert arity(head(updates)) > 0;          // No-argument updates cannot be polymorphic
 
-    arity = arity(head(updates));
-    args_types = ((t : t, _ <- nonempty(u.args)) : u <- updates);
-    disp_args = choose_disp_args(args_types, typedefs);
+  //   arity = arity(head(updates));
+  //   args_types = ((t : t, _ <- nonempty(u.args)) : u <- updates);
+  //   disp_args = choose_disp_args(args_types, typedefs);
 
-    cases = [{
-      types = (args_types(i)(j) : j <- disp_args);
-      try_update_instr = try_update(db_type, update_id(u.name, arity, i), (fn_arg(j) : j < arity));
-      code = (try_update_instr, exit_block);
-      return (types, code);
-    } : u @ i <- updates];
+  //   cases = [{
+  //     types = (args_types(i)(j) : j <- disp_args);
+  //     try_update_instr = try_update(db_type, update_id(u.name, arity, i), (fn_arg(j) : j < arity));
+  //     code = (try_update_instr, exit_block);
+  //     return (types, code);
+  //   } : u @ i <- updates];
 
-    code = dynamic_dispatch_code((fn_arg(i) : i <- disp_args), cases);
-    return (execute_block(code));
-  }
+  //   code = dynamic_dispatch_code((fn_arg(i) : i <- disp_args), cases);
+  //   return (execute_block(code));
+  // }
 
 
   Instr* msg_handler_resol_code(DBSymbol db_type, Handler+ handlers) {
@@ -1190,14 +1188,14 @@ implicit typedefs : [TypeName -> NeType] {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-Maybe[UpdateSymbol] name(<Update, Handler>) =
-  update() u?   = just(u.name),
-  handler()     = nothing;
+// Maybe[UpdateSymbol] name(<Update, Handler>) =
+//   update() u?   = just(u.name),
+//   handler()     = nothing;
 
-NeType* arg_types(<Update, Handler>) =
-  update() u?   = (t : t, _ <- u.args),
-  handler() h?  = (h.type);
+// NeType* arg_types(<Update, Handler>) =
+//   update() u?   = (t : t, _ <- u.args),
+//   handler() h?  = (h.type);
 
-UpdateId polymorphic_update_id(<Update, Handler>, Nat idx) =
-  update() u?   = update_id(u.name, arity(u), idx),
-  handler() h?  = handler_id(idx);
+// UpdateId polymorphic_update_id(<Update, Handler>, Nat idx) =
+//   update() u?   = update_id(u.name, arity(u), idx),
+//   handler() h?  = handler_id(idx);

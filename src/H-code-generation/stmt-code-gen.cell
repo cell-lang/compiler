@@ -100,15 +100,17 @@ implicit program           : Program,
     target_idx = only([i : dependee @ i <- rel_auto_type.links, is_subset(msg_type, db_msg_type(dependee))]);
     target = linked_db_var(target_idx);
     code, surr, _ = opt_eval_code(msg, env, init_var_gen);
-    code = (code | send_msg(target, var_type(target), surr, false));
+    code = (code | send_internal_msg(target, var_type(target), surr));
     return (code, just(surrogates), [], init_var_gen);
   }
 
 
   StmtCompInfo try_update_stmt_opt_code(UpdateSymbol name, Expr* args, [EnvVar -> Type] env, VarGen init_var_gen) {
-    code, surrs, _ = opt_eval_code(args, env, init_var_gen);
-    code = (code | try_update(this_db_symbol, update_id(name, |args|), surrs));
-    return (code, just(surrogates), [], init_var_gen);
+    fail; //## IMPLEMENT IMPLEMENT IMPLEMENT
+
+    // code, surrs, _ = opt_eval_code(args, env, init_var_gen);
+    // code = (code | try_update(this_db_symbol, update_id(name, |args|), surrs));
+    // return (code, just(surrogates), [], init_var_gen);
   }
 
 
@@ -590,7 +592,7 @@ implicit program           : Program,
     code, surr, _ = opt_eval_code(msg, env, init_var_gen);
     db_type = var_type(db_var);
     res_bvar = low_level_bvar(res_var);
-    code = (code | send_msg(db_var, db_type, surr, true, res_bvar));
+    code = (code | send_external_msg(db_var, db_type, surr, res_bvar));
     surrs = update(surrogates, res_var, bool_obj(res_bvar));
     return (code, just(surrs), [], init_var_gen);
   }

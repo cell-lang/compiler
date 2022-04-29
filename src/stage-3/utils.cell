@@ -59,8 +59,8 @@ Bool may_break(Instr+ loop_body) = in(breaks_loop, code_outcomes(loop_body));
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-[MembVar] updated_memb_vars(CompiledUpdate update) {
-  return search_instrs(update.body, updated_memb_vars);
+[MembVar] updated_memb_vars(CompiledHandler handler) {
+  return search_instrs(handler.body, updated_memb_vars);
 
   [MembVar] updated_memb_vars(Instr instr) =
     set_var()   = [corresponding_memb_var(instr.var) if instr.var :: PendingStateVar],
@@ -68,8 +68,8 @@ Bool may_break(Instr+ loop_body) = in(breaks_loop, code_outcomes(loop_body));
 }
 
 
-[ValueStoreId] value_stores_with_insertions(CompiledUpdate update) {
-  return search_instrs(update.body, value_stores_with_insertions);
+[ValueStoreId] value_stores_with_insertions(CompiledHandler handler) {
+  return search_instrs(handler.body, value_stores_with_insertions);
 
   [ValueStoreId] value_stores_with_insertions(Instr instr) =
     init_value_store()              |
@@ -80,8 +80,8 @@ Bool may_break(Instr+ loop_body) = in(breaks_loop, code_outcomes(loop_body));
 }
 
 
-[TableVar] table_vars_with_insertions(CompiledUpdate update) {
-  return search_instrs(update.body, table_vars);
+[TableVar] table_vars_with_insertions(CompiledHandler handler) {
+  return search_instrs(handler.body, table_vars);
 
   [TableVar] table_vars(Instr instr) =
     init_table()                            |
@@ -94,8 +94,8 @@ Bool may_break(Instr+ loop_body) = in(breaks_loop, code_outcomes(loop_body));
 }
 
 
-[TableVar] table_vars_with_deletions(CompiledUpdate update) {
-  return search_instrs(update.body, table_vars);
+[TableVar] table_vars_with_deletions(CompiledHandler handler) {
+  return search_instrs(handler.body, table_vars);
 
   [TableVar] table_vars(Instr instr) =
     init_table()                            |
@@ -108,71 +108,76 @@ Bool may_break(Instr+ loop_body) = in(breaks_loop, code_outcomes(loop_body));
 }
 
 
-## THE RETURNED TYPE IS ACTUALLY MORE SPECIFIC THAN THAT
-[UpdateId] invoked_mutators(CompiledUpdate update) {
-  return search_instrs(update.body, mutators);
+// ## THE RETURNED TYPE IS ACTUALLY MORE SPECIFIC THAN THAT
+// [UpdateId] invoked_mutators(CompiledHandler handler) {
+//   return search_instrs(handler.body, mutators);
 
-  [UpdateId] mutators(Instr instr) =
-    try_update()  = [instr.update_id],
-    _             = search_any_nested(instr, mutators, []);
-}
+//   [UpdateId] mutators(Instr instr) =
+//     // try_update()  = [instr.update_id],
+//     _             = search_any_nested(instr, mutators, []);
+// }
 
 
-[LinkedDBVar] updated_dependees(CompiledUpdate update) {
-  return search_instrs(update.body, dependees);
+[LinkedDBVar] updated_dependees(CompiledHandler handler) {
+  return search_instrs(handler.body, dependees);
 
   [LinkedDBVar] dependees(Instr instr) =
-    send_msg()  = [cast_linked_db_var(instr.db_var)],
-    _           = search_any_nested(instr, dependees, []);
+    send_internal_msg() = [instr.db_var],
+    _                   = search_any_nested(instr, dependees, []);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
 implicit block : StaticBlock {
-  [UpdateId, UpdateId] call_graph_transitive_closure {
-    shallow_graph = [id -> invoked_mutators(u) : id u <- block.updates];
-    deep_graph = transitive_closure(shallow_graph);
-    return [s, t : s ts <- deep_graph, t <- ts];
+  // [UpdateId, UpdateId] call_graph_transitive_closure {
+  //   shallow_graph = [id -> invoked_mutators(h) : id h <- block.handlers];
+  //   deep_graph = transitive_closure(shallow_graph);
+  //   return [s, t : s ts <- deep_graph, t <- ts];
+  // }
+
+
+  [HandlerId, MembVar] updated_memb_vars {
+    return [id, v : id h <- block.handlers, v <- updated_memb_vars(h)];
+    // directly_touched = [id -> updated_memb_vars(h) : id h <- block.handlers];
+    // deep_call_map = call_graph_transitive_closure;
+    // indirectly_touched = [s, v : s t <- deep_call_map, v <- directly_touched(t)];
+    // return [u, v : u vs <- directly_touched, v <- vs | v <- indirectly_touched(u, ?)];
   }
 
 
-  [UpdateId, MembVar] updated_memb_vars {
-    directly_touched = [id -> updated_memb_vars(u) : id u <- block.updates];
-    deep_call_map = call_graph_transitive_closure;
-    indirectly_touched = [s, v : s t <- deep_call_map, v <- directly_touched(t)];
-    return [u, v : u vs <- directly_touched, v <- vs | v <- indirectly_touched(u, ?)];
+  [HandlerId, ValueStoreId] value_stores_with_insertions {
+    return [id, vs : id h <- block.handlers, vs <- value_stores_with_insertions(h)];
+    // directly_touched = [id -> value_stores_with_insertions(h) : id h <- block.handlers];
+    // deep_call_map = call_graph_transitive_closure;
+    // indirectly_touched = [s, v : s t <- deep_call_map, v <- directly_touched(t)];
+    // return [u, s : u ss <- directly_touched, s <- ss | s <- indirectly_touched(u, ?)];
   }
 
 
-  [UpdateId, ValueStoreId] value_stores_with_insertions {
-    directly_touched = [id -> value_stores_with_insertions(u) : id u <- block.updates];
-    deep_call_map = call_graph_transitive_closure;
-    indirectly_touched = [s, v : s t <- deep_call_map, v <- directly_touched(t)];
-    return [u, s : u ss <- directly_touched, s <- ss | s <- indirectly_touched(u, ?)];
+  [HandlerId, TableVar] table_vars_with_insertions {
+    return [id, v : id h <- block.handlers, v <- table_vars_with_insertions(h)];
+    // directly_touched = [id -> table_vars_with_insertions(h) : id h <- block.handlers];
+    // deep_call_map = call_graph_transitive_closure;
+    // indirectly_touched = [s, v : s t <- deep_call_map, v <- directly_touched(t)];
+    // return [u, v : u vs <- directly_touched, v <- vs | v <- indirectly_touched(u, ?)];
   }
 
 
-  [UpdateId, TableVar] table_vars_with_insertions {
-    directly_touched = [id -> table_vars_with_insertions(u) : id u <- block.updates];
-    deep_call_map = call_graph_transitive_closure;
-    indirectly_touched = [s, v : s t <- deep_call_map, v <- directly_touched(t)];
-    return [u, v : u vs <- directly_touched, v <- vs | v <- indirectly_touched(u, ?)];
+  [HandlerId, TableVar] table_vars_with_deletions {
+    return [id, v : id h <- block.handlers, v <- table_vars_with_deletions(h)];
+    // directly_touched = [id -> table_vars_with_deletions(h) : id h <- block.handlers];
+    // deep_call_map = call_graph_transitive_closure;
+    // indirectly_touched = [s, v : s t <- deep_call_map, v <- directly_touched(t)];
+    // return [u, v : u vs <- directly_touched, v <- vs | v <- indirectly_touched(u, ?)];
   }
 
 
-  [UpdateId, TableVar] table_vars_with_deletions {
-    directly_touched = [id -> table_vars_with_deletions(u) : id u <- block.updates];
-    deep_call_map = call_graph_transitive_closure;
-    indirectly_touched = [s, v : s t <- deep_call_map, v <- directly_touched(t)];
-    return [u, v : u vs <- directly_touched, v <- vs | v <- indirectly_touched(u, ?)];
-  }
-
-
-  [UpdateId, LinkedDBVar] updated_dependees {
-    directly_touched = [id -> updated_dependees(u) : id u <- block.updates];
-    deep_call_map = call_graph_transitive_closure;
-    indirectly_touched = [s, a : s t <- deep_call_map, a <- directly_touched(t)];
-    return [u, a : u as <- directly_touched, a <- as | a <- indirectly_touched(u, ?)];
+  [HandlerId, LinkedDBVar] updated_dependees {
+    return [id, d : id h <- block.handlers, d <- updated_dependees(h)];
+    // directly_touched = [id -> updated_dependees(h) : id h <- block.handlers];
+    // deep_call_map = call_graph_transitive_closure;
+    // indirectly_touched = [s, a : s t <- deep_call_map, a <- directly_touched(t)];
+    // return [u, a : u as <- directly_touched, a <- as | a <- indirectly_touched(u, ?)];
   }
 }
 

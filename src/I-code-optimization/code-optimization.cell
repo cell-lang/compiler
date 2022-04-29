@@ -29,7 +29,7 @@ StaticBlock optimize_static_block(StaticBlock block) =
     rel_vars_load_code:           block.rel_vars_load_code,
     foreign_keys_check_code:      block.foreign_keys_check_code,
     methods:                      [id -> optimize_static_block_method(def) : id def <- block.methods],
-    updates:                      [id -> optimize_static_block_update(def) : id def <- block.updates],
+    handlers:                     [id -> optimize_static_block_handler(def) : id def <- block.handlers],
     handler_dispatch_resolver:    block.handler_dispatch_resolver,
     exported_handlers:            block.exported_handlers,
     msg_memb_pred:                block.msg_memb_pred
@@ -50,9 +50,9 @@ OptCompMethod optimize_static_block_method(OptCompMethod method) {
 }
 
 
-CompiledUpdate optimize_static_block_update(CompiledUpdate update) {
-  opt_body = if update.body != () then repeatedly_optimize_code(update.body) else ();
-  return compiled_update(update.args_vars, opt_body);
+CompiledHandler optimize_static_block_handler(CompiledHandler handler) {
+  opt_body = if handler.body != () then repeatedly_optimize_code(handler.body) else ();
+  return compiled_handler(opt_body);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

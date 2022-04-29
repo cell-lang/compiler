@@ -571,9 +571,8 @@ BasicInstr set_persistent_state(AnyAutoVar v, AtomicExpr e, AutoSymbol t) = set_
 
 BasicInstr init_db(AnyDBVar v, LocDBVar* ls, DBSymbol t)  = init_db(db_var: v, links: ls, type: t);
 BasicInstr cleanup_db(AnyDBVar v, DBSymbol t)  = cleanup_db(db_var: v, type: t);
-BasicInstr send_msg(AnyDBVar v, DBSymbol t, AtomicExpr m, Bool r) = send_msg(db_var: v, type: t, msg: m, is_root: r);
-BasicInstr send_msg(AnyDBVar v, DBSymbol t, AtomicExpr m, Bool r, BoolVar rv) = send_msg(db_var: v, type: t, msg: m, is_root: r, res_var: rv);
-BasicInstr try_update(DBSymbol t, UpdateId id, AtomicExpr* as) = try_update(type: t, update_id: id, args: as);
+BasicInstr send_external_msg(LocDBVar v, DBSymbol t, AtomicExpr m, BoolVar rv) = send_external_msg(db_var: v, type: t, msg: m, res_var: rv);
+BasicInstr send_internal_msg(LinkedDBVar v, DBSymbol t, AtomicExpr m) = send_internal_msg(db_var: v, type: t, msg: m);
 
 BasicInstr set_state(BoolVar rv, LocDBVar v, AtomicExpr e, DBSymbol t) = set_state(res_var: rv, db_var: v, state: e, type: t);
 
@@ -717,7 +716,7 @@ CompiledMethod compiled_method(Maybe[StdVar]* as, NeType* ats, [+MembTestPredId*
   return compiled_method(args_vars: as, args_types: ats, args_memb_preds: mps, ret_type: rt, code: c);
 }
 
-CompiledUpdate compiled_update(<StdVar, FnArg>* as, Instr* b) = compiled_update(args_vars: as, body: b);
+CompiledHandler compiled_handler(Instr* b) = compiled_handler(args_vars: (:var(:this)), body: b);
 
 ////////////////////////////// Derived expressions /////////////////////////////
 

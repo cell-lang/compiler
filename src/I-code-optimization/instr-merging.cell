@@ -48,7 +48,7 @@ StaticBlock merge_instrs(StaticBlock block) =
     rel_vars_load_code:           block.rel_vars_load_code,
     foreign_keys_check_code:      block.foreign_keys_check_code,
     methods:                      [id -> merge_instrs(def) : id def <- block.methods],
-    updates:                      [id -> merge_instrs(def) : id def <- block.updates],
+    handlers:                     [id -> merge_instrs(def) : id def <- block.handlers],
     handler_dispatch_resolver:    block.handler_dispatch_resolver,
     exported_handlers:            block.exported_handlers,
     msg_memb_pred:                block.msg_memb_pred
@@ -69,9 +69,9 @@ OptCompMethod merge_instrs(OptCompMethod method) {
 }
 
 
-CompiledUpdate merge_instrs(CompiledUpdate update) {
-  opt_body = if update.body != () then merge_instrs(update.body) else ();
-  return compiled_update(update.args_vars, opt_body);
+CompiledHandler merge_instrs(CompiledHandler handler) {
+  opt_body = if handler.body != () then merge_instrs(handler.body) else ();
+  return compiled_handler(opt_body);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
