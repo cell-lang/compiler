@@ -147,3 +147,20 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
     db.name -> tables_info(database=db) : db <- program.data_bases
   ];
 }
+
+////////////////////////////////////////////////////////////////////////////////
+
+implicit program : Program {
+  [HandlerId -> Handler] identified_handlers(DBSymbol rel_auto_id) {
+    return identified_handlers_by_rel_auto_id(rel_auto_id, !);
+
+    [DBSymbol -> [HandlerId -> Handler]] identified_handlers_by_rel_auto_id = [
+      rel_auto.name -> identified_handlers(rel_auto) : rel_auto <- program.data_bases
+    ];
+
+    [HandlerId -> Handler] identified_handlers(Database rel_auto) {
+      sorted_handlers = rand_sort(rel_auto.handlers);
+      return [handler_id(i) -> h : h @ i <- sorted_handlers];
+    }
+  }
+}

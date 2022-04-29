@@ -2,7 +2,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
   StaticBlock compiled_database([RelVar -> [+Nat -> Nat]] rel_vars_args_perms) {
     methods = compiled_database_methods(database.methods);
     // updates = compiled_database_updates(database.updates);
-    handlers, exported_handlers, maybe_dispatch_resolver = compiled_database_handlers(database.handlers);
+    handlers, exported_handlers, maybe_dispatch_resolver = compiled_database_handlers;
     msg_types = [h.type : h <- database.handlers];
     msg_memb_pred = if msg_types != [] then just(memb_test_preds_map[ne_union_type(msg_types)]) else nothing;
 
@@ -749,13 +749,13 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
   // }
 
 
-  ([HandlerId -> CompiledHandler], [HandlerId, HandlerWrapper], Maybe[(FnArg, Instr*)]) compiled_database_handlers([Handler] handlers) {
+  ([HandlerId -> CompiledHandler], [HandlerId, HandlerWrapper], Maybe[(FnArg, Instr*)]) compiled_database_handlers {
+    handlers = identified_handlers(database.name);
     return ([], [], nothing) if handlers == [];
-    sorted_handlers = rand_sort(handlers);
-    comp_handlers = merge(([handler_id(i) -> compiled_handler(handler_body(h))] : h @ i <- sorted_handlers));
-    exported_handlers = [handler_id(i), interface : h @ i <- sorted_handlers, interface <- interfaces(h)];
+    comp_handlers = [id -> compiled_handler(handler_body(h)) : id h <- handlers];
+    exported_handlers = [id, interface : id h <- handlers, interface <- interfaces(h)];
     dispatch_resol_code =  if |handlers| > 1
-      then msg_handler_resol_code(database.name, sorted_handlers)
+      then msg_handler_resol_code(database.name, handlers)
       else (ret_val(int32(0)));
     dispatch_resolver = (fn_arg(0), dispatch_resol_code);
     return (comp_handlers, exported_handlers, just(dispatch_resolver));
@@ -1146,8 +1146,8 @@ implicit typedefs : [TypeName -> NeType] {
   // }
 
 
-  Instr* msg_handler_resol_code(DBSymbol db_type, Handler+ handlers) {
-    cases = [((h.type), (ret_val(int32(i)))) : h @ i <- handlers];
+  Instr* msg_handler_resol_code(DBSymbol db_type, [+HandlerId -> Handler] handlers) {
+    cases = [((h.type), (ret_val(int32(_untag_(id))))) : id h <- handlers];
     return dynamic_dispatch_code((fn_arg(0)), cases);
   }
 }
@@ -1185,17 +1185,3 @@ implicit typedefs : [TypeName -> NeType] {
     if is_subset(type, float_type)  then :float   else
                                          :object;
 }
-
-////////////////////////////////////////////////////////////////////////////////
-
-// Maybe[UpdateSymbol] name(<Update, Handler>) =
-//   update() u?   = just(u.name),
-//   handler()     = nothing;
-
-// NeType* arg_types(<Update, Handler>) =
-//   update() u?   = (t : t, _ <- u.args),
-//   handler() h?  = (h.type);
-
-// UpdateId polymorphic_update_id(<Update, Handler>, Nat idx) =
-//   update() u?   = update_id(u.name, arity(u), idx),
-//   handler() h?  = handler_id(idx);
