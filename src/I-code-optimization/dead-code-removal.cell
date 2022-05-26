@@ -155,17 +155,7 @@ Instr* remove_dead_loop_code(Instr+ body) {
 
 Instr* remove_dead_foreach_code(ForeachInstr instr) {
   opt_body = remove_dead_code(instr.body);
-  return (
-    foreach(
-      seq:        instr.seq,
-      src_array:  instr.src_array,
-      tmp_buffer: instr.tmp_buffer if instr.tmp_buffer?,
-      count_var:  instr.count_var,
-      idx_var:    instr.idx_var,
-      it_var:     instr.it_var,
-      body:       opt_body
-    ) if opt_body != ()
-  );
+  return (foreach(instr.iter, opt_body) if opt_body != ());
 }
 
 

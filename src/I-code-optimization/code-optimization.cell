@@ -439,17 +439,15 @@ Instr* reconstruct_code(CodeTree code_tree, NodeInfo+ nodes) {
 
   Instr* reconstruct_foreach(Nat idx, ArrayVar src_array, Maybe[ArrayVar] tmp_buffer, CodeTree+ body, NodeInfo+ nodes) {
     node = match (nodes(idx)) foreach_node() n? = n;
-    return (
-      foreach(
-        seq:        node.seq,
-        src_array:  src_array,
-        tmp_buffer: value(tmp_buffer) if tmp_buffer != nothing,
-        count_var:  node.count_var,
-        idx_var:    node.idx_var,
-        it_var:     node.it_var,
-        body:       reconstruct(body, nodes)
-      )
+    iter = foreach_seq_iter(
+      seq:        node.seq,
+      src_array:  src_array,
+      tmp_buffer: value(tmp_buffer) if tmp_buffer != nothing,
+      count_var:  node.count_var,
+      idx_var:    node.idx_var,
+      it_var:     node.it_var
     );
+    return (foreach(iter, reconstruct(body, nodes)));
   }
 
 

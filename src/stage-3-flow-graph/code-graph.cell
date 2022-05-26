@@ -77,18 +77,33 @@ RCNodeInfo set_cls_par_node(ImplArg v, AnyLambdaExpr c, Instr* is)  = set_cls_pa
 
 (NodeInfo+, CodeTree) build_foreach_code_graph(ForeachInstr instr, Nat offset) {
   body_nodes, body_code_trees = build_code_graph(instr.body, nat(offset+1));
+  iter = instr.iter;
   code_tree = foreach_node(
     idx:        offset,
-    src_array:  instr.src_array,
-    tmp_buffer: instr.tmp_buffer if instr.tmp_buffer?,
+    src_array:  iter.src_array,
+    tmp_buffer: iter.tmp_buffer if iter.tmp_buffer?,
     body:       nonempty(body_code_trees)
   );
   node_info = foreach_node(
-    seq:        instr.seq,
-    count_var:  instr.count_var,
-    idx_var:    instr.idx_var,
-    it_var:     instr.it_var
+    seq:        iter.seq,
+    count_var:  iter.count_var,
+    idx_var:    iter.idx_var,
+    it_var:     iter.it_var
   );
+  ## BUG BUG BUG: THIS CODE TRIGGERED AN ASSERTION FAILURE IN THE COMPILER, SOMETHING TO DO
+  ## WITH THE FACT THAT IT COULDN'T FIGURE OUT THE OPTIMIZED RECORD TYPE OF SOMETHING
+  // code_tree = foreach_node(
+  //   idx:        offset,
+  //   src_array:  instr.iter.src_array,
+  //   tmp_buffer: instr.iter.tmp_buffer if instr.tmp_buffer?, ## THE PROBLEM WAS PROBABLY HERE
+  //   body:       nonempty(body_code_trees)
+  // );
+  // node_info = foreach_node(
+  //   seq:        instr.iter.seq,
+  //   count_var:  instr.iter.count_var,
+  //   idx_var:    instr.iter.idx_var,
+  //   it_var:     instr.iter.it_var
+  // );
   return ((node_info) & body_nodes, code_tree);
 }
 

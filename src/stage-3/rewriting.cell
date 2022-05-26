@@ -339,15 +339,18 @@ Instr rewrite_exprs(CompInstr instr, (AnyTypeExpr -> AnyTypeExpr) rewrite, (RefO
     repeat(b?)        = repeat((rewrite_exprs(is, rewrite, rewrite_ref) : is <- b)),
     execute_block(b?) = execute_block((rewrite_exprs(is, rewrite, rewrite_ref) : is <- b)),
     try_block()       = try_block(instr.var, (rewrite_exprs(is, rewrite, rewrite_ref) : is <- instr.body)), // var is the variable that the try block is supposed to set, so it should not be rewritten
-    foreach()         = foreach(
-                          seq:        cast_loc_or_std_var(rewrite(instr.seq)),
-                          src_array:  instr.src_array,
-                          tmp_buffer: instr.tmp_buffer if instr.tmp_buffer?,
-                          count_var:  cast_int32_var(rewrite(instr.count_var)),
-                          idx_var:    instr.idx_var,
-                          it_var:     instr.it_var,
-                          body:       (rewrite_exprs(is, rewrite, rewrite_ref) : is <- instr.body)
-                        );
+    foreach()         = foreach(rewrite_exprs(instr.iter, rewrite), (rewrite_exprs(is, rewrite, rewrite_ref) : is <- instr.body));
+
+
+ForeachSeqIter rewrite_exprs(ForeachSeqIter iter, (AnyTypeExpr -> AnyTypeExpr) rewrite) =
+  foreach_seq_iter(
+    seq:        cast_loc_or_std_var(rewrite(iter.seq)),
+    src_array:  iter.src_array,
+    tmp_buffer: iter.tmp_buffer if iter.tmp_buffer?,
+    count_var:  cast_int32_var(rewrite(iter.count_var)),
+    idx_var:    iter.idx_var,
+    it_var:     iter.it_var
+  );
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -373,12 +376,15 @@ Instr rewrite_nested(CompInstr instr, (Instr -> Instr) rw_instr, (AnyTypeExpr ->
     repeat(b?)        = repeat((rw_instr(is) : is <- b)),
     execute_block(b?) = execute_block((rw_instr(is) : is <- b)),
     try_block()       = try_block(instr.var, (rw_instr(is) : is <- instr.body)), // var is the variable that the try block is supposed to set, so it should not be rewritten
-    foreach()         = foreach(
-                          seq:        cast_loc_or_std_var(rw_expr(instr.seq)),
-                          src_array:  instr.src_array,
-                          tmp_buffer: instr.tmp_buffer if instr.tmp_buffer?,
-                          count_var:  cast_int32_var(rw_expr(instr.count_var)),
-                          idx_var:    instr.idx_var,
-                          it_var:     instr.it_var,
-                          body:       (rw_instr(is) : is <- instr.body)
-                        );
+    foreach()         = foreach(rewrite_nested(instr.iter, rw_expr), (rw_instr(is) : is <- instr.body));
+
+
+ForeachSeqIter rewrite_nested(ForeachSeqIter iter, (AnyTypeExpr -> AnyTypeExpr) rw_expr) =
+  foreach_seq_iter(
+    seq:        cast_loc_or_std_var(rw_expr(iter.seq)),
+    src_array:  iter.src_array,
+    tmp_buffer: iter.tmp_buffer if iter.tmp_buffer?,
+    count_var:  cast_int32_var(rw_expr(iter.count_var)),
+    idx_var:    iter.idx_var,
+    it_var:     iter.it_var
+  );

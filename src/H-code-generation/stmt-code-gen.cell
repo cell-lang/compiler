@@ -1078,14 +1078,14 @@ implicit program           : Program,
 
     // Mapping source to destination arrays
     read_len_instr = set_ivar32(count_var, get_size(seq_surr));
-    map_instr = foreach(
+    map_instr_iter = foreach_seq_iter(
       seq:        seq_surr,
       src_array:  src_array_var,
       count_var:  count_var,
       idx_var:    hidden_idx_var,
-      it_var:     it_var,
-      body:       body_code
+      it_var:     it_var
     );
+    map_instr = foreach(map_instr_iter, body_code);
 
     return ((entry_code | read_len_instr, map_instr), just(surrs), [], init_var_gen);
 

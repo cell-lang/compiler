@@ -435,15 +435,18 @@ type CompInstr      = branch(cond: BoolExpr, when_true: Instr+, when_false: Inst
                       try_block(var: LocVar, body: Instr+),
                       ForeachInstr;
 
-type ForeachInstr   = foreach(
+type ForeachSeqIter = foreach_seq_iter(
                         seq:        <LocVar, StdVar>,
                         src_array:  ArrayVar,
                         tmp_buffer: ArrayVar?,
                         count_var:  Int32Var,
                         idx_var:    Int32Var,
-                        it_var:     AnyLocVar,
-                        body:       Instr*
+                        it_var:     AnyLocVar
                       );
+
+type ForeachIter    = ForeachSeqIter;
+
+type ForeachInstr   = foreach(iter: ForeachIter, body: Instr*);
 
 type Instr          = BasicInstr, JumpInstr, CompInstr;
 

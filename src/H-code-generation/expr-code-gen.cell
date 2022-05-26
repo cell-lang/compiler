@@ -1134,15 +1134,15 @@ implicit program           : Program,
     }
 
     // Mapping source to destination arrays
-    map_instr = foreach(
+    map_instr_iter = foreach_seq_iter(
       seq:        src_surr,
       src_array:  src_array_var,
       tmp_buffer: array_var,
       count_var:  array_size_var,
       idx_var:    hidden_idx_var,
-      it_var:     it_var,
-      body:       body_code
+      it_var:     it_var
     );
+    map_instr = foreach(map_instr_iter, body_code);
 
     eval_code = (eval_code & loop_init_code | map_instr, mk_seq_instr);
     return (eval_code, res_var, ret_var_gen);
