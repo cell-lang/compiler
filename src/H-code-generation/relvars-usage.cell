@@ -31,6 +31,11 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
       just(v?, true)  = v,
       _               = undefined;
 
+  Bool is_mandatory_slave_of(DBSymbol rel_auto_id, TableVar origin, TableVar target) =
+    match (bin_rel_only_master_info(rel_auto_id, original_rel_var(origin)))
+      just(m?, true)  = m == original_rel_var(target),
+      _               = false;
+
 
   [PhysRelVar] slave_columns(DBSymbol rel_auto_id, PhysRelVar relvar) {
     assert arity(table_info(rel_auto_id, table_var(relvar))) == 1;

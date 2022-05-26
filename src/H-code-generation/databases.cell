@@ -7,7 +7,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
     msg_memb_pred = if msg_types != [] then just(memb_test_preds_map[ne_union_type(msg_types)]) else nothing;
 
     insert_checked_foreign_keys = [
-      bk : k bk <- physical_foreign_keys_map, not insertion_is_statically_checked(k)
+      bk : k bk <- physical_foreign_keys_map, not insertion_is_statically_checked(k), not is_mandatory_slave_of(database.name, bk.origin, bk.target)
     ];
     delete_checked_foreign_keys = [
       bk : k bk <- physical_foreign_keys_map,
