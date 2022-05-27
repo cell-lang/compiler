@@ -509,18 +509,17 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 
       sign = table_signature(rel_auto_id, tv);
 
-      it_var = if is_columnar_relvar(rel_auto_id, logical_rel_var(rel_var)) then
-          column_it_var(0, column_is_mandatory(rel_auto_id, tv), column_repr(sign(1)))
-        else if is_ternary_slave_column(rel_auto_id, logical_rel_var(rel_var)) then
-          slave_column_it_var(0, column_repr(sign(2)))
-        else table_it_var(0, [], cast_any_surr_table(table_info(rel_auto_id, tv)), arity, src_is_sym);
-
       if foreign_keys != [] {
         conds = ({
           target_table_info = table_info(rel_auto_id, fk.target);
 
-          if fk.type == :binary_ternary and is_ternary_slave_column(rel_auto_id, logical_rel_var(original_rel_var(fk.target)))
-            return table_contains(fk.target, target_table_info, (just(assoc_surr_var), nothing), false);
+          if fk.type == :binary_ternary and is_ternary_slave_column(rel_auto_id, logical_rel_var(original_rel_var(fk.target))) {
+            target_table_info = cast_slave_column(target_table_info);
+            if target_table_info.master == tv {
+              assert src_table_info :: MasterBinTable;
+              return table_contains(fk.target, target_table_info, (just(assoc_surr_var), nothing), false);
+            }
+          }
 
           tgt_is_sym, args_sets = match (fk.type)
             unary_unary             = (false, ((just(0)))),
@@ -545,7 +544,21 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 
         cond = or((neg(c) : c <- conds));
 
-        surr_vars_used = isort(union([
+        ## BAD BAD BAD: THIS BLOCK OF CODE DUPLICATES THE LOGIC IN THE COMPREHENSION EXPRESSION ABOVE.
+        ## MAKE SURE THE TWO ARE ALWAYS SINCRONIZED WHEN MODIFYING THE CODE
+        assoc_surr_is_needed = false;
+        for fk <- foreign_keys {
+          if fk.type == :binary_ternary and is_ternary_slave_column(rel_auto_id, logical_rel_var(original_rel_var(fk.target))) {
+            target_table_info = cast_slave_column(table_info(rel_auto_id, fk.target));
+            if target_table_info.master == tv {
+              assert src_table_info :: MasterBinTable;
+              assoc_surr_is_needed = true;
+              break;
+            }
+          }
+        }
+
+        surr_vars_used = union([
           match (fk.type)
             unary_unary             = [0],
             unary_binary(i?)        = [0],
@@ -563,46 +576,63 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
             sym_binary_sym_ternary  = [0, 1],
             sym_ternary_sym_binary  = [0, 1]
           : fk <- foreign_keys
-        ]));
+        ]);
 
-        assert match (it_var)
-          table_it_var()        = true,
-          column_it_var()       = surr_vars_used == (0),
-          slave_column_it_var() = surr_vars_used == (0, 1) or surr_vars_used == (0) or surr_vars_used == (1); ## NOT AT ALL SURE HERE. WHAT IS THIS ASSERTION FOR ANYWAY?
-
-        surrs_reads = match (it_var)
-          table_it_var()        = (set_ivar32(surr_vars(i), get_unknown_arg(it_var, i)) : i <- surr_vars_used),
-          column_it_var()       = (set_ivar32(surr_vars(0), get_unknown_arg(it_var, 0))),
+        if is_columnar_relvar(rel_auto_id, logical_rel_var(rel_var)) {
+          it_var = column_it_var(0, column_is_mandatory(rel_auto_id, tv), column_repr(sign(1)));
+          assert surr_vars_used == [0];
           ## ISN'T THIS TOTALLY POINTLESS IF THE TARGET TABLE IS ALSO THE MASTER ONE?
           ## AND CAN THE TARGET TABLE BE ANYTHING OTHER THAN THE MASTER?
-          slave_column_it_var() = { master = master_table(rel_auto_id, tv);
-                                    master_info = cast_master_bin_table(table_info(rel_auto_id, master));
-                                    return (
-                                      set_ivar32(assoc_surr_var, get_unknown_arg(it_var, 0)),
-                                      set_ivar32(surr_vars(0), get_arg_by_assoc_surr(master, master_info, 0, assoc_surr_var)),
-                                      set_ivar32(surr_vars(1), get_arg_by_assoc_surr(master, master_info, 1, assoc_surr_var))
-                                    );
-                                  };
+          surrs_reads = (set_ivar32(surr_vars(0), get_unknown_arg(it_var, 0)));
+          assert not (fk <- foreign_keys : fk.type == :binary_ternary and is_ternary_slave_column(rel_auto_id, logical_rel_var(original_rel_var(fk.target))));
+          get_iter_instr = get_column_iter(it_var, tv, cast_any_bin_col(src_table_info));
 
-        if (fk <- foreign_keys : fk.type == :binary_ternary and is_ternary_slave_column(rel_auto_id, logical_rel_var(original_rel_var(fk.target)))) {
-          assoc_surr_var_read = set_ivar32(assoc_surr_var, get_assoc_surr(tv, cast_master_bin_table(table_info(rel_auto_id, tv)), (surr_vars(0), surr_vars(1))));
-          surrs_reads = (surrs_reads | assoc_surr_var_read);
+          code = (code |
+            get_iter_instr,
+            repeat((
+              break_if(is_out_of_range(it_var))
+            ) & surrs_reads & (
+              do_if(cond, ret_val(false)),
+              move_forward(it_var)
+            ))
+          );
         }
+        else if is_ternary_slave_column(rel_auto_id, logical_rel_var(rel_var)) {
+          it_var = slave_column_it_var(0, column_repr(sign(2)));
+          assert surr_vars_used == [0, 1] or surr_vars_used == [0] or surr_vars_used == [1]; ## NOT AT ALL SURE HERE. WHAT IS THIS ASSERTION FOR ANYWAY?
+          ## ISN'T THIS TOTALLY POINTLESS IF THE TARGET TABLE IS ALSO THE MASTER ONE?
+          ## AND CAN THE TARGET TABLE BE ANYTHING OTHER THAN THE MASTER?
+          master = master_table(rel_auto_id, tv);
+          master_info = cast_master_bin_table(table_info(rel_auto_id, master));
+          surrs_reads = (
+            set_ivar32(assoc_surr_var, get_unknown_arg(it_var, 0)),
+            set_ivar32(surr_vars(0), get_arg_by_assoc_surr(master, master_info, 0, assoc_surr_var)),
+            set_ivar32(surr_vars(1), get_arg_by_assoc_surr(master, master_info, 1, assoc_surr_var))
+          );
+          assert not (fk <- foreign_keys : fk.type == :binary_ternary and is_ternary_slave_column(rel_auto_id, logical_rel_var(original_rel_var(fk.target))));
+          get_iter_instr = get_slave_col_iter(it_var, tv, cast_slave_column(src_table_info), (nothing : i < arity));
 
-        get_iter_instr = match (it_var)
-          table_it_var()        = get_table_iter(it_var, tv, cast_any_surr_table(src_table_info), (nothing : i < arity)),
-          slave_column_it_var() = get_slave_col_iter(it_var, tv, cast_slave_column(src_table_info), (nothing : i < arity)),
-          column_it_var()       = get_column_iter(it_var, tv, cast_any_bin_col(src_table_info));
+          code = (code |
+            get_iter_instr,
+            repeat((
+              break_if(is_out_of_range(it_var))
+            ) & surrs_reads & (
+              do_if(cond, ret_val(false)),
+              move_forward(it_var)
+            ))
+          );
+        }
+        else {
+          tbl_info = cast_any_surr_table(table_info(rel_auto_id, tv));
+          empty_args = (nothing : _ < arity);
+          vars = (maybe(surr_vars(i), surr_vars_used(i)) : i < arity);
 
-        code = (code |
-          get_iter_instr,
-          repeat((
-            break_if(is_out_of_range(it_var))
-          ) & surrs_reads & (
-            do_if(cond, ret_val(false)),
-            move_forward(it_var)
-          ))
-        );
+          iter = if assoc_surr_is_needed
+            then get_table_foreach_iter(tv, cast_master_bin_table(tbl_info), empty_args, vars, assoc_surr_var)
+            else get_table_foreach_iter(tv, tbl_info, empty_args, vars);
+
+          code = (code | foreach(iter, (do_if(cond, ret_val(false)))));
+        }
       }
     }
 
@@ -1184,4 +1214,72 @@ implicit typedefs : [TypeName -> NeType] {
     if is_subset(type, integer)     then :int     else
     if is_subset(type, float_type)  then :float   else
                                          :object;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+## THIS IS TOTALLY THE WRONG PLACE FOR THESE FUNCTIONS. MOVE THEM WITH THE OTHER CONSTRUCTORS OR UTILITIES FUNCTIONS
+// type TableType      = unary_table, bin_table, sym_bin_table, master_bin_table, tern_table, sym_12_tern_table, slave_tern_table;
+// type TableItVar     = table_it_var(id: Nat, set_args: [Nat], table_type: TableType);
+// get_table_iter(it_var: TableItVar, table_var: AnyTableVar, table: AnySurrTable, args: Maybe[Int32Var]+),
+
+// type Table  = table(
+//                 value_stores: ValueStoreId+,
+//                 keys:         [[+Nat]],
+//                 col_types:    NeType+,
+//                 symmetric:    Bool
+//               );
+ForeachIter get_table_foreach_iter(AnyTableVar table_var, Table table, Maybe[Int32Var]+ args, Maybe[Int32Var]+ vars) {
+  fail;
+}
+
+
+// type MasterBinTableIter = master_bin_table_iter(
+//                         table_var:  AnyTableVar,
+//                         table:      MasterBinTable,
+//                         args:       (Maybe[Int32Var], Maybe[Int32Var]),
+//                         vars:       (Maybe[Int32Var], Maybe[Int32Var]),
+//                         surr_var:   Int32Var?
+//                       );
+ForeachIter get_table_foreach_iter(AnyTableVar table_var, MasterBinTable table, Maybe[Int32Var]+ args, Maybe[Int32Var]+ vars) {
+  assert vars(0) == nothing or args(0) == nothing;
+  assert vars(1) == nothing or args(1) == nothing;
+
+  fail if |args| != 2 or |vars| != 2;
+
+  return master_bin_table_iter(
+    table_var:  table_var,
+    table:      table,
+    args:       args,
+    vars:       vars
+  );
+}
+
+
+// type SlaveTernTable = slave_tern_table(
+//                         master:       TableVar,
+//                         value_stores: (ValueStoreId, ValueStoreId, ValueStoreId),
+//                         keys:         [[+Nat]],
+//                         col_types:    (NeType, NeType, NeType),
+//                         symmetric:    Bool
+//                       );
+ForeachIter get_table_foreach_iter(AnyTableVar table_var, SlaveTernTable table, Maybe[Int32Var]+ args, Maybe[Int32Var]+ vars) {
+  fail;
+}
+
+
+ForeachIter get_table_foreach_iter(AnyTableVar table_var, MasterBinTable table, Maybe[Int32Var]+ args, Maybe[Int32Var]+ vars, Int32Var surr_var) {
+  assert vars(0) == nothing or args(0) == nothing;
+  assert vars(1) == nothing or args(1) == nothing;
+
+  fail if |args| != 2 or |vars| != 2;
+
+  return master_bin_table_iter(
+    table_var:  table_var,
+    table:      table,
+    args:       args,
+    vars:       vars,
+    surr_var:   surr_var
+  );
 }

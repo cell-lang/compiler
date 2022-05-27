@@ -1367,8 +1367,8 @@ implicit program           : Program,
     entry_code, args_aliases, var_gen = opt_eval_code(set_args, env, init_var_gen);
 
     surr_vars, var_gen = next_int32_vars(var_gen, |set_args|);
-    shadow_surr_vars, var_gen = next_int32_vars(var_gen, [i : v @ i <- iter.vars, v != nothing]);
-    it_var_id, var_gen = next_table_it_var_id(var_gen);
+    shadow_surr_vars_map, var_gen = next_int32_vars(var_gen, [i : v @ i <- iter.vars, v != nothing]);
+    shadow_surr_vars = (apply(v, shadow_surr_vars_map(i)) : v @ i <- iter.vars);
 
     surr_args = (apply(a, surr_vars(arg_idx_bound_arg_idx(i))) : a @ i <- table_args);
 
@@ -1390,18 +1390,14 @@ implicit program           : Program,
       sign = table_signature(tv);
       vars_reprs = [value(v) -> low_level_repr(sign(free_args_idxs(i))) : v @ i <- iter.vars, v != nothing];
       low_level_vars = [v -> low_level_var(r, v) : v r <- vars_reprs];
-      it_var = table_it_var(it_var_id, set(bound_args_idxs), table_info, |table_args|, symmetric);
 
-      vars_setup_code = join(({
-        shadow_surr_var = shadow_surr_vars(i);
+      vars_setup_code = ({
+        shadow_surr_var = shadow_surr_vars_map(i);
         store_id = table_col_store_id(tv, free_args_idxs(i));
         store_type = value_store_type(rel_auto_type(iter.rel_var), unqualified(store_id));
         store_id = substitute(store_id);
-        return (
-          set_ivar32(shadow_surr_var, get_unknown_arg(it_var, i)),
-          surr_to_decoded_value(low_level_vars(value(v)), store_id, store_type, shadow_surr_var)
-        );
-      } : v @ i <- iter.vars, v != nothing));
+        return surr_to_decoded_value(low_level_vars(value(v)), store_id, store_type, shadow_surr_var);
+      } : v @ i <- iter.vars, v != nothing);
 
       // Environment the body runs in
       sgn = table_signature(tv);
@@ -1417,11 +1413,8 @@ implicit program           : Program,
       if body_code != () {
         entry_code = entry_code & entry_code_fixes;
 
-        loop_code = (break_if(is_out_of_range(it_var))) & vars_setup_code & body_code & (move_forward(it_var));
-        table_code = (
-          get_table_iter(it_var, substitute(tv), table_info, nonempty(surr_args)),
-          repeat(nonempty(loop_code))
-        );
+        table_iter = get_table_foreach_iter(substitute(tv), table_info, nonempty(surr_args), nonempty(shadow_surr_vars));
+        table_code = (foreach(table_iter, nonempty(vars_setup_code & body_code)));
 
         for e @ i <- reverse(args_aliases) {
           idx = rat(bound_args_idxs, i);

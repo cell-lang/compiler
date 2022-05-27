@@ -176,7 +176,7 @@ implicit program           : Program,
       bound_surr_var, var_gen = next_int32_var(var_gen);
       free_surr_var, var_gen = next_int32_var(var_gen);
 
-      it_var_id, var_gen = next_table_it_var_id(var_gen);
+      // it_var_id, var_gen = next_table_it_var_id(var_gen);
 
       bound_arg_eval_code, bound_arg_alias, var_gen = opt_eval_info(bound_arg, var_gen);
 
@@ -197,7 +197,7 @@ implicit program           : Program,
         ll_free_arg_var = apply(free_arg_var, low_level_var(free_arg_repr, $));
         ll_value_var = apply(value_var, low_level_var(value_repr, $));
 
-        it_var = table_it_var(it_var_id, [bound_arg_idx], master_table_info, 2, false);
+        // it_var = table_it_var(it_var_id, [bound_arg_idx], master_table_info, 2, false);
 
         bound_arg_store_id = table_col_store_id(tv, bound_arg_idx);
         free_arg_store_id = table_col_store_id(tv, free_arg_idx);
@@ -216,36 +216,53 @@ implicit program           : Program,
         next_action_surrs = surrogates & new_surrs;
         action_code = yield_action_opt_code(next, var_gen, surrogates = next_action_surrs);
 
+        loop_body_instr = do_if(
+          table_contains(substitute(tv), table_info(tv), (just(assoc_surr_var), nothing), false),
+          ( surr_to_decoded_value(value(ll_free_arg_var), free_arg_store_id, free_arg_store_type, free_surr_var) if ll_free_arg_var != nothing,
+            set_any_var(
+              value(ll_value_var),
+              column_lookup(substitute(tv), table_info(tv), assoc_surr_var)
+            ) if ll_value_var != nothing
+          ) & action_code
+        );
+
+        iter = master_bin_table_iter(
+          table_var:  substitute(master_table),
+          table:      master_table_info,
+          args:       (maybe(bound_surr_var, i == bound_arg_idx) : i <- (0, 1)),
+          vars:       (maybe(free_surr_var, i != bound_arg_idx)  : i <- (0, 1)),
+          surr_var:   assoc_surr_var
+        );
+
+        value_to_surr_expr = value_to_surr(bound_arg_store_id, bound_arg_store_type, value_store_encoded_expr(bound_arg_store_type, bound_arg_alias));
+
         code = code & (
-          set_ivar32(bound_surr_var, value_to_surr(bound_arg_store_id, bound_arg_store_type, value_store_encoded_expr(bound_arg_store_type, bound_arg_alias))),
+          set_ivar32(bound_surr_var, value_to_surr_expr),
           do_if_not(
             is_eq(bound_surr_var, -1),
-            ( get_table_iter(it_var, substitute(master_table), master_table_info, (just(bound_surr_var), nothing)),
-              repeat((
-                break_if(is_out_of_range(it_var)),
+            foreach(iter, (loop_body_instr))
 
-                set_ivar32(free_surr_var, get_unknown_arg(it_var, 0)),
-                set_ivar32(assoc_surr_var, get_assoc_surr(substitute(master_table), master_table_info, (bound_surr_var, free_surr_var))),
-                do_if(
-                  table_contains(substitute(tv), table_info(tv), (just(assoc_surr_var), nothing), false),
-                  ( surr_to_decoded_value(value(ll_free_arg_var), free_arg_store_id, free_arg_store_type, free_surr_var) if ll_free_arg_var != nothing,
-                    set_any_var(
-                      value(ll_value_var),
-                      column_lookup(substitute(tv), table_info(tv), assoc_surr_var)
-                    ) if ll_value_var != nothing
-                  ) & action_code
-                ),
+            ## WASN'T THE (just(bound_surr_var), nothing) A BUG? WHAT IF THE BOUND INDEX IS THE SECOND ONE?
+            ## TEST THIS WITH THE OLD VERSION OF THE COMPILER
 
-                move_forward(it_var)
-              ))
-            )
+            // ( get_table_iter(it_var, substitute(master_table), master_table_info, (just(bound_surr_var), nothing)),
+            //   repeat((
+            //     break_if(is_out_of_range(it_var)),
+
+            //     set_ivar32(free_surr_var, get_unknown_arg(it_var, 0)),
+            //     set_ivar32(assoc_surr_var, get_assoc_surr(substitute(master_table), master_table_info, (bound_surr_var, free_surr_var))),
+
+            //     loop_body_instr
+
+            //     move_forward(it_var)
+            //   ))
+            // )
           )
         );
       }
 
       return code;
     }
-
 
 
     Instr* relvar_by_first_and_second_arg_iter_code(Maybe[StdVar]+ vars, AnyRelVar relvar, Expr arg_0, Expr arg_1, YieldAction next, VarGen init_var_gen) {
@@ -472,8 +489,9 @@ implicit program           : Program,
     args_eval_code, args_aliases, var_gen = opt_eval_info(set_args, init_var_gen);
 
     surr_vars, var_gen = next_int32_vars(var_gen, |set_args|);
-    shadow_surr_vars, var_gen = next_int32_vars(var_gen, |action.vars|);
-    it_var_id, var_gen = next_table_it_var_id(var_gen);
+    shadow_surr_vars_map, var_gen = next_int32_vars(var_gen, [i : v @ i <- action.vars, v != nothing]);
+    shadow_surr_vars = (apply(v, shadow_surr_vars_map(i)) : v @ i <- action.vars);
+    // it_var_id, var_gen = next_table_it_var_id(var_gen);
 
     surr_args = (apply(a, surr_vars(arg_idx_bound_arg_idx(i))) : a @ i <- args);
 
@@ -496,18 +514,19 @@ implicit program           : Program,
       vars_types = (sign(free_args_idxs(i)) : i < |action.vars|);
       low_level_vars = (apply(v, low_level_var(low_level_repr(vars_types(i)), $)) : v @ i <- action.vars);
 
-      it_var = table_it_var(it_var_id, set(bound_args_idxs), tv_info, |args|, symmetric);
+      // it_var = table_it_var(it_var_id, set(bound_args_idxs), tv_info, |args|, symmetric);
 
-      vars_setup_code = join(({
-        shadow_surr_var = shadow_surr_vars(i);
+      vars_setup_code = ({
+        shadow_surr_var = shadow_surr_vars_map(i);
         store_id = table_col_store_id(tv, free_args_idxs(i));
         store_type = value_store_type(rel_auto_type(action.relvar), unqualified(store_id));
         store_id = substitute(store_id);
-        return (
-          set_ivar32(shadow_surr_var, get_unknown_arg(it_var, i)),
-          surr_to_decoded_value(value(v), store_id, store_type, shadow_surr_var)
-        );
-      } : v @ i <- low_level_vars, v != nothing));
+        return surr_to_decoded_value(value(v), store_id, store_type, shadow_surr_var);
+        // return (
+        //   set_ivar32(shadow_surr_var, get_unknown_arg(it_var, i)),
+        //   surr_to_decoded_value(value(v), store_id, store_type, shadow_surr_var)
+        // );
+      } : v @ i <- low_level_vars, v != nothing);
 
       new_surrs = [
         value(v) -> obj_expr(value_unsafe(low_level_vars(i)))
@@ -516,11 +535,15 @@ implicit program           : Program,
       next_action_surrs = surrogates & new_surrs;
       action_code = yield_action_opt_code(action.next, var_gen, surrogates = next_action_surrs);
 
-      loop_code = (break_if(is_out_of_range(it_var))) & vars_setup_code & action_code & (move_forward(it_var));
-      table_code = (
-        get_table_iter(it_var, substitute(tv), tv_info, nonempty(surr_args)),
-        repeat(nonempty(loop_code))
-      );
+      iter = get_table_foreach_iter(substitute(tv), tv_info, nonempty(surr_args), nonempty(shadow_surr_vars));
+      table_code = (foreach(iter, vars_setup_code & action_code));
+
+      // loop_code = vars_setup_code & action_code;
+
+      // table_code = (
+      //   get_table_iter(it_var, substitute(tv), tv_info, nonempty(surr_args)),
+      //   repeat(nonempty(loop_code))
+      // );
 
       for e @ i <- reverse(args_aliases) {
         idx = rat(bound_args_idxs, i);
