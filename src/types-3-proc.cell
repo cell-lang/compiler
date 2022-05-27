@@ -111,12 +111,11 @@ type SeqItVar       = seq_it_var(Nat);
 type BinRelItVar    = bin_rel_it_var(Nat);
 type TernRelItVar   = tern_rel_it_var(Nat);
 
-type TableType      = unary_table, bin_table, sym_bin_table, master_bin_table, tern_table, sym_12_tern_table, slave_tern_table;
+// type TableType      = unary_table, bin_table, sym_bin_table, master_bin_table, tern_table, sym_12_tern_table, slave_tern_table;
 
-type TableItVar     = table_it_var(id: Nat, set_args: [Nat], table_type: TableType);
 type ColumnItVar    = column_it_var(id: Nat, mandatory: Bool, repr: ColumnRepr);
 type SlaveColumnItVar = slave_column_it_var(id: Nat, repr: ColumnRepr);
-type AnyTableItVar  = TableItVar, ColumnItVar, SlaveColumnItVar;
+type AnyTableItVar  = ColumnItVar, SlaveColumnItVar;
 
 type ItVar          = SeqItVar, SetItVar, BinRelItVar, TernRelItVar, AnyTableItVar;
 
@@ -400,7 +399,6 @@ type BasicInstr     = init_stream(StreamVar),
                       init_table(table_var: TableVar, table: AnyTable),
                       cleanup_table(table_var: TableVar, table: AnyTable),
 
-                      get_table_iter(it_var: TableItVar, table_var: AnyTableVar, table: AnySurrTable, args: Maybe[Int32Var]+),
                       get_slave_col_iter(it_var: SlaveColumnItVar, table_var: AnyTableVar, column: SlaveColumn, args: Maybe[Int32Var]+),
                       get_column_iter(it_var: ColumnItVar, col_var: AnyTableVar, column: <Column, MandatoryColumn>),
                       queue_deletes(table_var: TableVar, table: AnyTable, args: Maybe[Int32Var]+, symmetric: Bool),

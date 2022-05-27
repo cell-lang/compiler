@@ -85,24 +85,6 @@ SeqItVar seq_it_var(Nat n)          = :seq_it_var(n);
 BinRelItVar bin_rel_it_var(Nat n)   = :bin_rel_it_var(n);
 TernRelItVar tern_rel_it_var(Nat n) = :tern_rel_it_var(n);
 
-TableItVar table_it_var(Nat id, [Nat] as, AnySurrTable t, NzNat a, Bool s) {
-  assert arity(t) == a;
-  assert t.symmetric == s;
-  return table_it_var(id: id, set_args: as, table_type: table_type(t));
-
-
-  TableType table_type(Table table) =
-    match (arity(table), table.symmetric)
-      1,  false     = :unary_table,
-      2,  false     = :bin_table,
-      2,  true      = :sym_bin_table,
-      3,  false     = :tern_table,
-      3,  true      = :sym_12_tern_table;
-
-  TableType table_type(MasterBinTable) = :master_bin_table;
-  TableType table_type(SlaveTernTable) = :slave_tern_table;
-}
-
 ColumnItVar column_it_var(Nat id, Bool m, ColumnRepr r) = column_it_var(id: id, mandatory: m, repr: r);
 SlaveColumnItVar slave_column_it_var(Nat id, ColumnRepr r) = slave_column_it_var(id: id, repr: r);
 
@@ -190,7 +172,6 @@ Int32NatOp get_count(AnyTableVar v, AnyTable t, Maybe[Int32Var]+ as, Bool s)    
 Int32NatOp table_lookup(AnyTableVar v, AnySurrTable t, Maybe[Int32Var]+ as, Bool s)     = table_lookup(table_var: v, table: t, args: as, symmetric: s);
 Int32NatOp add32(Int32Expr e1, Int32Expr e2)                                            = :add32(e1, e2);
 Int32NatOp value_to_surr(AnyValueStoreId s, ValueStoreType t, <AtomicExpr, IntExpr> e)  = value_to_surr(store: s, store_type: t, value: e);
-Int32NatOp get_unknown_arg(TableItVar v, Nat i)                                         = get_unknown_arg(iter: v, arg: if i :: <0..2> then i else undefined);
 Int32NatOp get_unknown_arg(<ColumnItVar, SlaveColumnItVar> v, Nat i)                    = get_unknown_arg(iter: v, arg: if i == 0 then 0 else undefined);
 Int32NatOp get_arg_by_assoc_surr(AnyTableVar v, MasterBinTable t, <0..1> a, Int32Var s) = get_arg_by_assoc_surr(table_var: v, table_type: t, arg: a, surr: s);
 Int32NatOp get_assoc_surr(AnyTableVar v, MasterBinTable t, (Int32Var, Int32Var) as)     = get_assoc_surr(table_var: v, table_type: t, args: as);
@@ -596,12 +577,6 @@ BasicInstr cleanup_value_store(ValueStoreId s) = cleanup_value_store(store: s);
 
 BasicInstr init_table(TableVar v, AnyTable t)    = init_table(table_var: v, table: t);
 BasicInstr cleanup_table(TableVar v, AnyTable t) = cleanup_table(table_var: v, table: t);
-
-BasicInstr get_table_iter(TableItVar v, AnyTableVar tv, AnySurrTable t, Maybe[Int32Var]+ as) {
-  assert (a <- as : a == nothing);
-  assert arity(v) == |as|;
-  return get_table_iter(it_var: v, table_var: tv, table: t, args: as);
-}
 
 BasicInstr get_slave_col_iter(SlaveColumnItVar v, AnyTableVar tv, SlaveColumn c, Maybe[Int32Var]+ as) {
   assert (a <- as : a == nothing);
