@@ -111,8 +111,6 @@ type SeqItVar       = seq_it_var(Nat);
 type BinRelItVar    = bin_rel_it_var(Nat);
 type TernRelItVar   = tern_rel_it_var(Nat);
 
-// type TableType      = unary_table, bin_table, sym_bin_table, master_bin_table, tern_table, sym_12_tern_table, slave_tern_table;
-
 type ColumnItVar    = column_it_var(id: Nat, mandatory: Bool, repr: ColumnRepr);
 type SlaveColumnItVar = slave_column_it_var(id: Nat, repr: ColumnRepr);
 type AnyTableItVar  = ColumnItVar, SlaveColumnItVar;
@@ -442,15 +440,47 @@ type SeqIter        = seq_iter(
                         it_var:     AnyLocVar
                       );
 
-type MasterBinTableIter = master_bin_table_iter(
+// type TableType      = unary_table, bin_table, sym_bin_table, master_bin_table, tern_table, sym_12_tern_table, slave_tern_table;
+
+type UnaryTableIter = unary_table_iter(table_var: AnyTableVar, var: Int32Var?);
+
+type BinTableIter   = bin_table_iter(
                         table_var:  AnyTableVar,
-                        table:      MasterBinTable,
+                        table:      Table,
                         args:       (Maybe[Int32Var], Maybe[Int32Var]),
-                        vars:       (Maybe[Int32Var], Maybe[Int32Var]),
-                        surr_var:   Int32Var?
+                        vars:       (Maybe[Int32Var], Maybe[Int32Var])
                       );
 
-type ForeachIter    = SeqIter, MasterBinTableIter;
+type SymBinTableIter  = sym_bin_table_iter(
+                          table_var:  AnyTableVar,
+                          table:      Table,
+                          arg:        Int32Var?,
+                          var:        Int32Var?
+                        );
+
+type MasterBinTableIter = master_bin_table_iter(
+                            table_var:  AnyTableVar,
+                            table:      MasterBinTable,
+                            args:       (Maybe[Int32Var], Maybe[Int32Var]),
+                            vars:       (Maybe[Int32Var], Maybe[Int32Var]),
+                            surr_var:   Int32Var?
+                          );
+
+type TernTableIter  = tern_table_iter(
+                        table_var:  AnyTableVar,
+                        table:      Table,
+                        args:       (Maybe[Int32Var], Maybe[Int32Var], Maybe[Int32Var]),
+                        vars:       (Maybe[Int32Var], Maybe[Int32Var], Maybe[Int32Var])
+                      );
+
+type SemiSymTernTableIter = semi_sym_tern_table_iter(
+                              table_var:  AnyTableVar,
+                              table:      Table,
+                              args:       (Maybe[Int32Var], Maybe[Int32Var], Maybe[Int32Var]),
+                              vars:       (Maybe[Int32Var], Maybe[Int32Var], Maybe[Int32Var])
+                            );
+
+type ForeachIter    = SeqIter, UnaryTableIter, BinTableIter, SymBinTableIter, MasterBinTableIter, TernTableIter, SemiSymTernTableIter;
 
 type ForeachInstr   = foreach(iter: ForeachIter, body: Instr*);
 
