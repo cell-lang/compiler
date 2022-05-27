@@ -3,13 +3,14 @@ type NodeInfo       = std_node(<BasicInstr, JumpInstr>),
                       nat_switch_node(IntExpr),
                       symb_switch_node(value: ObjExpr, cases: [+SymbObj]+),
                       set_cls_par_node(var: ImplArg, cls: AnyLambdaExpr),
-                      foreach_node(
-                        seq:        <LocVar, StdVar>,
-                        ## THESE VARIABLES SHOULD NOT BE LIVE ONCE WE GET HERE
-                        count_var:  Int32Var,
-                        idx_var:    Int32Var,
-                        it_var:     AnyLocVar
-                      );
+                      foreach_node(iter: ForeachIter);
+                      // foreach_node(
+                      //   seq:        <LocVar, StdVar>,
+                      //   ## THESE VARIABLES SHOULD NOT BE LIVE ONCE WE GET HERE
+                      //   count_var:  Int32Var,
+                      //   idx_var:    Int32Var,
+                      //   it_var:     AnyLocVar
+                      // );
 
 type CodeTree       = std_node(Nat),
                       branch_node(idx: Nat, if_body: CodeTree+, else_body: CodeTree*),
@@ -19,7 +20,8 @@ type CodeTree       = std_node(Nat),
                       block_node(CodeTree+),
                       try_block_node(var: LocVar, body: CodeTree+),
                       ## SHOULD VARIABLES OF TYPE ArrayVar BE MOVED TO THE NodeInfo?
-                      foreach_node(idx: Nat, src_array: ArrayVar, tmp_buffer: ArrayVar?, body: CodeTree+),
+                      // foreach_node(idx: Nat, src_array: ArrayVar, tmp_buffer: ArrayVar?, body: CodeTree+),
+                      foreach_node(idx: Nat, body: CodeTree+),
                       root_node(CodeTree+);
 
 type RCNodeInfo     = std_node(Instr*),
@@ -77,19 +79,22 @@ RCNodeInfo set_cls_par_node(ImplArg v, AnyLambdaExpr c, Instr* is)  = set_cls_pa
 
 (NodeInfo+, CodeTree) build_foreach_code_graph(ForeachInstr instr, Nat offset) {
   body_nodes, body_code_trees = build_code_graph(instr.body, nat(offset+1));
-  iter = instr.iter;
-  code_tree = foreach_node(
-    idx:        offset,
-    src_array:  iter.src_array,
-    tmp_buffer: iter.tmp_buffer if iter.tmp_buffer?,
-    body:       nonempty(body_code_trees)
-  );
-  node_info = foreach_node(
-    seq:        iter.seq,
-    count_var:  iter.count_var,
-    idx_var:    iter.idx_var,
-    it_var:     iter.it_var
-  );
+  code_tree = foreach_node(idx: offset, body: nonempty(body_code_trees));
+  node_info = foreach_node(iter: instr.iter);
+  // iter = instr.iter;
+  // code_tree = foreach_node(
+  //   idx:        offset,
+  //   src_array:  iter.src_array,
+  //   tmp_buffer: iter.tmp_buffer if iter.tmp_buffer?,
+  //   body:       nonempty(body_code_trees)
+  // );
+  // node_info = foreach_node(
+  //   seq:        iter.seq,
+  //   count_var:  iter.count_var,
+  //   idx_var:    iter.idx_var,
+  //   it_var:     iter.it_var
+  // );
+
   ## BUG BUG BUG: THIS CODE TRIGGERED AN ASSERTION FAILURE IN THE COMPILER, SOMETHING TO DO
   ## WITH THE FACT THAT IT COULDN'T FIGURE OUT THE OPTIMIZED RECORD TYPE OF SOMETHING
   // code_tree = foreach_node(

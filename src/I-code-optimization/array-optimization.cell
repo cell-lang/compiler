@@ -308,7 +308,9 @@ implicit typedefs : [TypeName -> NeType], loc_vars_types : [StdVar -> NeType] {
     }
 
     Instr opt_foreach(ForeachInstr instr, [StdVar -> LowLevelEltRepr] pending) {
-      assert not pending(instr.iter.seq, _);
+      assert match (instr.iter)
+        seq_iter()  = not pending(instr.iter.seq, _),
+        _           = true;
       opt_body = optimize_array_ops(instr.body, pending);
       return foreach(instr.iter, opt_body);
     }

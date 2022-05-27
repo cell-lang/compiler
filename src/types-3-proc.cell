@@ -435,7 +435,7 @@ type CompInstr      = branch(cond: BoolExpr, when_true: Instr+, when_false: Inst
                       try_block(var: LocVar, body: Instr+),
                       ForeachInstr;
 
-type ForeachSeqIter = foreach_seq_iter(
+type SeqIter        = seq_iter(
                         seq:        <LocVar, StdVar>,
                         src_array:  ArrayVar,
                         tmp_buffer: ArrayVar?,
@@ -444,7 +444,15 @@ type ForeachSeqIter = foreach_seq_iter(
                         it_var:     AnyLocVar
                       );
 
-type ForeachIter    = ForeachSeqIter;
+type MasterBinTableIter = master_bin_table_iter(
+                        table_var:  AnyTableVar,
+                        table:      MasterBinTable,
+                        args:       (Maybe[Int32Var], Maybe[Int32Var]),
+                        vars:       (Maybe[Int32Var], Maybe[Int32Var]),
+                        surr_var:   Int32Var?
+                      );
+
+type ForeachIter    = SeqIter, MasterBinTableIter;
 
 type ForeachInstr   = foreach(iter: ForeachIter, body: Instr*);
 

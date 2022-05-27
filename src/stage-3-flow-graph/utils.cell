@@ -5,11 +5,16 @@
     nat_switch_node(e?)     = std_loc_vars_used(e),
     symb_switch_node()      = std_loc_vars_used(info.value),
     set_cls_par_node()      = search_any_exprs(info.cls, std_loc_vars_used),
-    foreach_node()          = [info.seq];
+    foreach_node()          = std_loc_vars_used(info.iter);
 
 
   [<StdVar, LocVar>] std_loc_vars_used(AnyTypeExpr expr) =
     if expr :: <StdVar, LocVar> then [expr] else search_any_nested(expr, std_loc_vars_used);
+
+
+  [<StdVar, LocVar>] std_loc_vars_used(ForeachIter iter) =
+    seq_iter()              = [iter.seq],
+    master_bin_table_iter() = [];
 }
 
 
@@ -20,8 +25,11 @@
     nat_switch_node()   |
     symb_switch_node()  |
     set_cls_par_node()  = [],
-    foreach_node()      = [info.it_var if info.it_var :: <StdVar, LocVar>]; ## NOT SURE THIS ONE IS NECESSARY
+    foreach_node()      = std_loc_vars_set(info.iter);
 
+  [<StdVar, LocVar>] std_loc_vars_set(ForeachIter iter) =
+    seq_iter()              = [iter.it_var if iter.it_var :: <StdVar, LocVar>], ## NOT SURE THIS ONE IS NECESSARY
+    master_bin_table_iter() = [];
 
   [<StdVar, LocVar>] std_loc_vars_set(JumpInstr instr) = [];
 

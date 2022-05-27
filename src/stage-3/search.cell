@@ -253,7 +253,10 @@
   repeat(is?)         |
   execute_block(is?)  = search_any_exprs(is, search),
   try_block()         = search_any_exprs(instr.body, search),
-  foreach()           = search(instr.iter.seq) & search(instr.iter.count_var) & search_any_exprs(instr.body, search);
+  foreach()           = search_any_exprs(instr.iter, search) & search_any_exprs(instr.body, search);
+
+
+[T] search_any_exprs(ForeachIter iter, (AnyTypeExpr -> [T]) search_expr) = search_any_nested(iter, search_expr);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -279,9 +282,17 @@
   repeat(iss?)        |
   execute_block(iss?) = union([search_instr(is) : is <- iss]),
   try_block()         = union([search_instr(is) : is <- instr.body]),
-  foreach()           = search_expr(instr.iter.seq) &
-                        search_expr(instr.iter.count_var) &
-                        union([search_instr(is) : is <- instr.body]);
+  foreach()           = search_any_nested(instr.iter, search_expr) & union([search_instr(is) : is <- instr.body]);
+
+
+[T] search_any_nested(SeqIter iter, (AnyTypeExpr -> [T]) search_expr) =
+  ## WHY AREN'T WE SEARCHING THE OTHER VARIABLES AS WELL?
+  search_expr(iter.seq) & search_expr(iter.count_var);
+
+[T] search_any_nested(MasterBinTableIter iter, (AnyTypeExpr -> [T]) search_expr) =
+  union([search_expr(value(a)) : a <- iter.args, a != nothing]) &
+  union([search_expr(value(v)) : v <- iter.vars, v != nothing]) &
+  if iter.surr_var? then search_expr(iter.surr_var) else [];
 
 ////////////////////////////////////////////////////////////////////////////////
 
