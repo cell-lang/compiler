@@ -291,17 +291,30 @@
   search_expr(iter.seq) & search_expr(iter.count_var);
 
 
-[T] search_any_nested(UnaryTableIter iter, (AnyTypeExpr -> [T]) search_expr) = undefined;
-[T] search_any_nested(BinTableIter iter, (AnyTypeExpr -> [T]) search_expr) = undefined;
-[T] search_any_nested(SymBinTableIter iter, (AnyTypeExpr -> [T]) search_expr) = undefined;
+[T] search_any_nested(UnaryTableIter iter, (AnyTypeExpr -> [T]) search_expr) =
+  if iter.var? then search_expr(iter.var) else [];
+
+[T] search_any_nested(BinTableIter iter, (AnyTypeExpr -> [T]) search_expr) =
+  union([search_arg(a, search_expr) : a <- iter.args]);
+
+[T] search_any_nested(SymBinTableIter iter, (AnyTypeExpr -> [T]) search_expr) =
+  union([search_arg(a, search_expr) : a <- iter.args]);
 
 [T] search_any_nested(MasterBinTableIter iter, (AnyTypeExpr -> [T]) search_expr) =
-  union([search_expr(value(a)) : a <- iter.args, a != nothing]) &
-  union([search_expr(value(v)) : v <- iter.vars, v != nothing]) &
+  union([search_arg(a, search_expr) : a <- iter.args]) &
   if iter.surr_var? then search_expr(iter.surr_var) else [];
 
-[T] search_any_nested(TernTableIter iter, (AnyTypeExpr -> [T]) search_expr) = undefined;
-[T] search_any_nested(SemiSymTernTableIter iter, (AnyTypeExpr -> [T]) search_expr) = undefined;
+[T] search_any_nested(TernTableIter iter, (AnyTypeExpr -> [T]) search_expr) =
+  union([search_arg(a, search_expr) : a <- iter.args]);
+
+[T] search_any_nested(SemiSymTernTableIter iter, (AnyTypeExpr -> [T]) search_expr) =
+  union([search_arg(a, search_expr) : a <- iter.args]);
+
+
+[T] search_arg(TableArgStatus, (AnyTypeExpr -> [T]) search_expr) =
+  bound(v?) = search_expr(v),
+  read(v?)  = search_expr(v),
+  ignored   = [];
 
 ////////////////////////////////////////////////////////////////////////////////
 

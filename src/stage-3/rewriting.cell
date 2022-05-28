@@ -354,22 +354,35 @@ SeqIter rewrite_exprs(SeqIter iter, (AnyTypeExpr -> AnyTypeExpr) rewrite) =
     it_var:     iter.it_var
   );
 
-UnaryTableIter rewrite_exprs(UnaryTableIter iter, (AnyTypeExpr -> AnyTypeExpr) rewrite) = undefined;
-BinTableIter rewrite_exprs(BinTableIter iter, (AnyTypeExpr -> AnyTypeExpr) rewrite) = undefined;
-SymBinTableIter rewrite_exprs(SymBinTableIter iter, (AnyTypeExpr -> AnyTypeExpr) rewrite) = undefined;
+UnaryTableIter rewrite_exprs(UnaryTableIter iter, (AnyTypeExpr -> AnyTypeExpr) rewrite) =
+  unary_table_iter(table_var: iter.table_var, var: cast_int32_var(rewrite(iter.var)) if iter.var?);
+
+BinTableIter rewrite_exprs(BinTableIter iter, (AnyTypeExpr -> AnyTypeExpr) rewrite) =
+  bin_table_iter(iter.table_var, iter.table, (rewrite_var(a, rewrite) : a <- iter.args));
+
+SymBinTableIter rewrite_exprs(SymBinTableIter iter, (AnyTypeExpr -> AnyTypeExpr) rewrite) =
+  sym_bin_table_iter(iter.table_var, iter.table, (rewrite_var(a, rewrite) : a <- iter.args));
 
 MasterBinTableIter rewrite_exprs(MasterBinTableIter iter, (AnyTypeExpr -> AnyTypeExpr) rewrite) =
   master_bin_table_iter(
     table_var:  iter.table_var,
     table:      iter.table,
     ## WHICH VARIABLES SHOULD BE REWRITTEN? CHECK THE CODE ABOVE FOR SeqIter
-    args:       (apply(a, cast_int32_var(rewrite($))) : a <- iter.args),
-    vars:       (apply(v, cast_int32_var(rewrite($))) : v <- iter.vars),
+    args:       (rewrite_var(a, rewrite) : a <- iter.args),
     surr_var:   cast_int32_var(rewrite(iter.surr_var)) if iter.surr_var?
   );
 
-TernTableIter rewrite_exprs(TernTableIter iter, (AnyTypeExpr -> AnyTypeExpr) rewrite) = undefined;
-SemiSymTernTableIter rewrite_exprs(SemiSymTernTableIter iter, (AnyTypeExpr -> AnyTypeExpr) rewrite) = undefined;
+TernTableIter rewrite_exprs(TernTableIter iter, (AnyTypeExpr -> AnyTypeExpr) rewrite) =
+  tern_table_iter(iter.table_var, iter.table, (rewrite_var(a, rewrite) : a <- iter.args));
+
+SemiSymTernTableIter rewrite_exprs(SemiSymTernTableIter iter, (AnyTypeExpr -> AnyTypeExpr) rewrite) =
+  semi_sym_tern_table_iter(iter.table_var, iter.table, (rewrite_var(a, rewrite) : a <- iter.args));
+
+
+TableArgStatus rewrite_var(TableArgStatus, (AnyTypeExpr -> AnyTypeExpr) rewrite) =
+  bound(v?) = :bound(cast_int32_var(rewrite(v))),
+  read(v?)  = :read(cast_int32_var(rewrite(v))),
+  ignored   = :ignored;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -395,35 +408,4 @@ Instr rewrite_nested(CompInstr instr, (Instr -> Instr) rw_instr, (AnyTypeExpr ->
     repeat(b?)        = repeat((rw_instr(is) : is <- b)),
     execute_block(b?) = execute_block((rw_instr(is) : is <- b)),
     try_block()       = try_block(instr.var, (rw_instr(is) : is <- instr.body)), // var is the variable that the try block is supposed to set, so it should not be rewritten
-    foreach()         = foreach(rewrite_nested(instr.iter, rw_expr), (rw_instr(is) : is <- instr.body));
-
-
-SeqIter rewrite_nested(SeqIter iter, (AnyTypeExpr -> AnyTypeExpr) rw_expr) =
-  seq_iter(
-    seq:        cast_loc_or_std_var(rw_expr(iter.seq)),
-    ## SHOULDN'T AT LEAST SOME OF THESE VARIABLES BE REWRITTEN?
-    src_array:  iter.src_array,
-    tmp_buffer: iter.tmp_buffer if iter.tmp_buffer?,
-    count_var:  cast_int32_var(rw_expr(iter.count_var)),
-    idx_var:    iter.idx_var,
-    it_var:     iter.it_var
-  );
-
-
-UnaryTableIter rewrite_nested(UnaryTableIter iter, (AnyTypeExpr -> AnyTypeExpr) rewrite) = undefined;
-BinTableIter rewrite_nested(BinTableIter iter, (AnyTypeExpr -> AnyTypeExpr) rewrite) = undefined;
-SymBinTableIter rewrite_nested(SymBinTableIter iter, (AnyTypeExpr -> AnyTypeExpr) rewrite) = undefined;
-
-
-MasterBinTableIter rewrite_nested(MasterBinTableIter iter, (AnyTypeExpr -> AnyTypeExpr) rewrite) =
-  master_bin_table_iter(
-    table_var:  iter.table_var,
-    table:      iter.table,
-    ## WHICH VARIABLES SHOULD BE REWRITTEN? CHECK THE CODE ABOVE FOR SeqIter
-    args:       (apply(a, cast_int32_var(rewrite($))) : a <- iter.args),
-    vars:       (apply(v, cast_int32_var(rewrite($))) : v <- iter.vars),
-    surr_var:   cast_int32_var(rewrite(iter.surr_var)) if iter.surr_var?
-  );
-
-TernTableIter rewrite_nested(TernTableIter iter, (AnyTypeExpr -> AnyTypeExpr) rewrite) = undefined;
-SemiSymTernTableIter rewrite_nested(SemiSymTernTableIter iter, (AnyTypeExpr -> AnyTypeExpr) rewrite) = undefined;
+    foreach()         = foreach(rewrite_exprs(instr.iter, rw_expr), (rw_instr(is) : is <- instr.body));

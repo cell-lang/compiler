@@ -1219,67 +1219,62 @@ implicit typedefs : [TypeName -> NeType] {
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
+TableArgStatus table_arg_status(Maybe[Int32Var] arg, Maybe[Int32Var] var) =
+  just(v?), nothing   = :bound(v),
+  nothing,  just(v?)  = :read(v),
+  nothing,  nothing   = :ignored;
+
 ## THIS IS TOTALLY THE WRONG PLACE FOR THESE FUNCTIONS. MOVE THEM WITH THE OTHER CONSTRUCTORS OR UTILITIES FUNCTIONS
-// type TableType      = unary_table, bin_table, sym_bin_table, master_bin_table, tern_table, sym_12_tern_table, slave_tern_table;
-// type TableItVar     = table_it_var(id: Nat, set_args: [Nat], table_type: TableType);
-// get_table_iter(it_var: TableItVar, table_var: AnyTableVar, table: AnySurrTable, args: Maybe[Int32Var]+),
 
-// type Table  = table(
-//                 value_stores: ValueStoreId+,
-//                 keys:         [[+Nat]],
-//                 col_types:    NeType+,
-//                 symmetric:    Bool
-//               );
-ForeachIter get_table_foreach_iter(AnyTableVar table_var, Table table, Maybe[Int32Var]+ args, Maybe[Int32Var]+ vars) {
+ForeachIter get_table_foreach_iter(AnyTableVar table_var, Table table, Maybe[Int32Var]+ bound_args, Maybe[Int32Var]+ vars) {
+  assert |bound_args| == |vars| and |bound_args| == arity(table);
+  assert all((a == nothing or v == nothing : a, v <- zip(bound_args, vars)));
+  assert any((a == nothing : a <- bound_args));
+
+  arity = arity(table);
+
+  if arity == 1 {
+    assert bound_args == (nothing);
+    var = vars(0);
+    return unary_table_iter(table_var: table_var, var: value(var) if var != nothing);
+  }
+  else if arity == 2 {
+    fail if |bound_args| != 2 or |vars| != 2;
+    args = (table_arg_status(a, vars(i)) : a @ i <- bound_args);
+    return if table.symmetric
+      then sym_bin_table_iter(table_var, table, args)
+      else bin_table_iter(table_var, table, args);
+  }
+  else {
+    assert arity == 3;
+    fail if |bound_args| != 3 or |vars| != 3;
+    args = (table_arg_status(a, vars(i)) : a @ i <- bound_args);
+    return if table.symmetric
+      then semi_sym_tern_table_iter(table_var, table, args)
+      else tern_table_iter(table_var, table, args);
+  }
+}
+
+
+ForeachIter get_table_foreach_iter(AnyTableVar table_var, MasterBinTable table, Maybe[Int32Var]+ bound_args, Maybe[Int32Var]+ vars) {
+  assert all((a == nothing or v == nothing : a, v <- zip(bound_args, vars)));
+
+  fail if |bound_args| != 2 or |vars| != 2;
+  args = (table_arg_status(a, vars(i)) : a @ i <- bound_args);
+  return master_bin_table_iter(table_var, table, args);
+}
+
+
+ForeachIter get_table_foreach_iter(AnyTableVar table_var, MasterBinTable table, Maybe[Int32Var]+ bound_args, Maybe[Int32Var]+ vars, Int32Var surr_var) {
+  assert all((a == nothing or v == nothing : a, v <- zip(bound_args, vars)));
+
+  fail if |bound_args| != 2 or |vars| != 2;
+
+  args = (table_arg_status(a, vars(i)) : a @ i <- bound_args);
+  return master_bin_table_iter(table_var, table, args, surr_var);
+}
+
+
+ForeachIter get_table_foreach_iter(AnyTableVar table_var, SlaveTernTable table, Maybe[Int32Var]+ bound_args, Maybe[Int32Var]+ vars) {
   fail;
-}
-
-
-// type MasterBinTableIter = master_bin_table_iter(
-//                         table_var:  AnyTableVar,
-//                         table:      MasterBinTable,
-//                         args:       (Maybe[Int32Var], Maybe[Int32Var]),
-//                         vars:       (Maybe[Int32Var], Maybe[Int32Var]),
-//                         surr_var:   Int32Var?
-//                       );
-ForeachIter get_table_foreach_iter(AnyTableVar table_var, MasterBinTable table, Maybe[Int32Var]+ args, Maybe[Int32Var]+ vars) {
-  assert vars(0) == nothing or args(0) == nothing;
-  assert vars(1) == nothing or args(1) == nothing;
-
-  fail if |args| != 2 or |vars| != 2;
-
-  return master_bin_table_iter(
-    table_var:  table_var,
-    table:      table,
-    args:       args,
-    vars:       vars
-  );
-}
-
-
-// type SlaveTernTable = slave_tern_table(
-//                         master:       TableVar,
-//                         value_stores: (ValueStoreId, ValueStoreId, ValueStoreId),
-//                         keys:         [[+Nat]],
-//                         col_types:    (NeType, NeType, NeType),
-//                         symmetric:    Bool
-//                       );
-ForeachIter get_table_foreach_iter(AnyTableVar table_var, SlaveTernTable table, Maybe[Int32Var]+ args, Maybe[Int32Var]+ vars) {
-  fail;
-}
-
-
-ForeachIter get_table_foreach_iter(AnyTableVar table_var, MasterBinTable table, Maybe[Int32Var]+ args, Maybe[Int32Var]+ vars, Int32Var surr_var) {
-  assert vars(0) == nothing or args(0) == nothing;
-  assert vars(1) == nothing or args(1) == nothing;
-
-  fail if |args| != 2 or |vars| != 2;
-
-  return master_bin_table_iter(
-    table_var:  table_var,
-    table:      table,
-    args:       args,
-    vars:       vars,
-    surr_var:   surr_var
-  );
 }

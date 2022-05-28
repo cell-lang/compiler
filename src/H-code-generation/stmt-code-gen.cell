@@ -1363,12 +1363,22 @@ implicit program           : Program,
     bound_args_idxs = (i : a @ i <- table_args, a != nothing);
     free_args_idxs = (i : a @ i <- table_args, a == nothing);
     arg_idx_bound_arg_idx = [i -> j : i @ j <- bound_args_idxs];
+    arg_idx_free_arg_idx = [i -> j : i @ j <- free_args_idxs];
 
     entry_code, args_aliases, var_gen = opt_eval_code(set_args, env, init_var_gen);
 
     surr_vars, var_gen = next_int32_vars(var_gen, |set_args|);
     shadow_surr_vars_map, var_gen = next_int32_vars(var_gen, [i : v @ i <- iter.vars, v != nothing]);
-    shadow_surr_vars = (apply(v, shadow_surr_vars_map(i)) : v @ i <- iter.vars);
+    shadow_surr_vars = ({
+      if a == nothing {
+        // The argument is a free one
+        free_arg_idx = arg_idx_free_arg_idx(i);
+        if iter.vars(free_arg_idx) != nothing
+          // There's a variable for it
+          return just(shadow_surr_vars_map(free_arg_idx));
+      }
+      return nothing;
+    } : a @ i <- table_args);
 
     surr_args = (apply(a, surr_vars(arg_idx_bound_arg_idx(i))) : a @ i <- table_args);
 
