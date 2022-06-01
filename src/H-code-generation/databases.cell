@@ -623,15 +623,29 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
           );
         }
         else {
-          tbl_info = cast_any_surr_table(table_info(rel_auto_id, tv));
-          empty_args = (nothing : _ < arity);
-          vars = (maybe(surr_vars(i), surr_vars_used(i)) : i < arity);
+          assert src_table_info == table_info(rel_auto_id, tv); ## REMOVE REMOVE REMOVE WHEN DONE
 
-          iter = if assoc_surr_is_needed
-            then get_table_foreach_iter(tv, cast_master_bin_table(tbl_info), empty_args, vars, assoc_surr_var)
-            else get_table_foreach_iter(tv, tbl_info, empty_args, vars);
+          if src_table_info :: SlaveTernTable {
+            ## IMPLEMENT IMPLEMENT IMPLEMENT
+            ## IMPLEMENT IMPLEMENT IMPLEMENT
+            ## IMPLEMENT IMPLEMENT IMPLEMENT
+            ## IMPLEMENT IMPLEMENT IMPLEMENT
+            ## IMPLEMENT IMPLEMENT IMPLEMENT
+            ## IMPLEMENT IMPLEMENT IMPLEMENT
+            code = code;
+          }
+          else {
+            src_table_info = cast_any_surr_table(src_table_info);
 
-          code = (code | foreach(iter, (do_if(cond, ret_val(false)))));
+            empty_args = (nothing : _ < arity);
+            vars = (maybe(surr_vars(i), surr_vars_used(i)) : i < arity);
+
+            iter = if assoc_surr_is_needed
+              then get_table_foreach_iter(tv, cast_master_bin_table(src_table_info), empty_args, vars, assoc_surr_var)
+              else get_table_foreach_iter(tv, src_table_info, empty_args, vars);
+
+            code = (code | foreach(iter, (do_if(cond, ret_val(false)))));
+          }
         }
       }
     }
@@ -1276,5 +1290,7 @@ ForeachIter get_table_foreach_iter(AnyTableVar table_var, MasterBinTable table, 
 
 
 ForeachIter get_table_foreach_iter(AnyTableVar table_var, SlaveTernTable table, Maybe[Int32Var]+ bound_args, Maybe[Int32Var]+ vars) {
-  fail;
+  fail if |bound_args| != 2 or |vars| != 2;
+  args = (table_arg_status(a, vars(i)) : a @ i <- bound_args);
+  return slave_tern_table_iter(table_var, table, args);
 }

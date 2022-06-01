@@ -1382,6 +1382,8 @@ implicit program           : Program,
 
     surr_args = (apply(a, surr_vars(arg_idx_bound_arg_idx(i))) : a @ i <- table_args);
 
+    assoc_surr_var, var_gen = next_int32_var(var_gen);
+
     symmetric = symmetric(iter.rel_var);
 
     // Selecting the candidate tables among those the logical relation is partitioned into
@@ -1395,12 +1397,14 @@ implicit program           : Program,
     for tv <- isort(candidate_tables) {
       assert (a <- surr_args : a == nothing);
 
-      table_info = cast_any_surr_table(table_info(tv));
+      tbl_info = cast_any_surr_table(table_info(tv));
 
       sign = table_signature(tv);
       vars_reprs = [value(v) -> low_level_repr(sign(free_args_idxs(i))) : v @ i <- iter.vars, v != nothing];
       low_level_vars = [v -> low_level_var(r, v) : v r <- vars_reprs];
 
+      ## BAD BAD BAD: THIS IS WASTEFUL WHEN ITERATING OVER A SLAVE TERNARY TABLE
+      ## THE MASTER VARS OUGHT TO BE SET ONLY ONCE IN THE OUTER LOOP
       vars_setup_code = ({
         shadow_surr_var = shadow_surr_vars_map(i);
         store_id = table_col_store_id(tv, free_args_idxs(i));
@@ -1423,8 +1427,63 @@ implicit program           : Program,
       if body_code != () {
         entry_code = entry_code & entry_code_fixes;
 
-        table_iter = get_table_foreach_iter(substitute(tv), table_info, nonempty(surr_args), nonempty(shadow_surr_vars));
-        table_code = (foreach(table_iter, nonempty(vars_setup_code & body_code)));
+        compiled_loop_body = nonempty(vars_setup_code & body_code);
+
+        if tbl_info :: SlaveTernTable {
+          unqual_master = tbl_info.master;
+          master = match (tv)
+            table_var()       = unqual_master,
+            qual_table_var()  = qual_table_var(tv.db_var, unqual_master);
+            // capt_table_var()  = undefined; // Statically verified that it cannot happen
+
+          master_info = cast_master_bin_table(table_info(master));
+
+          master_args = nonempty(take(surr_args, 2));
+          master_vars = nonempty(take(shadow_surr_vars, 2));
+
+          surr_arg_0 = surr_args(0);
+          surr_arg_1 = surr_args(1);
+          surr_arg_2 = surr_args(2);
+
+          if surr_arg_0 == nothing and surr_arg_1 == nothing {
+            slave_iter = get_table_foreach_iter(substitute(tv), tbl_info, (nothing, surr_arg_2), (just(assoc_surr_var), shadow_surr_vars(2)));
+            var0 = shadow_surr_vars(0);
+            var1 = shadow_surr_vars(1);
+            body_header = (
+              set_ivar32(value(var0), get_arg_by_assoc_surr(master, master_info, 0, assoc_surr_var)) if var0 != nothing,
+              set_ivar32(value(var1), get_arg_by_assoc_surr(master, master_info, 1, assoc_surr_var)) if var1 != nothing
+
+            );
+            table_code = (foreach(slave_iter, body_header & compiled_loop_body));
+          }
+          else if surr_arg_0 != nothing and surr_arg_1 != nothing {
+            assert surr_arg_2 == nothing;
+            slave_iter = get_table_foreach_iter(substitute(tv), tbl_info, (just(assoc_surr_var), surr_arg_2), (nothing, shadow_surr_vars(2)));
+            table_code = (
+              set_ivar32(assoc_surr_var, get_assoc_surr(master, master_info, (value(surr_arg_0), value(surr_arg_1)))),
+              do_if_not(
+                are_eq(assoc_surr_var, -1),
+                foreach(slave_iter, compiled_loop_body)
+              )
+            );
+          }
+          else {
+            ## ARE slave_tern_rel(x, ?, z) OR slave_tern_rel(?, y, z) POSSIBLE AT THE MOMENT?
+            ## FOR THOSE I OUGHT TO CHOOSE (AT RUNTIME) THE BEST ONE OF THE TWO POSSIBLE EXECUTION PATHS
+            assert match (surr_args)
+              (just(),  nothing, just())  |
+              (nothing, just(),  just())  = false,
+              (_,        _,      _)       = true;
+
+            master_iter = get_table_foreach_iter(substitute(master), master_info, master_args, master_vars, assoc_surr_var);
+            slave_iter = get_table_foreach_iter(substitute(tv), tbl_info, (just(assoc_surr_var), surr_arg_2), (nothing, shadow_surr_vars(2)));
+            table_code = (foreach(master_iter, (foreach(slave_iter, compiled_loop_body))));
+          }
+        }
+        else {
+          table_iter = get_table_foreach_iter(substitute(tv), tbl_info, nonempty(surr_args), nonempty(shadow_surr_vars));
+          table_code = (foreach(table_iter, compiled_loop_body));
+        }
 
         for e @ i <- reverse(args_aliases) {
           idx = rat(bound_args_idxs, i);
