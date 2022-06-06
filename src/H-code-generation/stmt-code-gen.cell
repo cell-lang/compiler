@@ -105,12 +105,133 @@ implicit program           : Program,
   }
 
 
+  // [UpdateId -> CompiledUpdate] compiled_database_updates([Update] updates) {
+  //   return merge([compiled_updates(ms) : _ ms <- group_by(updates, ($.name, |$.args|))]);
+
+
+  //   [UpdateId -> CompiledUpdate] compiled_updates([+Update] updates) {
+  //     an_update = an_elem(updates);
+  //     name = an_update.name;
+  //     arity = |an_update.args|;
+  //     return [update_id(name, arity) -> compiled_update(an_update)] if |updates| == 1;
+  //     sorted_updates = rand_sort(updates);
+  //     comp_updates = merge(([update_id(m.name, arity, i) -> compiled_update(m)] : m @ i <- sorted_updates));
+  //     dispatcher_code = update_dispatch_code(database.name, sorted_updates);
+  //     dispatcher = compiled_update((fn_arg(i) : i < arity), dispatcher_code);
+  //     return comp_updates & [update_id(name, arity) -> dispatcher];
+  //   }
+
+
+  //   CompiledUpdate compiled_update(Update update) =
+  //     compiled_update((v : _, v <- update.args), update_body(update));
+
+
+  //   Instr* update_body(Update update) {
+  //     // Compiling the body of the update
+  //     return () if update.body == ();
+
+  //     code, _, _, _ = stmts_opt_code(
+  //       update.body,
+  //       [v -> t : (t, v) <- update.args],
+  //       blank_var_gen,
+  //       context           = database,
+  //       typed_vars        = [],
+  //       surrogates        = [],
+  //       exp_break_surrs   = nothing,
+  //       result_var        = :invalid_var
+  //     );
+
+  //     return (execute_block(nonempty(code)));
+  //   }
+  // }
+
+  // Instr* update_dispatch_code(DBSymbol db_type, Update+ updates) {
+  //   assert |updates| > 1;
+  //   assert |[name(u) : u <- updates]| == 1;   // All updates must have the same name
+  //   assert |[arity(u) : u <- updates]| == 1;  // All updates have the same arity
+  //   assert arity(head(updates)) > 0;          // No-argument updates cannot be polymorphic
+
+  //   arity = arity(head(updates));
+  //   args_types = ((t : t, _ <- nonempty(u.args)) : u <- updates);
+  //   disp_args = choose_disp_args(args_types, typedefs);
+
+  //   cases = [{
+  //     types = (args_types(i)(j) : j <- disp_args);
+  //     try_update_instr = try_update(db_type, update_id(u.name, arity, i), (fn_arg(j) : j < arity));
+  //     code = (try_update_instr, exit_block);
+  //     return (types, code);
+  //   } : u @ i <- updates];
+
+  //   code = dynamic_dispatch_code((fn_arg(i) : i <- disp_args), cases);
+  //   return (execute_block(code));
+  // }
+
+  // type Update   = update(name: UpdateSymbol, args: (NeType, StdVar)*, body: Statement*);
+
   StmtCompInfo try_update_stmt_opt_code(UpdateSymbol name, Expr* args, [EnvVar -> Type] env, VarGen init_var_gen) {
-    fail; //## IMPLEMENT IMPLEMENT IMPLEMENT
+    args_types = (expr_type(a, env) : a <- args);
+
+    eval_code, args_aliases, var_gen = opt_eval_code(args, env, init_var_gen);
+    ## FORCE THE ARGUMENT ALIASES TO BE ACTUAL VARIABLES?
+    code = eval_code;
+
+    rel_auto = cast_database(context);
+    updates = [u : u <- rel_auto.updates, u.name == name, |u.args| == |args|];
+    ## FILTER OUT THE UPDATES BY SIGNATURE
+
+    if |updates| == 1 {
+      update = only(updates);
+      code = code & update_body(update, args_aliases, var_gen);
+    }
+    else {
+      assert args != ();
+
+      updates = nonempty(isort(updates));
+      updates_bodies = (update_body(u, args_aliases, var_gen) : u <- updates);
+
+      formal_args_types = ((t : t, _ <- nonempty(u.args)) : u <- updates);
+      disp_args = choose_disp_args(formal_args_types, typedefs);
+
+      cases = [{
+        types = (formal_args_types(i)(j) : j <- disp_args);
+        case_code = update_body(u, args_aliases, var_gen);
+        case_code = (case_code | exit_block); ## IS THIS NECESSARY OR EVEN CORRECT?
+        return (types, case_code);
+      } : u @ i <- updates];
+
+      code = dynamic_dispatch_code((args_aliases(i) : i <- disp_args), cases);
+      code = (execute_block(code));
+    }
+
+    return (code, just(surrogates), [], init_var_gen);
 
     // code, surrs, _ = opt_eval_code(args, env, init_var_gen);
     // code = (code | try_update(this_db_symbol, update_id(name, |args|), surrs));
     // return (code, just(surrogates), [], init_var_gen);
+
+
+    Instr* update_body(Update update, ObjExpr* actual_args, VarGen init_var_gen) {
+      // Compiling the body of the update
+      return () if update.body == ();
+
+      code, surrs, break_surrs, var_gen = stmts_opt_code(
+        update.body,
+        [v -> t : (t, v) <- update.args],
+        init_var_gen,
+        // context           = database, // context is already set
+        typed_vars        = [],
+        surrogates        = [],
+        exp_break_surrs   = nothing,
+        result_var        = :invalid_var
+      );
+      assert break_surrs == [];
+
+      formal_args = (v : _, v <- update.args);
+      code = (set_var(formal_args(i), e) : e @ i <- actual_args);
+      code = (code | execute_block(nonempty(code)));
+      return code;
+    }
+
   }
 
 
