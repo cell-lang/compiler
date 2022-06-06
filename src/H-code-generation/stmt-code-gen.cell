@@ -402,16 +402,45 @@ implicit program           : Program,
 
 
     Instr* table_delete_code(TableVar table_var, Maybe[ObjExpr]+ args_aliases, Maybe[Int32Var]+ args_surrs, Maybe[Type]+ args_types, Bool symmetric, [PhysRelVar] attributes) {
+      spare_surr_var = ivar32(735016505); ## BUG BUG BUG
+
       tbl_info = table_info(table_var);
 
       // Deleting from the master table
       code = (queue_deletes(table_var, tbl_info, args_surrs, symmetric));
 
       if attributes != [] {
-        // Deleting from the slave attribute tables, if any
-        code = code & (queue_deletes(:table_var(a), table_info(:table_var(a)), (args_surrs | nothing), false) : a <- isort(attributes));
-        // Checking that the master table actually contains a matching entry before queuing the deletions
-        code = (do_if(table_contains(table_var, tbl_info, args_surrs, symmetric), code));
+        if arity(tbl_info) == 1 {
+          // Deleting from the slave attribute tables, if any
+          code = code & (queue_deletes(:table_var(a), table_info(:table_var(a)), (args_surrs | nothing), false) : a <- isort(attributes));
+          // Checking that the master table actually contains a matching entry before queuing the deletions
+          code = (do_if(table_contains(table_var, tbl_info, args_surrs, symmetric), code));
+        }
+        else {
+          assert arity(tbl_info) == 2;
+          arg_0_surr = args_surrs(0);
+          arg_1_surr = args_surrs(1);
+          if arg_0_surr != nothing {
+            if arg_1_surr != nothing {
+              attrs_del_code = (queue_deletes(:table_var(a), table_info(:table_var(a)), (just(spare_surr_var), nothing), false) : a <- isort(attributes));
+              code = (
+                set_ivar32(spare_surr_var, get_assoc_surr(table_var, cast_master_bin_table(tbl_info), (value(arg_0_surr), value(arg_1_surr)))),
+                do_if_not(are_eq(spare_surr_var, -1), code & attrs_del_code)
+              );
+            }
+            else {
+              fail; ## IMPLEMENT IMPLEMENT IMPLEMENT
+            }
+          }
+          else {
+            if arg_1_surr != nothing {
+              fail; ## IMPLEMENT IMPLEMENT IMPLEMENT
+            }
+            else {
+              fail; ## IMPLEMENT IMPLEMENT IMPLEMENT
+            }
+          }
+        }
       }
 
       for a @ ri <- reverse(args_aliases) {
