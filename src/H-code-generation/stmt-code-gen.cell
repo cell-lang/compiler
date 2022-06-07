@@ -353,50 +353,88 @@ implicit program           : Program,
 
 
     Instr* slave_column_delete_code(TableVar table_var, Maybe[ObjExpr]+ args_aliases, Maybe[Int32Var]+ args_surrs, Maybe[Type]+ args_types, Int32Var assoc_surr_var) {
+      master_table = master_table(table_var);
+      master_table_info = cast_master_bin_table(table_info(master_table));
+
+      store_ids = (table_col_store_id(table_var, i) : i <= 1);
+      stores_types = (value_store_type(this_db_symbol, id) : id <- store_ids);
+
       fail if |args_aliases| != 3;
       arg0, arg1, arg2 = args_aliases;
-      if arg0 != nothing and arg1 != nothing and arg2 != nothing {
+
+      if arg0 != nothing {
         arg0 = value(arg0);
-        arg1 = value(arg1);
-        arg2 = value(arg2);
-
         arg_0_surr = value_unsafe(args_surrs(0));
-        arg_1_surr = value_unsafe(args_surrs(1));
 
-        master_table = master_table(table_var);
-        master_table_info = cast_master_bin_table(table_info(master_table));
+        if arg1 != nothing {
+          arg1 = value(arg1);
+          arg_1_surr = value_unsafe(args_surrs(1));
 
-        store_ids = (table_col_store_id(table_var, i) : i <= 1);
-        stores_types = (value_store_type(this_db_symbol, id) : id <- store_ids);
-
-        code = opt_do_if(
-          and((value_store_guard(stores_types(i), value_unsafe(args_aliases(i)), value_unsafe(args_types(i))) : i <= 1)),
-          ( set_ivar32(arg_0_surr, value_to_surr(store_ids(0), stores_types(0), value_store_encoded_expr(stores_types(0), arg0))),
-            do_if_not(
-              is_eq(arg_0_surr, -1),
-              ( set_ivar32(arg_1_surr, value_to_surr(store_ids(1), stores_types(1), value_store_encoded_expr(stores_types(1), arg1))),
-                do_if_not(
-                  is_eq(arg_1_surr, -1),
-                  ( set_ivar32(assoc_surr_var, get_assoc_surr(master_table, master_table_info, (arg_0_surr, arg_1_surr))),
-                    do_if(
-                      and_then((
-                        neg(is_eq(assoc_surr_var, -1)),
-                        table_contains(table_var, table_info(table_var), (just(assoc_surr_var), nothing), false),
-                        is_eq(arg2, column_lookup(table_var, table_info(table_var), assoc_surr_var))
-                      )),
-                      queue_deletes(table_var, table_info(table_var), (args_surrs(0), args_surrs(1), nothing), false)
+          code = opt_do_if(
+            and((value_store_guard(stores_types(i), value_unsafe(args_aliases(i)), value_unsafe(args_types(i))) : i <= 1)),
+            ( set_ivar32(arg_0_surr, value_to_surr(store_ids(0), stores_types(0), value_store_encoded_expr(stores_types(0), arg0))),
+              do_if_not(
+                is_eq(arg_0_surr, -1),
+                ( set_ivar32(arg_1_surr, value_to_surr(store_ids(1), stores_types(1), value_store_encoded_expr(stores_types(1), arg1))),
+                  do_if_not(
+                    is_eq(arg_1_surr, -1),
+                    ( set_ivar32(assoc_surr_var, get_assoc_surr(master_table, master_table_info, (arg_0_surr, arg_1_surr))),
+                      do_if(
+                        and_then((
+                          neg(is_eq(assoc_surr_var, -1)),
+                          table_contains(table_var, table_info(table_var), (just(assoc_surr_var), nothing), false),
+                          is_eq(value(arg2), column_lookup(table_var, table_info(table_var), assoc_surr_var)) if arg2 != nothing
+                        )),
+                        queue_deletes(table_var, table_info(table_var), (just(assoc_surr_var), nothing), false)
+                      )
                     )
                   )
                 )
               )
             )
-          )
-        );
+          );
+        }
+        else {
+          assert arg2 == nothing;
 
-        return code;
+          iter = get_table_foreach_iter(master_table, master_table_info, (just(arg_0_surr), nothing), (nothing, nothing), assoc_surr_var);
+
+          code = opt_do_if(
+            value_store_guard(stores_types(0), arg0, value_unsafe(args_types(0))),
+            ( set_ivar32(arg_0_surr, value_to_surr(store_ids(0), stores_types(0), value_store_encoded_expr(stores_types(0), arg0))),
+              do_if_not(
+                is_eq(arg_0_surr, -1),
+                foreach(iter, (queue_deletes(table_var, table_info(table_var), (just(assoc_surr_var), nothing), false)))
+              )
+            )
+          );
+        }
+      }
+      else {
+        assert arg2 == nothing;
+
+        if arg1 != nothing {
+          arg1 = value(arg1);
+          arg_1_surr = value_unsafe(args_surrs(1));
+
+          iter = get_table_foreach_iter(master_table, master_table_info, (nothing, just(arg_1_surr)), (nothing, nothing), assoc_surr_var);
+
+          code = opt_do_if(
+            value_store_guard(stores_types(1), arg1, value_unsafe(args_types(1))),
+            ( set_ivar32(arg_1_surr, value_to_surr(store_ids(1), stores_types(1), value_store_encoded_expr(stores_types(1), arg1))),
+              do_if_not(
+                is_eq(arg_1_surr, -1),
+                foreach(iter, (queue_deletes(table_var, table_info(table_var), (just(assoc_surr_var), nothing), false)))
+              )
+            )
+          );
+        }
+        else {
+          code = (queue_deletes(table_var, table_info(table_var), (nothing, nothing), false));
+        }
       }
 
-      return table_delete_code(table_var, args_aliases, args_surrs, args_types, false, []);
+      return code;
     }
 
 
@@ -417,7 +455,10 @@ implicit program           : Program,
           code = (do_if(table_contains(table_var, tbl_info, args_surrs, symmetric), code));
         }
         else {
-          assert arity(tbl_info) == 2;
+          assert arity(tbl_info) == 2 and tbl_info :: MasterBinTable;
+
+          fail if not tbl_info :: MasterBinTable;
+
           arg_0_surr = args_surrs(0);
           arg_1_surr = args_surrs(1);
           if arg_0_surr != nothing {
@@ -429,12 +470,16 @@ implicit program           : Program,
               );
             }
             else {
-              fail; ## IMPLEMENT IMPLEMENT IMPLEMENT
+              iter = get_table_foreach_iter(table_var, tbl_info, args_surrs, (nothing, nothing), spare_surr_var);
+              attrs_del_code = (queue_deletes(:table_var(a), table_info(:table_var(a)), (just(spare_surr_var), nothing), false) : a <- isort(attributes));
+              code = (foreach(iter, attrs_del_code)) & code;
             }
           }
           else {
             if arg_1_surr != nothing {
-              fail; ## IMPLEMENT IMPLEMENT IMPLEMENT
+              iter = get_table_foreach_iter(table_var, tbl_info, args_surrs, (nothing, nothing), spare_surr_var);
+              attrs_del_code = (queue_deletes(:table_var(a), table_info(:table_var(a)), (just(spare_surr_var), nothing), false) : a <- isort(attributes));
+              code = (foreach(iter, attrs_del_code)) & code;
             }
             else {
               fail; ## IMPLEMENT IMPLEMENT IMPLEMENT
