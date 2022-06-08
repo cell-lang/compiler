@@ -214,7 +214,7 @@ implicit program           : Program,
       // Compiling the body of the update
       return () if update.body == ();
 
-      code, surrs, break_surrs, var_gen = stmts_opt_code(
+      body_code, surrs, break_surrs, var_gen = stmts_opt_code(
         update.body,
         [v -> t : (t, v) <- update.args],
         init_var_gen,
@@ -227,8 +227,8 @@ implicit program           : Program,
       assert break_surrs == [];
 
       formal_args = (v : _, v <- update.args);
-      code = (set_var(formal_args(i), e) : e @ i <- actual_args);
-      code = (code | execute_block(nonempty(code)));
+      set_args_code = (set_var(formal_args(i), e) : e @ i <- actual_args);
+      code = (set_args_code | execute_block(nonempty(body_code)));
       return code;
     }
 
