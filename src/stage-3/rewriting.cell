@@ -120,7 +120,6 @@ Int32Expr rewrite_nested(Int32NatOp expr, (AnyTypeExpr -> AnyTypeExpr) rewrite) 
   cast_int32(e?)          = cast_int32(cast_int_expr(rewrite(e))),
   add32(e1?, e2?)         = add32(cast_int32_expr(rewrite(e1)), cast_int32_expr(rewrite(e2))),
   value_to_surr()         = value_to_surr(expr.store, expr.store_type, rewrite_nested(expr.value, rewrite)),
-  get_unknown_arg()       = expr,
   get_arg_by_assoc_surr() = get_arg_by_assoc_surr(expr.table_var, expr.table_type, expr.arg, cast_int32_var(rewrite(expr.surr))),
   get_assoc_surr()        = get_assoc_surr(expr.table_var, expr.table_type, (cast_int32_var(rewrite(v)) : v <- expr.args)),
   get_aux_assoc_surr()    = get_aux_assoc_surr(expr.table_var, expr.table, (cast_int32_var(rewrite(v)) : v <- expr.args));
@@ -163,7 +162,6 @@ ObjExpr rewrite_nested(ObjNatOp expr, (AnyTypeExpr -> AnyTypeExpr) rewrite) =
   get_curr_arg()        = expr,
   surr_to_value()       = surr_to_value(expr.store, expr.store_type, cast_int32_var(rewrite(expr.surrogate))),
   column_lookup()       = column_lookup(expr.var, expr.column, cast_int32_var(rewrite(expr.key))),
-  get_value()           = expr,
   only_elt(e?)          = only_elt(cast_obj_expr(rewrite(e)));
 
 
@@ -302,10 +300,6 @@ BasicInstr rewrite_exprs(BasicInstr instr, (AnyTypeExpr -> AnyTypeExpr) rewrite,
   cleanup_value_store()     = instr,
   init_table()              = instr,
   cleanup_table()           = instr,
-  ## CHECK THAT THE REWRITING OF TABLE ITERATORS IS CONSISTENT WITH THIS
-  // get_table_iter()          = get_table_iter(instr.it_var, instr.table_var, instr.table, (apply(a, cast_int32_var(rewrite($))) : a <- instr.args)),
-  get_slave_col_iter()      = get_slave_col_iter(instr.it_var, instr.table_var, instr.column, (apply(a, cast_int32_var(rewrite($))) : a <- instr.args)),
-  get_column_iter()         = get_column_iter(instr.it_var, instr.col_var, instr.column),
   queue_deletes()           = queue_deletes(instr.table_var, instr.table, (apply(a, cast_int32_var(rewrite($))) : a <- instr.args), instr.symmetric),
   lookup_or_queue_insert_value() = lookup_or_queue_insert_value(instr.res_var, instr.store, instr.store_type, cast_int_or_obj_expr(rewrite(instr.value))),
   queue_insert_tuple()      = queue_insert_tuple(instr.table_var, instr.table, (cast_int32_var(rewrite(v)) : v <- instr.tuple)),

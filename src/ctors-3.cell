@@ -85,9 +85,6 @@ SeqItVar seq_it_var(Nat n)          = :seq_it_var(n);
 BinRelItVar bin_rel_it_var(Nat n)   = :bin_rel_it_var(n);
 TernRelItVar tern_rel_it_var(Nat n) = :tern_rel_it_var(n);
 
-ColumnItVar column_it_var(Nat id, Bool m, ColumnRepr r) = column_it_var(id: id, mandatory: m, repr: r);
-SlaveColumnItVar slave_column_it_var(Nat id, ColumnRepr r) = slave_column_it_var(id: id, repr: r);
-
 TableVar table_var(PhysRelVar v)        = :table_var(v);
 
 QualTableVar qual_table_var(AnyDBVar db, TableVar v) = qual_table_var(db_var: db, table_var: v);
@@ -172,7 +169,6 @@ Int32NatOp get_count(AnyTableVar v, AnyTable t, Maybe[Int32Var]+ as, Bool s)    
 Int32NatOp table_lookup(AnyTableVar v, AnySurrTable t, Maybe[Int32Var]+ as, Bool s)     = table_lookup(table_var: v, table: t, args: as, symmetric: s);
 Int32NatOp add32(Int32Expr e1, Int32Expr e2)                                            = :add32(e1, e2);
 Int32NatOp value_to_surr(AnyValueStoreId s, ValueStoreType t, <AtomicExpr, IntExpr> e)  = value_to_surr(store: s, store_type: t, value: e);
-Int32NatOp get_unknown_arg(<ColumnItVar, SlaveColumnItVar> v, Nat i)                    = get_unknown_arg(iter: v, arg: if i == 0 then 0 else undefined);
 Int32NatOp get_arg_by_assoc_surr(AnyTableVar v, MasterBinTable t, <0..1> a, Int32Var s) = get_arg_by_assoc_surr(table_var: v, table_type: t, arg: a, surr: s);
 Int32NatOp get_assoc_surr(AnyTableVar v, MasterBinTable t, (Int32Var, Int32Var) as)     = get_assoc_surr(table_var: v, table_type: t, args: as);
 Int32NatOp get_aux_assoc_surr(TableVar v, MasterBinTable t, (Int32Var, Int32Var) as)    = get_aux_assoc_surr(table_var: v, table: t, args: as);
@@ -598,15 +594,6 @@ BasicInstr cleanup_value_store(ValueStoreId s) = cleanup_value_store(store: s);
 
 BasicInstr init_table(TableVar v, AnyTable t)    = init_table(table_var: v, table: t);
 BasicInstr cleanup_table(TableVar v, AnyTable t) = cleanup_table(table_var: v, table: t);
-
-BasicInstr get_slave_col_iter(SlaveColumnItVar v, AnyTableVar tv, SlaveColumn c, Maybe[Int32Var]+ as) {
-  assert (a <- as : a == nothing);
-  assert arity(v) == 3;
-  assert |as| == 3;
-  return get_slave_col_iter(it_var: v, table_var: tv, column: c, args: as);
-}
-
-BasicInstr get_column_iter(ColumnItVar iv, AnyTableVar cv, <Column, MandatoryColumn> c) = get_column_iter(it_var: iv, col_var: cv, column: c);
 
 BasicInstr queue_deletes(TableVar v, AnyTable t, Maybe[Int32Var]+ as, Bool s) =
   queue_deletes(table_var: v, table: t, args: as, symmetric: s);
