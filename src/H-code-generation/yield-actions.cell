@@ -132,32 +132,35 @@ implicit program           : Program,
         store_ids = (substitute(id) : id <- store_ids);
 
         col_repr = column_repr(sign(2));
-        it_var, var_gen = next_slave_column_it_var(var_gen, col_repr); ## DO WE NEED TO USE A DIFFERENT ITERATOR VAR EVERY TIME? SEE ALSO ANALOGUES DOWN BELOW
 
-        master_table = master_table(tv);
-        master_table_info = cast_master_bin_table(table_info(master_table));
-        master_table = substitute(master_table);
-        vars_setup_code = (
-          set_ivar32(surr_var_01, get_unknown_arg(it_var, 0)),
-          set_ivar32(surr_var_0, get_arg_by_assoc_surr(master_table, master_table_info, 0, surr_var_01)) if ll_vars(0) != nothing,
-          set_ivar32(surr_var_1, get_arg_by_assoc_surr(master_table, master_table_info, 1, surr_var_01)) if ll_vars(1) != nothing,
-          surr_to_decoded_value(value_unsafe(ll_vars(0)), store_ids(0), store_types(0), surr_var_0) if ll_vars(0) != nothing,
-          surr_to_decoded_value(value_unsafe(ll_vars(1)), store_ids(1), store_types(1), surr_var_1) if ll_vars(1) != nothing,
-          set_any_var(value_unsafe(ll_vars(2)), column_lookup(substitute(tv), table_info(tv), surr_var_01)) if ll_vars(2) != nothing
-        );
+        fail; //## IMPLEMENT IMPLEMENT IMPLEMENT
 
-        new_surrs = [value(v) -> obj_expr(value_unsafe(ll_vars(i))) : v @ i <- vars, v != nothing];
-        next_action_surrs = surrogates & new_surrs;
-        action_code = yield_action_opt_code(next_action, var_gen, surrogates = next_action_surrs);
+        // it_var, var_gen = next_slave_column_it_var(var_gen, col_repr); ## DO WE NEED TO USE A DIFFERENT ITERATOR VAR EVERY TIME? SEE ALSO ANALOGUES DOWN BELOW
 
-        loop_code = (break_if(is_out_of_range(it_var))) & vars_setup_code & action_code & (move_forward(it_var));
+        // master_table = master_table(tv);
+        // master_table_info = cast_master_bin_table(table_info(master_table));
+        // master_table = substitute(master_table);
+        // vars_setup_code = (
+        //   set_ivar32(surr_var_01, get_unknown_arg(it_var, 0)),
+        //   set_ivar32(surr_var_0, get_arg_by_assoc_surr(master_table, master_table_info, 0, surr_var_01)) if ll_vars(0) != nothing,
+        //   set_ivar32(surr_var_1, get_arg_by_assoc_surr(master_table, master_table_info, 1, surr_var_01)) if ll_vars(1) != nothing,
+        //   surr_to_decoded_value(value_unsafe(ll_vars(0)), store_ids(0), store_types(0), surr_var_0) if ll_vars(0) != nothing,
+        //   surr_to_decoded_value(value_unsafe(ll_vars(1)), store_ids(1), store_types(1), surr_var_1) if ll_vars(1) != nothing,
+        //   set_any_var(value_unsafe(ll_vars(2)), column_lookup(substitute(tv), table_info(tv), surr_var_01)) if ll_vars(2) != nothing
+        // );
 
-        table_code = (
-          get_slave_col_iter(it_var, substitute(tv), info, (nothing : i < 3)),
-          repeat(nonempty(loop_code))
-        );
+        // new_surrs = [value(v) -> obj_expr(value_unsafe(ll_vars(i))) : v @ i <- vars, v != nothing];
+        // next_action_surrs = surrogates & new_surrs;
+        // action_code = yield_action_opt_code(next_action, var_gen, surrogates = next_action_surrs);
 
-        code = code & table_code;
+        // loop_code = (break_if(is_out_of_range(it_var))) & vars_setup_code & action_code & (move_forward(it_var));
+
+        // table_code = (
+        //   get_slave_col_iter(it_var, substitute(tv), info, (nothing : i < 3)),
+        //   repeat(nonempty(loop_code))
+        // );
+
+        // code = code & table_code;
       }
 
       return code;
@@ -426,6 +429,8 @@ implicit program           : Program,
       else
         surr_var_0, var_gen = next_int32_var(init_var_gen);
 
+      entries_left_var, var_gen = next_int32_var(var_gen);
+
       // Selecting the candidate tables among those the logical relation is partitioned into
       // In this specific case, that means all of them
       candidate_tables = overlapping_tables(relvar, (nothing, nothing));
@@ -434,6 +439,9 @@ implicit program           : Program,
 
       // Iterating through all candidate tables
       for tv <- isort(candidate_tables) {
+        col_info = table_info(tv);
+        fail if not col_info :: <Column, MandatoryColumn>;
+
         sign = table_signature(tv);
         repr_0 = low_level_repr(sign(0));
         repr_1 = low_level_repr(sign(1));
@@ -447,13 +455,16 @@ implicit program           : Program,
         mandatory = column_is_mandatory(tv);
         col_repr = column_repr(sign(1));
 
-        it_var, var_gen = next_column_it_var(var_gen, mandatory, col_repr);
-
-        vars_setup_code = (
-          set_ivar32(surr_var_0, get_unknown_arg(it_var, 0)),
-          surr_to_decoded_value(value(ll_var_0), store_id, store_type, surr_var_0) if ll_var_0 != nothing,
-          set_any_var(value(ll_var_1), column_lookup(substitute(tv), table_info(tv), surr_var_0)) if ll_var_1 != nothing
-        );
+        vars_setup_code = ();
+        new_surrs = [];
+        if ll_var_0 != nothing {
+          read_value_instr = surr_to_decoded_value(value(ll_var_0), store_id, store_type, surr_var_0);
+          vars_setup_code = (vars_setup_code | read_value_instr);
+        }
+        if ll_var_1 != nothing {
+          read_value_instr = set_any_var(value(ll_var_1), column_lookup(substitute(tv), col_info, surr_var_0));
+          vars_setup_code = (vars_setup_code | read_value_instr);
+        }
 
         new_surrs = [
           value(var_0) -> obj_expr(value_unsafe(ll_var_0)) if var_0 != nothing,
@@ -462,12 +473,36 @@ implicit program           : Program,
         next_action_surrs = surrogates & new_surrs;
         action_code = yield_action_opt_code(next_action, var_gen, surrogates = next_action_surrs);
 
-        loop_code = (break_if(is_out_of_range(it_var))) & vars_setup_code & action_code & (move_forward(it_var));
+        loop_body_code = vars_setup_code & action_code;
+        if column_has_master(tv) {
+          if not mandatory {
+            loop_body_code = (
+              do_if(
+                table_contains(tv, col_info, (just(surr_var_0), nothing), false),
+                loop_body_code
+              )
+            );
+          }
+          iter = unary_table_iter(table_var: column_master(tv), var: surr_var_0);
+          table_code = (foreach(iter, loop_body_code));
+        }
+        else {
+          assert col_info :: Column;
 
-        table_code = (
-          get_column_iter(it_var, substitute(tv), cast_any_bin_col(table_info(tv))),
-          repeat(nonempty(loop_code))
-        );
+          table_code = (
+            set_ivar32(entries_left_var, get_count(tv, col_info, (nothing, nothing), false)),
+            set_ivar32(surr_var_0, 0),
+            repeat_while(
+              is_gt(upcast_int32(entries_left_var), 0),
+              ( do_if(
+                  table_contains(tv, col_info, (just(surr_var_0), nothing), false),
+                  (loop_body_code | set_ivar32(entries_left_var, add32(entries_left_var, -1)))
+                ),
+                set_ivar32(surr_var_0, add32(surr_var_0, 1))
+              )
+            )
+          );
+        }
 
         code = code & table_code;
       }
