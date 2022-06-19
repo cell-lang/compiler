@@ -10,6 +10,9 @@
 //     relvar(_, a) -> ...
 //     ... -> relvar(_, a)
 
+## THIS CODE IS AWARE OF THE Table TYPE DEFINED IN THE LOW-LEVEL LAYER
+## IT SHOULD ONLY KNOW ABOUT PhysRelVar
+
 implicit program : Program, typedefs : [TypeName -> NeType], context : Context {
   Bool is_columnar_relvar(AnyRelVar rel_var) = is_columnar_relvar(rel_auto_type(rel_var), unqualified(rel_var));
 
@@ -26,10 +29,15 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
       just(_, true) = true,
       _             = false;
 
+  Bool column_has_master(DBSymbol rel_auto_id, TableVar table_var) =
+    match (bin_rel_only_master_info(rel_auto_id, original_rel_var(table_var)))
+      just()  = true,
+      _       = false;
+
   PhysRelVar column_master(DBSymbol rel_auto_id, TableVar table_var) =
     match (bin_rel_only_master_info(rel_auto_id, original_rel_var(table_var)))
-      just(v?, true)  = v,
-      _               = undefined;
+      just(m?, _) = m,
+      _           = undefined;
 
   Bool is_mandatory_slave_of(DBSymbol rel_auto_id, TableVar origin, TableVar target) =
     match (bin_rel_only_master_info(rel_auto_id, original_rel_var(origin)))

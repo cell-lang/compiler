@@ -122,6 +122,18 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context {
   }
 
 
+  Bool column_has_master(TableVar var)      = column_has_master(this_db_symbol, var);
+  Bool column_has_master(QualTableVar var)  = column_has_master(var_type(var.db_var), var.table_var);
+
+
+  TableVar column_master(TableVar var) = table_var(column_master(this_db_symbol, var));
+
+  QualTableVar column_master(QualTableVar var) {
+    master_relvar = column_master(var_type(var.db_var), var.table_var);
+    return qual_table_var(var.db_var, table_var(master_relvar));
+  }
+
+
   TableVar master_table(TableVar var) {
     master_phys_relvar = master_relvar(this_db_symbol, original_rel_var(var));
     return table_var(master_phys_relvar);
