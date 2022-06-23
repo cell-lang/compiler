@@ -190,6 +190,21 @@ VarGen blank_var_gen = counter_set(nz_ctrs: []);
   return ([k -> vars(i) : k @ i <- isort(keys)], ret_gen);
 }
 
+(Maybe[Int32Var]+, VarGen) next_int32_vars(VarGen init_gen, Bool+ requested) {
+  gen = init_gen;
+  maybe_vars = ();
+  for r <- requested {
+    if r {
+      var, gen = next_int32_var(gen);
+      maybe_var = just(var);
+    }
+    else
+      maybe_var = nothing;
+    maybe_vars = (maybe_vars | maybe_var);
+  }
+  return (nonempty(maybe_vars), gen);
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 

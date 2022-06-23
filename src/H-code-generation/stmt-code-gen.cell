@@ -1187,9 +1187,12 @@ implicit program           : Program,
     return match (iter)
       coll_value_iter() = opt_code(iter, stmt.body, env, var_gen),
       rel_subset_iter() = unord_coll_iter_opt_code(iter.vars, iter.src_expr, iter.args, stmt.body, env, var_gen),
-      rel_var_iter()    = if is_columnar_relvar(iter.rel_var)
-                            then columnar_rel_var_iter_opt_code(iter, stmt.body, env, var_gen)
-                            else rel_var_iter_opt_code(iter, stmt.body, env, var_gen);
+      rel_var_iter()    = if is_columnar_relvar(iter.rel_var) then
+                            columnar_rel_var_iter_opt_code(iter, stmt.body, env, var_gen)
+                          else if is_ternary_slave_column(iter.rel_var) then
+                            ternary_slave_column_iter_opt_code(iter, stmt.body, env, var_gen)
+                          else
+                            rel_var_iter_opt_code(iter, stmt.body, env, var_gen);
 
     // type CollValueIter  = coll_value_iter(vars: Maybe[StdVar]+, idx_var: StdVar?, src_expr: Expr);
     StmtCompInfo opt_code(CollValueIter iter, Statement+ body, [EnvVar -> Type] env, VarGen var_gen) {
@@ -1575,6 +1578,140 @@ implicit program           : Program,
     }
   }
 
+
+  StmtCompInfo ternary_slave_column_iter_opt_code(RelVarIter iter, Statement+ body, [EnvVar -> Type] env, VarGen init_var_gen) {
+    vars : Maybe[StdVar]*;
+
+    fail if not iter.args :: (Maybe[Expr], Maybe[Expr], Nothing);
+    arg0, arg1, arg2 = iter.args;
+
+    vars = ();
+    next_idx = 0;
+    for a <- iter.args {
+      if a == nothing {
+        var = iter.vars(next_idx);
+        next_idx = next_idx + 1;
+      }
+      else
+        var = nothing;
+      vars = (vars | var);
+    }
+    fail if |vars| != 3;
+
+    if arg0 == nothing or arg1 == nothing {
+      return full_column_iter_code(vars, arg0, arg1, iter.rel_var, body, env, init_var_gen);
+    }
+    else {
+      fail;
+    }
+
+
+    StmtCompInfo full_column_iter_code((Maybe[StdVar], Maybe[StdVar], Maybe[StdVar]) vars, Maybe[Expr] arg0, Maybe[Expr] arg1, AnyRelVar rel_var, Statement+ body, [EnvVar -> Type] env, VarGen init_var_gen) {
+      var0, var1, var2 = vars;
+
+      assoc_surr_var, var_gen = next_int32_var(init_var_gen);
+      entries_left_var, var_gen = next_int32_var(var_gen);
+      surr_vars, var_gen = next_int32_vars(var_gen, (var0 != nothing, var1 != nothing));
+      args_surrs, var_gen = next_int32_vars(var_gen, (arg0 != nothing, arg1 != nothing));
+
+      // Types of the bounded arguments
+      args_types = apply((arg0, arg1), expr_type($, env));
+      if not args_types :: Maybe[NeType]*
+        return ((terminate(true)), just(surrogates), [], init_var_gen);
+
+      // Selecting the candidate tables among those the logical relation is partitioned into
+      candidate_tables = overlapping_tables(rel_var, (args_types | nothing));
+
+      entry_code, args_aliases, var_gen = sparse_opt_eval_code((arg0, arg1), env, init_var_gen);
+
+      // Iterating through all candidate tables
+      code = ();
+      surrs = surrogates;
+      for tv <- isort(candidate_tables) {
+        col_info = cast_slave_column(table_info(tv));
+
+        sign = table_signature(tv);
+        vars_reprs = [value(v) -> low_level_repr(sign(i)) : v @ i <- vars, v != nothing];
+        low_level_vars = [v -> low_level_var(r, v) : v r <- vars_reprs];
+
+        store_ids = (table_col_store_id(tv, i) : i <- (0, 1));
+        store_types = (value_store_type(rel_auto_type(rel_var), unqualified(s)) : s <- store_ids);
+        store_ids = (substitute(s) : s <- store_ids);
+
+        // mandatory = column_is_mandatory(tv);
+
+        col_repr = col_info.repr;
+        unqual_master = col_info.master;
+        master = match (tv)
+          table_var()       = unqual_master,
+          qual_table_var()  = qual_table_var(tv.db_var, unqual_master);
+          // capt_table_var()  = undefined; // Statically verified that it cannot happen
+        master_info = cast_master_bin_table(table_info(master));
+
+        vars_setup_code = ();
+        for v @ i <- (var0, var1)
+          if v != nothing {
+            llvar = low_level_vars(value(v));
+            surr_var = value_unsafe(surr_vars(i));
+            fail if not i :: <0..1>;
+            read_surr_instr = set_ivar32(surr_var, get_arg_by_assoc_surr(master, master_info, i, assoc_surr_var));
+            read_value_instr = surr_to_decoded_value(llvar, store_ids(i), store_types(i), surr_var);
+            vars_setup_code = (vars_setup_code | read_surr_instr, read_value_instr);
+          }
+        if var2 != nothing {
+          llvar = low_level_vars(value(var2));
+          read_value_instr = set_any_var(llvar, column_lookup(substitute(tv), col_info, assoc_surr_var));
+          vars_setup_code = (vars_setup_code | read_value_instr);
+        }
+
+        // Environment the body runs in
+        sgn = table_signature(tv);
+        loop_vars = [value(v) -> sgn(i) : v @ i <- vars, v != nothing];
+        exit_env = update_env(body, env & loop_vars);
+        body_env = merge_envs(env, exit_env) & loop_vars;
+
+        local_surrs = [v -> obj_expr(llv) : v llv <- low_level_vars];
+
+        let surrogates = surrs
+          entry_code_fixes, body_code, surrs = loop_stable_code(body, local_surrs, body_env, var_gen);
+
+        if body_code != () {
+          entry_code = entry_code & entry_code_fixes; ## BUG BUG BUG: WHAT IS THIS AND WHY IS IT NOT EVEN USED?
+          loop_body_code = vars_setup_code & body_code;
+          loop_body_code = (
+            do_if(
+              table_contains(substitute(tv), col_info, (just(assoc_surr_var), nothing), false),
+              loop_body_code
+            )
+          );
+          iter = get_table_foreach_iter(substitute(master), master_info, args_surrs, surr_vars, assoc_surr_var);
+          table_code = (foreach(iter, loop_body_code));
+
+          for a @ i <- reverse(args_aliases)
+            if a != nothing {
+              expr = value(a);
+              idx = |args_aliases| - 1 - i;
+              arg_type = value_unsafe(args_types(idx));
+              store_id = store_ids(idx);
+              store_type = store_types(idx);
+              arg_surr = value_unsafe(args_surrs(idx));
+              table_code = opt_do_if(
+                value_store_guard(store_type, expr, arg_type),
+                ( set_ivar32(arg_surr, value_to_surr(store_id, store_type, value_store_encoded_expr(store_type, expr))),
+                  do_if_not(is_eq(arg_surr, -1), table_code)
+                )
+              );
+            }
+
+          code = code & table_code;
+        }
+      }
+
+      return (entry_code & code, just(surrs), [], init_var_gen);
+    }
+  }
+
+
   // type RelVarIter = rel_var_iter(vars: Maybe[StdVar]+, rel_var: AnyRelVar, args: Maybe[Expr]+);
   StmtCompInfo rel_var_iter_opt_code(RelVarIter iter, Statement+ body, [EnvVar -> Type] env, VarGen init_var_gen) {
     table_args = iter.args;
@@ -1672,7 +1809,6 @@ implicit program           : Program,
             body_header = (
               set_ivar32(value(var0), get_arg_by_assoc_surr(master, master_info, 0, assoc_surr_var)) if var0 != nothing,
               set_ivar32(value(var1), get_arg_by_assoc_surr(master, master_info, 1, assoc_surr_var)) if var1 != nothing
-
             );
             table_code = (foreach(slave_iter, body_header & compiled_loop_body));
           }
