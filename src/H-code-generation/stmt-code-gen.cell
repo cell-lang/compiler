@@ -1598,11 +1598,99 @@ implicit program           : Program,
     }
     fail if |vars| != 3;
 
-    if arg0 == nothing or arg1 == nothing {
-      return full_column_iter_code(vars, arg0, arg1, iter.rel_var, body, env, init_var_gen);
-    }
-    else {
-      fail;
+    return if arg0 == nothing or arg1 == nothing
+      then full_column_iter_code(vars, arg0, arg1, iter.rel_var, body, env, init_var_gen)
+      else maybe_once_column_iter_code(only_unsafe(iter.vars), value(arg0), value(arg1), iter.rel_var, body, env, init_var_gen);
+
+
+    StmtCompInfo maybe_once_column_iter_code(Maybe[StdVar] maybe_var2, Expr arg0, Expr arg1, AnyRelVar rel_var, Statement+ body, [EnvVar -> Type] env, VarGen init_var_gen) {
+      assoc_surr_var, var_gen = next_int32_var(init_var_gen);
+      // entries_left_var, var_gen = next_int32_var(var_gen);
+      // surr_vars, var_gen = next_int32_vars(var_gen, (var0 != nothing, var1 != nothing));
+      args_surrs, var_gen = next_int32_vars(var_gen, 2);
+      fail if |args_surrs| != 2;
+
+      // Types of the bounded arguments
+      args_types = (expr_type(arg0, env), expr_type(arg1, env));
+      if not args_types :: NeType*
+        return ((terminate(true)), just(surrogates), [], init_var_gen);
+
+      // Selecting the candidate tables among those the logical relation is partitioned into
+      candidate_tables = overlapping_tables(rel_var, ((just(t) : t <- args_types) | nothing));
+
+      entry_code, args_aliases, var_gen = opt_eval_code((arg0, arg1), env, init_var_gen);
+
+      // Iterating through all candidate tables
+      code = ();
+      surrs = surrogates;
+      for tv <- isort(candidate_tables) {
+        col_info = cast_slave_column(table_info(tv));
+
+        store_ids = (table_col_store_id(tv, i) : i <- (0, 1));
+        store_types = (value_store_type(rel_auto_type(rel_var), unqualified(s)) : s <- store_ids);
+        store_ids = (substitute(s) : s <- store_ids);
+
+        col_repr = col_info.repr;
+        unqual_master = col_info.master;
+        master = match (tv)
+          table_var()       = unqual_master,
+          qual_table_var()  = qual_table_var(tv.db_var, unqual_master);
+          // capt_table_var()  = undefined; // Statically verified that it cannot happen
+        master_info = cast_master_bin_table(table_info(master));
+
+        if maybe_var2 != nothing {
+          var2 = value(maybe_var2);
+
+          sign = table_signature(tv);
+          var2_type = sign(2);
+          var2_repr = low_level_repr(var2_type);
+
+          llvar = low_level_var(var2_repr, var2);
+          read_value_instr = set_any_var(llvar, column_lookup(substitute(tv), col_info, assoc_surr_var));
+          vars_setup_code = (read_value_instr);
+
+          loop_vars = [var2 -> var2_type];
+          local_surrs = [var2 -> obj_expr(llvar)];
+        }
+        else {
+          vars_setup_code = ();
+          loop_vars = [];
+          local_surrs = [];
+        }
+
+        // Environment the body runs in
+        exit_env = update_env(body, env & loop_vars);
+        body_env = merge_envs(env, exit_env) & loop_vars;
+
+        let surrogates = surrs
+          entry_code_fixes, body_code, surrs = loop_stable_code(body, local_surrs, body_env, var_gen);
+
+        if body_code != () {
+          entry_code = entry_code & entry_code_fixes; ## BUG BUG BUG: WHAT IS THIS AND WHY IS IT NOT EVEN USED?
+          table_code = (
+            set_ivar32(assoc_surr_var, get_assoc_surr(substitute(master), master_info, args_surrs)),
+            do_if_not(is_eq(assoc_surr_var, -1), vars_setup_code & body_code)
+          );
+
+          for e @ i <- reverse(args_aliases) {
+            idx = |args_aliases| - 1 - i;
+            arg_type = args_types(idx);
+            store_id = store_ids(idx);
+            store_type = store_types(idx);
+            arg_surr = args_surrs(idx);
+            table_code = opt_do_if(
+              value_store_guard(store_type, e, arg_type),
+              ( set_ivar32(arg_surr, value_to_surr(store_id, store_type, value_store_encoded_expr(store_type, e))),
+                do_if_not(is_eq(arg_surr, -1), table_code)
+              )
+            );
+          }
+
+          code = code & table_code;
+        }
+      }
+
+      return (entry_code & code, just(surrs), [], init_var_gen);
     }
 
 
@@ -1637,8 +1725,6 @@ implicit program           : Program,
         store_ids = (table_col_store_id(tv, i) : i <- (0, 1));
         store_types = (value_store_type(rel_auto_type(rel_var), unqualified(s)) : s <- store_ids);
         store_ids = (substitute(s) : s <- store_ids);
-
-        // mandatory = column_is_mandatory(tv);
 
         col_repr = col_info.repr;
         unqual_master = col_info.master;
