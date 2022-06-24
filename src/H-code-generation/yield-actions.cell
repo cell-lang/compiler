@@ -110,7 +110,7 @@ implicit program           : Program,
     Instr* full_relvar_iter_code(Maybe[StdVar]+ vars, AnyRelVar relvar, YieldAction next_action, VarGen init_var_gen) {
       assert |vars| == 3;
 
-      surr_var_01, var_gen = next_int32_var(init_var_gen);
+      assoc_surr_var, var_gen = next_int32_var(init_var_gen);
       surr_var_0, var_gen = next_int32_var(var_gen);
       surr_var_1, var_gen = next_int32_var(var_gen);
 
@@ -122,7 +122,7 @@ implicit program           : Program,
 
       // Iterating through all candidate tables
       for tv <- isort(candidate_tables) {
-        info = cast_slave_column(table_info(tv));
+        col_info = cast_slave_column(table_info(tv));
         sign = table_signature(tv);
         reprs = (low_level_repr(t) : t <- sign);
         ll_vars = (apply(v, low_level_var(reprs(i), $)) : v @ i <- vars);
@@ -133,34 +133,29 @@ implicit program           : Program,
 
         col_repr = column_repr(sign(2));
 
-        fail; //## IMPLEMENT IMPLEMENT IMPLEMENT
+        master_table = master_table(tv);
+        master_info = cast_master_bin_table(table_info(master_table));
+        master_table = substitute(master_table);
 
-        // it_var, var_gen = next_slave_column_it_var(var_gen, col_repr); ## DO WE NEED TO USE A DIFFERENT ITERATOR VAR EVERY TIME? SEE ALSO ANALOGUES DOWN BELOW
+        vars_setup_code = (
+          surr_to_decoded_value(value_unsafe(ll_vars(0)), store_ids(0), store_types(0), surr_var_0) if ll_vars(0) != nothing,
+          surr_to_decoded_value(value_unsafe(ll_vars(1)), store_ids(1), store_types(1), surr_var_1) if ll_vars(1) != nothing,
+          set_any_var(value_unsafe(ll_vars(2)), column_lookup(substitute(tv), col_info, assoc_surr_var)) if ll_vars(2) != nothing
+        );
 
-        // master_table = master_table(tv);
-        // master_table_info = cast_master_bin_table(table_info(master_table));
-        // master_table = substitute(master_table);
-        // vars_setup_code = (
-        //   set_ivar32(surr_var_01, get_unknown_arg(it_var, 0)),
-        //   set_ivar32(surr_var_0, get_arg_by_assoc_surr(master_table, master_table_info, 0, surr_var_01)) if ll_vars(0) != nothing,
-        //   set_ivar32(surr_var_1, get_arg_by_assoc_surr(master_table, master_table_info, 1, surr_var_01)) if ll_vars(1) != nothing,
-        //   surr_to_decoded_value(value_unsafe(ll_vars(0)), store_ids(0), store_types(0), surr_var_0) if ll_vars(0) != nothing,
-        //   surr_to_decoded_value(value_unsafe(ll_vars(1)), store_ids(1), store_types(1), surr_var_1) if ll_vars(1) != nothing,
-        //   set_any_var(value_unsafe(ll_vars(2)), column_lookup(substitute(tv), table_info(tv), surr_var_01)) if ll_vars(2) != nothing
-        // );
+        new_surrs = [value(v) -> obj_expr(value_unsafe(ll_vars(i))) : v @ i <- vars, v != nothing];
+        next_action_surrs = surrogates & new_surrs;
+        action_code = yield_action_opt_code(next_action, var_gen, surrogates = next_action_surrs);
 
-        // new_surrs = [value(v) -> obj_expr(value_unsafe(ll_vars(i))) : v @ i <- vars, v != nothing];
-        // next_action_surrs = surrogates & new_surrs;
-        // action_code = yield_action_opt_code(next_action, var_gen, surrogates = next_action_surrs);
+        iter_vars = (maybe(surr_var_0, vars(0) != nothing), maybe(surr_var_1, vars(1) != nothing));
+        iter = get_table_foreach_iter(master_table, master_info, (nothing, nothing), iter_vars, assoc_surr_var);
 
-        // loop_code = (break_if(is_out_of_range(it_var))) & vars_setup_code & action_code & (move_forward(it_var));
-
-        // table_code = (
-        //   get_slave_col_iter(it_var, substitute(tv), info, (nothing : i < 3)),
-        //   repeat(nonempty(loop_code))
-        // );
-
-        // code = code & table_code;
+        ## THIS OUGHT TO BE DONE ONLY IF THE COLUMN IS NOT MANDATORY?
+        loop_body_instr = do_if(
+          table_contains(substitute(tv), col_info, (just(assoc_surr_var), nothing), false),
+          vars_setup_code & action_code
+        );
+        code = (code | foreach(iter, (loop_body_instr)));
       }
 
       return code;
@@ -179,15 +174,13 @@ implicit program           : Program,
       bound_surr_var, var_gen = next_int32_var(var_gen);
       free_surr_var, var_gen = next_int32_var(var_gen);
 
-      // it_var_id, var_gen = next_table_it_var_id(var_gen);
-
       bound_arg_eval_code, bound_arg_alias, var_gen = opt_eval_info(bound_arg, var_gen);
 
       bound_arg_type = subexpr_type(bound_arg);
       return (terminate(true)) if bound_arg_type == empty_type;
 
       // Selecting the candidate tables among those the logical relation is partitioned into
-      candidate_tables = overlapping_tables(relvar, (just(bound_arg_type), nothing, nothing));
+      candidate_tables = overlapping_tables(relvar, (maybe(bound_arg_type, bound_arg_idx == 0), maybe(bound_arg_type, bound_arg_idx == 1), nothing));
 
       code = bound_arg_eval_code;
       for tv <- candidate_tables {
@@ -199,8 +192,6 @@ implicit program           : Program,
         value_repr = low_level_repr(sign(2));
         ll_free_arg_var = apply(free_arg_var, low_level_var(free_arg_repr, $));
         ll_value_var = apply(value_var, low_level_var(value_repr, $));
-
-        // it_var = table_it_var(it_var_id, [bound_arg_idx], master_table_info, 2, false);
 
         bound_arg_store_id = table_col_store_id(tv, bound_arg_idx);
         free_arg_store_id = table_col_store_id(tv, free_arg_idx);
@@ -244,22 +235,6 @@ implicit program           : Program,
           do_if_not(
             is_eq(bound_surr_var, -1),
             foreach(iter, (loop_body_instr))
-
-            ## WASN'T THE (just(bound_surr_var), nothing) A BUG? WHAT IF THE BOUND INDEX IS THE SECOND ONE?
-            ## TEST THIS WITH THE OLD VERSION OF THE COMPILER
-
-            // ( get_table_iter(it_var, substitute(master_table), master_table_info, (just(bound_surr_var), nothing)),
-            //   repeat((
-            //     break_if(is_out_of_range(it_var)),
-
-            //     set_ivar32(free_surr_var, get_unknown_arg(it_var, 0)),
-            //     set_ivar32(assoc_surr_var, get_assoc_surr(substitute(master_table), master_table_info, (bound_surr_var, free_surr_var))),
-
-            //     loop_body_instr
-
-            //     move_forward(it_var)
-            //   ))
-            // )
           )
         );
       }
