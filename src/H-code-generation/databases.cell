@@ -494,15 +494,18 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
     phys_keys_by_table = group_by(physical_foreign_keys, $.origin);
     tables = sort_by_key(keys(phys_keys_by_table), arity(rel_auto_id, original_rel_var($)));
 
+    surr_vars = (ivar32(i) : i < 3);
+    assoc_surr_var = ivar32(3);
+    src_size_var = ivar32(4);
+    tgt_size_var = ivar32(5);
+    entries_left_var = ivar32(6);
+
     code = ();
     for tv <- tables {
       src_table_info = table_info(rel_auto_id, tv);
       rel_var = original_rel_var(tv);
       arity = arity(rel_auto_id, rel_var);
       src_is_sym = symmetric(rel_auto_id, rel_var);
-
-      surr_vars = (ivar32(i) : i < 3);
-      assoc_surr_var = ivar32(3);
 
       foreign_keys = lookup(phys_keys_by_table, tv, []);
       assert not (fk <- foreign_keys : fk.origin != tv);
@@ -578,74 +581,83 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
           : fk <- foreign_keys
         ]);
 
-        if is_columnar_relvar(rel_auto_id, logical_rel_var(rel_var)) {
-          it_var = column_it_var(0, column_is_mandatory(rel_auto_id, tv), column_repr(sign(1)));
+        if src_table_info :: Column {
           assert surr_vars_used == [0];
-          ## ISN'T THIS TOTALLY POINTLESS IF THE TARGET TABLE IS ALSO THE MASTER ONE?
-          ## AND CAN THE TARGET TABLE BE ANYTHING OTHER THAN THE MASTER?
-          surrs_reads = (set_ivar32(surr_vars(0), get_unknown_arg(it_var, 0)));
-          assert not (fk <- foreign_keys : fk.type == :binary_ternary and is_ternary_slave_column(rel_auto_id, logical_rel_var(original_rel_var(fk.target))));
-          get_iter_instr = get_column_iter(it_var, tv, cast_any_bin_col(src_table_info));
 
+          key_surr_var = surr_vars(only(surr_vars_used));
           code = (code |
-            get_iter_instr,
-            repeat((
-              break_if(is_out_of_range(it_var))
-            ) & surrs_reads & (
-              do_if(cond, ret_val(false)),
-              move_forward(it_var)
-            ))
+            set_ivar32(entries_left_var, get_count(tv, src_table_info, (nothing, nothing), false)),
+            set_ivar32(key_surr_var, 0),
+            repeat_while(
+              is_gt(upcast_int32(entries_left_var), 0),
+              ( do_if(
+                  table_contains(tv, src_table_info, (just(key_surr_var), nothing), false),
+                  ( do_if(cond, ret_val(false)),
+                    set_ivar32(entries_left_var, add32(entries_left_var, -1))
+                  )
+                ),
+                set_ivar32(key_surr_var, add32(key_surr_var, 1))
+              )
+            )
           );
         }
-        else if is_ternary_slave_column(rel_auto_id, logical_rel_var(rel_var)) {
-          it_var = slave_column_it_var(0, column_repr(sign(2)));
-          assert surr_vars_used == [0, 1] or surr_vars_used == [0] or surr_vars_used == [1]; ## NOT AT ALL SURE HERE. WHAT IS THIS ASSERTION FOR ANYWAY?
-          ## ISN'T THIS TOTALLY POINTLESS IF THE TARGET TABLE IS ALSO THE MASTER ONE?
-          ## AND CAN THE TARGET TABLE BE ANYTHING OTHER THAN THE MASTER?
-          master = master_table(rel_auto_id, tv);
-          master_info = cast_master_bin_table(table_info(rel_auto_id, master));
-          surrs_reads = (
-            set_ivar32(assoc_surr_var, get_unknown_arg(it_var, 0)),
-            set_ivar32(surr_vars(0), get_arg_by_assoc_surr(master, master_info, 0, assoc_surr_var)),
-            set_ivar32(surr_vars(1), get_arg_by_assoc_surr(master, master_info, 1, assoc_surr_var))
-          );
-          assert not (fk <- foreign_keys : fk.type == :binary_ternary and is_ternary_slave_column(rel_auto_id, logical_rel_var(original_rel_var(fk.target))));
-          get_iter_instr = get_slave_col_iter(it_var, tv, cast_slave_column(src_table_info), (nothing : i < arity));
+        else if src_table_info :: MandatoryColumn {
+          // Nothing we can do here. This has to be checked at loading time.
+          // At this point we don't have the necessary information anymore
+          ## BUT WHAT IF THE TARGET IS NOT THE MASTER? CAN THAT HAPPEN?
+          ## THEN THE KEY WOULD HAVE TO BE REWRITTEN AS A KEY FROM
+          ## THE MASTER TO THE TARGET
+          assert |foreign_keys| == 1;
+          assert src_table_info.master == only(foreign_keys).target;
+        }
+        else if src_table_info :: SlaveColumn {
+          assert [fk.type : fk <- foreign_keys] == [:ternary_binary];
+          assert surr_vars_used == [0, 1];
 
-          code = (code |
-            get_iter_instr,
-            repeat((
-              break_if(is_out_of_range(it_var))
-            ) & surrs_reads & (
-              do_if(cond, ret_val(false)),
-              move_forward(it_var)
-            ))
+          master = src_table_info.master;
+          master_info = cast_master_bin_table(table_info(rel_auto_id, master));
+
+          ## THIS DOESN'T WORK FOR THE slave_ternary_column(a, b, _) -> its_binary_master(a, b) FOREIGN KEY,
+          ## WHICH HAS TO BE CHECKED AT LOADING TIME. OR MAYBE NOT?
+
+          iter = get_table_foreach_iter(master, master_info, (nothing, nothing), (just(surr_vars(i)) : i <- (0, 1)), assoc_surr_var);
+          body_code = (
+            do_if(
+              ## INEFFICIENT, WE'RE REPEATING THE ASSOCIATIVE SURROGATE LOOKUP
+              table_contains(tv, src_table_info, (just(assoc_surr_var), nothing), false),
+              do_if(cond, ret_val(false))
+            )
           );
+          code = (code | foreach(iter, body_code));
+        }
+        else if src_table_info :: SlaveTernTable {
+          master = src_table_info.master;
+          master_info = cast_master_bin_table(table_info(rel_auto_id, master));
+
+          ## THIS DOESN'T WORK FOR THE slave_ternary_table(a, b, _) -> its_binary_master(a, b) FOREIGN KEY,
+          ## WHICH HAS TO BE CHECKED AT LOADING TIME. OR MAYBE NOT?
+
+          iter = get_table_foreach_iter(master, master_info, (nothing, nothing), (just(surr_vars(i)) : i <- (0, 1)));
+          body_code = (
+            do_if(
+              ## INEFFICIENT, WE'RE REPEATING THE ASSOCIATIVE SURROGATE LOOKUP
+              table_contains(tv, src_table_info, ((just(surr_vars(i)) : i <- (0, 1)) | nothing), false),
+              do_if(cond, ret_val(false))
+            )
+          );
+          code = (code | foreach(iter, body_code));
         }
         else {
-          assert src_table_info == table_info(rel_auto_id, tv); ## REMOVE REMOVE REMOVE WHEN DONE
+          src_table_info = cast_any_surr_table(src_table_info);
 
-          if src_table_info :: SlaveTernTable {
-            ## IMPLEMENT IMPLEMENT IMPLEMENT
-            ## IMPLEMENT IMPLEMENT IMPLEMENT
-            ## IMPLEMENT IMPLEMENT IMPLEMENT
-            ## IMPLEMENT IMPLEMENT IMPLEMENT
-            ## IMPLEMENT IMPLEMENT IMPLEMENT
-            ## IMPLEMENT IMPLEMENT IMPLEMENT
-            code = code;
-          }
-          else {
-            src_table_info = cast_any_surr_table(src_table_info);
+          empty_args = (nothing : _ < arity);
+          vars = (maybe(surr_vars(i), surr_vars_used(i)) : i < arity);
 
-            empty_args = (nothing : _ < arity);
-            vars = (maybe(surr_vars(i), surr_vars_used(i)) : i < arity);
+          iter = if assoc_surr_is_needed
+            then get_table_foreach_iter(tv, cast_master_bin_table(src_table_info), empty_args, vars, assoc_surr_var)
+            else get_table_foreach_iter(tv, src_table_info, empty_args, vars);
 
-            iter = if assoc_surr_is_needed
-              then get_table_foreach_iter(tv, cast_master_bin_table(src_table_info), empty_args, vars, assoc_surr_var)
-              else get_table_foreach_iter(tv, src_table_info, empty_args, vars);
-
-            code = (code | foreach(iter, (do_if(cond, ret_val(false)))));
-          }
+          code = (code | foreach(iter, (do_if(cond, ret_val(false)))));
         }
       }
     }
