@@ -1275,9 +1275,16 @@ ForeachIter get_table_foreach_iter(AnyTableVar table_var, Table table, Maybe[Int
     assert arity == 3;
     fail if |bound_args| != 3 or |vars| != 3;
     args = (table_arg_status(a, vars(i)) : a @ i <- bound_args);
-    return if table.symmetric
-      then semi_sym_tern_table_iter(table_var, table, args)
-      else tern_table_iter(table_var, table, args);
+    if table.symmetric {
+      swap_first_two_args = match (args)
+        (read(),   bound(),  _)  = true,
+        (ignored,  bound(),  _)  = true,
+        (_,        _,        _)  = false;
+      args = (args(1), args(0), args(2)) if swap_first_two_args;
+      return semi_sym_tern_table_iter(table_var, table, args);
+    }
+    else
+      return tern_table_iter(table_var, table, args);
   }
 }
 
