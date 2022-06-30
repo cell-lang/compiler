@@ -97,10 +97,19 @@ implicit program           : Program,
   StmtCompInfo send_msg_stmt_opt_code(Expr msg, [EnvVar -> Type] env, VarGen init_var_gen) {
     rel_auto_type = rel_auto_by_id(this_db_symbol);
     msg_type = expr_type(msg, env);
+
     target_idx = only([i : dependee @ i <- rel_auto_type.links, is_subset(msg_type, db_msg_type(dependee))]);
+    target_id = rel_auto_type.links(target_idx);
+    target_type = rel_auto_by_id(target_id);
     target = linked_db_var(target_idx);
+    assert var_type(target) == target_id;
+
+    handlers = identified_handlers(target_id);
+    maybe_target_handler_id = [id : id h <- handlers, is_subset(msg_type, h.type)];
+    handler_id = if maybe_target_handler_id != [] then just(only(maybe_target_handler_id)) else nothing;
+
     code, surr, _ = opt_eval_code(msg, env, init_var_gen);
-    code = (code | send_internal_msg(target, var_type(target), surr));
+    code = (code | send_internal_msg(target, target_id, surr, handler_id));
     return (code, just(surrogates), [], init_var_gen);
   }
 
@@ -788,7 +797,7 @@ implicit program           : Program,
     db_type = var_type(db_var);
     res_bvar = low_level_bvar(res_var);
     msg_type = expr_type(msg, env);
-    handlers = identified_handlers(var_type(db_var));
+    handlers = identified_handlers(db_type);
     maybe_target_handler_id = [id : id h <- handlers, is_subset(msg_type, h.type)];
     handler_id = if maybe_target_handler_id != [] then just(only(maybe_target_handler_id)) else nothing;
     code = (code | send_external_msg(db_var, db_type, surr, res_bvar, handler_id));

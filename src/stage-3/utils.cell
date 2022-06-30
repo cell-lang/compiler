@@ -118,11 +118,11 @@ Bool may_break(Instr+ loop_body) = in(breaks_loop, code_outcomes(loop_body));
 // }
 
 
-[LinkedDBVar] updated_dependees(CompiledHandler handler) {
-  return search_instrs(handler.body, dependees);
+[LinkedDBVar -> Maybe[HandlerId]] updated_dependees(CompiledHandler handler) {
+  return [v -> h : vh <- search_instrs(handler.body, dependees), (v?, h?) ?= vh];
 
-  [LinkedDBVar] dependees(Instr instr) =
-    send_internal_msg() = [instr.db_var],
+  [(LinkedDBVar, Maybe[HandlerId])] dependees(Instr instr) =
+    send_internal_msg() = [(instr.db_var, instr.handler_id)],
     _                   = search_any_nested(instr, dependees, []);
 }
 
@@ -172,8 +172,8 @@ implicit block : StaticBlock {
   }
 
 
-  [HandlerId, LinkedDBVar] updated_dependees {
-    return [id, d : id h <- block.handlers, d <- updated_dependees(h)];
+  [HandlerId, LinkedDBVar, Maybe[HandlerId]] updated_dependees {
+    return [id, d, t : id h <- block.handlers, d t <- updated_dependees(h)];
     // directly_touched = [id -> updated_dependees(h) : id h <- block.handlers];
     // deep_call_map = call_graph_transitive_closure;
     // indirectly_touched = [s, a : s t <- deep_call_map, a <- directly_touched(t)];
