@@ -1,5 +1,9 @@
 type CodeOutcome = fails, returns, breaks_loop, exits_block, falls_through;
 
+type TargetHandlerId = unknown, HandlerId;
+
+////////////////////////////////////////////////////////////////////////////////
+
 <fails>         fails         = :fails;
 <returns>       returns       = :returns;
 <breaks_loop>   breaks_loop   = :breaks_loop;
@@ -118,11 +122,11 @@ Bool may_break(Instr+ loop_body) = in(breaks_loop, code_outcomes(loop_body));
 // }
 
 
-[LinkedDBVar -> Maybe[HandlerId]] updated_dependees(CompiledHandler handler) {
-  return [v -> h : vh <- search_instrs(handler.body, dependees), (v?, h?) ?= vh];
+[LinkedDBVar, TargetHandlerId] updated_dependees(CompiledHandler handler) {
+  return [v, h : vh <- search_instrs(handler.body, dependees), (v?, h?) ?= vh];
 
-  [(LinkedDBVar, Maybe[HandlerId])] dependees(Instr instr) =
-    send_internal_msg() = [(instr.db_var, instr.handler_id)],
+  [(LinkedDBVar, TargetHandlerId)] dependees(Instr instr) =
+    send_internal_msg() = [(instr.db_var, if instr.handler_id != nothing then value(instr.handler_id) else :unknown)],
     _                   = search_any_nested(instr, dependees, []);
 }
 
@@ -172,7 +176,8 @@ implicit block : StaticBlock {
   }
 
 
-  [HandlerId, LinkedDBVar, Maybe[HandlerId]] updated_dependees {
+  [HandlerId, LinkedDBVar, TargetHandlerId] updated_dependees {
+    print (block.name, [id, d, t : id h <- block.handlers, d t <- updated_dependees(h)]);
     return [id, d, t : id h <- block.handlers, d t <- updated_dependees(h)];
     // directly_touched = [id -> updated_dependees(h) : id h <- block.handlers];
     // deep_call_map = call_graph_transitive_closure;

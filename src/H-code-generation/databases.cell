@@ -808,7 +808,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
   ([HandlerId -> CompiledHandler], [HandlerId, HandlerWrapper], Maybe[(FnArg, Instr*)]) compiled_database_handlers {
     handlers = identified_handlers(database.name);
     return ([], [], nothing) if handlers == [];
-    comp_handlers = [id -> compiled_handler(handler_body(h)) : id h <- handlers];
+    comp_handlers = [id -> compiled_handler(h.type, handler_body(h)) : id h <- handlers];
     exported_handlers = [id, interface : id h <- handlers, interface <- interfaces(h)];
     dispatch_resol_code =  if |handlers| > 1
       then msg_handler_resol_code(database.name, handlers)
