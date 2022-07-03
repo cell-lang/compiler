@@ -230,7 +230,8 @@ ObjNatOp get_curr_obj(<SetItVar, SeqItVar> it)                          = :get_c
 ObjNatOp get_curr_arg(BinRelItVar v,  Nat a)                            = get_curr_arg(var: v, arg: if a :: <0..1> then a else undefined);
 ObjNatOp get_curr_arg(TernRelItVar v, Nat a)                            = get_curr_arg(var: v, arg: if a :: <0..2> then a else undefined);
 ObjNatOp surr_to_value(AnyValueStoreId s, ValueStoreType t, Int32Var v) = surr_to_value(store: s, store_type: t, surrogate: v);
-ObjNatOp column_lookup(AnyTableVar v, AnyTable t, Int32Var k)           = column_lookup(var: v, column: cast_any_column(t), key: k);
+ObjNatOp column_lookup(AnyTableVar v, AnyTable t, Int32Var k)           = column_lookup(var: v, column: cast_any_column(t), key: k, safe: false);
+ObjNatOp column_lookup(AnyTableVar v, AnyTable t, Int32Var k, Bool b)   = column_lookup(var: v, column: cast_any_column(t), key: k, safe: b);
 ObjNatOp only_elt(ObjExpr s)                                            = :only_elt(s);
 
 ObjNatOp lookup_field(ObjExpr e, SymbObj f, Maybe[LowLevelRepr] r) {
@@ -454,7 +455,7 @@ JumpInstr ret_val(AnyTypeExpr e) = :ret_val(e);
 
 BasicInstr no_op = :no_op;
 
-Instr branch(BoolExpr cond, Instr* body, Instr* neg_body) {
+CompInstr branch(BoolExpr cond, Instr* body, Instr* neg_body) {
   if body != () {
     if |body| == 1 {
       branch_instr = match (only(body))
@@ -479,17 +480,17 @@ Instr branch_or_no_op(BoolExpr c, Instr* t, Instr* f) =
     then no_op
     else branch(c, t, f);
 
-Instr repeat(Instr+ b) = :repeat(b);
+CompInstr repeat(Instr+ b) = :repeat(b);
 Instr break_loop       = :break_loop;
 
-Instr execute_block(Instr+ b) = :execute_block(b);
+CompInstr execute_block(Instr+ b) = :execute_block(b);
 Instr exit_block              = :exit_block;
 
-Instr* opt_execute_block(Instr* b) = (execute_block(b) if b != ());
+CompInstr* opt_execute_block(Instr* b) = (execute_block(b) if b != ());
 
 Instr try_block(LocVar v, Instr+ b) = try_block(var: v, body: b);
 
-Instr switch_on_nat(IntExpr e, Instr*+ cs) = switch_on_nat(value: e, cases: cs);
+CompInstr switch_on_nat(IntExpr e, Instr*+ cs) = switch_on_nat(value: e, cases: cs);
 
 BinTableIter bin_table_iter(AnyTableVar v, Table t, (TableArgStatus, TableArgStatus) as) =
   bin_table_iter(table_var: v, table: t, args: as);
@@ -512,9 +513,9 @@ TernTableIter tern_table_iter(AnyTableVar v, Table t, (TableArgStatus, TableArgS
 SemiSymTernTableIter semi_sym_tern_table_iter(AnyTableVar v, Table t, (TableArgStatus, TableArgStatus, TableArgStatus) as) =
   semi_sym_tern_table_iter(table_var: v, table: t, args: as);
 
-Instr foreach(ForeachIter i, Instr* b) = foreach(iter: i, body: b);
+CompInstr foreach(ForeachIter i, Instr* b) = foreach(iter: i, body: b);
 
-Instr symb_switch(ObjExpr e, [+([+SymbObj], Instr+)] cs, Instr* eis) = symb_switch(value: e, cases: cs, else: eis);
+CompInstr symb_switch(ObjExpr e, [+([+SymbObj], Instr+)] cs, Instr* eis) = symb_switch(value: e, cases: cs, else: eis);
 
 
 Instr* opt_symb_switch(ObjExpr expr, [([+SymbObj], Instr+)] cases, Instr* else_code) {
@@ -703,6 +704,8 @@ CompiledMethod compiled_method(Maybe[StdVar]* as, NeType* ats, [+MembTestPredId*
 }
 
 CompiledHandler compiled_handler(NeType t, Instr* b) = compiled_handler(msg_type: t, body: b);
+
+PhysCol phys_col(PhysRelVar r, Nat i) = phys_col(relvar: r, index: i);
 
 ////////////////////////////// Derived expressions /////////////////////////////
 

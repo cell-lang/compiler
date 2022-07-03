@@ -1,0 +1,222 @@
+CompiledPrg optimize_by_tracking_surrs_membs(CompiledPrg prg) {
+  opt_static_blocks = [optimize_static_block(b) : b <- prg.static_blocks];
+  return compiled_prg(
+    typedefs:       prg.typedefs,
+    opt_reprs:      prg.opt_reprs,
+    bool_procs:     prg.bool_procs,
+    procs:          prg.procs,
+    react_blocks:   prg.react_blocks,
+    static_blocks:  [optimize_static_block_by_tracking_surrs_membs(b) : b <- prg.static_blocks],
+    int_seqs:       prg.int_seqs
+  );
+}
+
+
+StaticBlock optimize_static_block_by_tracking_surrs_membs(StaticBlock block) {
+  let cols_subset_map = block.cols_subset_map
+    opt_methods = [id -> optimize_static_block_method_by_tracking_surrs_membs(def) : id def <- block.methods];
+
+  return static_block(
+    name:                         block.name,
+    links:                        block.links,
+    state_vars:                   block.state_vars,
+    value_stores:                 block.value_stores,
+    tables:                       block.tables,
+    insert_checked_foreign_keys:  block.insert_checked_foreign_keys,
+    delete_checked_foreign_keys:  block.delete_checked_foreign_keys,
+    cols_subset_map:              block.cols_subset_map,
+    init_code:                    block.init_code,
+    cleanup_code:                 block.cleanup_code,
+    copy_state_code:              block.copy_state_code,
+    set_state_code:               block.set_state_code,
+    memb_var_check_exprs:         block.memb_var_check_exprs,
+    rel_vars_load_code:           block.rel_vars_load_code,
+    foreign_keys_check_code:      block.foreign_keys_check_code,
+    methods:                      opt_methods,
+    handlers:                     block.handlers,
+    handler_dispatch_resolver:    block.handler_dispatch_resolver,
+    exported_handlers:            block.exported_handlers,
+    msg_memb_pred:                block.msg_memb_pred
+  );
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+implicit cols_subset_map : [PhysCol, PhysCol] {
+  OptCompMethod optimize_static_block_method_by_tracking_surrs_membs(OptCompMethod method) {
+    opt_body = optimize_by_tracking_surrs_membs(method.body, []);
+    return opt_comp_method(
+      args:             method.args,
+      args_types:       method.args_types,
+      args_memb_preds:  method.args_memb_preds,
+      loc_vars_types:   method.loc_vars_types,
+      ret_type:         method.ret_type,
+      ret_val_repr:     method.ret_val_repr,
+      body:             opt_body
+    );
+
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  () optimize_by_tracking_surrs_membs((), [Int32Var, PhysCol]) = ();
+
+  Instr+ optimize_by_tracking_surrs_membs(Instr+ instrs, [Int32Var, PhysCol] memberships) {
+    curr_membs = memberships;
+    opt_instrs = ();
+    for instr <- instrs {
+      opt_instr = optimize_by_tracking_surrs_membs(instr, curr_membs);
+      opt_instrs = (opt_instrs | opt_instr);
+      curr_membs = match (instr)
+        set_ivar32()  = updated_memberships(instr, curr_membs),
+        _             = curr_membs;
+    }
+    return nonempty(opt_instrs);
+
+
+    [Int32Var, PhysCol] updated_memberships(<set_ivar32(var: Int32Var, value: Int32Expr)> instr, [Int32Var, PhysCol] memberships) {
+      membs = [v, c : v c <- memberships, v != instr.var];
+      if instr.value :: Int32Var {
+        new_membs = [instr.var, c : c <- memberships(instr.value, ?)];
+        membs = union(membs, new_membs);
+      }
+      return membs;
+    }
+  }
+
+
+  JumpInstr optimize_by_tracking_surrs_membs(JumpInstr instr, [Int32Var, PhysCol] memberships) =
+    ret_val(e?)   = ret_val(optimize_by_tracking_surrs_membs(e, memberships)),
+    _             = instr;
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  BasicInstr optimize_by_tracking_surrs_membs(BasicInstr instr, [Int32Var, PhysCol] memberships) =
+    rewrite_exprs(instr, optimize_by_tracking_surrs_membs($, memberships), rewrite_nested($, optimize_by_tracking_surrs_membs($, memberships)));
+
+
+  AnyTypeExpr optimize_by_tracking_surrs_membs(AnyTypeExpr expr, [Int32Var, PhysCol] memberships) {
+    return match (expr)
+      column_lookup()   = if not expr.safe and expr.var :: TableVar and expr.column :: MandatoryColumn
+                            then optimize_column_lookup(expr.var, expr.column, expr.key, memberships)
+                            else expr,
+      _                 = rewrite_nested(expr, optimize_by_tracking_surrs_membs($, memberships));
+
+
+    ObjNatOp optimize_column_lookup(TableVar var, MandatoryColumn column, Int32Var key, [Int32Var, PhysCol] memberships) {
+      safe_cols = follow([c : c <- memberships(key, ?)], cols_subset_map);
+      phys_col = phys_col(original_rel_var(var), 0);
+      return column_lookup(var, column, key, safe_cols(phys_col));
+    }
+  }
+
+
+  CompInstr optimize_by_tracking_surrs_membs(CompInstr instr, [Int32Var, PhysCol] memberships) {
+    return match (instr)
+      branch()            = optimized_branch(instr.cond, instr.when_true, instr.when_false, memberships),
+      switch_on_nat()     = optimized_switch_on_nat(instr.value, instr.cases, memberships),
+      symb_switch()       = optimized_symb_switch(instr.value, instr.cases, instr.else, memberships),
+      repeat(is?)         = repeat(optimize_by_tracking_surrs_membs(is, memberships)),
+      execute_block(is?)  = execute_block(optimize_by_tracking_surrs_membs(is, memberships)),
+      try_block()         = instr,
+      foreach()           = optimized_foreach(instr.iter, instr.body, memberships);
+
+
+    CompInstr optimized_branch(BoolExpr cond, Instr+ when_true, Instr* when_false, [Int32Var, PhysCol] memberships) {
+      opt_then_branch = optimize_by_tracking_surrs_membs(when_true, memberships);
+      opt_else_branch = optimize_by_tracking_surrs_membs(when_false, memberships);
+      return branch(cond, opt_then_branch, opt_else_branch);
+    }
+
+
+    CompInstr optimized_switch_on_nat(IntExpr value, Instr*+ cases, [Int32Var, PhysCol] memberships) {
+      opt_cases = (optimize_by_tracking_surrs_membs(c, memberships) : c <- cases);
+      return switch_on_nat(value, opt_cases);
+    }
+
+
+    CompInstr optimized_symb_switch(ObjExpr value, [+([+SymbObj], Instr+)] cases, Instr* else, [Int32Var, PhysCol] memberships) {
+      opt_cases = [(c(0), optimize_by_tracking_surrs_membs(c(1), memberships)) : c <- cases];
+      opt_else = optimize_by_tracking_surrs_membs(else, memberships);
+      return symb_switch(value, opt_cases, else);
+    }
+
+    CompInstr optimized_foreach(ForeachIter iter, Instr* body, [Int32Var, PhysCol] memberships) {
+      body_memberships = updated_memberships(iter, memberships);
+      opt_body = optimize_by_tracking_surrs_membs(body, body_memberships);
+      return foreach(iter, opt_body);
+    }
+
+    ////////////////////////////////////////////////////////////////////////////
+
+    [Int32Var, PhysCol] updated_memberships(SeqIter iter, [Int32Var, PhysCol] memberships) = memberships;
+
+
+    // type UnaryTableIter       = unary_table_iter(table_var: AnyTableVar, var: Int32Var?);
+    [Int32Var, PhysCol] updated_memberships(UnaryTableIter iter, [Int32Var, PhysCol] memberships) {
+      assert not (iter.var? and memberships(iter.var, _));
+
+      if iter.var? and iter.table_var :: TableVar {
+        relvar = original_rel_var(iter.table_var);
+        return union(memberships, [iter.var -> phys_col(relvar, 0)]);
+      }
+      else
+        return memberships;
+    }
+
+    // type BinTableIter         = bin_table_iter(
+    //                               table_var:  AnyTableVar,
+    //                               table:      Table,
+    //                               args:       (TableArgStatus, TableArgStatus)
+    //                             );
+    [Int32Var, PhysCol] updated_memberships(BinTableIter iter, [Int32Var, PhysCol] memberships) {
+      return memberships;
+    }
+
+    // type SymBinTableIter      = sym_bin_table_iter(
+    //                               table_var:  AnyTableVar,
+    //                               table:      Table,
+    //                               args:       (TableArgStatus, TableArgStatus)
+    //                             );
+    [Int32Var, PhysCol] updated_memberships(SymBinTableIter iter, [Int32Var, PhysCol] memberships) {
+      return memberships;
+    }
+
+    // type MasterBinTableIter   = master_bin_table_iter(
+    //                               table_var:  AnyTableVar,
+    //                               table:      MasterBinTable,
+    //                               args:       (TableArgStatus, TableArgStatus),
+    //                               surr_var:   Int32Var?
+    //                             );
+    [Int32Var, PhysCol] updated_memberships(MasterBinTableIter iter, [Int32Var, PhysCol] memberships) {
+      return memberships;
+    }
+
+    // type SlaveTernTableIter   = slave_tern_table_iter(
+    //                               table_var:  AnyTableVar,
+    //                               table:      SlaveTernTable,
+    //                               args:       (TableArgStatus, TableArgStatus)
+    //                             );
+    [Int32Var, PhysCol] updated_memberships(SlaveTernTableIter iter, [Int32Var, PhysCol] memberships) {
+      return memberships;
+    }
+
+    // type TernTableIter        = tern_table_iter(
+    //                               table_var:  AnyTableVar,
+    //                               table:      Table,
+    //                               args:       (TableArgStatus, TableArgStatus, TableArgStatus)
+    //                             );
+    [Int32Var, PhysCol] updated_memberships(TernTableIter iter, [Int32Var, PhysCol] memberships) {
+      return memberships;
+    }
+
+    // type SemiSymTernTableIter = semi_sym_tern_table_iter(
+    //                               table_var:  AnyTableVar,
+    //                               table:      Table,
+    //                               args:       (TableArgStatus, TableArgStatus, TableArgStatus)
+    //                             );
+    [Int32Var, PhysCol] updated_memberships(SemiSymTernTableIter iter, [Int32Var, PhysCol] memberships) {
+      return memberships;
+    }
+  }
+}

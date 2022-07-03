@@ -218,7 +218,7 @@ type ObjNatOp       = at(seq: ObjExpr, idx: IntExpr, fast_repr: LowLevelEltRepr)
                       get_curr_arg(var: BinRelItVar,  arg: <0..1>),
                       get_curr_arg(var: TernRelItVar, arg: <0..2>),
                       surr_to_value(store: AnyValueStoreId, store_type: ValueStoreType, surrogate: Int32Var),
-                      column_lookup(var: AnyTableVar, column: AnyColumn, key: Int32Var),
+                      column_lookup(var: AnyTableVar, column: AnyColumn, key: Int32Var, safe: Bool),
                       only_elt(ObjExpr);
 
 type BoolFnCall     = is_member(pred: MembTestPredId, obj: AtomicExpr),
@@ -636,6 +636,8 @@ type ReactBlock = react_block(
                     state_memb_pred:      MembTestPredId
                   );
 
+type PhysCol = phys_col(relvar: PhysRelVar, index: Nat);
+
 type StaticBlock = static_block(
                     name:                         DBSymbol,
                     links:                        DBSymbol*,
@@ -644,6 +646,7 @@ type StaticBlock = static_block(
                     tables:                       [TableVar -> AnyTable],
                     insert_checked_foreign_keys:  [BlockForeignKey],
                     delete_checked_foreign_keys:  [BlockForeignKey],
+                    cols_subset_map:              [PhysCol, PhysCol], // The set of values in column #0 is a subset of those of column #1
                     init_code:                    Instr*,
                     cleanup_code:                 Instr*,
                     copy_state_code:              Instr*,

@@ -11,11 +11,16 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
     ];
     delete_checked_foreign_keys = [
       bk : k bk <- physical_foreign_keys_map,
-        not database.attr_map(only(k.target_rel_vars), k.source_rel_var) and not
-        ( database.attr_map(k.source_rel_var, only(k.target_rel_vars)) and
+        // If the source is an attribute of the target then cascade delete is enought to automatically enforce the constraint
+        not database.attr_map(only(k.target_rel_vars), k.source_rel_var),
+        // If the target is a mandatory single-valued attribute of the source, then it cannot be independently deleted
+        not (
+          database.attr_map(k.source_rel_var, only(k.target_rel_vars)) and
           is_one_to_one_attribute(database.name, only(k.target_rel_vars))
         )
     ];
+
+    cols_subset_map = compute_cols_subset_map(database);
 
     memb_var_check_exprs = [
       v -> is_member(memb_test_preds_map(info.type, !), v) : v info <- database.state_vars
@@ -29,6 +34,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
       tables:                       tables_info,
       insert_checked_foreign_keys:  insert_checked_foreign_keys,
       delete_checked_foreign_keys:  delete_checked_foreign_keys,
+      cols_subset_map:              cols_subset_map,
       init_code:                    database_init_code,
       cleanup_code:                 database_cleanup_code,
       copy_state_code:              database_copy_state_code(rel_vars_args_perms),
@@ -43,7 +49,6 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
       msg_memb_pred:                msg_memb_pred
     );
   }
-
 
   Instr* database_init_code {
     state_vars = database.state_vars;
@@ -1069,7 +1074,6 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 }
 
 
-
 implicit program : Program, typedefs : [TypeName -> NeType], database : Database { ## program IS NOT REALLY NEEDED, BUT THE TYPECHECKER...
   [ValueStoreId -> ValueStoreType] value_stores = [
     vs -> {
@@ -1145,6 +1149,22 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
       } : rv info <- database.rel_vars, tv = table_var(rv)
     ];
   }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+[PhysCol, PhysCol] compute_cols_subset_map(Database rel_auto) {
+  tuples = ();
+  for fk <- rel_auto.foreign_keys {
+    src = fk.source_rel_var;
+    tgt = only(fk.target_rel_vars);
+    tuples = match (fk.source_args, fk.target_args)
+      (just(v1?), nothing),   (just(v2?))           = (tuples | (phys_col(src, 0), phys_col(tgt, 0))),
+      (just(v1?)),            (just(v2?), nothing)  = (tuples | (phys_col(src, 0), phys_col(tgt, 0))),
+      _,                      _                     = tuples;
+  }
+  return [c1, c2 : (c1, c2) <- tuples];
 }
 
 ////////////////////////////////////////////////////////////////////////////////
