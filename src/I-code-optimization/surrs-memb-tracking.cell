@@ -97,10 +97,11 @@ implicit cols_subset_map : [PhysCol, PhysCol] {
 
   AnyTypeExpr optimize_by_tracking_surrs_membs(AnyTypeExpr expr, [Int32Var, PhysCol] memberships) {
     return match (expr)
-      column_lookup()   = if not expr.safe and expr.var :: TableVar and expr.column :: MandatoryColumn
-                            then optimize_column_lookup(expr.var, expr.column, expr.key, memberships)
-                            else expr,
-      _                 = rewrite_nested(expr, optimize_by_tracking_surrs_membs($, memberships));
+      column_lookup()                                 = if not expr.safe and expr.var :: TableVar and expr.column :: MandatoryColumn
+                                                          then optimize_column_lookup(expr.var, expr.column, expr.key, memberships)
+                                                          else expr,
+      are_eq(int_obj(upcast_int32(v?)), int_obj(-1))  = if memberships(v, _) then false else expr,
+      _                                               = rewrite_nested(expr, optimize_by_tracking_surrs_membs($, memberships));
 
 
     ObjNatOp optimize_column_lookup(TableVar var, MandatoryColumn column, Int32Var key, [Int32Var, PhysCol] memberships) {
@@ -123,9 +124,10 @@ implicit cols_subset_map : [PhysCol, PhysCol] {
 
 
     CompInstr optimized_branch(BoolExpr cond, Instr+ when_true, Instr* when_false, [Int32Var, PhysCol] memberships) {
+      opt_cond = cast_bool_expr(optimize_by_tracking_surrs_membs(cond, memberships));
       opt_then_branch = optimize_by_tracking_surrs_membs(when_true, memberships);
       opt_else_branch = optimize_by_tracking_surrs_membs(when_false, memberships);
-      return branch(cond, opt_then_branch, opt_else_branch);
+      return branch(opt_cond, opt_then_branch, opt_else_branch);
     }
 
 

@@ -233,3 +233,25 @@ ValueStoreId unqualified(<ValueStoreId, NestedValueStoreId> id) =
 ////////////////////////////////////////////////////////////////////////////////
 
 StdVar* ord_red_vars(AggrFunct aggr_fn) = isort(keys(aggr_fn.red_vars));
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+Bool is_always_true(BoolExpr expr) =
+  true          |
+  neg(false)    = true,
+  and(es?)      |
+  and_then(es?) = not (e <- es : not is_always_true(e)),
+  or(es?)       |
+  or_else(es?)  = (e <- es : is_always_true(e)),
+  _             = false;
+
+
+Bool is_always_false(BoolExpr expr) =
+  false         |
+  neg(true)    = true,
+  and(es?)      |
+  and_then(es?) = (e <- es : is_always_false(e)),
+  or(es?)       |
+  or_else(es?)  = not (e <- es : not is_always_false(e)),
+  _             = false;

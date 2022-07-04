@@ -127,10 +127,12 @@ Instr* remove_dead_code(Instr instr) =
   _                   = (instr);
 
 
-Instr* remove_dead_branch_code(BoolExpr cond, Instr+ if_body, Instr* else_body) {
-  opt_if_body = remove_dead_code(if_body);
+Instr* remove_dead_branch_code(BoolExpr cond, Instr+ then_body, Instr* else_body) {
+  return then_body if is_always_true(cond);
+  return else_body if is_always_false(cond);
+  opt_then_body = remove_dead_code(then_body);
   opt_else_body = remove_dead_code(else_body);
-  return (branch(cond, opt_if_body, opt_else_body) if opt_if_body != () or opt_else_body != ());
+  return (branch(cond, opt_then_body, opt_else_body) if opt_then_body != () or opt_else_body != ());
 }
 
 
