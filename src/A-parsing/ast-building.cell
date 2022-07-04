@@ -1823,7 +1823,7 @@ implicit filename : String, lines : Nat** {
     tag_obj_any   = build_ptrn_tag_obj_any_ast(mtc),                        //rule_seq([atomic_rule(lowercase_id), atomic_rule(at), atomic_rule(lowercase_id)])
     var           = syn_ptrn_var(var(get_lowercase_id(mtc, 0)), ptrn_any),  //rule_seq([atomic_rule(lowercase_id), atomic_rule(question_mark)])
     atom          = ptrn_symbol(get_lowercase_id(mtc)),                     //atomic_rule(lowercase_id)
-    integer       = syn_ptrn_integer(get_integer(mtc, 1)),                  //rule_seq([optional_rule(atomic_rule(minus)), atomic_rule(integer)])
+    integer       = build_ptrn_integer_ast(mtc),                            //rule_seq([optional_rule(atomic_rule(minus)), atomic_rule(integer)])
     float         = ptrn_float,                                             //atomic_rule(circumflex)
     atom_any      = ptrn_symbol,                                            //atomic_rule(plus)
     integer_any   = syn_ptrn_integer,                                       //atomic_rule(asterisk)
@@ -1834,6 +1834,14 @@ implicit filename : String, lines : Nat** {
     map           = syn_ptrn_map,                                           //par_rule(atomic_rule(triple_dot))
     bin_rel       = syn_ptrn_bin_rel,
     tern_rel      = syn_ptrn_tern_rel;
+
+  SynPtrn build_ptrn_integer_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 2;
+    value = get_integer(nodes(1));
+    value = -value if nodes(0) != null_match;
+    return syn_ptrn_integer(value);
+  }
 
   SynPtrn build_ptrn_tag_obj_ast(RuleMatch mtc) {
     nodes = rule_seq_nodes(mtc);
