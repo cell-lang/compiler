@@ -170,7 +170,12 @@ implicit cols_subset_map : [PhysCol, PhysCol] {
     //                               args:       (TableArgStatus, TableArgStatus)
     //                             );
     [Int32Var, PhysCol] updated_memberships(BinTableIter iter, [Int32Var, PhysCol] memberships) {
-      return memberships;
+      body_memberships = memberships;
+      if iter.table_var :: TableVar {
+        for a @ i <- iter.args
+          body_memberships = updated_memberships(a, i, iter.table_var, body_memberships);
+      }
+      return body_memberships;
     }
 
     // type SymBinTableIter      = sym_bin_table_iter(
@@ -189,7 +194,13 @@ implicit cols_subset_map : [PhysCol, PhysCol] {
     //                               surr_var:   Int32Var?
     //                             );
     [Int32Var, PhysCol] updated_memberships(MasterBinTableIter iter, [Int32Var, PhysCol] memberships) {
-      return memberships;
+      body_memberships = memberships;
+      if iter.table_var :: TableVar {
+        for a @ i <- iter.args
+          body_memberships = updated_memberships(a, i, iter.table_var, body_memberships);
+        ## BAD BAD BAD: WE'RE NOT CONSIDERING THE ASSOCIATIVE SURROGATE
+      }
+      return body_memberships;
     }
 
     // type SlaveTernTableIter   = slave_tern_table_iter(
@@ -198,7 +209,12 @@ implicit cols_subset_map : [PhysCol, PhysCol] {
     //                               args:       (TableArgStatus, TableArgStatus)
     //                             );
     [Int32Var, PhysCol] updated_memberships(SlaveTernTableIter iter, [Int32Var, PhysCol] memberships) {
-      return memberships;
+      if iter.table_var :: TableVar {
+        ## BAD BAD BAD: WE'RE NOT CONSIDERING THE ASSOCIATIVE SURROGATE
+        return updated_memberships(iter.args(1), 1, iter.table_var, memberships);
+      }
+      else
+        return memberships;
     }
 
     // type TernTableIter        = tern_table_iter(
@@ -207,7 +223,12 @@ implicit cols_subset_map : [PhysCol, PhysCol] {
     //                               args:       (TableArgStatus, TableArgStatus, TableArgStatus)
     //                             );
     [Int32Var, PhysCol] updated_memberships(TernTableIter iter, [Int32Var, PhysCol] memberships) {
-      return memberships;
+      body_memberships = memberships;
+      if iter.table_var :: TableVar {
+        for a @ i <- iter.args
+          body_memberships = updated_memberships(a, i, iter.table_var, body_memberships);
+      }
+      return body_memberships;
     }
 
     // type SemiSymTernTableIter = semi_sym_tern_table_iter(
@@ -220,3 +241,13 @@ implicit cols_subset_map : [PhysCol, PhysCol] {
     }
   }
 }
+
+
+[Int32Var, PhysCol] updated_memberships(TableArgStatus status, Nat index, TableVar table_var, [Int32Var, PhysCol] memberships) =
+  read(v?)  = {
+    assert not memberships(v, _);
+    phys_col = phys_col(original_rel_var(table_var), index);
+    return union(memberships, [v -> phys_col]);
+  },
+  bound()   |
+  ignored   = memberships;

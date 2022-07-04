@@ -1162,6 +1162,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
     tuples = match (fk.source_args, fk.target_args)
       (just(v1?), nothing),   (just(v2?))           = (tuples | (phys_col(src, 0), phys_col(tgt, 0))),
       (just(v1?)),            (just(v2?), nothing)  = (tuples | (phys_col(src, 0), phys_col(tgt, 0))),
+      (nothing, just(v1?)),   (just(v2?))           = (tuples | (phys_col(src, 1), phys_col(tgt, 0))),
+      (just(v1?)),            (nothing, just(v2?))  = (tuples | (phys_col(src, 0), phys_col(tgt, 1))),
       _,                      _                     = tuples;
   }
   return [c1, c2 : (c1, c2) <- tuples];
