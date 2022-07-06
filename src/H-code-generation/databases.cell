@@ -1037,17 +1037,17 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-[[+(TableVar, Nat)]] column_clusters([TableVar, NzNat, Bool] tables, [BlockForeignKey] foreign_keys) {
-  init_clusters = union([associations(k) : k <- foreign_keys]) & [[(v, 0), (v, 1)] : v _ s <- tables, s];
+[[+PhysCol]] column_clusters([TableVar, NzNat, Bool] tables, [BlockForeignKey] foreign_keys) {
+  init_clusters = union([associations(k) : k <- foreign_keys]) & [[phys_col(v, 0), phys_col(v, 1)] : v _ s <- tables, s];
   non_trivial_clusters = merge_intersecting(init_clusters);
-  all_cols = [(r, i) : r a _ <- tables, i <- (i : i < a)];
+  all_cols = [phys_col(r, i) : r a _ <- tables, i <- (i : i < a)];
   rem_cols = all_cols - union(non_trivial_clusters);
   final_clusters = non_trivial_clusters & [[c] : c <- rem_cols];
   assert union(final_clusters) == all_cols;
   return final_clusters;
 
 
-  [[+(TableVar, Nat)]] associations(BlockForeignKey foreign_key) {
+  [[+PhysCol]] associations(BlockForeignKey foreign_key) {
     idx_assocs = match (foreign_key.type)
       unary_unary             = [0 -> 0],
       unary_binary(i?)        |
@@ -1068,7 +1068,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
       sym_binary_sym_ternary  |
       sym_ternary_sym_binary  = [0 -> 0];
 
-    return [[(foreign_key.origin, i), (foreign_key.target, j)] : i j <- idx_assocs];
+    return [[phys_col(foreign_key.origin, i), phys_col(foreign_key.target, j)] : i j <- idx_assocs];
   }
 }
 
@@ -1077,12 +1077,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
   [ValueStoreId -> ValueStoreType] value_stores = [
     vs -> {
       cols = nonempty([c : c <- table_col_value_store_map(?, vs)]);
-      // types = [database.rel_vars(_untag_(left(c))).signature(right(c)) : c <- cols];
-      ## WORKAROUND FOR COMPILER BUG IN VERSION 0.1 (IS IT GONE IN 0.3?)
-      ## THE COMMENTED OUT VERSION ABOVE DOES NOT WORK
-      types = [database.rel_vars(rv).signature(idx) : c <- cols, rv = untag(left(c)), idx = right(c)];
-      types_copy = [database.rel_vars(_untag_(left(c))).signature(right(c)) : c <- cols];
-      assert types == types_copy;
+      types = [database.rel_vars(c.relvar).signature(c.index) : c <- cols];
       return value_store_type(ne_union_superset(types));
     } : vs <- values(table_col_value_store_map)
   ];
@@ -1095,7 +1090,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
   }
 
 
-  [(TableVar, Nat) -> ValueStoreId] table_col_value_store_map {
+  [PhysCol -> ValueStoreId] table_col_value_store_map {
     auto_id = database.name;
     table_vars = [table_var(r), arity(auto_id, r), info.symmetric : r info <- database.rel_vars];
     clusters = column_clusters(table_vars, physical_foreign_keys);
@@ -1110,7 +1105,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
     return [
       tv -> {
         if is_columnar_relvar(auto_id, logical_rel_var(rv)) {
-          value_store = col_to_vs_map((tv, 0));
+          value_store = col_to_vs_map(phys_col(tv, 0));
           signature = info.signature;
           fail if |signature| != 2;
           repr = column_repr(signature(1));
@@ -1124,7 +1119,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
         else if is_ternary_slave_column(auto_id, logical_rel_var(rv)) {
           masters_slaves = masters_ternary_slave_columns;
           master = table_var(masters_slaves(auto_id, !, rv));
-          value_stores = (col_to_vs_map((tv, i)) : i <- (0, 1));
+          value_stores = (col_to_vs_map(phys_col(tv, i)) : i <- (0, 1));
           signature = info.signature;
           fail if |signature| != 3;
           return slave_column(master, value_stores, column_repr(signature(2)), signature);
@@ -1133,7 +1128,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
           signature = info.signature;
           fail if |signature| != 2;
           return master_bin_table(
-            (col_to_vs_map((tv, i)) : i <- (0, 1)),
+            (col_to_vs_map(phys_col(tv, i)) : i <- (0, 1)),
             info.keys,
             signature,
             info.symmetric
@@ -1144,14 +1139,14 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
           fail if |signature| != 3;
           return slave_tern_table(
             table_var(master_relvar(auto_id, rv)),
-            (col_to_vs_map((tv, i)) : i <- (0, 1, 2)),
+            (col_to_vs_map(phys_col(tv, i)) : i <- (0, 1, 2)),
             info.keys,
             signature,
             info.symmetric
           );
         }
         else {
-          value_stores = (col_to_vs_map((tv, i)) : i < |info.signature|);
+          value_stores = (col_to_vs_map(phys_col(tv, i)) : i < |info.signature|);
           return table(value_stores, info.keys, info.signature, info.symmetric);
         }
       } : rv info <- database.rel_vars, tv = table_var(rv)

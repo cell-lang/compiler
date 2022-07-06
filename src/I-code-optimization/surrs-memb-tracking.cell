@@ -106,7 +106,7 @@ implicit cols_subset_map : [PhysCol, PhysCol] {
 
     ObjNatOp optimize_column_lookup(TableVar var, MandatoryColumn column, Int32Var key, [Int32Var, PhysCol] memberships) {
       safe_cols = follow([c : c <- memberships(key, ?)], cols_subset_map);
-      phys_col = phys_col(original_rel_var(var), 0);
+      phys_col = phys_col(var, 0);
       return column_lookup(var, column, key, safe_cols(phys_col));
     }
   }
@@ -158,10 +158,8 @@ implicit cols_subset_map : [PhysCol, PhysCol] {
     [Int32Var, PhysCol] updated_memberships(UnaryTableIter iter, [Int32Var, PhysCol] memberships) {
       assert not (iter.var? and memberships(iter.var, _));
 
-      if iter.var? and iter.table_var :: TableVar {
-        relvar = original_rel_var(iter.table_var);
-        return union(memberships, [iter.var -> phys_col(relvar, 0)]);
-      }
+      if iter.var? and iter.table_var :: TableVar
+        return union(memberships, [iter.var -> phys_col(iter.table_var, 0)]);
       else
         return memberships;
     }
@@ -248,7 +246,7 @@ implicit cols_subset_map : [PhysCol, PhysCol] {
 [Int32Var, PhysCol] updated_memberships(TableArgStatus status, Nat index, TableVar table_var, [Int32Var, PhysCol] memberships) =
   read(v?)  = {
     assert not memberships(v, _);
-    phys_col = phys_col(original_rel_var(table_var), index);
+    phys_col = phys_col(table_var, index);
     return union(memberships, [v -> phys_col]);
   },
   bound()   |
