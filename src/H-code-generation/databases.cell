@@ -30,7 +30,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
       name:                         database.name,
       links:                        database.links,
       state_vars:                   [v -> info.type : v info <- database.state_vars],
-      value_stores:                 value_stores,
+      value_stores:                 used_value_stores,
       tables:                       tables_info,
       insert_checked_foreign_keys:  insert_checked_foreign_keys,
       delete_checked_foreign_keys:  delete_checked_foreign_keys,
@@ -1038,8 +1038,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 ////////////////////////////////////////////////////////////////////////////////
 
 [[+(TableVar, Nat)]] column_clusters([TableVar, NzNat, Bool] tables, [BlockForeignKey] foreign_keys) {
-  init_clusters = union([associations(k) : k <- foreign_keys]) &
-                  [[(v, 0), (v, 1)] : v _ s <- tables, s];
+  init_clusters = union([associations(k) : k <- foreign_keys]) & [[(v, 0), (v, 1)] : v _ s <- tables, s];
   non_trivial_clusters = merge_intersecting(init_clusters);
   all_cols = [(r, i) : r a _ <- tables, i <- (i : i < a)];
   rem_cols = all_cols - union(non_trivial_clusters);
@@ -1082,9 +1081,18 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
       ## WORKAROUND FOR COMPILER BUG IN VERSION 0.1 (IS IT GONE IN 0.3?)
       ## THE COMMENTED OUT VERSION ABOVE DOES NOT WORK
       types = [database.rel_vars(rv).signature(idx) : c <- cols, rv = untag(left(c)), idx = right(c)];
+      types_copy = [database.rel_vars(_untag_(left(c))).signature(right(c)) : c <- cols];
+      assert types == types_copy;
       return value_store_type(ne_union_superset(types));
     } : vs <- values(table_col_value_store_map)
   ];
+
+
+  [ValueStoreId -> ValueStoreType] used_value_stores {
+    value_stores = value_stores;
+    value_stores_in_use = [vs : _ t <- tables_info, _ vs <- table_cols_store_ids_map(t)];
+    return [vs -> value_stores(vs) : vs <- value_stores_in_use];
+  }
 
 
   [(TableVar, Nat) -> ValueStoreId] table_col_value_store_map {

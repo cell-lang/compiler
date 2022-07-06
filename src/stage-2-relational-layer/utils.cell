@@ -15,3 +15,13 @@ Bool rel_var_is_symmetric(Database rel_auto, RelVar rel_var) =
 [[+Nat]] rel_var_keys(Database rel_auto, RelVar rel_var) =
   only([info.keys : v info <- rel_auto.rel_vars, logical_rel_var(v) == rel_var]);
 
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+[Nat -> ValueStoreId] table_cols_store_ids_map(AnyTable table) =
+  table()             |
+  master_bin_table()  |
+  slave_tern_table()  |
+  slave_column()      = [i -> t : t @ i <- table.value_stores],
+  column()            |
+  mandatory_column()  = [0 -> table.value_store];
