@@ -23,6 +23,39 @@ type Opt[T]         = (), (T);
 
 ////////////////////////////////////////////////////////////////////////////////
 
+[+[+T]] coalesce_cycles([+T] nodes, [T, T] edges) {
+  used_nodes : [T];
+
+  reachability_map = [m, n : m <- nodes, n <- reachable_from(m, edges)];
+
+  cycles = [];
+  used_nodes = [];
+
+  for n <- nodes
+    if not used_nodes(n) {
+      cycle = if reachability_map(n, n)
+        then [m : m <- nodes, reachability_map(n, m), reachability_map(m, n)] // The node is part of a cycle
+        else [n];
+      cycles = _insert_(cycles, nonempty(cycle));
+      for m <- cycle
+        used_nodes = _insert_(used_nodes, m);
+    }
+
+  return nonempty(cycles);
+
+
+  [T] reachable_from(T node, [T, T] edges) {
+    nodes = [n : n <- edges(node, ?)];
+    loop {
+      new_nodes = [n : m <- nodes, n <- edges(m, ?), not nodes(n)];
+      return nodes if new_nodes == [];
+      nodes = nodes & new_nodes;
+    }
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
 ## FIND BETTER NAME
 [T] follow([T] init_set, [T, T] rel) {
   set = init_set;

@@ -31,6 +31,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
       links:                        database.links,
       state_vars:                   [v -> info.type : v info <- database.state_vars],
       value_stores:                 used_value_stores,
+      value_stores_owners:          value_stores_owners,
       tables:                       tables_info,
       insert_checked_foreign_keys:  insert_checked_foreign_keys,
       delete_checked_foreign_keys:  delete_checked_foreign_keys,
@@ -1032,6 +1033,108 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 
     return key_type;
   }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+implicit program : Program, typedefs : [TypeName -> NeType], database : Database {
+  [ValueStoreId -> PhysCol] value_stores_owners {
+    auto_id = database.name;
+    table_vars = [table_var(r), arity(auto_id, r), info.symmetric : r info <- database.rel_vars];
+    direct_supercols = direct_supercolumns(table_vars, physical_foreign_keys);
+    clusters = column_clusters(table_vars, physical_foreign_keys);
+    surr_cols = [phys_col(v, c) : v t <- tables_info, c _ <- table_cols_store_ids_map(t)];
+    surr_cols_clusters = [];
+    for clst <- clusters {
+      is_surr_cluster = only([surr_cols(c) : c <- clst]);
+      assert is_surr_cluster or |clst| == 1;
+      if is_surr_cluster
+        surr_cols_clusters = _insert_(surr_cols_clusters, clst);
+    }
+    return [
+      only([table_col_value_store_map(c, !) : c <- clst]) ->
+        only(cluster_representatives(clst, direct_supercols))
+      : clst <- surr_cols_clusters
+    ];
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+[PhysCol, PhysCol] direct_supercolumns([TableVar, NzNat, Bool] tables, [BlockForeignKey] foreign_keys) {
+  foreign_keys_supercolumns = [
+    sub_col, super_col
+    : fk <- foreign_keys, sub_col super_col <- implied_subset_superset_relationships(fk)
+  ];
+  symmetry_supercolumns = [phys_col(r, 1) -> phys_col(r, 0) : v _ <- tables(?, ?, true), r = original_rel_var(v)];
+  return union(foreign_keys_supercolumns, symmetry_supercolumns);
+
+
+  [PhysCol -> PhysCol] implied_subset_superset_relationships(BlockForeignKey foreign_key) {
+    cols_idxs = match (foreign_key.type)
+      unary_unary             = [0 -> 0],
+      unary_binary(i?)        |
+      unary_ternary(i?)       = [0 -> i],
+      binary_unary(i?)        |
+      ternary_unary(i?)       = [i -> 0],
+
+      binary_ternary          |
+      ternary_binary          = [0 -> 0, 1 -> 1],
+
+      sym_ternary_unary_3     = [2 -> 0],
+      unary_sym_ternary_3     = [0 -> 2],
+
+      // Relying on the fact that symmetric columns share the same value store
+      unary_sym_binary        |
+      unary_sym_ternary_12    |
+      sym_binary_unary        |
+      sym_ternary_unary_12    |
+      sym_binary_sym_ternary  |
+      sym_ternary_sym_binary  = [0 -> 0];
+
+    origin = original_rel_var(foreign_key.origin);
+    target = original_rel_var(foreign_key.target);
+
+    return [phys_col(origin, origin_idx) -> phys_col(target, target_idx) : origin_idx target_idx <- cols_idxs];
+  }
+}
+
+
+[+PhysCol] cluster_representatives([+PhysCol] column_cluster, [PhysCol, PhysCol] direct_supercols) {
+  // Coalescing all the cycles in the clusters, so that we end up with a non-cyclical graph
+  cycles = coalesce_cycles(column_cluster, direct_supercols);
+
+  // Mapping each column to the cluster it's part of
+  col_to_cycle_map = [col -> cycle : cycle <- cycles, col <- cycle];
+
+  // Computing the (direct) subcycle/supercycle relation
+  direct_supercycles = [
+    subcycle, supercycle
+    : subcol supercol <- direct_supercols,
+      col_to_cycle_map(subcol, _),
+      col_to_cycle_map(supercol, _),
+      subcycle = col_to_cycle_map(subcol),
+      supercycle = col_to_cycle_map(supercol),
+      subcycle != supercycle
+  ];
+
+  // The root cycles are those that don't have a supercycles
+  root_cycles = [c : c <- cycles, not direct_supercycles(c, _)];
+
+  // Picking a representative for each root cycle
+  root_cycles_reprs = [any(c) : c <- root_cycles];
+
+  // Verifying that among the supercolumns of every column there's at least one representative
+  assert {
+    for c <- column_cluster {
+      supercols = follow([c], direct_supercols);
+      return false if disjoint(supercols, root_cycles_reprs);
+    }
+    return true;
+  };
+
+  return nonempty(root_cycles_reprs);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
