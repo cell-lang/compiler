@@ -13,8 +13,10 @@ CompiledPrg optimize_by_tracking_surrs_membs(CompiledPrg prg) {
 
 
 StaticBlock optimize_static_block_by_tracking_surrs_membs(StaticBlock block) {
-  let cols_subset_map = block.cols_subset_map, value_stores_owners = block.value_stores_owners
+  let cols_subset_map = block.cols_subset_map, value_stores_owners = block.value_stores_owners {
     opt_methods = [id -> optimize_static_block_method_by_tracking_surrs_membs(def) : id def <- block.methods];
+    opt_handlers = [id -> optimize_static_block_handler_by_tracking_surrs_membs(def) : id def <- block.handlers];
+  }
 
   return static_block(
     name:                         block.name,
@@ -34,7 +36,7 @@ StaticBlock optimize_static_block_by_tracking_surrs_membs(StaticBlock block) {
     rel_vars_load_code:           block.rel_vars_load_code,
     foreign_keys_check_code:      block.foreign_keys_check_code,
     methods:                      opt_methods,
-    handlers:                     block.handlers,
+    handlers:                     opt_handlers,
     handler_dispatch_resolver:    block.handler_dispatch_resolver,
     exported_handlers:            block.exported_handlers,
     msg_memb_pred:                block.msg_memb_pred
@@ -56,6 +58,12 @@ implicit cols_subset_map : [PhysCol, PhysCol], value_stores_owners : [ValueStore
       body:             opt_body
     );
 
+  }
+
+
+  CompiledHandler optimize_static_block_handler_by_tracking_surrs_membs(CompiledHandler handler) {
+    opt_body = optimize_by_tracking_surrs_membs(handler.body, [], []);
+    return compiled_handler(handler.msg_type, opt_body);
   }
 
   //////////////////////////////////////////////////////////////////////////////
