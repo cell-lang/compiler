@@ -13,7 +13,7 @@ CompiledPrg optimize_by_tracking_surrs_membs(CompiledPrg prg) {
 
 
 StaticBlock optimize_static_block_by_tracking_surrs_membs(StaticBlock block) {
-  let cols_subset_map = block.cols_subset_map
+  let cols_subset_map = block.cols_subset_map, value_stores_owners = block.value_stores_owners
     opt_methods = [id -> optimize_static_block_method_by_tracking_surrs_membs(def) : id def <- block.methods];
 
   return static_block(
@@ -43,9 +43,9 @@ StaticBlock optimize_static_block_by_tracking_surrs_membs(StaticBlock block) {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-implicit cols_subset_map : [PhysCol, PhysCol] {
+implicit cols_subset_map : [PhysCol, PhysCol], value_stores_owners : [ValueStoreId -> PhysCol] {
   OptCompMethod optimize_static_block_method_by_tracking_surrs_membs(OptCompMethod method) {
-    opt_body = optimize_by_tracking_surrs_membs(method.body, []);
+    opt_body = optimize_by_tracking_surrs_membs(method.body, [], []);
     return opt_comp_method(
       args:             method.args,
       args_types:       method.args_types,
@@ -60,39 +60,128 @@ implicit cols_subset_map : [PhysCol, PhysCol] {
 
   //////////////////////////////////////////////////////////////////////////////
 
-  () optimize_by_tracking_surrs_membs((), [Int32Var, PhysCol]) = ();
+  () optimize_by_tracking_surrs_membs((), [Int32Var, PhysCol], [Int32Var, PhysCol]) = ();
 
-  Instr+ optimize_by_tracking_surrs_membs(Instr+ instrs, [Int32Var, PhysCol] memberships) {
+  Instr+ optimize_by_tracking_surrs_membs(Instr+ instrs, [Int32Var, PhysCol] memberships, [Int32Var, PhysCol] maybe_memberships) {
     curr_membs = memberships;
+    curr_maybe_membs = maybe_memberships;
     opt_instrs = ();
     for instr <- instrs {
-      opt_instr = optimize_by_tracking_surrs_membs(instr, curr_membs);
+      opt_instr = optimize_by_tracking_surrs_membs(instr, curr_membs, curr_maybe_membs);
       opt_instrs = (opt_instrs | opt_instr);
-      curr_membs = match (instr)
-        set_ivar32()  = updated_memberships(instr, curr_membs),
-        _             = curr_membs;
+      curr_membs, curr_maybe_membs = updated_memberships(instr, curr_membs, curr_maybe_membs);
     }
     return nonempty(opt_instrs);
-
-
-    [Int32Var, PhysCol] updated_memberships(<set_ivar32(var: Int32Var, value: Int32Expr)> instr, [Int32Var, PhysCol] memberships) {
-      membs = [v, c : v c <- memberships, v != instr.var];
-      if instr.value :: Int32Var {
-        new_membs = [instr.var, c : c <- memberships(instr.value, ?)];
-        membs = union(membs, new_membs);
-      }
-      return membs;
-    }
   }
-
-
-  JumpInstr optimize_by_tracking_surrs_membs(JumpInstr instr, [Int32Var, PhysCol] memberships) =
-    ret_val(e?)   = ret_val(optimize_by_tracking_surrs_membs(e, memberships)),
-    _             = instr;
 
   //////////////////////////////////////////////////////////////////////////////
 
-  BasicInstr optimize_by_tracking_surrs_membs(BasicInstr instr, [Int32Var, PhysCol] memberships) =
+  ([Int32Var, PhysCol], [Int32Var, PhysCol]) updated_memberships(Instr* instrs, [Int32Var, PhysCol] memberships, [Int32Var, PhysCol] maybe_memberships) {
+    curr_membs = memberships;
+    curr_maybe_membs = maybe_memberships;
+    for instr <- instrs
+      curr_membs, curr_maybe_membs = updated_memberships(instr, curr_membs, curr_maybe_membs);
+    return (curr_membs, curr_maybe_membs);
+  }
+
+
+  ([Int32Var, PhysCol], [Int32Var, PhysCol]) updated_memberships(Instr instr, [Int32Var, PhysCol] memberships, [Int32Var, PhysCol] maybe_memberships) {
+    return match (instr)
+        set_ivar32()  = set_ivar32_updated_memberships(instr.var, instr.value, memberships, maybe_memberships),
+        branch()      = branch_updated_memberships(instr.cond, instr.when_true, instr.when_false, memberships, maybe_memberships),
+        _             = (memberships, maybe_memberships);
+
+
+    ([Int32Var, PhysCol], [Int32Var, PhysCol]) set_ivar32_updated_memberships(Int32Var var, Int32Expr value, [Int32Var, PhysCol] memberships, [Int32Var, PhysCol] maybe_memberships) {
+      membs = [v, c : v c <- memberships, v != var];
+      maybe_membs = [v, c : v c <- maybe_memberships, v != var];
+      if value :: Int32Var and var != value {
+        new_membs = [var, c : c <- memberships(value, ?)];
+        membs = union(membs, new_membs);
+        new_maybe_membs = [var, c : c <- maybe_memberships(value, ?)];
+        maybe_membs = union(maybe_membs, new_maybe_membs);
+      }
+      else {
+        new_maybe_membs = match (value)
+          value_to_surr() = [var -> value_stores_owners(cast_value_store_id(value.store))],
+          _               = [];
+        maybe_membs = union(maybe_membs, new_maybe_membs);
+      }
+      return (membs, maybe_membs);
+    }
+
+
+    ([Int32Var, PhysCol], [Int32Var, PhysCol]) branch_updated_memberships(BoolExpr cond, Instr+ when_true, Instr* when_false, [Int32Var, PhysCol] memberships, [Int32Var, PhysCol] maybe_memberships) {
+      then_branch_entry_membs, then_branch_entry_maybe_membs = updated_memberships_when_true(cond, memberships, maybe_memberships);
+      else_branch_entry_membs, else_branch_entry_maybe_membs = updated_memberships_when_false(cond, memberships, maybe_memberships);
+
+      then_branch_exit_membs, then_branch_exit_maybe_membs = updated_memberships(when_true, then_branch_entry_membs, then_branch_entry_maybe_membs);
+      else_branch_exit_membs, else_branch_exit_maybe_membs = updated_memberships(when_true, else_branch_entry_membs, else_branch_entry_maybe_membs);
+
+      then_branch_outcomes = code_outcomes(when_true);
+      else_branch_outcomes = code_outcomes(when_false);
+
+      if then_branch_outcomes(falls_through)
+        if else_branch_outcomes(falls_through)
+          return merge_memberships(then_branch_exit_membs, then_branch_exit_maybe_membs, else_branch_exit_membs, else_branch_exit_maybe_membs);
+        else
+          return (then_branch_exit_membs, then_branch_exit_maybe_membs);
+      else
+        if else_branch_outcomes(falls_through)
+          return (else_branch_exit_membs, else_branch_exit_maybe_membs);
+        else
+          return ([], []); ## SHOULD I FAIL HERE INSTEAD?
+    }
+
+
+    ([Int32Var, PhysCol], [Int32Var, PhysCol]) updated_memberships_when_true(BoolExpr cond, [Int32Var, PhysCol] memberships, [Int32Var, PhysCol] maybe_memberships) {
+      return (memberships, maybe_memberships);
+    }
+
+
+    ([Int32Var, PhysCol], [Int32Var, PhysCol]) updated_memberships_when_false(BoolExpr cond, [Int32Var, PhysCol] memberships, [Int32Var, PhysCol] maybe_memberships) {
+      return match (cond)
+        are_eq(int_obj(upcast_int32(e?)), int_obj(-1))  = if e :: Int32Var and maybe_memberships(e, _) then
+                                                            ( union(memberships, [e, c : c <- maybe_memberships(e, ?)]),
+                                                              [v, c : v c <- maybe_memberships, v != e]
+                                                            )
+                                                          else (memberships, maybe_memberships),
+        _                                               = (memberships, maybe_memberships);
+    }
+
+    ////////////////////////////////////////////////////////////////////////////
+
+    ([Int32Var, PhysCol], [Int32Var, PhysCol]) merge_memberships([Int32Var, PhysCol] membs_1, [Int32Var, PhysCol] maybe_membs_1, [Int32Var, PhysCol] membs_2, [Int32Var, PhysCol] maybe_membs_2) {
+      membs = ();
+      maybe_membs = ();
+
+      for v c <- membs_1 {
+        if membs_2(v, c)
+          membs = (membs | (v, c));
+        else if maybe_membs_2(v, c)
+          maybe_membs = (maybe_membs | (v, c));
+      }
+
+      for v c <- membs_2
+        if maybe_membs_1(v, c)
+          maybe_membs = (maybe_membs | (v, c));
+
+      for v c <- maybe_membs_1
+        if maybe_membs_2(v, c)
+          maybe_membs = (maybe_membs | (v, c));
+
+      return ([v, c : (v, c) <- membs], [v, c : (v, c) <- maybe_membs]);
+    }
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  JumpInstr optimize_by_tracking_surrs_membs(JumpInstr instr, [Int32Var, PhysCol] memberships, [Int32Var, PhysCol] maybe_memberships) =
+    ret_val(e?)   = ret_val(optimize_by_tracking_surrs_membs(e, memberships)),
+    _             = instr;
+
+
+  BasicInstr optimize_by_tracking_surrs_membs(BasicInstr instr, [Int32Var, PhysCol] memberships, [Int32Var, PhysCol] maybe_memberships) =
     rewrite_exprs(instr, optimize_by_tracking_surrs_membs($, memberships), rewrite_nested($, optimize_by_tracking_surrs_membs($, memberships)));
 
 
@@ -113,40 +202,40 @@ implicit cols_subset_map : [PhysCol, PhysCol] {
   }
 
 
-  CompInstr optimize_by_tracking_surrs_membs(CompInstr instr, [Int32Var, PhysCol] memberships) {
+  CompInstr optimize_by_tracking_surrs_membs(CompInstr instr, [Int32Var, PhysCol] memberships, [Int32Var, PhysCol] maybe_memberships) {
     return match (instr)
-      branch()            = optimized_branch(instr.cond, instr.when_true, instr.when_false, memberships),
-      switch_on_nat()     = optimized_switch_on_nat(instr.value, instr.cases, memberships),
-      symb_switch()       = optimized_symb_switch(instr.value, instr.cases, instr.else, memberships),
-      repeat(is?)         = repeat(optimize_by_tracking_surrs_membs(is, memberships)),
-      execute_block(is?)  = execute_block(optimize_by_tracking_surrs_membs(is, memberships)),
+      branch()            = optimized_branch(instr.cond, instr.when_true, instr.when_false, memberships, maybe_memberships),
+      switch_on_nat()     = optimized_switch_on_nat(instr.value, instr.cases, memberships, maybe_memberships),
+      symb_switch()       = optimized_symb_switch(instr.value, instr.cases, instr.else, memberships, maybe_memberships),
+      repeat(is?)         = repeat(optimize_by_tracking_surrs_membs(is, memberships, maybe_memberships)),
+      execute_block(is?)  = execute_block(optimize_by_tracking_surrs_membs(is, memberships, maybe_memberships)),
       try_block()         = instr,
-      foreach()           = optimized_foreach(instr.iter, instr.body, memberships);
+      foreach()           = optimized_foreach(instr.iter, instr.body, memberships, maybe_memberships);
 
 
-    CompInstr optimized_branch(BoolExpr cond, Instr+ when_true, Instr* when_false, [Int32Var, PhysCol] memberships) {
+    CompInstr optimized_branch(BoolExpr cond, Instr+ when_true, Instr* when_false, [Int32Var, PhysCol] memberships, [Int32Var, PhysCol] maybe_memberships) {
       opt_cond = cast_bool_expr(optimize_by_tracking_surrs_membs(cond, memberships));
-      opt_then_branch = optimize_by_tracking_surrs_membs(when_true, memberships);
-      opt_else_branch = optimize_by_tracking_surrs_membs(when_false, memberships);
+      opt_then_branch = optimize_by_tracking_surrs_membs(when_true, memberships, maybe_memberships);
+      opt_else_branch = optimize_by_tracking_surrs_membs(when_false, memberships, maybe_memberships);
       return branch(opt_cond, opt_then_branch, opt_else_branch);
     }
 
 
-    CompInstr optimized_switch_on_nat(IntExpr value, Instr*+ cases, [Int32Var, PhysCol] memberships) {
-      opt_cases = (optimize_by_tracking_surrs_membs(c, memberships) : c <- cases);
+    CompInstr optimized_switch_on_nat(IntExpr value, Instr*+ cases, [Int32Var, PhysCol] memberships, [Int32Var, PhysCol] maybe_memberships) {
+      opt_cases = (optimize_by_tracking_surrs_membs(c, memberships, maybe_memberships) : c <- cases);
       return switch_on_nat(value, opt_cases);
     }
 
 
-    CompInstr optimized_symb_switch(ObjExpr value, [+([+SymbObj], Instr+)] cases, Instr* else, [Int32Var, PhysCol] memberships) {
-      opt_cases = [(c(0), optimize_by_tracking_surrs_membs(c(1), memberships)) : c <- cases];
-      opt_else = optimize_by_tracking_surrs_membs(else, memberships);
+    CompInstr optimized_symb_switch(ObjExpr value, [+([+SymbObj], Instr+)] cases, Instr* else, [Int32Var, PhysCol] memberships, [Int32Var, PhysCol] maybe_memberships) {
+      opt_cases = [(c(0), optimize_by_tracking_surrs_membs(c(1), memberships, maybe_memberships)) : c <- cases];
+      opt_else = optimize_by_tracking_surrs_membs(else, memberships, maybe_memberships);
       return symb_switch(value, opt_cases, else);
     }
 
-    CompInstr optimized_foreach(ForeachIter iter, Instr* body, [Int32Var, PhysCol] memberships) {
+    CompInstr optimized_foreach(ForeachIter iter, Instr* body, [Int32Var, PhysCol] memberships, [Int32Var, PhysCol] maybe_memberships) {
       body_memberships = updated_memberships(iter, memberships);
-      opt_body = optimize_by_tracking_surrs_membs(body, body_memberships);
+      opt_body = optimize_by_tracking_surrs_membs(body, body_memberships, maybe_memberships);
       return foreach(iter, opt_body);
     }
 
