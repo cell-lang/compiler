@@ -1,3 +1,5 @@
+LowLevelRepr tuple(TupleArgRepr+ as) = :tuple(as);
+
 OptTagRecRepr opt_tag_rec_repr(Symbol t, Nat i) = opt_tag_rec_repr(tag: t, index: i);
 
 LocVar lvar(Nat n)      = :lvar(n);
@@ -62,6 +64,8 @@ MembIntVar nested_auto_int_var(NestedAutoVar av, MembIntVar mv) = nested_auto_in
 LocFloatVar fvar(<Symbol, Nat> id)  = :fvar(id);
 FloatFnArg  float_arg(Nat id)       = :float_arg(id);
 LocFloatVar float_arg(Symbol id)    = :fvar(id);
+
+TupleVar tuple_var(Nat id, TupleArgRepr+ r) = tuple_var(id: id, repr: r);
 
 LocOptTagRecVar opt_tag_rec_var(<Symbol, Nat> id, Symbol s, Nat i) = opt_tag_rec_var(id: id, tag: s, index: i);
 
@@ -197,6 +201,7 @@ ObjExpr obj_expr(BoolExpr  expr)                = bool_obj(expr);
 ObjExpr obj_expr(IntExpr   expr)                = int_obj(expr);
 ObjExpr obj_expr(<Int32Var, Int32NatOp>  expr)  = int_obj(upcast_int32(expr));
 ObjExpr obj_expr(FloatExpr expr)                = float_obj(expr);
+ObjExpr obj_expr(LowLevelTupleExpr expr)        = tuple_to_obj(expr);
 ObjExpr obj_expr(ObjExpr   expr)                = expr;
 
 
@@ -218,6 +223,11 @@ ObjExpr int_obj(<Int32Var, Int32NatOp> expr) = int_obj(upcast_int32(expr));
 ObjExpr float_obj(FloatExpr expr) =
   float_value(e?) = e,
   _               = :float_obj(expr);
+
+
+ObjExpr tuple_to_obj(LowLevelTupleExpr expr) =
+  obj_to_tuple()  = expr.obj_expr,
+  _               = :tuple_to_obj(expr);
 
 
 ObjNatOp at(ObjExpr s, IntExpr i, LowLevelEltRepr r)                    = at(seq: s, idx: i, fast_repr: r);
@@ -258,6 +268,20 @@ BoolExpr or_else(BoolExpr+ es)  = if |es| != 1 then :or_else(es)  else only(es);
 
 BoolExpr and([+BoolExpr] es)  = and(rand_sort(es));
 BoolExpr or([+BoolExpr] es)   = or(rand_sort(es));
+
+LowLevelTupleExpr low_level_tuple_expr(TupleArgExpr+ args) =
+  :tuple_expr((
+    match (a)
+      int_obj(e?)     |
+      float_obj(e?)   = e,
+      _               = a
+    : a <- args
+  ));
+
+LowLevelTupleExpr obj_to_tuple(TupleArgRepr+ as, ObjExpr e) =
+  match (e)
+    tuple_to_obj(t?)  = t, ## SHOULD MAYBE ASSERT THE TYPE OF t IS as
+    _                 = obj_to_tuple(args_reprs: as, obj_expr: e);
 
 OptTagRecExpr cast_opt_tag_rec(Symbol s, Nat i, ObjExpr e) = cast_opt_tag_rec(tag: s, index: i, expr: e);
 
@@ -431,6 +455,7 @@ BasicInstr set_ivar(IntVar v, IntExpr e)                = set_ivar(var: v, value
 BasicInstr set_ivar(IntVar v, <Int32Var, Int32NatOp> e) = set_ivar(var: v, value: upcast_int32(e));
 BasicInstr set_ivar32(Int32Var v, Int32Expr e)          = set_ivar32(var: v, value: e);
 BasicInstr set_fvar(FloatVar v, FloatExpr e)            = set_fvar(var: v, value: e);
+BasicInstr set_tvar(TupleVar v, LowLevelTupleExpr e)    = set_tvar(var: v, value: e);
 
 BasicInstr set_var(<WriteObjVar, LocOptTagRecVar> v, RefObjExpr e)  = set_rc_var(var: v, value: e);
 

@@ -127,6 +127,10 @@ Instr surr_to_decoded_value(FloatVar var, AnyValueStoreId store_id, ValueStoreTy
     mono_tagged_integer() = undefined;
 
 
+Instr surr_to_decoded_value(TupleVar var, AnyValueStoreId store_id, ValueStoreType store_type, Int32Var surr) =
+  undefined; ## IMPLEMENT IMPLEMENT IMPLEMENT
+
+
 Instr surr_to_decoded_value(BoolVar var, AnyValueStoreId store_id, ValueStoreType store_type, Int32Var surr) =
   match (store_type)
     object                = set_bvar(var, bool_value(surr_to_value(store_id, store_type, surr))),
@@ -143,7 +147,7 @@ Instr surr_to_decoded_value(LocOptTagRecVar var, AnyValueStoreId store_id, Value
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-type GenVarType = obj, int, int32, float, bool, array, tag_rec,
+type GenVarType = obj, int, int32, float, bool, tuple, array, tag_rec,
                   set_it, seq_it, bin_rel_it, tern_rel_it, table_it,
                   column_it, slave_column_it, stream, vector;
 
@@ -176,6 +180,8 @@ VarGen blank_var_gen = counter_set(nz_ctrs: []);
 (VecVar,     VarGen) next_vector_var(VarGen gen, NzNat size)          = next_var(gen, :vector, vvar($, size));
 (ArrayVar,   VarGen) next_array_var(VarGen gen, LowLevelEltRepr repr) = next_var(gen, :array, avar($, repr));
 (ArrayVar,   VarGen) next_array_var(VarGen gen, OptTagRecRepr repr)   = next_var(gen, :array, avar($, :object));
+
+(TupleVar, VarGen) next_tuple_var(VarGen gen, TupleArgRepr+ args_reprs) = next_var(gen, :tuple, tuple_var($, args_reprs));
 
 (LocOptTagRecVar, VarGen) next_opt_tag_rec_var(VarGen gen, Symbol tag, Nat idx)  = next_var(gen, :tag_rec, opt_tag_rec_var($, tag, idx));
 

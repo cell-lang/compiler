@@ -1,5 +1,6 @@
 LowLevelRepr+ atomic_low_level_reprs = (:bool, :int, :float);
 
+
 // LowLevelEltRepr* atomic_low_level_elt_reprs = (:bool, :int, :float);
 LowLevelEltRepr+ atomic_low_level_elt_reprs = (:bool, :nat8, :int8, :int16, :int32, :int, :float);
 
@@ -21,11 +22,16 @@ NeType low_level_repr_type(SmallIntRepr) =
   // nat32   = type_nat32,
 
 
-LowLevelRepr low_level_repr(BoolExpr)                         = :bool;
-LowLevelRepr low_level_repr(<IntExpr, Int32Var, Int32NatOp>)  = :int;
-LowLevelRepr low_level_repr(FloatExpr)                        = :float;
+<bool>  low_level_repr(BoolExpr)                         = :bool;
+<int>   low_level_repr(<IntExpr, Int32Var, Int32NatOp>)  = :int;
+<float> low_level_repr(FloatExpr)                        = :float;
 
-LowLevelRepr low_level_repr(<InlineObj, StdObjVar, ObjNatOp>) = :object;
+LowLevelRepr low_level_repr(LowLevelTupleExpr expr) =
+  tuple_var()     = tuple(expr.repr),
+  tuple_expr(as?) = tuple((low_level_repr(a) : a <- as)),
+  obj_to_tuple()  = tuple(expr.args_reprs);
+
+<object> low_level_repr(<InlineObj, StdObjVar, ObjNatOp>) = :object;
 
 OptTagRecRepr low_level_repr(OptTagRecExpr expr) = opt_tag_rec_repr(expr.tag, expr.index);
 
@@ -103,11 +109,12 @@ ObjProcArg low_level_arg(<StdVar, FnArg> var, AnyLowLevelRepr repr) {
 
 
 AnyTypeExpr low_level_expr(LowLevelRepr repr, ObjExpr expr) =
-  bool      = bool_value(expr),
-  int       = get_int_val(expr),
-  symbol    = expr, ## TEMPORARY TEMPORARY TEMPORARY
-  float     = float_value(expr),
-  object    = expr;
+  bool        = bool_value(expr),
+  int         = get_int_val(expr),
+  symbol      = expr, ## TEMPORARY TEMPORARY TEMPORARY
+  float       = float_value(expr),
+  tuple(as?)  = obj_to_tuple(as, expr),
+  object      = expr;
 
 
 AnyTypeExpr low_level_expr(SmallIntRepr repr, ObjExpr expr) =
@@ -138,6 +145,23 @@ implicit typedefs : [TypeName -> NeType] {
 
 
 implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptions {
+  AnyLowLevelRepr ret_val_opt_repr(NeType type) {
+    maybe_args_types = maybe_tuple_type_fields(type);
+    if maybe_args_types != nothing {
+      args_types = value(maybe_args_types);
+      if |args_types| <= 4 {
+        args_reprs = ({
+          for r <- (:int, :float)
+            return r if is_subset(t, low_level_repr_type(r));
+          return :object;
+        } : t <- args_types);
+        return tuple(args_reprs);
+      }
+    }
+    return opt_repr(type);
+  }
+
+
   AnyLowLevelRepr opt_repr(NeType type) {
     for r <- atomic_low_level_reprs
       return r if is_subset_wrapper_1(type, low_level_repr_type(r));
@@ -199,7 +223,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
   LowLevelSign low_level_sign(Function fn) =
     low_level_sign(
       args:       (opt_repr(t) : _, t <- fn.args),
-      ret_value:  opt_repr(fn.res_type)
+      ret_value:  ret_val_opt_repr(fn.res_type)
     );
 
 
@@ -253,5 +277,3 @@ implicit program : Program, typedefs : [TypeName -> NeType], options : CompOptio
     ];
   }
 }
-
-

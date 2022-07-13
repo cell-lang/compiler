@@ -97,6 +97,13 @@
 
 ////////////////////////////////////////////////////////////////////////////////
 
+[T] search_any_nested(LowLevelTupleExpr expr, (AnyTypeExpr -> [T]) search) =
+  tuple_var()     = [],
+  tuple_expr(as?) = seq_union((search(a) : a <- as)),
+  obj_to_tuple()  = search(expr.obj_expr);
+
+////////////////////////////////////////////////////////////////////////////////
+
 [T] search_any_nested(<InlineObj, StdObjVar> expr, (AnyTypeExpr -> [T]) search) = [];
 
 
@@ -109,7 +116,8 @@
   get_inner_obj(e?)     |
   bool_obj(e?)          |
   int_obj(e?)           |
-  float_obj(e?)         = search(e),
+  float_obj(e?)         |
+  tuple_to_obj(e?)      = search(e),
   get_curr_obj()        = [],
   get_curr_arg()        = [],
   get_curr_arg()        = [],
@@ -188,7 +196,8 @@
   set_bvar()                |
   set_ivar()                |
   set_ivar32()              |
-  set_fvar()                = search(instr.value),
+  set_fvar()                |
+  set_tvar()                = search(instr.value),
   set_rc_var()              = search_any_nested(instr.value, search),
   init_memb_var()           = [],
   reset_memb_var()          = [],

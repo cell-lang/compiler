@@ -1,8 +1,10 @@
 type SmallIntRepr     = int8, int16, int32, nat8; //, nat16, nat32;
 
-type LowLevelRepr     = bool, int, symbol, float, object, array(type: LowLevelEltRepr);
+type TupleArgRepr     = int, float, object, OptTagRecRepr;
 
-type LowLevelEltRepr  = LowLevelRepr, SmallIntRepr;
+type LowLevelRepr     = bool, int, symbol, float, object, tuple(TupleArgRepr+), array(type: LowLevelEltRepr);
+
+type LowLevelEltRepr  = LowLevelRepr, SmallIntRepr; ## BUG BUG BUG: SHOULD tuple(..) BELONG HERE? AND WHAT ABOUT array(..)?
 
 type OptRecRepr       = opt_rec_repr([+Symbol -> (repr: LowLevelRepr, optional: Bool)]);
 
@@ -96,13 +98,15 @@ type LocFloatVar    = fvar(<Symbol, Nat>);
 type FloatFnArg     = float_arg(Nat);
 type FloatVar       = LocFloatVar, FloatFnArg;
 
+type TupleVar       = tuple_var(id: Nat, repr: TupleArgRepr+); ## RENAME repr INTO reprs OR args_reprs
+
 type LocOptTagRecVar  = opt_tag_rec_var(id: <Symbol, Nat>, tag: Symbol, index: Nat);
 type OptTagRecFnArg   = opt_tag_rec_fn_arg(id: Nat, tag: Symbol, index: Nat);
 type OptTagRecVar     = LocOptTagRecVar, OptTagRecFnArg;
 
 type ArrayVar       = avar(id: Nat, repr: LowLevelEltRepr), shadow_array_var(id: Symbol, repr: LowLevelEltRepr);
 
-type AnyWriteVar    = LocBoolVar, LocIntVar, FloatVar, LocOptTagRecVar, WriteObjVar;
+type AnyWriteVar    = LocBoolVar, LocIntVar, FloatVar, TupleVar, LocOptTagRecVar, WriteObjVar;
 
 type StreamVar      = svar(Nat);
 
@@ -114,9 +118,9 @@ type TernRelItVar   = tern_rel_it_var(Nat);
 type ItVar          = SeqItVar, SetItVar, BinRelItVar, TernRelItVar;
 
 type AnyVar         = ObjVar, OptTagRecVar, VecVar, ArrayVar, BoolVar, IntVar,
-                      Int32Var, FloatVar, ItVar, StreamVar;
+                      Int32Var, FloatVar, TupleVar, ItVar, StreamVar;
 
-type AnyLocVar      = LocBoolVar, LocIntVar, LocFloatVar, LocOptTagRecVar, LocVar, StdVar;
+type AnyLocVar      = LocBoolVar, LocIntVar, LocFloatVar, TupleVar, LocOptTagRecVar, LocVar, StdVar;
 
 type TableVar       = table_var(PhysRelVar);
 type QualTableVar   = qual_table_var(db_var: AnyDBVar, table_var: TableVar);
@@ -214,6 +218,7 @@ type ObjNatOp       = at(seq: ObjExpr, idx: IntExpr, fast_repr: LowLevelEltRepr)
                       bool_obj(BoolExpr),
                       int_obj(IntExpr),
                       float_obj(FloatExpr),
+                      tuple_to_obj(LowLevelTupleExpr),
                       get_curr_obj(<SetItVar, SeqItVar>),
                       get_curr_arg(var: BinRelItVar,  arg: <0..1>),
                       get_curr_arg(var: TernRelItVar, arg: <0..2>),
@@ -230,6 +235,9 @@ type CompositeBoolExpr = neg(BoolExpr),
                          and_then(BoolExpr+),
                          or_else(BoolExpr+);
 
+type TupleArgExpr   = IntExpr, FloatExpr, ObjExpr;
+type LowLevelTupleExpr  = TupleVar, tuple_expr(TupleArgExpr+), obj_to_tuple(args_reprs: TupleArgRepr+, obj_expr: ObjExpr);
+
 type BoolExpr       = AtomicBoolExpr, BoolNatOp, BoolFnCall, CompositeBoolExpr;
 
 type IntExpr        = Int, IntConst, IntVar, IntNatOp;
@@ -244,7 +252,7 @@ type ObjExpr        = InlineObj, StdObjVar, ObjNatOp, OptTagRecExpr;
 
 type AtomicExpr     = ObjExpr;
 
-type AnyTypeExpr    = BoolExpr, IntExpr, Int32Expr, FloatExpr, ObjExpr;
+type AnyTypeExpr    = BoolExpr, IntExpr, Int32Expr, FloatExpr, LowLevelTupleExpr, ObjExpr;
 
 type RefObjExpr     = mk_set_from_stream(stream: StreamVar),
                       mk_set(elems: VecVar, size: IntExpr),
@@ -309,6 +317,7 @@ type BasicInstr     = init_stream(StreamVar),
                       set_ivar(var: IntVar, value: IntExpr),
                       set_ivar32(var: Int32Var, value: Int32Expr),
                       set_fvar(var: FloatVar, value: FloatExpr),
+                      set_tvar(var: TupleVar, value: LowLevelTupleExpr),
 
                       set_rc_var(var: <WriteObjVar, LocOptTagRecVar>, value: RefObjExpr),
 

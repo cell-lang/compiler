@@ -1364,14 +1364,30 @@ implicit program           : Program,
     conds = (e.cond : e <- elts, is_cond_expr(e));
     if conds == () {
       // Easy case, no conditional inclusions
-      code = (array_alloc(elts_var, int32(|elts|)));
-      for e @ i <- elts {
-        fail if is_cond_expr(e); ## ANY BETTER WAY TO DO THIS?
-        fail if not i :: Int32;
-        elt_eval_code, elt_surr, _ = opt_eval_info(e, var_gen);
-        code = code & (elt_eval_code | array_write(elts_var, i, elt_surr));
+      if |elts| > 1 and |elts| <= 4 {
+        // Here we use a tuple expr
+        code = ();
+        elts_aliases = ();
+        for e @ i <- elts {
+          fail if is_cond_expr(e); ## ANY BETTER WAY TO DO THIS?
+          fail if not i :: Int32;
+          elt_eval_code, elt_alias, _ = opt_eval_info(e, var_gen);
+          code = code & elt_eval_code;
+          elts_aliases = (elts_aliases | elt_alias);
+        }
+        code = (code | set_any_var(seq_var, tuple_to_obj(low_level_tuple_expr(nonempty(elts_aliases)))));
+        return (code, seq_var, ret_var_gen);
       }
-      return ((code | mk_seq(seq_var, elts_var, int32(|elts|))), seq_var, ret_var_gen);
+      else {
+        code = (array_alloc(elts_var, int32(|elts|)));
+        for e @ i <- elts {
+          fail if is_cond_expr(e); ## ANY BETTER WAY TO DO THIS?
+          fail if not i :: Int32;
+          elt_eval_code, elt_surr, _ = opt_eval_info(e, var_gen);
+          code = code & (elt_eval_code | array_write(elts_var, i, elt_surr));
+        }
+        return ((code | mk_seq(seq_var, elts_var, int32(|elts|))), seq_var, ret_var_gen);
+      }
     }
 
     // Evaluating conditions and final array size
@@ -1950,6 +1966,8 @@ Instr+ store_result(Instr* code, ObjExpr surr_expr, AnyLocVar res_var) {
                         then (trimmed_code | set_any_var(res_var, obj_expr(i.value)))
                         else def_code,
 
+    set_tvar()      = undefined, ## IMPLEMENT IMPLEMENT IMPLEMENT
+
     call_proc()  i? = if i.var? and i.var :: AnyLocVar and surr_expr == obj_expr(i.var)
                                 and low_level_repr(i.var) == low_level_repr(res_var)
                         then (trimmed_code | call_proc(res_var, i.name, i.args, i.cls_args))
@@ -1962,11 +1980,12 @@ Instr+ store_result(Instr* code, ObjExpr surr_expr, AnyLocVar res_var) {
 ////////////////////////////////////////////////////////////////////////////////
 
 (AnyLocVar, VarGen) next_var(LowLevelRepr repr, VarGen gen) =
-  bool    = next_bool_var(gen),
-  int     = next_int_var(gen),
-  float   = next_float_var(gen),
-  symbol  |
-  object  = next_obj_var(gen);
+  bool        = next_bool_var(gen),
+  int         = next_int_var(gen),
+  float       = next_float_var(gen),
+  tuple(as?)  = next_tuple_var(gen, as),
+  symbol      |
+  object      = next_obj_var(gen);
 
 (LocOptTagRecVar, VarGen) next_var(OptTagRecRepr repr, VarGen gen) =
   next_opt_tag_rec_var(gen, repr.tag, repr.index);
@@ -1976,12 +1995,16 @@ Instr fake_init_var(LocBoolVar  var) = set_bvar(var, false);
 Instr fake_init_var(LocIntVar   var) = set_ivar(var, 0);
 Instr fake_init_var(LocFloatVar var) = set_fvar(var, float_lit((0), false, 0));
 
+Instr fake_init_var(TupleVar var) = undefined; ## IMPLEMENT IMPLEMENT IMPLEMENT
+
 Instr fake_init_var(StdVar var) = undefined;
+
 Instr fake_init_var(<LocVar, LocOptTagRecVar> var) = nullify_var(var);
 
 
 Instr set_any_var(LocBoolVar  var, ObjExpr expr) = set_bvar(var, bool_value(expr));
 Instr set_any_var(LocIntVar   var, ObjExpr expr) = set_ivar(var, get_int_val(expr));
 Instr set_any_var(LocFloatVar var, ObjExpr expr) = set_fvar(var, float_value(expr));
+Instr set_any_var(TupleVar    var, ObjExpr expr) = set_tvar(var, obj_to_tuple(var.repr, expr));
 Instr set_any_var(WriteObjVar var, ObjExpr expr) = set_var(var, expr);
 Instr set_any_var(LocOptTagRecVar var, ObjExpr expr) = set_var(var, expr);

@@ -1,32 +1,38 @@
 BoolExpr cast_bool_expr(BoolExpr e) = e;
-BoolExpr cast_bool_expr(<IntExpr, Int32Expr, FloatExpr, ObjExpr>) = undefined;
+BoolExpr cast_bool_expr(<IntExpr, Int32Expr, FloatExpr, LowLevelTupleExpr, ObjExpr>) = undefined;
 
 BoolVar cast_bool_var(AnyTypeExpr e) = if e :: BoolVar then e else undefined;
 
 IntExpr cast_int_expr(IntExpr e) = e;
-IntExpr cast_int_expr(<BoolExpr, Int32Var, Int32NatOp, FloatExpr, ObjExpr>) = undefined;
+IntExpr cast_int_expr(<BoolExpr, Int32Var, Int32NatOp, FloatExpr, LowLevelTupleExpr, ObjExpr>) = undefined;
 
 FloatExpr cast_float_expr(FloatExpr e) = e;
-FloatExpr cast_float_expr(<BoolExpr, IntExpr, Int32Expr, ObjExpr>) = undefined;
+FloatExpr cast_float_expr(<BoolExpr, IntExpr, Int32Expr, LowLevelTupleExpr, ObjExpr>) = undefined;
+
+TupleArgExpr cast_tuple_arg_expr(<IntExpr, FloatExpr, ObjExpr> e) = e;
+TupleArgExpr cast_tuple_arg_expr(<BoolExpr, Int32Var, Int32NatOp, LowLevelTupleExpr>) = undefined;
+
+LowLevelTupleExpr cast_low_level_tuple_expr(LowLevelTupleExpr e) = e;
+LowLevelTupleExpr cast_low_level_tuple_expr(<BoolExpr, IntExpr, Int32Expr, FloatExpr, ObjExpr>) = undefined;
 
 ObjExpr cast_obj_expr(ObjExpr e) = e;
-ObjExpr cast_obj_expr(<BoolExpr, IntExpr, Int32Expr, FloatExpr>) = undefined;
+ObjExpr cast_obj_expr(<BoolExpr, IntExpr, Int32Expr, FloatExpr, LowLevelTupleExpr>) = undefined;
 
 Int32Expr cast_int32_expr(<Int32Var, Int32NatOp> e) = e;
 Int32Expr cast_int32_expr(Int n) = if n :: Int32 then n else undefined;
-Int32Expr cast_int32_expr(<BoolExpr, IntConst, IntVar, IntNatOp, FloatExpr, ObjExpr>) = undefined;
+Int32Expr cast_int32_expr(<BoolExpr, IntConst, IntVar, IntNatOp, FloatExpr, LowLevelTupleExpr, ObjExpr>) = undefined;
 
 IntVar cast_int_var(IntVar v) = v;
-IntVar cast_int_var(<BoolExpr, Int, IntConst, IntNatOp, Int32Expr, FloatExpr, ObjExpr>) = undefined;
+IntVar cast_int_var(<BoolExpr, Int, IntConst, IntNatOp, Int32Expr, FloatExpr, LowLevelTupleExpr, ObjExpr>) = undefined;
 
 Int32Var cast_int32_var(Int32Var v) = v;
-Int32Var cast_int32_var(<BoolExpr, IntExpr, Int32, Int32NatOp, FloatExpr, ObjExpr>) = undefined;
+Int32Var cast_int32_var(<BoolExpr, IntExpr, Int32, Int32NatOp, FloatExpr, LowLevelTupleExpr, ObjExpr>) = undefined;
 
 <Int32Var, Int32NatOp> cast_int32_var_or_nat_op(<Int32Var, Int32NatOp> v) = v;
-<Int32Var, Int32NatOp> cast_int32_var_or_nat_op(<BoolExpr, IntExpr, Int32, FloatExpr, ObjExpr>) = undefined;
+<Int32Var, Int32NatOp> cast_int32_var_or_nat_op(<BoolExpr, IntExpr, Int32, FloatExpr, LowLevelTupleExpr, ObjExpr>) = undefined;
 
 <IntExpr, ObjExpr> cast_int_or_obj_expr(<IntExpr, ObjExpr> e) = e;
-<IntExpr, ObjExpr> cast_int_or_obj_expr(<BoolExpr, Int32Var, Int32NatOp, FloatExpr>) = undefined;
+<IntExpr, ObjExpr> cast_int_or_obj_expr(<BoolExpr, Int32Var, Int32NatOp, FloatExpr, LowLevelTupleExpr>) = undefined;
 
 <StdVar, LocVar> cast_loc_or_std_var(AnyTypeExpr expr) = if expr :: <StdVar, LocVar> then expr else undefined;
 
@@ -143,6 +149,13 @@ FloatExpr rewrite_nested(FloatNatOp expr, (AnyTypeExpr -> AnyTypeExpr) rewrite) 
 
 ////////////////////////////////////////////////////////////////////////////////
 
+LowLevelTupleExpr rewrite_nested(LowLevelTupleExpr expr, (AnyTypeExpr -> AnyTypeExpr) rewrite) =
+  tuple_var()     = expr,
+  tuple_expr(as?) = low_level_tuple_expr((cast_tuple_arg_expr(rewrite(a)) : a <- as)),
+  obj_to_tuple()  = obj_to_tuple(expr.args_reprs, cast_obj_expr(rewrite(expr.obj_expr)));
+
+////////////////////////////////////////////////////////////////////////////////
+
 ObjExpr rewrite_nested(<InlineObj, StdObjVar> expr, (AnyTypeExpr -> AnyTypeExpr) rewrite) =
   expr;
 
@@ -157,6 +170,7 @@ ObjExpr rewrite_nested(ObjNatOp expr, (AnyTypeExpr -> AnyTypeExpr) rewrite) =
   bool_obj(e?)          = bool_obj(cast_bool_expr(rewrite(e))),
   int_obj(e?)           = int_obj(cast_int_expr(rewrite(e))),
   float_obj(e?)         = float_obj(cast_float_expr(rewrite(e))),
+  tuple_to_obj(e?)      = tuple_to_obj(cast_low_level_tuple_expr(rewrite(e))),
   get_curr_obj()        = expr,
   get_curr_arg()        = expr,
   get_curr_arg()        = expr,
@@ -245,6 +259,7 @@ BasicInstr rewrite_exprs(BasicInstr instr, (AnyTypeExpr -> AnyTypeExpr) rewrite,
   set_ivar()                = set_ivar(instr.var, cast_int_expr(rewrite(instr.value))),
   set_ivar32()              = set_ivar32(instr.var, cast_int32_expr(rewrite(instr.value))),
   set_fvar()                = set_fvar(instr.var, cast_float_expr(rewrite(instr.value))),
+  set_tvar()                = set_tvar(instr.var, cast_low_level_tuple_expr(rewrite(instr.value))),
   set_rc_var()              = set_var(instr.var, rewrite_ref(instr.value)),
   init_memb_var()           = instr,
   reset_memb_var()          = instr,
