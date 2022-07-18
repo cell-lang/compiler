@@ -111,7 +111,10 @@ implicit cols_subset_map : [PhysCol, PhysCol], value_stores_owners : [ValueStore
       }
       else {
         new_maybe_membs = match (value)
-          value_to_surr() = [var -> value_stores_owners(cast_value_store_id(value.store))],
+          ## TODO TODO TODO: EXTEND THE TRACKING TO DEPENDEE'S VALUE STORES
+          // value_to_surr() = [var -> value_stores_owners(value.store) if is_value_store_id(value.store)],
+          ## BAD BAD BAD: IMPROVE THE TYPE INFERENCE SO THAT THE ABOVE LINE OF CODE IS ACCEPTED
+          value_to_surr() = {store = value.store; return [var -> value_stores_owners(store) if is_value_store_id(store)];},
           _               = [];
         maybe_membs = union(maybe_membs, new_maybe_membs);
       }
