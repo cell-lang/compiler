@@ -106,9 +106,13 @@ type PropAtomicExpr   = StdVar, LocVar,
 
 type PropExpr         = PropAtomicExpr, mk_tagged_obj(tag: SymbObj, obj: PropAtomicExpr);
 
-type PropInt32Expr      = value_to_surr(store: AnyValueStoreId, store_type: ValueStoreType, value: <PropAtomicExpr, PropIntExpr>);
-type PropInt32QuasiExpr = value_to_ex_surr(store: ValueStoreId, value: <PropExpr, PropIntExpr>);
-type AnyPropInt32Expr   = PropInt32Expr, PropInt32QuasiExpr;
+type PropInt32Expr      = value_to_surr(store: AnyValueStoreId, store_type: ValueStoreType, value: <PropAtomicExpr, PropIntExpr>),
+                          get_assoc_surr(table_var: AnyTableVar, table_type: MasterBinTable, args: (Int32Var, Int32Var));
+
+type PropInt32QuasiExpr = value_to_ex_surr(store: ValueStoreId, value: <PropExpr, PropIntExpr>),
+                          ex_assoc_surr(table_var: TableVar, tuple: (Int32Var, Int32Var));
+
+type AnyPropInt32Expr   = Int32Var, PropInt32Expr, PropInt32QuasiExpr;
 
 type PropInfo = prop_info(
                   values: [DependantVar -> PropExpr],
@@ -133,15 +137,8 @@ PropInfo add_dependency(PropInfo info, DependantVar var, PropExpr expr) {
   return prop_info(values: values, ints32: cleared_info.ints32);
 }
 
-PropInfo add_dependency(PropInfo info, Int32Var var, PropInt32Expr expr) {
+PropInfo add_dependency(PropInfo info, Int32Var var, AnyPropInt32Expr quasi_expr) {
   cleared_info = clear_dependants(info, var);
-  ints32 = [v -> e : v e <- cleared_info.ints32 | v e <- [var -> expr]];
-  return prop_info(values: cleared_info.values, ints32: ints32);
-}
-
-PropInfo add_dependency(PropInfo info, Int32Var var, ValueStoreId store, <PropExpr, PropIntExpr> value) {
-  cleared_info = clear_dependants(info, var);
-  quasi_expr = value_to_ex_surr(store: store, value: value);
   ints32 = [v -> e : v e <- cleared_info.ints32 | v e <- [var -> quasi_expr]];
   return prop_info(values: cleared_info.values, ints32: ints32);
 }
@@ -163,10 +160,59 @@ PropExpr lookup(PropInfo info, DependantVar var, PropAtomicExpr default) {
   return default;
 }
 
+
+Maybe[Int32Var] lookup_ex_surr_of(PropInfo info, ValueStoreId store, <PropExpr, PropIntExpr> value) {
+  pseudo_expr = value_to_ex_surr(store: store, value: value);
+  vars = [v : v <- info.ints32(?, pseudo_expr)];
+  if vars != [] {
+    first_var = only(min_by(vars, match ($) ivar32(n?) = n));
+    return just(first_var);
+  }
+  else
+    return nothing;
+}
+
 Bool is_ex_surr_of(Int32Var var, ValueStoreId store, <PropExpr, PropIntExpr> value, PropInfo info) {
   if info.ints32(var, _) {
     pseudo_expr = info.ints32(var);
-    return pseudo_expr.store == store and pseudo_expr.value == value;
+    return match (pseudo_expr)
+      value_to_surr()     |
+      value_to_ex_surr()  = pseudo_expr.store == store and pseudo_expr.value == value,
+      get_assoc_surr()    |
+      ex_assoc_surr()     = false;
+  }
+  else {
+    return false;
+  }
+}
+
+Int32Var root_var(PropInfo info, Int32Var var) {
+  curr_var = var;
+  loop {
+    return curr_var if not info.ints32(curr_var, _);
+    curr_value = info.ints32(curr_var);
+    return curr_var if not curr_value :: Int32Var;
+    curr_var = curr_value;
+  }
+}
+
+Maybe[Int32Var] lookup_ex_assoc_surr_of(PropInfo info, TableVar table_var, Int32Var left_arg, Int32Var right_arg) {
+  left_root = root_var(info, left_arg);
+  right_root = root_var(info, right_arg);
+  expr = ex_assoc_surr(table_var: table_var, tuple: (left_root, right_root));
+  vars = [v : v <- info.ints32(?, expr)];
+  // There could be more than one var here that contains the associative surrogate we're looking for
+  return if vars != [] then just(any(vars)) else nothing;
+}
+
+Bool is_ex_assoc_surr_of(Int32Var var, AnyTableVar table_var, (Int32Var, Int32Var) tuple, PropInfo info) {
+  if info.ints32(var, _) {
+    pseudo_expr = info.ints32(var);
+    return match (pseudo_expr)
+      get_assoc_surr()    = false, // This could actually return the null surrogate
+      ex_assoc_surr()     = pseudo_expr.table_var == table_var and pseudo_expr.tuple == tuple,
+      value_to_surr()     |
+      value_to_ex_surr()  = false;
   }
   else {
     return false;
@@ -190,8 +236,11 @@ Bool is_curr_value(PropInfo info, Int32Var var, PropInt32Expr value) =
   mk_tagged_obj()   = dependees(expr.obj);
 
 [DependeeVar] dependees(AnyPropInt32Expr expr) =
+  ivar32()            = [expr],
   value_to_surr()     = dependees(expr.value),
-  value_to_ex_surr()  = dependees(expr.value);
+  get_assoc_surr()    = [v : v <- expr.args],
+  value_to_ex_surr()  = dependees(expr.value),
+  ex_assoc_surr()     = [v : v <- expr.tuple];
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -238,6 +287,7 @@ PropInfo outgoing_prop_info(NodeInfo node, PropInfo info) {
     invoke_db_method()              = clear_any(info, instr.res_var),
 
     lookup_or_queue_insert_value()  = lookup_or_queue_insert_value_update_info(instr.res_var, instr.store, instr.value, info),
+    queue_insert_master_tuple()     = queue_insert_master_tuple_update_info(instr.assoc_surr_var, instr.table_var, instr.table, instr.tuple, info),
     // lookup_or_queue_insert_value()  = clear_any(info, instr.res_var),
 
     _                               = info;
@@ -249,10 +299,22 @@ PropInfo outgoing_prop_info(NodeInfo node, PropInfo info) {
     // finish_init()         =
 
 
-  PropInfo lookup_or_queue_insert_value_update_info(Int32Var res_var, ValueStoreId store, <AtomicExpr, IntExpr> value, PropInfo info) =
-    if value :: PropExpr or value :: PropIntExpr
-      then add_dependency(info, res_var, store, value)
-      else clear_dependants(info, res_var);
+  PropInfo lookup_or_queue_insert_value_update_info(Int32Var res_var, ValueStoreId store, <AtomicExpr, IntExpr> value, PropInfo info) {
+    if value :: PropExpr or value :: PropIntExpr {
+      quasi_expr = value_to_ex_surr(store: store, value: value);
+      if info.ints32(_, quasi_expr)
+        quasi_expr = info.ints32(!, quasi_expr);
+      return add_dependency(info, res_var, quasi_expr);
+    }
+    else
+      return clear_dependants(info, res_var);
+  }
+
+
+  PropInfo queue_insert_master_tuple_update_info(Int32Var assoc_surr_var, TableVar table_var, MasterBinTable table, (Int32Var, Int32Var) tuple, PropInfo info) {
+    value = ex_assoc_surr(table_var: table_var, tuple: tuple);
+    return add_dependency(info, assoc_surr_var, value);
+  }
 
 
   PropInfo set_rc_var_update_info(<WriteObjVar, LocOptTagRecVar> var, RefObjExpr value, PropInfo pre_instr_info) {
@@ -289,12 +351,30 @@ NodeInfo rewrite_node(NodeInfo node, PropInfo info) =
   return match (instr)
     set_ivar32()                    = rewrite_set_ivar32(instr, instr.var, instr.value, info),
     lookup_or_queue_insert_value()  = rewrite_lookup_or_queue_insert_value(instr, instr.res_var, instr.store, instr.store_type, instr.value, info),
+    queue_insert_tuple()            = rewrite_queue_insert_tuple(instr, instr.table_var, instr.table, instr.tuple, info),
     _                               = instr;
+
+
+  BasicInstr rewrite_queue_insert_tuple(BasicInstr instr, TableVar, Table, Int32Var+, PropInfo info) = instr;
+
+  BasicInstr rewrite_queue_insert_tuple(BasicInstr instr, TableVar table_var, SlaveTernTable table, Int32Var+ tuple, PropInfo info) {
+    if |tuple| == 3 {
+      maybe_var = lookup_ex_assoc_surr_of(info, table.master, tuple(0), tuple(1));
+      if maybe_var != nothing
+        return queue_insert_tuple(table_var, table, (value(maybe_var), tuple(2)));
+    }
+
+    return instr;
+  }
 
 
   BasicInstr rewrite_lookup_or_queue_insert_value(BasicInstr instr, Int32Var res_var, ValueStoreId store, ValueStoreType store_type, <AtomicExpr, IntExpr> value, PropInfo info) {
     value_copy = value; ## BAD BAD BAD: THIS IS A HACK TO WORK AROUND THE LIMITATIONS OF THE TYPE CHECKER
-    return :no_op if value_copy :: <PropExpr, PropIntExpr> and is_ex_surr_of(res_var, store, value_copy, info);
+    if value_copy :: <PropExpr, PropIntExpr> {
+      maybe_var = lookup_ex_surr_of(info, store, value_copy);
+      if maybe_var != nothing
+        return set_ivar32(res_var, _untag_(maybe_var)); ## OUGHT TO BE value(maybe_var), BUT THAT CONFLICTS WITH THE value ARGUMENT
+    }
 
     rw_value = rewrite_expr(value, info);
     return instr if rw_value == value;

@@ -627,10 +627,15 @@ BasicInstr queue_deletes(TableVar v, AnyTable t, Maybe[Int32Var]+ as, Bool s) =
 BasicInstr lookup_or_queue_insert_value(Int32Var v, ValueStoreId s, ValueStoreType t, <AtomicExpr, IntExpr> e) =
   lookup_or_queue_insert_value(res_var: v, store: s, store_type: t, value: e);
 
-BasicInstr queue_insert_tuple(TableVar v, AnyTable t, Int32Var+ as) {
-  fail if not t :: AnySurrTable;
-  return queue_insert_tuple(table_var: v, table: t, tuple: as);
-}
+BasicInstr queue_insert_tuple(TableVar v, <Table, SlaveTernTable> t, Int32Var+ as) = queue_insert_tuple(table_var: v, table: t, tuple: as);
+
+BasicInstr queue_insert_master_tuple(Int32Var s, TableVar v, MasterBinTable t, (Int32Var, Int32Var) as) =
+  queue_insert_master_tuple(assoc_surr_var: s, table_var: v, table: t, tuple: as);
+
+BasicInstr queue_insert_any_tuple(TableVar, AnyColumn, Int32Var+, Int32Var) = undefined;
+BasicInstr queue_insert_any_tuple(TableVar v, <Table, SlaveTernTable> t, Int32Var+ as, Int32Var s) = queue_insert_tuple(v, t, as);
+BasicInstr queue_insert_any_tuple(TableVar v, MasterBinTable t, Int32Var+ as, Int32Var s) =
+  queue_insert_master_tuple(s, v, t, if |as| == 2 then as else undefined);
 
 BasicInstr column_insert_deferred(TableVar v, Bool m, ColumnRepr r, Int32Var k, AnyTypeExpr e, Bool f) =
   column_insert_deferred(table_var: v, mandatory: m, col_repr: r, key_surr: k, value: e, forced: f);

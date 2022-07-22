@@ -531,7 +531,7 @@ implicit program           : Program,
     arity = |args_aliases|;
     surr_vars, var_gen = next_int32_vars(var_gen, arity);
     fail if surr_vars == ();
-    is_new_val_vars, var_gen = next_bool_vars(var_gen, arity);
+    assoc_surr_var, var_gen = next_int32_var(var_gen);
 
     // Selecting the candidate tables among those the logical relation is partitioned into
     candidate_tables = nonempty(overlapping_tables(rel_var, (just(t) : t <- args_types)));
@@ -547,7 +547,7 @@ implicit program           : Program,
         return lookup_or_queue_insert_value(surr_var, store_id, store_type, value_store_encoded_expr(store_type, e));
       } : e @ i <- args_aliases);
 
-      insertion_code = (queue_insert_tuple(table_var, table_info(table_var), surr_vars));
+      insertion_code = (queue_insert_any_tuple(table_var, table_info(table_var), surr_vars, assoc_surr_var));
       code = args_eval_code & pre_insert_code & insertion_code;
 
       return (code, just(surrogates), [], init_var_gen);
@@ -564,7 +564,7 @@ implicit program           : Program,
         store_type = value_store_type(this_db_symbol, store_id);
         return lookup_or_queue_insert_value(surr_vars(i), store_id, store_type, value_store_encoded_expr(store_type, e));
       } : e @ i <- args_aliases);
-      code = (code | queue_insert_tuple(tv, table_info(tv), surr_vars), exit_block);
+      code = (code | queue_insert_any_tuple(tv, table_info(tv), surr_vars, assoc_surr_var), exit_block);
       return (types, code);
     } : tv <- candidate_tables];
 
@@ -741,7 +741,7 @@ implicit program           : Program,
     arity = |args_aliases|;
     surr_vars, var_gen = next_int32_vars(var_gen, arity);
     fail if surr_vars == ();
-    is_new_val_vars, var_gen = next_bool_vars(var_gen, arity);
+    assoc_surr_var, var_gen = next_int32_var(var_gen);
 
     // Selecting the candidate tables among those the logical relation is partitioned into
     candidate_tables = nonempty(overlapping_tables(rel_var, (just(t) : t <- args_types)));
@@ -763,7 +763,7 @@ implicit program           : Program,
 
       insertion_code = (
         (queue_deletes(table_var, table_info(table_var), as, symmetric) : as <- deletes_args) |
-        queue_insert_tuple(table_var, table_info(table_var), surr_vars)
+        queue_insert_any_tuple(table_var, table_info(table_var), surr_vars, assoc_surr_var)
       );
       code = args_eval_code & pre_insert_code & insertion_code;
 
@@ -782,7 +782,7 @@ implicit program           : Program,
         return lookup_or_queue_insert_value(surr_vars(i), store_id, store_type, value_store_encoded_expr(store_type, e));
       } : e @ i <- args_aliases);
       code = code & (queue_deletes(tv, table_info(tv), as, symmetric) : as <- deletes_args);
-      code = (code | queue_insert_tuple(tv, table_info(tv), surr_vars), exit_block);
+      code = (code | queue_insert_any_tuple(tv, table_info(tv), surr_vars, assoc_surr_var), exit_block);
       return (types, code);
     } : tv <- candidate_tables];
 
