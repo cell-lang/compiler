@@ -175,22 +175,22 @@ implicit program           : Program,
   //   return (execute_block(code));
   // }
 
-  // type Update   = update(name: UpdateSymbol, args: (NeType, StdVar)*, body: Statement*);
 
   StmtCompInfo try_update_stmt_opt_code(UpdateSymbol name, Expr* args, [EnvVar -> Type] env, VarGen init_var_gen) {
     args_types = (expr_type(a, env) : a <- args);
 
     eval_code, args_aliases, var_gen = opt_eval_code(args, env, init_var_gen);
-    ## FORCE THE ARGUMENT ALIASES TO BE ACTUAL VARIABLES?
     code = eval_code;
 
     rel_auto = cast_database(context);
-    updates = [u : u <- rel_auto.updates, u.name == name, |u.args| == |args|];
-    ## FILTER OUT THE UPDATES BY SIGNATURE
+    updates = [u : u <- rel_auto.updates, u.name == name, |u.args| == |args|, may_dispatch_to(args_types, (t : t, _ <- u.args))];
 
-    if |updates| == 1 {
+    if updates == [] {
+      code = (terminate(true));
+    }
+    else if |updates| == 1 {
       update = only(updates);
-      code = code & update_body(update, args_aliases, env, var_gen);
+      code = code & compiled_update_body(update, args_aliases, env, var_gen);
     }
     else {
       assert args != ();
@@ -201,7 +201,7 @@ implicit program           : Program,
 
       cases = [{
         types = (formal_args_types(i)(j) : j <- disp_args);
-        case_code = update_body(u, args_aliases, env, var_gen);
+        case_code = compiled_update_body(u, args_aliases, env, var_gen);
         case_code = (case_code | exit_block); ## IS THIS NECESSARY OR EVEN CORRECT?
         return (types, case_code);
       } : u @ i <- updates];
@@ -212,19 +212,16 @@ implicit program           : Program,
 
     return (code, just(surrogates), [], init_var_gen);
 
-    // code, surrs, _ = opt_eval_code(args, env, init_var_gen);
-    // code = (code | try_update(this_db_symbol, update_id(name, |args|), surrs));
-    // return (code, just(surrogates), [], init_var_gen);
 
-    // type StmtCompInfo = (Instr*, Maybe[[SurrExpr -> ObjExpr]], [[SurrExpr -> ObjExpr]], VarGen);
-
-    Instr* update_body(Update update, ObjExpr* actual_args, [EnvVar -> Type] env, VarGen init_var_gen) {
-      // Compiling the body of the update
+    Instr* compiled_update_body(Update update, ObjExpr* actual_args, [EnvVar -> Type] env, VarGen init_var_gen) {
       return () if update.body == ();
 
-      local_vars = select(update.body, $ :: <StdVar, FnArg>);
-      fail if not local_vars :: [<StdVar, FnArg>];
+      assert select(update.body, $ :: FnArg) == [];
+
+      local_vars = select(update.body, $ :: StdVar);
+      fail if not local_vars :: [StdVar];
       conflicting_vars = [v : v <- local_vars, env(v, _)];
+
 
       var_gen = init_var_gen;
       repl_map = [];
@@ -237,7 +234,7 @@ implicit program           : Program,
       args = [lookup(repl_map, v, v) -> t : (t, v) <- update.args];
 
       assert {
-        new_local_vars = select(body, $ :: <StdVar, FnArg>);
+        new_local_vars = select(body, $ :: StdVar);
         return not (v <- new_local_vars : env(v, _));
       };
 
@@ -245,9 +242,32 @@ implicit program           : Program,
         body_code, surrs, break_surrs, var_gen = stmts_opt_code(body, args, var_gen);
       assert break_surrs == [];
 
-      formal_args = (v : _, v <- update.args);
+      formal_args = (lookup(repl_map, v, v) : _, v <- update.args);
       set_args_code = (set_var(formal_args(i), e) : e @ i <- actual_args);
       code = (set_args_code | execute_block(nonempty(body_code)));
+
+// print "----------------------------------------------------------------";
+// print "context.name";
+// print match (context) data_base() = context.name;
+// print "update.name";
+// print update.name;
+// print "update.args";
+// print update.args;
+// print "actual_args";
+// print actual_args;
+// print "env";
+// print env;
+// print "local_vars";
+// print local_vars;
+// print "conflicting_vars";
+// print conflicting_vars;
+// print "repl_map";
+// print repl_map;
+// print "formal_args";
+// print formal_args;
+// print "set_args_code";
+// print set_args_code;
+
       return code;
     }
   }

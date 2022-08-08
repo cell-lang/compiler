@@ -51,6 +51,17 @@ implicit typedefs : [TypeName -> NeType] {
 
 
   Bool signatures_overlap(NeType+ sgn1, NeType+ sgn2) = not (t @ i <- sgn1 : are_ptype_disjoint(t, sgn2(i)));
+
+
+  Bool may_dispatch_to(Type* actual_types, NeType* formal_types) {
+    assert |actual_types| == |formal_types|;
+
+    for t @ i <- actual_types
+      if t == empty_type or are_ptype_disjoint(t, formal_types(i))
+        return false;
+
+    return true;
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
