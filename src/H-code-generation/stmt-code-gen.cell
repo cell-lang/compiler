@@ -190,20 +190,18 @@ implicit program           : Program,
 
     if |updates| == 1 {
       update = only(updates);
-      code = code & update_body(update, args_aliases, var_gen);
+      code = code & update_body(update, args_aliases, env, var_gen);
     }
     else {
       assert args != ();
 
       updates = nonempty(isort(updates));
-      updates_bodies = (update_body(u, args_aliases, var_gen) : u <- updates);
-
       formal_args_types = ((t : t, _ <- nonempty(u.args)) : u <- updates);
       disp_args = choose_disp_args(formal_args_types, typedefs);
 
       cases = [{
         types = (formal_args_types(i)(j) : j <- disp_args);
-        case_code = update_body(u, args_aliases, var_gen);
+        case_code = update_body(u, args_aliases, env, var_gen);
         case_code = (case_code | exit_block); ## IS THIS NECESSARY OR EVEN CORRECT?
         return (types, case_code);
       } : u @ i <- updates];
@@ -218,21 +216,33 @@ implicit program           : Program,
     // code = (code | try_update(this_db_symbol, update_id(name, |args|), surrs));
     // return (code, just(surrogates), [], init_var_gen);
 
+    // type StmtCompInfo = (Instr*, Maybe[[SurrExpr -> ObjExpr]], [[SurrExpr -> ObjExpr]], VarGen);
 
-    Instr* update_body(Update update, ObjExpr* actual_args, VarGen init_var_gen) {
+    Instr* update_body(Update update, ObjExpr* actual_args, [EnvVar -> Type] env, VarGen init_var_gen) {
       // Compiling the body of the update
       return () if update.body == ();
 
-      body_code, surrs, break_surrs, var_gen = stmts_opt_code(
-        update.body,
-        [v -> t : (t, v) <- update.args],
-        init_var_gen,
-        // context           = database, // context is already set
-        typed_vars        = [],
-        surrogates        = [],
-        exp_break_surrs   = nothing,
-        result_var        = :invalid_var
-      );
+      local_vars = select(update.body, $ :: <StdVar, FnArg>);
+      fail if not local_vars :: [<StdVar, FnArg>];
+      conflicting_vars = [v : v <- local_vars, env(v, _)];
+
+      var_gen = init_var_gen;
+      repl_map = [];
+      for v <- conflicting_vars {
+        repl_var, var_gen = next_repl_var(var_gen);
+        repl_map = _put_(repl_map, v, repl_var);
+      }
+
+      body = replace_stmts_vars(update.body, repl_map);
+      args = [lookup(repl_map, v, v) -> t : (t, v) <- update.args];
+
+      assert {
+        new_local_vars = select(body, $ :: <StdVar, FnArg>);
+        return not (v <- new_local_vars : env(v, _));
+      };
+
+      let typed_vars = [], surrogates = [], exp_break_surrs = nothing, result_var = :invalid_var // context = database, // context is already set
+        body_code, surrs, break_surrs, var_gen = stmts_opt_code(body, args, var_gen);
       assert break_surrs == [];
 
       formal_args = (v : _, v <- update.args);
@@ -240,7 +250,6 @@ implicit program           : Program,
       code = (set_args_code | execute_block(nonempty(body_code)));
       return code;
     }
-
   }
 
 

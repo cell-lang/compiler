@@ -679,3 +679,119 @@ Bool updates_any_non_local_untyped_variable(Statement stmt, [EnvVar -> Type] env
   counter:     1,
   ticks:       1
 );
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+StdVar replace_std_var(StdVar var, [<StdVar, FnArg> -> StdVar] repl_map) = if repl_map(var, _) then repl_map(var) else var;
+<StdVar, FnArg> replace_std_var(FnArg var, [<StdVar, FnArg> -> StdVar] repl_map) = if repl_map(var, _) then repl_map(var) else var;
+ImplArg replace_std_var(ImplArg var, [<StdVar, FnArg> -> StdVar] repl_map) = var;
+
+Maybe[StdVar] replace_std_var(Maybe[StdVar] maybe_var, [<StdVar, FnArg> -> StdVar] repl_map) = apply(maybe_var, replace_std_var($, repl_map));
+Maybe[StdVar]+ replace_std_vars(Maybe[StdVar]+ maybe_vars, [<StdVar, FnArg> -> StdVar] repl_map) = (replace_std_var(v, repl_map) : v <- maybe_vars);
+
+Maybe[Expr] replace_expr_vars(Maybe[Expr] maybe_expr, [<StdVar, FnArg> -> StdVar] repl_map) = apply(maybe_expr, replace_expr_vars($, repl_map));
+Maybe[Expr]+ replace_exprs_vars(Maybe[Expr]+ exprs, [<StdVar, FnArg> -> StdVar] repl_map) = (replace_expr_vars(e, repl_map) : e <- exprs);
+
+Statement+ replace_stmts_vars(Statement+ stmts, [<StdVar, FnArg> -> StdVar] repl_map) = (replace_stmt_vars(s, repl_map) : s <- stmts);
+
+
+Expr replace_expr_vars(Expr expr, [<StdVar, FnArg> -> StdVar] repl_map) =
+  var() | fn_arg()  = replace_std_var(expr, repl_map),
+  _                 = rewrite_expr(expr, replace_expr_vars($, repl_map), replace_clause_vars($, repl_map), replace_stmt_vars($, repl_map));
+
+
+Clause replace_clause_vars(Clause cls, [<StdVar, FnArg> -> StdVar] repl_map) =
+  set_or_seq_clause() = set_or_seq_clause(replace_std_var(cls.var, repl_map), replace_expr_vars(cls.src, repl_map)),
+  rel_clause()        = rel_clause(replace_std_vars(cls.vars, repl_map), replace_expr_vars(cls.src, repl_map), replace_exprs_vars(cls.args, repl_map)),
+  relvar_clause()     = relvar_clause(replace_std_vars(cls.vars, repl_map), cls.rel_var, replace_exprs_vars(cls.args, repl_map)),
+  seq_clause()        = seq_clause(replace_std_vars(cls.vars, repl_map), replace_std_var(cls.idx_var, repl_map), replace_expr_vars(cls.src, repl_map)),
+  and_clause()        = and_clause(replace_clause_vars(cls.left, repl_map), replace_clause_vars(cls.right, repl_map)),
+  or_clause()         = or_clause(replace_clause_vars(cls.left, repl_map), replace_clause_vars(cls.right, repl_map)),
+  match_clause()      = match_clause(replace_ptrn_vars(cls.ptrn, repl_map), replace_expr_vars(cls.expr, repl_map)),
+  asgnm_clause()      = asgnm_clause(replace_std_var(cls.var, repl_map), replace_expr_vars(cls.expr, repl_map)),
+  filter_clause(e?)   = filter_clause(replace_expr_vars(e, repl_map));
+
+
+Pattern replace_ptrn_vars(Pattern ptrn, [<StdVar, FnArg> -> StdVar] repl_map) =
+  ptrn_var()        = ptrn_var(replace_std_var(ptrn.var, repl_map), replace_ptrn_vars(ptrn, repl_map)),
+
+  ptrn_tuple(ps?)   = ptrn_tuple((replace_ptrn_vars(p, repl_map) : p <- ps)),
+  ptrn_tag_obj()    = ptrn_tag_obj(ptrn.tag, replace_ptrn_vars(ptrn.obj, repl_map)),
+  ptrn_union(ps?)   = ptrn_union([replace_ptrn_vars(p, repl_map) : p <- ps]),
+
+  ptrn_symbol       |
+  ptrn_float        |
+  ptrn_empty_seq    |
+  ptrn_empty_rel    |
+  ptrn_ne_seq       |
+  ptrn_ne_set       |
+  ptrn_ne_map       |
+  ptrn_ne_bin_rel   |
+  ptrn_ne_tern_rel  |
+  ptrn_any          |
+  ptrn_symbol()     |
+  ptrn_integer()    = ptrn;
+
+
+Statement replace_stmt_vars(Statement stmt, [<StdVar, FnArg> -> StdVar] repl_map) =
+  assert_stmt()             = assert_stmt(replace_expr_vars(stmt.cond, repl_map), [replace_std_var(v, repl_map) : v <- stmt.env], stmt.file, stmt.line, stmt.text),
+  fail_stmt()               = fail_stmt([replace_std_var(v, repl_map) : v <- stmt.env], stmt.file, stmt.line),
+  seq_update_stmt()         = seq_update_stmt(replace_std_var(stmt.seq_var, repl_map), replace_expr_vars(stmt.idx, repl_map), replace_expr_vars(stmt.value, repl_map)),
+  assignment_stmt()         = assignment_stmt((apply(v, replace_std_var($, repl_map)) : v <- stmt.vars), replace_expr_vars(stmt.value, repl_map)),
+  proc_call_stmt()          = proc_call_stmt(
+                                res_var: replace_std_var(stmt.res_var, repl_map) if stmt.res_var?,
+                                args: (replace_expr_vars(a, repl_map) : a <- stmt.args),
+                                proc_name: stmt.proc_name,
+                                rel_auto_args: stmt.rel_auto_args,
+                                react_auto_args: stmt.react_auto_args
+                              ),
+  apply_ctrl_stmt()         = apply_ctrl_stmt(stmt.auto_var, replace_std_var(stmt.res_var, repl_map)),
+  send_msg_ctrl_stmt()      = send_msg_ctrl_stmt(replace_std_var(stmt.res_var, repl_map), stmt.db_var, replace_expr_vars(stmt.msg, repl_map)),
+  read_state_ctrl_stmt()    = read_state_ctrl_stmt(replace_std_var(stmt.res_var, repl_map), stmt.auto_var),
+  restore_state_ctrl_stmt() = restore_state_ctrl_stmt(replace_std_var(stmt.res_var, repl_map), stmt.auto_var, replace_expr_vars(stmt.state, repl_map)),
+  foreach_stmt()            = foreach_stmt(replace_iter_vars(stmt.iter, repl_map), replace_stmts_vars(stmt.body, repl_map)),
+  for_stmt()                = for_stmt(
+                                var:          replace_std_var(stmt.var, repl_map) if stmt.var?,
+                                start_val:    replace_expr_vars(stmt.start_val, repl_map),
+                                end_val:      replace_expr_vars(stmt.end_val, repl_map),
+                                end_val_incl: stmt.end_val_incl,
+                                body:         replace_stmts_vars(stmt.body, repl_map)
+                              ),
+  print_stmt()            |
+  send_msg_stmt()         |
+  try_update_stmt()       |
+  set_memb_var_stmt()     |
+  delete_stmt()           |
+  insert_stmt()           |
+  update_stmt()           |
+  set_input_ctrl_stmt()   |
+  clear_input_ctrl_stmt() |
+  return_stmt()           |
+  break_stmt              |
+  return_stmt             |
+  if_stmt()               |
+  loop_stmt()             |
+  let_stmt()              = rewrite_stmt(stmt, replace_expr_vars($, repl_map), replace_stmt_vars($, repl_map));
+
+
+CollValueIter replace_iter_vars(CollValueIter iter, [<StdVar, FnArg> -> StdVar] repl_map) =
+  coll_value_iter(
+    vars:     replace_std_vars(iter.vars, repl_map),
+    idx_var:  replace_std_var(iter.idx_var, repl_map) if iter.idx_var?,
+    src_expr: replace_expr_vars(iter.src_expr, repl_map)
+  );
+
+RelSubsetIter replace_iter_vars(RelSubsetIter iter, [<StdVar, FnArg> -> StdVar] repl_map) =
+  rel_subset_iter(
+    replace_std_vars(iter.vars, repl_map),
+    replace_expr_vars(iter.src_expr, repl_map),
+    replace_exprs_vars(iter.args, repl_map)
+  );
+
+RelVarIter replace_iter_vars(RelVarIter iter, [<StdVar, FnArg> -> StdVar] repl_map) =
+  rel_var_iter(
+    replace_std_vars(iter.vars, repl_map),
+    iter.rel_var,
+    replace_exprs_vars(iter.args, repl_map)
+  );

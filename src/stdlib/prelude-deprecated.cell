@@ -23,6 +23,34 @@ type Opt[T]         = (), (T);
 
 ////////////////////////////////////////////////////////////////////////////////
 
+[Any] select(Any obj, (Any -> Bool) cond) =
+  if cond(obj)
+    then [obj]
+    else match (obj)
+      <+>         = [],
+      <*..*>      = [],
+      <!>         = [],
+      ()          = union([select(x, cond) : x <- obj]),
+      []          = union([select(x, cond) : x <- obj]),
+      [,]         = union([select(l, cond) & select(r, cond) : l r <- obj]),
+      [,,]        = union([select(l, cond) & select(m, cond) & select(r, cond)  : l m r <- obj]),
+      tag?(iobj?) = select(iobj, cond); ## SHOULD I EXTEND THE SEARCH TO THE TAG AS WELL?
+
+
+[Any] select_rec(Any obj, (Any -> Bool) cond) =
+  [obj if cond(obj)] &
+  match (obj)
+      <+>         = [],
+      <*..*>      = [],
+      <!>         = [],
+      ()          = union([select_rec(x, cond) : x <- obj]),
+      []          = union([select_rec(x, cond) : x <- obj]),
+      [,]         = union([select_rec(l, cond) & select_rec(r, cond) : l r <- obj]),
+      [,,]        = union([select_rec(l, cond) & select_rec(m, cond) & select_rec(r, cond) : l m r <- obj]),
+      tag?(iobj?) = select_rec(iobj, cond); ## SHOULD I EXTEND THE SEARCH TO THE TAG AS WELL?
+
+////////////////////////////////////////////////////////////////////////////////
+
 [+[+T]] coalesce_cycles([+T] nodes, [T, T] edges) {
   used_nodes : [T];
 
