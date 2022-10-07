@@ -65,10 +65,7 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
       : _ ms <- group_by(database.methods, family_id($.id))
     ]);
 
-    updates_errs = union([
-      [overlapping_signatures(u1, u2) : u1 u2 <- symmetric_cart_prod(us), overlap(u1, u2)]
-      : _ us <- group_by(database.updates, ($.name, arity($)))
-    ]);
+    updates_errs = updates_errors(database);
 
     handler_errs = [
       overlapping_signatures(h1, h2)
@@ -82,6 +79,24 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
     keys = [logical_rel_var(v) -> info.keys : v info <- database.rel_vars];
     res = try_to_split(sgns, database.foreign_keys, keys);
     return [unpartitionable_foreign_key(get_error(res)) if failed(res)];
+  }
+
+
+  [CoreWFError] updates_errors(Database database) {
+    // Signatures must not overlap
+    overlapping_signatures_errors = union([
+      [overlapping_signatures(u1, u2) : u1 u2 <- symmetric_cart_prod(us), overlap(u1, u2)]
+      : _ us <- group_by(database.updates, ($.name, arity($)))
+    ]);
+    return overlapping_signatures_errors if overlapping_signatures_errors != [];
+
+    // Mutator methods must not be recursive
+    shallow_graph = [(u.name, |u.args|) -> invoked_mutators(u) : u <- database.updates];
+    deep_graph = transitive_closure(shallow_graph);
+    recursive_updates = [u : u us <- deep_graph, us(u)];
+    return [recursive_mutator(u(0), u(1)) : u <- recursive_updates] if recursive_updates != [];
+
+    return [];
   }
 
 

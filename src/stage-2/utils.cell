@@ -795,3 +795,13 @@ RelVarIter replace_iter_vars(RelVarIter iter, [<StdVar, FnArg> -> StdVar] repl_m
     iter.rel_var,
     replace_exprs_vars(iter.args, repl_map)
   );
+
+////////////////////////////////////////////////////////////////////////////////
+
+[(UpdateSymbol, Nat)] invoked_mutators(Update update) {
+  return retrieve_from_nested_stmts(update.body, retrieve);
+
+  [(UpdateSymbol, Nat)] retrieve(Statement stmt) =
+    try_update_stmt() = [(stmt.name, |stmt.args|)],
+    _                 = retrieve_from_nested_stmts(stmt, retrieve);
+}

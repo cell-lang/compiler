@@ -7,6 +7,7 @@ type AnyReactAutoVar = SignalVar, NestedAutoVar;
 type CoreWFError  = error_cluster(AnyAuto, [+CoreWFError]),
                     recursively_defined_auto_or_db(AnyAuto),
                     overlapping_signatures(SgnDecl, SgnDecl),
+                    recursive_mutator(name: UpdateSymbol, arity: Nat),
                     multiple_rel_var_arities(rel_var: RelVar, arities: [+Nat]),
                     differing_keys_in_poly_rel_var(rel_var: RelVar, keys1: [[+Nat]], keys2: [[+Nat]]),
                     overlapping_rel_var_signatures(rel_var: RelVar, signatures: (NeType+, NeType+)),
@@ -35,6 +36,7 @@ type CoreWFError  = error_cluster(AnyAuto, [+CoreWFError]),
 CoreWFError error_cluster(AnyAuto db, [+CoreWFError] es) = :error_cluster(db, es);
 CoreWFError recursively_defined_auto_or_db(AnyAuto db) = :recursively_defined_auto_or_db(db);
 CoreWFError overlapping_signatures(SgnDecl f1, SgnDecl f2) = :overlapping_signatures(f1, f2);
+CoreWFError recursive_mutator(UpdateSymbol n, Nat a) = recursive_mutator(name: n, arity: a);
 CoreWFError multiple_rel_var_arities(RelVar v, [+Nat] as) = multiple_rel_var_arities(rel_var: v, arities: as);
 CoreWFError differing_keys_in_poly_rel_var(RelVar v, [[+Nat]] ks1, [[+Nat]] ks2) = differing_keys_in_poly_rel_var(rel_var: v, keys1: ks1, keys2: ks2);
 CoreWFError overlapping_rel_var_signatures(RelVar v, NeType+ s1, NeType+ s2) = overlapping_rel_var_signatures(rel_var: v, signatures: (s1, s2));
@@ -64,6 +66,7 @@ String* error_message(CoreWFError err) =
   error_cluster(db?, es?)             = error_cluster_error_message(db, es),
   recursively_defined_auto_or_db(db?) = recursively_defined_auto_or_db_error_message(db),
   overlapping_signatures(f1?, f2?)    = overlapping_signatures_error_message(f1, f2),
+  recursive_mutator()                 = recursive_mutator_error_message(err.name, err.arity),
   multiple_rel_var_arities()          = multiple_rel_var_arities_error_message(err.rel_var, err.arities),
   differing_keys_in_poly_rel_var()    = differing_keys_in_poly_rel_var_error_message(err.rel_var, err.keys1, err.keys2),
   overlapping_rel_var_signatures()    = overlapping_rel_var_signatures_error_message(err.rel_var, err.signatures),
@@ -89,6 +92,12 @@ String* error_message(CoreWFError err) =
 
 ////////////////////////////////////////////////////////////////////////////////
 
+String* recursive_mutator_error_message(UpdateSymbol name, Nat arity) = (
+  "Recursive mutator method found: " & user_repr(name) & "/" & _print_(arity),
+  "Mutators are not allowed to invoke themselves recursively, either directly or indirectly"
+);
+
+
 String* overlapping_signatures_error_message(SgnDecl d1, SgnDecl d2) = (
   "Overlapping argument types in polymorphic " & artifact_type_name(d1) & ": " & artifact_name(d1),
   "    " & source_code_location_string(source_code_location(d1)),
@@ -97,8 +106,7 @@ String* overlapping_signatures_error_message(SgnDecl d1, SgnDecl d2) = (
 
 
 String* multiple_rel_var_arities_error_message(RelVar rel_var, [+Nat] arities) = (
-  "Polymorphic relation variables " & user_repr(rel_var) & " have different arities: "
-                                          & append((printed(a) : a <- isort(arities)))
+  "Polymorphic relation variables " & user_repr(rel_var) & " have different arities: " & append((printed(a) : a <- isort(arities)))
 );
 
 
