@@ -91,12 +91,16 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
     return overlapping_signatures_errors if overlapping_signatures_errors != [];
 
     // Mutator methods must not be recursive
-    shallow_graph = [(u.name, |u.args|) -> invoked_mutators(u) : u <- database.updates];
+    untyped_update_ids = [untyped_update_id(u) : u <- database.updates];
+    shallow_graph = [id -> [m : u <- database.updates, id == untyped_update_id(u), m <- invoked_mutators(u)] : id <- untyped_update_ids];
     deep_graph = transitive_closure(shallow_graph);
     recursive_updates = [u : u us <- deep_graph, us(u)];
     return [recursive_mutator(u(0), u(1)) : u <- recursive_updates] if recursive_updates != [];
 
     return [];
+
+
+    (UpdateSymbol, Nat) untyped_update_id(Update update) = (update.name, |update.args|);
   }
 
 

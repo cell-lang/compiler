@@ -292,33 +292,35 @@ Bool is_param_type(FnType type) = (t <- type.args : is_param_type(t)) or is_para
 [T] retrieve_from_nested_stmts(Statement* stmts, (Statement -> [T]) retrieve) = seq_union((retrieve(s) : s <- stmts));
 
 [T] retrieve_from_nested_stmts(Statement stmt, (Statement -> [T]) retrieve) =
-  if_stmt()                 = seq_union((retrieve_from_nested_stmts(ss, retrieve) : ss <- (stmt.body, stmt.else))),
-  loop_stmt(ss?)            = retrieve_from_nested_stmts(ss, retrieve),
-  foreach_stmt()            |
-  for_stmt()                |
-  let_stmt()                = retrieve_from_nested_stmts(stmt.body, retrieve),
-  assignment_stmt()         |
-  return_stmt()             |
-  break_stmt                |
-  fail_stmt()               |
-  assert_stmt()             |
-  print_stmt()              |
-  seq_update_stmt()         |
+  if_stmt()                     = seq_union((retrieve_from_nested_stmts(ss, retrieve) : ss <- (stmt.body, stmt.else))),
+  loop_stmt(ss?)                = retrieve_from_nested_stmts(ss, retrieve),
+  foreach_stmt()                |
+  for_stmt()                    |
+  let_stmt()                    = retrieve_from_nested_stmts(stmt.body, retrieve),
+  assignment_stmt()             |
+  return_stmt()                 |
+  break_stmt                    |
+  fail_stmt()                   |
+  assert_stmt()                 |
+  print_stmt()                  |
+  seq_update_stmt()             |
 
-  return_stmt               |
-  proc_call_stmt()          |
+  return_stmt                   |
+  proc_call_stmt()              |
 
-  send_msg_stmt()           |
-  try_update_stmt()         |
-  set_memb_var_stmt()       |
-  insert_stmt()             |
-  delete_stmt()             |
-  set_input_ctrl_stmt()     |
-  clear_input_ctrl_stmt()   |
-  apply_ctrl_stmt()         |
-  send_msg_ctrl_stmt()      |
-  read_state_ctrl_stmt()    |
-  restore_state_ctrl_stmt() = [];
+  send_msg_stmt()               |
+  try_update_stmt()             |
+  set_memb_var_stmt()           |
+  insert_stmt()                 |
+  delete_stmt()                 |
+  update_stmt()                 |
+  set_input_ctrl_stmt()         |
+  clear_input_ctrl_stmt()       |
+  set_elapsed_time_ctrl_stmt()  |
+  apply_ctrl_stmt()             |
+  send_msg_ctrl_stmt()          |
+  read_state_ctrl_stmt()        |
+  restore_state_ctrl_stmt()     = [];
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
