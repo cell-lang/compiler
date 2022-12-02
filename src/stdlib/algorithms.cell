@@ -15,47 +15,47 @@ T* sort_set([T] s, (T T -> Bool) lt) = sort(rand_sort(s), lt);
 
 T* sort_by_key([T] s, (T -> Int) k) = sort_set(s, k($a) < k($b));
 
-T* sort(T* s, (T T -> Bool) lt) = mergesort(s, lt);
+// T* sort(T* s, (T T -> Bool) lt) = mergesort(s, lt);
 
-T* mergesort(T* seq, (T T -> Bool) lt) {
-  len = |seq|;
-  return seq if len <= 1;
-  ss = ((x) : x <- seq);
-  while len > 1 {
-    nss = ();
-    idx = 0;
-    ## BAD BAD BAD DOESN'T WORK WELL WITH A ROPE
-    while len > idx+1 {
-      nss = (merge(ss(idx), ss(idx+1), lt)) & nss;
-      idx = idx + 2;
-    }
-    assert idx == |ss| or idx == |ss| - 1;
-    ss  = if len > idx then (ss(idx)) & nss else nss;
-    len = |ss|; ## SHOULD BE len = (len + 1) / 2;
-  }
-  return ss(0);
+// T* mergesort(T* seq, (T T -> Bool) lt) {
+//   len = |seq|;
+//   return seq if len <= 1;
+//   ss = ((x) : x <- seq);
+//   while len > 1 {
+//     nss = ();
+//     idx = 0;
+//     ## BAD BAD BAD DOESN'T WORK WELL WITH A ROPE
+//     while len > idx+1 {
+//       nss = (merge(ss(idx), ss(idx+1), lt)) & nss;
+//       idx = idx + 2;
+//     }
+//     assert idx == |ss| or idx == |ss| - 1;
+//     ss  = if len > idx then (ss(idx)) & nss else nss;
+//     len = |ss|; ## SHOULD BE len = (len + 1) / 2;
+//   }
+//   return ss(0);
 
 
-  T* merge(T* seq1, T* seq2, (T T -> Bool) lt) {
-    l1 = |seq1|;
-    l2 = |seq2|;
-    rs = ();
-    i1 = 0;
-    i2 = 0;
-    while i1 < l1 or i2 < l2 {
-      if i1 == l1 or (i2 < l2 and lt(seq2(i2), seq1(i1))) {
-        rs = (seq2(i2)) & rs;
-        i2 = i2 + 1;
-      }
-      else {
-        rs = (seq1(i1)) & rs;
-        i1 = i1 + 1;
-      }
-    }
-    assert i1 <= l1 and i2 <= l2;
-    return reverse(rs);
-  }
-}
+//   T* merge(T* seq1, T* seq2, (T T -> Bool) lt) {
+//     l1 = |seq1|;
+//     l2 = |seq2|;
+//     rs = ();
+//     i1 = 0;
+//     i2 = 0;
+//     while i1 < l1 or i2 < l2 {
+//       if i1 == l1 or (i2 < l2 and lt(seq2(i2), seq1(i1))) {
+//         rs = (seq2(i2)) & rs;
+//         i2 = i2 + 1;
+//       }
+//       else {
+//         rs = (seq1(i1)) & rs;
+//         i1 = i1 + 1;
+//       }
+//     }
+//     assert i1 <= l1 and i2 <= l2;
+//     return reverse(rs);
+//   }
+// }
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
