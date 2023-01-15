@@ -421,3 +421,32 @@ Instr rewrite_nested(CompInstr instr, (Instr -> Instr) rw_instr, (AnyTypeExpr ->
     execute_block(b?) = execute_block((rw_instr(is) : is <- b)),
     try_block()       = try_block(instr.var, (rw_instr(is) : is <- instr.body)), // var is the variable that the try block is supposed to set, so it should not be rewritten
     foreach()         = foreach(rewrite_exprs(instr.iter, rw_expr), (rw_instr(is) : is <- instr.body));
+
+////////////////////////////////////////////////////////////////////////////////
+
+Instr* rewrite_nested_one_to_many(<BasicInstr, JumpInstr> instr, (Instr -> Instr*) rw_instr, (AnyTypeExpr -> AnyTypeExpr) rw_expr) =
+  (rewrite_exprs(instr, rw_expr, $));
+
+
+Instr* rewrite_nested_one_to_many(CompInstr instr, (Instr -> Instr*) rw_instr, (AnyTypeExpr -> AnyTypeExpr) rw_expr) =
+    branch()          = ( branch(
+                            cast_bool_expr(rw_expr(instr.cond)),
+                            join((rw_instr(is) : is <- instr.when_true)),
+                            join((rw_instr(is) : is <- instr.when_false))
+                          )
+                        ),
+    switch_on_nat()   = ( switch_on_nat(
+                            cast_int_expr(rw_expr(instr.value)),
+                            (join((rw_instr(is) : is <- c)) : c <- instr.cases)
+                          )
+                        ),
+    symb_switch()     = ( symb_switch(
+                            cast_obj_expr(rw_expr(instr.value)),
+                            [(left(c), nonempty(join((rw_instr(is) : is <- right(c))))) : c <- instr.cases],
+                            join((rw_instr(is) : is <- instr.else))
+                          )
+                        ),
+    repeat(b?)        = (repeat(nonempty(join((rw_instr(is) : is <- b))))),
+    execute_block(b?) = (execute_block(nonempty(join((rw_instr(is) : is <- b))))),
+    try_block()       = (try_block(instr.var, nonempty(join((rw_instr(is) : is <- instr.body))))), // var is the variable that the try block is supposed to set, so it should not be rewritten
+    foreach()         = (foreach(rewrite_exprs(instr.iter, rw_expr), join((rw_instr(is) : is <- instr.body))));
