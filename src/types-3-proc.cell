@@ -89,7 +89,9 @@ type IntVar         = LocIntVar,
                       MembIntVar,
                       LocAutoIntVar;
 
-type Int32Var       = ivar32(Nat),
+type LocInt32Var    = ivar32(Nat);
+
+type Int32Var       = LocInt32Var,
                       shadow_surr_var(StdVar),
                       shadow_array_size_var(StdVar),
                       shadow_array_capacity_var(StdVar);
@@ -193,9 +195,13 @@ type Int32NatOp     = bool_to_bit(BoolExpr),
                       get_arg_by_assoc_surr(table_var: AnyTableVar, table_type: MasterBinTable, arg: <0..1>, surr: Int32Var),
                       get_assoc_surr(table_var: AnyTableVar, table_type: MasterBinTable, args: (Int32Var, Int32Var)),
                       get_aux_assoc_surr(table_var: TableVar, table: MasterBinTable, args: (Int32Var, Int32Var)), // The tuple may not have been inserted yet
+
                       // Operations that are only used when loading or setting the state of a relational automaton
                       get_capacity(table_var: AnyTableVar, table: AnyTable),
-                      surr_set_size;
+                      surr_set_size,
+
+                      // Operations only used when rewriting optimized message handlers
+                      get_first_free_assoc_surr(table_var: TableVar);
 
 type FloatNatOp     = float_value(ObjExpr),
                       neg_float(FloatExpr),
