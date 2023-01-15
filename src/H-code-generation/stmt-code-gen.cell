@@ -287,8 +287,6 @@ implicit program           : Program,
     args_types = (apply(a, expr_type($, env)) : a <- args);
     return ((terminate(true)), just(surrogates), [], init_var_gen) if not args_types :: Maybe[NeType]+;
 
-    symmetric = symmetric(rel_var);
-
     code, args_aliases, var_gen = sparse_opt_eval_code(args, env, init_var_gen);
 
     args_surrs = ();
@@ -314,15 +312,15 @@ implicit program           : Program,
       attrs = [a : a <- rel_auto.attr_map(v, ?)];
 
       if is_columnar_relvar(log_rv) {
-        assert not symmetric and attrs == [];
+        assert attrs == [];
         table_code = column_delete_code(table_var(v), args_aliases, args_surrs, args_types);
       }
       else if is_ternary_slave_column(log_rv) {
-        assert not symmetric and attrs == [];
+        assert attrs == [];
         table_code = slave_column_delete_code(table_var(v), args_aliases, args_surrs, args_types, assoc_surr_var);
       }
       else
-        table_code = table_delete_code(table_var(v), args_aliases, args_surrs, args_types, symmetric, attrs);
+        table_code = table_delete_code(table_var(v), args_aliases, args_surrs, args_types, attrs);
 
       code = code & table_code;
     }
@@ -344,7 +342,7 @@ implicit program           : Program,
         key_arg_surr = value_unsafe(args_surrs(0));
         key_arg_type = value_unsafe(args_types(0));
 
-        has_key_check_expr = table_contains(table_var, tbl_info, (args_surrs(0), nothing), false);
+        has_key_check_expr = table_contains(table_var, tbl_info, (args_surrs(0), nothing));
 
         if arg1 != nothing {
           lookup_expr = column_lookup(table_var, tbl_info, key_arg_surr);
@@ -360,7 +358,7 @@ implicit program           : Program,
             ( set_ivar32(key_arg_surr, value_to_surr(key_store_id, key_store_type, value_store_encoded_expr(key_store_type, key_arg_alias))),
               do_if(
                 contains_tuple_check_expr,
-                queue_deletes(table_var, tbl_info, (args_surrs(0), nothing), false)
+                queue_deletes(table_var, tbl_info, (args_surrs(0), nothing))
               )
             )
           );
@@ -377,7 +375,7 @@ implicit program           : Program,
             ( set_ivar32(key_arg_surr, value_to_surr(key_store_id, key_store_type, value_store_encoded_expr(key_store_type, key_arg_alias))),
               do_if(
                 contains_tuple_check_expr,
-                queue_deletes(table_var, tbl_info, (args_surrs(0), nothing), false)
+                queue_deletes(table_var, tbl_info, (args_surrs(0), nothing))
               )
             )
           );
@@ -386,7 +384,7 @@ implicit program           : Program,
         }
       }
 
-      return table_delete_code(table_var, args_aliases, args_surrs, args_types, false, []);
+      return table_delete_code(table_var, args_aliases, args_surrs, args_types, []);
     }
 
 
@@ -420,10 +418,10 @@ implicit program           : Program,
                       do_if(
                         and_then((
                           neg(is_eq(assoc_surr_var, -1)),
-                          table_contains(table_var, table_info(table_var), (just(assoc_surr_var), nothing), false),
+                          table_contains(table_var, table_info(table_var), (just(assoc_surr_var), nothing)),
                           is_eq(value(arg2), column_lookup(table_var, table_info(table_var), assoc_surr_var)) if arg2 != nothing
                         )),
-                        queue_deletes(table_var, table_info(table_var), (just(assoc_surr_var), nothing), false)
+                        queue_deletes(table_var, table_info(table_var), (just(assoc_surr_var), nothing))
                       )
                     )
                   )
@@ -442,7 +440,7 @@ implicit program           : Program,
             ( set_ivar32(arg_0_surr, value_to_surr(store_ids(0), stores_types(0), value_store_encoded_expr(stores_types(0), arg0))),
               do_if_not(
                 is_eq(arg_0_surr, -1),
-                foreach(iter, (queue_deletes(table_var, table_info(table_var), (just(assoc_surr_var), nothing), false)))
+                foreach(iter, (queue_deletes(table_var, table_info(table_var), (just(assoc_surr_var), nothing))))
               )
             )
           );
@@ -462,13 +460,13 @@ implicit program           : Program,
             ( set_ivar32(arg_1_surr, value_to_surr(store_ids(1), stores_types(1), value_store_encoded_expr(stores_types(1), arg1))),
               do_if_not(
                 is_eq(arg_1_surr, -1),
-                foreach(iter, (queue_deletes(table_var, table_info(table_var), (just(assoc_surr_var), nothing), false)))
+                foreach(iter, (queue_deletes(table_var, table_info(table_var), (just(assoc_surr_var), nothing))))
               )
             )
           );
         }
         else {
-          code = (queue_deletes(table_var, table_info(table_var), (nothing, nothing), false));
+          code = (queue_deletes(table_var, table_info(table_var), (nothing, nothing)));
         }
       }
 
@@ -477,20 +475,20 @@ implicit program           : Program,
 
 
 
-    Instr* table_delete_code(TableVar table_var, Maybe[ObjExpr]+ args_aliases, Maybe[Int32Var]+ args_surrs, Maybe[Type]+ args_types, Bool symmetric, [PhysRelVar] attributes) {
+    Instr* table_delete_code(TableVar table_var, Maybe[ObjExpr]+ args_aliases, Maybe[Int32Var]+ args_surrs, Maybe[Type]+ args_types, [PhysRelVar] attributes) {
       spare_surr_var = ivar32(735016505); ## BUG BUG BUG
 
       tbl_info = table_info(table_var);
 
       // Deleting from the master table
-      code = (queue_deletes(table_var, tbl_info, args_surrs, symmetric));
+      code = (queue_deletes(table_var, tbl_info, args_surrs));
 
       if attributes != [] {
         if arity(tbl_info) == 1 {
           // Deleting from the slave attribute tables, if any
-          code = code & (queue_deletes(:table_var(a), table_info(:table_var(a)), (args_surrs | nothing), false) : a <- isort(attributes));
+          code = code & (queue_deletes(:table_var(a), table_info(:table_var(a)), (args_surrs | nothing)) : a <- isort(attributes));
           // Checking that the master table actually contains a matching entry before queuing the deletions
-          code = (do_if(table_contains(table_var, tbl_info, args_surrs, symmetric), code));
+          code = (do_if(table_contains(table_var, tbl_info, args_surrs), code));
         }
         else {
           assert arity(tbl_info) == 2 and tbl_info :: MasterBinTable;
@@ -501,7 +499,7 @@ implicit program           : Program,
           arg_1_surr = args_surrs(1);
           if arg_0_surr != nothing {
             if arg_1_surr != nothing {
-              attrs_del_code = (queue_deletes(:table_var(a), table_info(:table_var(a)), (just(spare_surr_var), nothing), false) : a <- isort(attributes));
+              attrs_del_code = (queue_deletes(:table_var(a), table_info(:table_var(a)), (just(spare_surr_var), nothing)) : a <- isort(attributes));
               code = (
                 set_ivar32(spare_surr_var, get_assoc_surr(table_var, cast_master_bin_table(tbl_info), (value(arg_0_surr), value(arg_1_surr)))),
                 do_if_not(are_eq(spare_surr_var, -1), code & attrs_del_code)
@@ -509,14 +507,14 @@ implicit program           : Program,
             }
             else {
               iter = get_table_foreach_iter(table_var, tbl_info, args_surrs, (nothing, nothing), spare_surr_var);
-              attrs_del_code = (queue_deletes(:table_var(a), table_info(:table_var(a)), (just(spare_surr_var), nothing), false) : a <- isort(attributes));
+              attrs_del_code = (queue_deletes(:table_var(a), table_info(:table_var(a)), (just(spare_surr_var), nothing)) : a <- isort(attributes));
               code = (foreach(iter, attrs_del_code)) & code;
             }
           }
           else {
             if arg_1_surr != nothing {
               iter = get_table_foreach_iter(table_var, tbl_info, args_surrs, (nothing, nothing), spare_surr_var);
-              attrs_del_code = (queue_deletes(:table_var(a), table_info(:table_var(a)), (just(spare_surr_var), nothing), false) : a <- isort(attributes));
+              attrs_del_code = (queue_deletes(:table_var(a), table_info(:table_var(a)), (just(spare_surr_var), nothing)) : a <- isort(attributes));
               code = (foreach(iter, attrs_del_code)) & code;
             }
             else {
@@ -769,7 +767,6 @@ implicit program           : Program,
     // Selecting the candidate tables among those the logical relation is partitioned into
     candidate_tables = nonempty(overlapping_tables(rel_var, (just(t) : t <- args_types)));
 
-    symmetric = symmetric(rel_var);
     keys = isort(relvar_keys(rel_var));
     deletes_args = ((maybe(v, k(i)) : v @ i <- surr_vars) : k <- keys);
 
@@ -785,7 +782,7 @@ implicit program           : Program,
       } : e @ i <- args_aliases);
 
       insertion_code = (
-        (queue_deletes(table_var, table_info(table_var), as, symmetric) : as <- deletes_args) |
+        (queue_deletes(table_var, table_info(table_var), as) : as <- deletes_args) |
         queue_insert_any_tuple(table_var, table_info(table_var), surr_vars, assoc_surr_var)
       );
       code = args_eval_code & pre_insert_code & insertion_code;
@@ -804,7 +801,7 @@ implicit program           : Program,
         store_type = value_store_type(this_db_symbol, store_id);
         return lookup_or_queue_insert_value(surr_vars(i), store_id, store_type, value_store_encoded_expr(store_type, e));
       } : e @ i <- args_aliases);
-      code = code & (queue_deletes(tv, table_info(tv), as, symmetric) : as <- deletes_args);
+      code = code & (queue_deletes(tv, table_info(tv), as) : as <- deletes_args);
       code = (code | queue_insert_any_tuple(tv, table_info(tv), surr_vars, assoc_surr_var), exit_block);
       return (types, code);
     } : tv <- candidate_tables];
@@ -1494,7 +1491,7 @@ implicit program           : Program,
             do_if_not(
               is_eq(key_arg_surr, -1),
               do_if(
-                table_contains(tv, table_info(tv), (just(key_arg_surr), nothing), false),
+                table_contains(tv, table_info(tv), (just(key_arg_surr), nothing)),
                 ( set_any_var(
                     value(low_level_value_var),
                     column_lookup(substitute(tv), table_info(tv), key_arg_surr)
@@ -1576,7 +1573,7 @@ implicit program           : Program,
             if not mandatory {
               loop_body_code = (
                 do_if(
-                  table_contains(tv, col_info, (just(surr_var_0), nothing), false),
+                  table_contains(tv, col_info, (just(surr_var_0), nothing)),
                   loop_body_code
                 )
               );
@@ -1588,12 +1585,12 @@ implicit program           : Program,
             assert col_info :: Column;
 
             table_code = (
-              set_ivar32(entries_left_var, get_count(tv, col_info, (nothing, nothing), false)),
+              set_ivar32(entries_left_var, get_count(tv, col_info, (nothing, nothing))),
               set_ivar32(surr_var_0, 0),
               repeat_while(
                 is_gt(upcast_int32(entries_left_var), 0),
                 ( do_if(
-                    table_contains(tv, col_info, (just(surr_var_0), nothing), false),
+                    table_contains(tv, col_info, (just(surr_var_0), nothing)),
                     (loop_body_code | set_ivar32(entries_left_var, add32(entries_left_var, -1)))
                   ),
                   set_ivar32(surr_var_0, add32(surr_var_0, 1))
@@ -1798,7 +1795,7 @@ implicit program           : Program,
           loop_body_code = vars_setup_code & body_code;
           loop_body_code = (
             do_if(
-              table_contains(substitute(tv), col_info, (just(assoc_surr_var), nothing), false),
+              table_contains(substitute(tv), col_info, (just(assoc_surr_var), nothing)),
               loop_body_code
             )
           );

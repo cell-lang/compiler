@@ -179,8 +179,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
       store_inserts = (immediate_insert_or_add_ref(surr_vars(i), stores_ids(i), stores_types(i), store_args(i)) : i < arity);
       table_insert = immediate_insert_tuple(tbl_var, tbl_info, nonempty(take(surr_vars, arity)));
       if arity == 2 {
-        symmetric = symmetric(rel_auto_id, rel_var);
-        guard_expr = neg(table_contains(tbl_var, tbl_info, (just(surr_vars(i)) : i < arity), symmetric));
+        guard_expr = neg(table_contains(tbl_var, tbl_info, (just(surr_vars(i)) : i < arity)));
         table_insert = do_if(guard_expr, table_insert);
       }
       core_loop_code = (store_inserts | table_insert);
@@ -219,8 +218,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
         );
         table_insert = immediate_insert_tuple(tv, tbl_info, nonempty(take(surr_vars, arity)));
         if arity == 2 {
-          symmetric = symmetric(rel_auto_id, rel_var);
-          guard_expr = neg(table_contains(tv, tbl_info, (just(surr_vars(i)) : i < arity), symmetric));
+          guard_expr = neg(table_contains(tv, tbl_info, (just(surr_vars(i)) : i < arity)));
           table_insert = do_if(guard_expr, table_insert);
         }
         case_code = (store_inserts | table_insert, exit_block);
@@ -302,7 +300,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
         immediate_insert_or_add_ref(surr_vars(0), store_id_0, store_type_0, store_arg_0),
         immediate_insert_or_add_ref(surr_vars(1), store_id_1, store_type_1, store_arg_1),
         do_if_not(
-          table_contains(master_table, master_table_type, (just(v) : v <- actual_surr_vars), false),
+          table_contains(master_table, master_table_type, (just(v) : v <- actual_surr_vars)),
           immediate_insert_tuple(master_table, master_table_type, actual_surr_vars)
         ) if not ordered,
         set_ivar32(idx_var, get_assoc_surr(master_table, master_table_type, actual_surr_vars)),
@@ -337,14 +335,14 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
           core_loop_code = (
             core_loop_code |
               do_if_not(
-                table_contains(table_var(master), master_info, (just(key_surr_var)), false),
+                table_contains(table_var(master), master_info, (just(key_surr_var))),
                 raise_load_error(false)
               ),
               surr_set_try_insert(key_surr_var, bvar),
               do_if_not(bvar, raise_load_error(false))
           );
 
-          master_size_expr = get_count(master_table, master_info, (nothing), false);
+          master_size_expr = get_count(master_table, master_info, (nothing));
           entry_code = (do_if(are_eq(master_size_expr, 0), raise_load_error(false)));
           exit_code = (
             do_if_not(are_eq(surr_set_size, master_size_expr), raise_load_error(false)),
@@ -526,28 +524,28 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
             target_table_info = cast_slave_column(target_table_info);
             if target_table_info.master == tv {
               assert src_table_info :: MasterBinTable;
-              return table_contains(fk.target, target_table_info, (just(assoc_surr_var), nothing), false);
+              return table_contains(fk.target, target_table_info, (just(assoc_surr_var), nothing));
             }
           }
 
-          tgt_is_sym, args_sets = match (fk.type)
-            unary_unary             = (false, ((just(0)))),
-            unary_binary(i?)        = (false, ((maybe(0, j == i) : j < 2))),
-            unary_ternary(i?)       = (false, ((maybe(0, j == i) : j < 3))),
-            binary_unary(i?)        = (false, ((just(i)))),
-            ternary_unary(i?)       = (false, ((just(i)))),
-            binary_ternary          = (false, ((just(0), just(1), nothing))),
-            ternary_binary          = (false, ((just(0), just(1)))),
-            unary_sym_binary        = (true,  ((just(0), nothing))),
-            unary_sym_ternary_12    = (true,  ((just(0), nothing, nothing))),
-            unary_sym_ternary_3     = (true,  ((nothing, nothing, just(0)))),
-            sym_binary_unary        = (true,  ((just(0)), (just(1)))),
-            sym_ternary_unary_12    = (true,  ((just(0)), (just(1)))),
-            sym_ternary_unary_3     = (true,  ((just(2)))), ## NOT AT ALL SURE ABOUT THIS ONE
-            sym_binary_sym_ternary  = (true,  ((just(0), just(1), nothing))),
-            sym_ternary_sym_binary  = (true,  ((just(0), just(1))));
+          args_sets = match (fk.type)
+            unary_unary             = ((just(0))),
+            unary_binary(i?)        = ((maybe(0, j == i) : j < 2)),
+            unary_ternary(i?)       = ((maybe(0, j == i) : j < 3)),
+            binary_unary(i?)        = ((just(i))),
+            ternary_unary(i?)       = ((just(i))),
+            binary_ternary          = ((just(0), just(1), nothing)),
+            ternary_binary          = ((just(0), just(1))),
+            unary_sym_binary        = ((just(0), nothing)),
+            unary_sym_ternary_12    = ((just(0), nothing, nothing)),
+            unary_sym_ternary_3     = ((nothing, nothing, just(0))),
+            sym_binary_unary        = ((just(0)), (just(1))),
+            sym_ternary_unary_12    = ((just(0)), (just(1))),
+            sym_ternary_unary_3     = ((just(2))), ## NOT AT ALL SURE ABOUT THIS ONE
+            sym_binary_sym_ternary  = ((just(0), just(1), nothing)),
+            sym_ternary_sym_binary  = ((just(0), just(1)));
           return and(
-            (table_contains(fk.target, target_table_info, (apply(a, surr_vars($)) : a <- as), tgt_is_sym) : as <- args_sets)
+            (table_contains(fk.target, target_table_info, (apply(a, surr_vars($)) : a <- as)) : as <- args_sets)
           );
         } : fk <- isort(foreign_keys));
 
@@ -592,12 +590,12 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 
           key_surr_var = surr_vars(only(surr_vars_used));
           code = (code |
-            set_ivar32(entries_left_var, get_count(tv, src_table_info, (nothing, nothing), false)),
+            set_ivar32(entries_left_var, get_count(tv, src_table_info, (nothing, nothing))),
             set_ivar32(key_surr_var, 0),
             repeat_while(
               is_gt(upcast_int32(entries_left_var), 0),
               ( do_if(
-                  table_contains(tv, src_table_info, (just(key_surr_var), nothing), false),
+                  table_contains(tv, src_table_info, (just(key_surr_var), nothing)),
                   ( do_if(cond, ret_val(false)),
                     set_ivar32(entries_left_var, add32(entries_left_var, -1))
                   )
@@ -630,7 +628,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
           body_code = (
             do_if(
               ## INEFFICIENT, WE'RE REPEATING THE ASSOCIATIVE SURROGATE LOOKUP
-              table_contains(tv, src_table_info, (just(assoc_surr_var), nothing), false),
+              table_contains(tv, src_table_info, (just(assoc_surr_var), nothing)),
               do_if(cond, ret_val(false))
             )
           );
@@ -647,7 +645,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
           body_code = (
             do_if(
               ## INEFFICIENT, WE'RE REPEATING THE ASSOCIATIVE SURROGATE LOOKUP
-              table_contains(tv, src_table_info, ((just(surr_vars(i)) : i <- (0, 1)) | nothing), false),
+              table_contains(tv, src_table_info, ((just(surr_vars(i)) : i <- (0, 1)) | nothing)),
               do_if(cond, ret_val(false))
             )
           );

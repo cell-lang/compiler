@@ -152,7 +152,7 @@ implicit program           : Program,
 
         ## THIS OUGHT TO BE DONE ONLY IF THE COLUMN IS NOT MANDATORY?
         loop_body_instr = do_if(
-          table_contains(substitute(tv), col_info, (just(assoc_surr_var), nothing), false),
+          table_contains(substitute(tv), col_info, (just(assoc_surr_var), nothing)),
           vars_setup_code & action_code
         );
         code = (code | foreach(iter, (loop_body_instr)));
@@ -211,7 +211,7 @@ implicit program           : Program,
         action_code = yield_action_opt_code(next, var_gen, surrogates = next_action_surrs);
 
         loop_body_instr = do_if(
-          table_contains(substitute(tv), table_info(tv), (just(assoc_surr_var), nothing), false),
+          table_contains(substitute(tv), table_info(tv), (just(assoc_surr_var), nothing)),
           ( surr_to_decoded_value(value(ll_free_arg_var), free_arg_store_id, free_arg_store_type, free_surr_var) if ll_free_arg_var != nothing,
             set_any_var(
               value(ll_value_var),
@@ -292,7 +292,7 @@ implicit program           : Program,
                   do_if_not(
                     is_eq(surr_var_01, -1),
                     do_if(
-                      table_contains(substitute(tv), table_info(tv), (just(surr_var_01), nothing), false),
+                      table_contains(substitute(tv), table_info(tv), (just(surr_var_01), nothing)),
                       ( set_any_var(
                           value(ll_value_var),
                           column_lookup(substitute(tv), table_info(tv), surr_var_01)
@@ -375,7 +375,7 @@ implicit program           : Program,
           do_if_not(
             is_eq(key_arg_surr, -1),
             do_if(
-              table_contains(tv, table_info(tv), (just(key_arg_surr), nothing), false),
+              table_contains(tv, table_info(tv), (just(key_arg_surr), nothing)),
               ( set_any_var(
                   value(ll_value_var),
                   column_lookup(substitute(tv), table_info(tv), key_arg_surr)
@@ -453,7 +453,7 @@ implicit program           : Program,
           if not mandatory {
             loop_body_code = (
               do_if(
-                table_contains(tv, col_info, (just(surr_var_0), nothing), false),
+                table_contains(tv, col_info, (just(surr_var_0), nothing)),
                 loop_body_code
               )
             );
@@ -465,12 +465,12 @@ implicit program           : Program,
           assert col_info :: Column;
 
           table_code = (
-            set_ivar32(entries_left_var, get_count(tv, col_info, (nothing, nothing), false)),
+            set_ivar32(entries_left_var, get_count(tv, col_info, (nothing, nothing))),
             set_ivar32(surr_var_0, 0),
             repeat_while(
               is_gt(upcast_int32(entries_left_var), 0),
               ( do_if(
-                  table_contains(tv, col_info, (just(surr_var_0), nothing), false),
+                  table_contains(tv, col_info, (just(surr_var_0), nothing)),
                   (loop_body_code | set_ivar32(entries_left_var, add32(entries_left_var, -1)))
                 ),
                 set_ivar32(surr_var_0, add32(surr_var_0, 1))

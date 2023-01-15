@@ -131,7 +131,7 @@ BoolNatOp is_blank(<AnySignalVar, LocVar, PendingStateVar> v) = :is_blank(v);
 BoolNatOp is_null(AnyNullableVar v)                       = :is_null(v);
 BoolNatOp has_field(ObjExpr r, SymbObj f)                 = has_field(record: r, field: f);
 BoolNatOp rel_obj_contains(ObjExpr r, Maybe[ObjExpr]+ as) = rel_obj_contains(rel: r, args: as);
-BoolNatOp table_contains(AnyTableVar v, AnyTable t, Maybe[Int32Var]+ vs, Bool b) = table_contains(table_var: v, table: t, tuple: vs, symmetric: b);
+BoolNatOp table_contains(AnyTableVar v, AnyTable t, Maybe[Int32Var]+ vs) = table_contains(table_var: v, table: t, tuple: vs);
 
 BoolNatOp are_eq(Int32Expr e1, Int32Expr e2)  = are_eq(int_obj(e1), int_obj(e2));
 
@@ -169,8 +169,8 @@ IntNatOp ticks                = :ticks;
 
 Int32NatOp bool_to_bit(BoolExpr e)                                                      = :bool_to_bit(e);
 Int32NatOp get_size(ObjExpr e)                                                          = :get_size(e);
-Int32NatOp get_count(AnyTableVar v, AnyTable t, Maybe[Int32Var]+ as, Bool s)            = get_count(table_var: v, table: t, args: as, symmetric: s);
-Int32NatOp table_lookup(AnyTableVar v, AnySurrTable t, Maybe[Int32Var]+ as, Bool s)     = table_lookup(table_var: v, table: t, args: as, symmetric: s);
+Int32NatOp get_count(AnyTableVar v, AnyTable t, Maybe[Int32Var]+ as)                    = get_count(table_var: v, table: t, args: as);
+Int32NatOp table_lookup(AnyTableVar v, AnySurrTable t, Maybe[Int32Var]+ as)             = table_lookup(table_var: v, table: t, args: as);
 Int32NatOp add32(Int32Expr e1, Int32Expr e2)                                            = :add32(e1, e2);
 Int32NatOp value_to_surr(AnyValueStoreId s, ValueStoreType t, <AtomicExpr, IntExpr> e)  = value_to_surr(store: s, store_type: t, value: e);
 Int32NatOp get_arg_by_assoc_surr(AnyTableVar v, MasterBinTable t, <0..1> a, Int32Var s) = get_arg_by_assoc_surr(table_var: v, table_type: t, arg: a, surr: s);
@@ -620,8 +620,8 @@ BasicInstr cleanup_value_store(ValueStoreId s) = cleanup_value_store(store: s);
 BasicInstr init_table(TableVar v, AnyTable t)    = init_table(table_var: v, table: t);
 BasicInstr cleanup_table(TableVar v, AnyTable t) = cleanup_table(table_var: v, table: t);
 
-BasicInstr queue_deletes(TableVar v, AnyTable t, Maybe[Int32Var]+ as, Bool s) =
-  queue_deletes(table_var: v, table: t, args: as, symmetric: s);
+BasicInstr queue_deletes(TableVar v, AnyTable t, Maybe[Int32Var]+ as) =
+  queue_deletes(table_var: v, table: t, args: as);
 
 BasicInstr lookup_or_queue_insert_value(Int32Var v, ValueStoreId s, ValueStoreType t, <AtomicExpr, IntExpr> e) =
   lookup_or_queue_insert_value(res_var: v, store: s, store_type: t, value: e);

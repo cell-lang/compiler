@@ -150,11 +150,9 @@ implicit program           : Program,
     return ((), :invalid_var, init_var_gen) if not args_types :: Maybe[NeType]+;
     candidate_tables = overlapping_tables(rel_var, args_types);
 
-    symmetric = symmetric(rel_var);
-
     code = (eval_code | set_ivar32(res_var, 0));
     for t @ i <- isort(candidate_tables) {
-      count_expr = get_count(substitute(t), table_info(t), surr_args, symmetric);
+      count_expr = get_count(substitute(t), table_info(t), surr_args);
       count_expr = add32(res_var, count_expr) if i > 0;
       table_code = (set_ivar32(res_var, count_expr));
       for e @ j <- reverse(args_aliases) {
@@ -194,8 +192,6 @@ implicit program           : Program,
 
     surr_args = (apply(a, surr_vars(arg_idx_bound_arg_idx(i))) : a @ i <- args);
 
-    symmetric = symmetric(rel_var);
-
     // Selecting the candidate tables among those the logical relation is partitioned into
     args_types = (apply(a, subexpr_type) : a <- args);
     return ((), :invalid_var, init_var_gen) if not args_types :: Maybe[NeType]+;
@@ -214,12 +210,12 @@ implicit program           : Program,
         arg_1 = surr_args(1);
         master_args = (arg_0, arg_1);
 
-        slave_table_contains_expr = table_contains(subst_table_var, target_table_info, (just(assoc_surr_var), nothing), false);
+        slave_table_contains_expr = table_contains(subst_table_var, target_table_info, (just(assoc_surr_var), nothing));
 
         if arg_0 != nothing and arg_1 != nothing {
           table_code = (
             branch(
-              table_contains(master_table, table_info(master_table), master_args, symmetric),
+              table_contains(master_table, table_info(master_table), master_args),
               ( set_ivar32(assoc_surr_var, get_assoc_surr(master_table, master_table_info, (value(arg_0), value(arg_1)))),
                 set_bvar(res_var, slave_table_contains_expr)
               ),
@@ -234,7 +230,7 @@ implicit program           : Program,
         }
       }
       else
-        table_code = (set_bvar(res_var, table_contains(subst_table_var, target_table_info, surr_args, symmetric)));
+        table_code = (set_bvar(res_var, table_contains(subst_table_var, target_table_info, surr_args)));
 
       for e @ j <- reverse(args_aliases) {
         idx = rat(bound_args_idxs, j);
@@ -307,7 +303,7 @@ implicit program           : Program,
       res_store_type = value_store_type(rel_auto_type(rel_var), unqualified(res_store_id));
       res_store_id = substitute(res_store_id);
       code = (
-        set_ivar32(res_surr_var, table_lookup(substitute(tv), cast_any_surr_table(table_info(tv)), maybe_seq(surr_vars_map, arity), symmetric(rel_var))),
+        set_ivar32(res_surr_var, table_lookup(substitute(tv), cast_any_surr_table(table_info(tv)), maybe_seq(surr_vars_map, arity))),
         do_if_not(is_eq(res_surr_var, -1), (
           surr_to_decoded_value(res_var, res_store_id, res_store_type, res_surr_var),
           exit_block
