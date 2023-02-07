@@ -6,18 +6,18 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
     msg_types = [h.type : h <- database.handlers];
     msg_memb_pred = if msg_types != [] then just(memb_test_preds_map[ne_union_type(msg_types)]) else nothing;
 
-    insert_checked_foreign_keys = [
-      bk : k bk <- physical_foreign_keys_map, not insertion_is_statically_checked(k), not is_mandatory_slave_of(database.name, bk.origin, bk.target)
-    ];
-    delete_checked_foreign_keys = [
-      bk : k bk <- physical_foreign_keys_map,
-        // If the source is an attribute of the target then cascade delete is enought to automatically enforce the constraint
-        not database.attr_map(only(k.target_rel_vars), k.source_rel_var),
-        // If the target is a mandatory single-valued attribute of the source, then it cannot be independently deleted
-        not (
-          database.attr_map(k.source_rel_var, only(k.target_rel_vars)) and
-          is_one_to_one_attribute(database.name, only(k.target_rel_vars))
-        )
+    foreign_keys = [bk -> {
+        insertion_is_checked = not insertion_is_statically_checked(k) and not is_mandatory_slave_of(database.name, bk.origin, bk.target);
+        deletion_is_checked =
+          // If the source is an attribute of the target then cascade delete is enought to automatically enforce the constraint
+          not database.attr_map(only(k.target_rel_vars), k.source_rel_var) and
+          // If the target is a mandatory single-valued attribute of the source, then it cannot be independently deleted
+          not (
+            database.attr_map(k.source_rel_var, only(k.target_rel_vars)) and
+            is_one_to_one_attribute(database.name, only(k.target_rel_vars))
+          );
+        return (insertion_checked: insertion_is_checked, deletion_checked: deletion_is_checked);
+      } : k bk <- physical_foreign_keys_map
     ];
 
     cols_subset_map = compute_cols_subset_map(database);
@@ -33,8 +33,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
       value_stores:                 used_value_stores,
       value_stores_owners:          value_stores_owners,
       tables:                       tables_info,
-      insert_checked_foreign_keys:  insert_checked_foreign_keys,
-      delete_checked_foreign_keys:  delete_checked_foreign_keys,
+      foreign_keys:                 foreign_keys,
       cols_subset_map:              cols_subset_map,
       init_code:                    database_init_code,
       cleanup_code:                 database_cleanup_code,
@@ -284,6 +283,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 
 
     Instr+ table_var_code(DBSymbol rel_auto_id, TableVar table_var, LocVar+ args_vars, Int32Var+ surr_vars, Bool ordered) {
+      column = cast_slave_column(table_info(table_var, context = database));
+
       master_table = master_table(rel_auto_id, table_var);
       master_table_type = cast_master_bin_table(table_info(rel_auto_id, master_table));
 
@@ -304,7 +305,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
           immediate_insert_tuple(master_table, master_table_type, actual_surr_vars)
         ) if not ordered,
         set_ivar32(idx_var, get_assoc_surr(master_table, master_table_type, actual_surr_vars)),
-        column_insert_immediate(table_var, column_is_mandatory(rel_auto_id, table_var), col_repr, idx_var, low_level_expr(col_repr, args_vars(2)))
+        column_insert_immediate(table_var, column, idx_var, low_level_expr(col_repr, args_vars(2)), false)
       );
     }
   }
@@ -319,6 +320,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 
     if |tables| == 1 {
       tbl_var = only(tables);
+      column = cast_any_column(table_info(tbl_var, context = database));
       is_mandatory = column_is_mandatory(rel_auto_id, tbl_var);
       store_id = table_col_store_id(rel_auto_id, tbl_var, 0);
       store_type = value_store_type(rel_auto_id, store_id);
@@ -358,12 +360,12 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
         entry_code = ();
         exit_code = ();
       }
-      insert_stmt = column_insert_immediate(tbl_var, is_mandatory, col_repr, key_surr_var, low_level_expr(col_repr, args_vars(1)));
+      insert_stmt = column_insert_immediate(tbl_var, column, key_surr_var, low_level_expr(col_repr, args_vars(1)), false);
       core_loop_code = (core_loop_code | insert_stmt);
     }
     else {
       ## CHECK CHECK CHECK: NOT SURE THIS ASSERTION ALWAYS HOLDS TRUE
-      ## WHY WAS THIS ASSERTION HERE IN THE FIRST PLACE?
+      ## WHY WAS IT HERE IN THE FIRST PLACE?
       // assert not (v <- tables : column_is_mandatory(rel_auto_id, v));
 
       // Choosing the dispatch arguments
@@ -372,13 +374,14 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
       disp_args = (args_vars(i) : i <- disp_args_idxs);
 
       cases = [{
+        column = cast_any_column(table_info(tv, context = database));
         store_id = table_col_store_id(rel_auto_id, tv, 0);
         store_type = value_store_type(rel_auto_id, store_id);
         store_arg = value_store_encoded_expr(store_type, args_vars(0));
         col_repr = column_repr(table_signature(rel_auto_id, tv)(1));
         case_code = (
           immediate_insert_or_add_ref(key_surr_var, store_id, store_type, store_arg),
-          column_insert_immediate(tv, column_is_mandatory(rel_auto_id, tv), col_repr, key_surr_var, low_level_expr(col_repr, args_vars(1))),
+          column_insert_immediate(tv, column, key_surr_var, low_level_expr(col_repr, args_vars(1)), false),
           exit_block
         );
         types = table_signature(rel_auto_id, tv);

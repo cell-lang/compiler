@@ -641,7 +641,7 @@ BasicInstr column_insert_deferred(TableVar v, AnyColumn c, Int32Var k, AnyTypeEx
 
 BasicInstr immediate_insert_or_add_ref(Int32Var sv, ValueStoreId s, ValueStoreType t, <AtomicExpr, IntExpr> v) = immediate_insert_or_add_ref(res_var: sv, store: s, store_type: t, value: v);
 BasicInstr immediate_insert_tuple(TableVar v, AnySurrTable t, Int32Var+ as) = immediate_insert_tuple(table_var: v, table: t, tuple: as);
-BasicInstr column_insert_immediate(TableVar t, Bool m, ColumnRepr r, Int32Var k, AnyTypeExpr v) = column_insert_immediate(table_var: t, mandatory: m, col_repr: r, key_surr: k, value: v);
+BasicInstr column_insert_immediate(TableVar t, AnyColumn c, Int32Var k, AnyTypeExpr v, Bool f) = column_insert_immediate(table_var: t, column: c, key_surr: k, value: v, forced: f);
 
 BasicInstr push_call_info(<FnId, ProcSymbol, MethodSymbol> f, ObjExpr* as) = push_call_info(fn_name: f, args: as);
 BasicInstr pop_call_info = :pop_call_info;
@@ -652,6 +652,7 @@ BasicInstr log_runtime_failure(Bool b, String f, NzNat l, Maybe[String] t, (<Std
 BasicInstr resize_mandatory_column(AnyTableVar v, MandatoryColumn c, Int32Expr cc, Int32Expr nc) =
   resize_mandatory_column(table_var: v, column: c, curr_capacity: cc, new_capacity: nc);
 
+BasicInstr value_store_apply(ValueStoreId s, ValueStoreType t) = value_store_apply(store: s, store_type: t);
 BasicInstr raise_load_error(Bool d) = raise_load_error(deferred: d);
 BasicInstr surr_set_try_insert(Int32Var s, BoolVar r) = surr_set_try_insert(surr: s, was_new: r);
 BasicInstr surr_set_clear = :surr_set_clear;
@@ -763,8 +764,11 @@ BoolExpr is_neither_blank_nor_null(<AnySignalVar, LocVar> v)  = neg(or(is_null(v
 
 BoolExpr is_between(IntExpr e, IntExpr l, IntExpr u) = and(is_ge(e, l), is_le(e, u));
 
-BoolExpr is_true(ObjExpr e)  = is_eq(e, obj_true);
-BoolExpr is_false(ObjExpr e) = is_eq(e, obj_false);
+BoolExpr is_true(ObjExpr e)  = are_eq(e, obj_true);
+BoolExpr is_false(ObjExpr e) = are_eq(e, obj_false);
+
+BoolExpr is_true(BoolExpr e)  = are_eq(obj_expr(e), obj_true);
+BoolExpr is_false(BoolExpr e) = are_eq(obj_expr(e), obj_false);
 
 BoolExpr is_bool(ObjExpr e)  = or(is_true(e), is_false(e));
 

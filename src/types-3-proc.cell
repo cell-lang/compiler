@@ -197,11 +197,10 @@ type Int32NatOp     = bool_to_bit(BoolExpr),
                       get_aux_assoc_surr(table_var: TableVar, table: MasterBinTable, args: (Int32Var, Int32Var)), // The tuple may not have been inserted yet
 
                       // Operations that are only used when loading or setting the state of a relational automaton
+                      // or generating optimized message handlers
                       get_capacity(table_var: AnyTableVar, table: AnyTable),
-                      surr_set_size,
-
-                      // Operations only used when rewriting optimized message handlers
-                      get_first_free_assoc_surr(table_var: TableVar);
+                      get_first_free_assoc_surr(table_var: TableVar),
+                      surr_set_size;
 
 type FloatNatOp     = float_value(ObjExpr),
                       neg_float(FloatExpr),
@@ -414,9 +413,10 @@ type BasicInstr     = init_stream(StreamVar),
 
                       immediate_insert_or_add_ref(res_var: Int32Var, store: ValueStoreId, store_type: ValueStoreType, value: <AtomicExpr, IntExpr>),
                       immediate_insert_tuple(table_var: TableVar, table: AnySurrTable, tuple: Int32Var+),
-                      column_insert_immediate(table_var: TableVar, mandatory: Bool, col_repr: ColumnRepr, key_surr: Int32Var, value: AnyTypeExpr),
+                      column_insert_immediate(table_var: TableVar, column: AnyColumn, key_surr: Int32Var, value: AnyTypeExpr, forced: Bool),
 
                       // Instructions that are only used when loading or setting the state of a relational automaton
+                      value_store_apply(store: ValueStoreId, store_type: ValueStoreType), // Also resets the value store auxiliary structure
                       resize_mandatory_column(table_var: AnyTableVar, column: MandatoryColumn, curr_capacity: Int32Expr, new_capacity: Int32Expr),
                       raise_load_error(deferred: Bool),
                       surr_set_try_insert(surr: Int32Var, was_new: BoolVar),
@@ -660,8 +660,7 @@ type StaticBlock = static_block(
                     value_stores:                 [ValueStoreId -> ValueStoreType],
                     value_stores_owners:          [ValueStoreId -> PhysCol],
                     tables:                       [TableVar -> AnyTable],
-                    insert_checked_foreign_keys:  [BlockForeignKey],
-                    delete_checked_foreign_keys:  [BlockForeignKey],
+                    foreign_keys:                 [BlockForeignKey -> (insertion_checked: Bool, deletion_checked: Bool)],
                     cols_subset_map:              [PhysCol, PhysCol], // The set of values in column #0 is a subset of those of column #1
                     init_code:                    Instr*,
                     cleanup_code:                 Instr*,

@@ -84,18 +84,24 @@ Bool may_break(Instr+ loop_body) = in(breaks_loop, code_outcomes(loop_body));
 }
 
 
-[TableVar] table_vars_with_insertions(CompiledHandler handler) {
-  return search_instrs(handler.body, table_vars);
+[TableVar] table_vars_with_insertions(CompiledHandler handler)  = table_vars_with_insertions_or_updates(handler, true, false);
+[TableVar] table_vars_with_updates(CompiledHandler handler)     = table_vars_with_insertions_or_updates(handler, false, true);
 
-  [TableVar] table_vars(Instr instr) =
+
+[TableVar] table_vars_with_insertions_or_updates(CompiledHandler handler, Bool include_unforced, Bool include_forced) {
+  assert include_unforced or include_forced;
+
+  return search_instrs(handler.body, table_vars($, include_unforced, include_forced));
+
+  [TableVar] table_vars(Instr instr, Bool include_unforced, Bool include_forced) =
     init_table()                            |
     cleanup_table()                         |
     immediate_insert_tuple()                |
     column_insert_immediate()               = undefined,
-    queue_insert_tuple()                    = [instr.table_var],
-    queue_insert_master_tuple()             = [instr.table_var],
-    column_insert_deferred()                = [instr.table_var],
-    _                                       = search_any_nested(instr, table_vars, []);
+    queue_insert_tuple()                    = [instr.table_var if include_unforced],
+    queue_insert_master_tuple()             = [instr.table_var if include_unforced],
+    column_insert_deferred()                = [instr.table_var if if instr.forced then include_forced else include_unforced],
+    _                                       = search_any_nested(instr, table_vars($, include_unforced, include_forced), []);
 }
 
 
@@ -108,7 +114,8 @@ Bool may_break(Instr+ loop_body) = in(breaks_loop, code_outcomes(loop_body));
     immediate_insert_tuple()                |
     column_insert_immediate()               = undefined,
     queue_deletes()                         = [instr.table_var],
-    column_insert_deferred()                = [instr.table_var if instr.forced], ## NOT SURE THERE'S ANY POINT IN DOING THIS
+    column_insert_deferred()                = [],
+    // column_insert_deferred()                = [instr.table_var if instr.forced], ## NOT SURE THERE'S ANY POINT IN DOING THIS
     _                                       = search_any_nested(instr, table_vars, []);
 }
 
@@ -137,6 +144,7 @@ implicit block : StaticBlock {
   [HandlerId, MembVar] updated_memb_vars                      = [id, v : id h <- block.handlers, v <- updated_memb_vars(h)];
   [HandlerId, ValueStoreId] value_stores_with_insertions      = [id, vs : id h <- block.handlers, vs <- value_stores_with_insertions(h)];
   [HandlerId, TableVar] table_vars_with_insertions            = [id, v : id h <- block.handlers, v <- table_vars_with_insertions(h)];
+  [HandlerId, TableVar] table_vars_with_updates               = [id, v : id h <- block.handlers, v <- table_vars_with_updates(h)];
   [HandlerId, TableVar] table_vars_with_deletions             = [id, v : id h <- block.handlers, v <- table_vars_with_deletions(h)];
   [HandlerId, LinkedDBVar, TargetHandlerId] updated_dependees = [id, d, t : id h <- block.handlers, d t <- updated_dependees(h)];
 
