@@ -350,17 +350,19 @@ NodeInfo rewrite_node(NodeInfo node, PropInfo info) =
   return match (instr)
     set_ivar32()                    = rewrite_set_ivar32(instr, instr.var, instr.value, info),
     lookup_or_queue_insert_value()  = rewrite_lookup_or_queue_insert_value(instr, instr.res_var, instr.store, instr.store_type, instr.value, info),
-    queue_insert_tuple()            = rewrite_queue_insert_tuple(instr, instr.table_var, instr.table, instr.tuple, info),
+    queue_insert_tuple()            = rewrite_queue_insert_tuple(instr, instr.table_var, instr.table, instr.tuple, instr.forced, info),
+    ## BUG BUG BUG: WHAT ABOUT queue_insert_master_tuple(..) and column_insert_deferred(..)?
+    ## FOR NOW THIS IS FINE, BUT AS SOON AS SLAVE TERNARY TABLE CAN BE IMPLEMENTED AS RAW COLUMNS THIS MAY CHANGE
     _                               = instr;
 
 
-  BasicInstr rewrite_queue_insert_tuple(BasicInstr instr, TableVar, Table, Int32Var+, PropInfo info) = instr;
+  BasicInstr rewrite_queue_insert_tuple(BasicInstr instr, TableVar, Table, Int32Var+, Bool, PropInfo info) = instr;
 
-  BasicInstr rewrite_queue_insert_tuple(BasicInstr instr, TableVar table_var, SlaveTernTable table, Int32Var+ tuple, PropInfo info) {
+  BasicInstr rewrite_queue_insert_tuple(BasicInstr instr, TableVar table_var, SlaveTernTable table, Int32Var+ tuple, Bool forced, PropInfo info) {
     if |tuple| == 3 {
       maybe_var = lookup_ex_assoc_surr_of(info, table.master, tuple(0), tuple(1));
       if maybe_var != nothing
-        return queue_insert_tuple(table_var, table, (value(maybe_var), tuple(2)));
+        return queue_insert_tuple(table_var, table, (value(maybe_var), tuple(2)), forced);
     }
 
     return instr;

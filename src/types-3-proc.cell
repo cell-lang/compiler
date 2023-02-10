@@ -406,7 +406,7 @@ type BasicInstr     = init_stream(StreamVar),
 
                       queue_deletes(table_var: TableVar, table: AnyTable, args: Maybe[Int32Var]+),
                       lookup_or_queue_insert_value(res_var: Int32Var, store: ValueStoreId, store_type: ValueStoreType, value: <AtomicExpr, IntExpr>),
-                      queue_insert_tuple(table_var: TableVar, table: <Table, SlaveTernTable>, tuple: Int32Var+),
+                      queue_insert_tuple(table_var: TableVar, table: <Table, SlaveTernTable>, tuple: Int32Var+, forced: Bool),
                       queue_insert_master_tuple(assoc_surr_var: Int32Var, table_var: TableVar, table: MasterBinTable, tuple: (Int32Var, Int32Var)),
 
                       column_insert_deferred(table_var: TableVar, column: AnyColumn, key_surr: Int32Var, value: AnyTypeExpr, forced: Bool),
@@ -416,12 +416,12 @@ type BasicInstr     = init_stream(StreamVar),
                       column_insert_immediate(table_var: TableVar, column: AnyColumn, key_surr: Int32Var, value: AnyTypeExpr, forced: Bool),
 
                       // Instructions that are only used when loading or setting the state of a relational automaton
+                      immediate_update_tuple(table_var: TableVar, table: AnySurrTable, tuple: Int32Var+, owned_value_stores: Maybe[(ValueStoreId, ValueStoreType)]+),
                       value_store_apply(store: ValueStoreId, store_type: ValueStoreType), // Also resets the value store auxiliary structure
                       resize_mandatory_column(table_var: AnyTableVar, column: MandatoryColumn, curr_capacity: Int32Expr, new_capacity: Int32Expr),
                       raise_load_error(deferred: Bool),
                       surr_set_try_insert(surr: Int32Var, was_new: BoolVar),
                       surr_set_clear;
-
 
 type JumpInstr      = break_loop,
                       exit_block,

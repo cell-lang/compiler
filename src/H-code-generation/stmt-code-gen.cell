@@ -246,28 +246,6 @@ implicit program           : Program,
       set_args_code = (set_var(formal_args(i), e) : e @ i <- actual_args);
       code = (set_args_code | execute_block(nonempty(body_code)));
 
-// print "----------------------------------------------------------------";
-// print "context.name";
-// print match (context) data_base() = context.name;
-// print "update.name";
-// print update.name;
-// print "update.args";
-// print update.args;
-// print "actual_args";
-// print actual_args;
-// print "env";
-// print env;
-// print "local_vars";
-// print local_vars;
-// print "conflicting_vars";
-// print conflicting_vars;
-// print "repl_map";
-// print repl_map;
-// print "formal_args";
-// print formal_args;
-// print "set_args_code";
-// print set_args_code;
-
       return code;
     }
   }
@@ -574,7 +552,7 @@ implicit program           : Program,
         return lookup_or_queue_insert_value(surr_var, store_id, store_type, value_store_encoded_expr(store_type, e));
       } : e @ i <- args_aliases);
 
-      insertion_code = (queue_insert_any_tuple(table_var, table_info(table_var), surr_vars, assoc_surr_var));
+      insertion_code = (queue_insert_any_tuple(table_var, table_info(table_var), surr_vars, assoc_surr_var, false));
       code = args_eval_code & pre_insert_code & insertion_code;
 
       return (code, just(surrogates), [], init_var_gen);
@@ -591,7 +569,7 @@ implicit program           : Program,
         store_type = value_store_type(this_db_symbol, store_id);
         return lookup_or_queue_insert_value(surr_vars(i), store_id, store_type, value_store_encoded_expr(store_type, e));
       } : e @ i <- args_aliases);
-      code = (code | queue_insert_any_tuple(tv, table_info(tv), surr_vars, assoc_surr_var), exit_block);
+      code = (code | queue_insert_any_tuple(tv, table_info(tv), surr_vars, assoc_surr_var, false), exit_block);
       return (types, code);
     } : tv <- candidate_tables];
 
@@ -767,9 +745,6 @@ implicit program           : Program,
     // Selecting the candidate tables among those the logical relation is partitioned into
     candidate_tables = nonempty(overlapping_tables(rel_var, (just(t) : t <- args_types)));
 
-    keys = isort(relvar_keys(rel_var));
-    deletes_args = ((maybe(v, k(i)) : v @ i <- surr_vars) : k <- keys);
-
     if |candidate_tables| == 1 {
       // Easy case: there's only one table
       table_var = only(candidate_tables);
@@ -781,10 +756,7 @@ implicit program           : Program,
         return lookup_or_queue_insert_value(surr_var, store_id, store_type, value_store_encoded_expr(store_type, e));
       } : e @ i <- args_aliases);
 
-      insertion_code = (
-        (queue_deletes(table_var, table_info(table_var), as) : as <- deletes_args) |
-        queue_insert_any_tuple(table_var, table_info(table_var), surr_vars, assoc_surr_var)
-      );
+      insertion_code = (queue_insert_any_tuple(table_var, table_info(table_var), surr_vars, assoc_surr_var, true));
       code = args_eval_code & pre_insert_code & insertion_code;
 
       return (code, just(surrogates), [], init_var_gen);
@@ -801,8 +773,7 @@ implicit program           : Program,
         store_type = value_store_type(this_db_symbol, store_id);
         return lookup_or_queue_insert_value(surr_vars(i), store_id, store_type, value_store_encoded_expr(store_type, e));
       } : e @ i <- args_aliases);
-      code = code & (queue_deletes(tv, table_info(tv), as) : as <- deletes_args);
-      code = (code | queue_insert_any_tuple(tv, table_info(tv), surr_vars, assoc_surr_var), exit_block);
+      code = (code | queue_insert_any_tuple(tv, table_info(tv), surr_vars, assoc_surr_var, true), exit_block);
       return (types, code);
     } : tv <- candidate_tables];
 
