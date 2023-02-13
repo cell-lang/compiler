@@ -165,7 +165,10 @@ type BoolNatOp      = is_symb(ObjExpr),
                       is_null(AnyNullableVar),
                       has_field(record: ObjExpr, field: SymbObj),
                       rel_obj_contains(rel: ObjExpr, args: Maybe[ObjExpr]+),
-                      table_contains(table_var: AnyTableVar, table: AnyTable, tuple: Maybe[Int32Var]+);
+                      table_contains(table_var: AnyTableVar, table: AnyTable, tuple: Maybe[Int32Var]+),
+
+                      // Operations that are only used in code that does not undergo further processing
+                      master_bin_table_contains_assoc_surr(table_var : TableVar, table: MasterBinTable, assoc_surr: Int32Var);
 
 type IntNatOp       = get_int_val(ObjExpr),
                       minus(IntExpr),
@@ -196,8 +199,7 @@ type Int32NatOp     = bool_to_bit(BoolExpr),
                       get_assoc_surr(table_var: AnyTableVar, table_type: MasterBinTable, args: (Int32Var, Int32Var)),
                       get_aux_assoc_surr(table_var: TableVar, table: MasterBinTable, args: (Int32Var, Int32Var)), // The tuple may not have been inserted yet
 
-                      // Operations that are only used when loading or setting the state of a relational automaton
-                      // or generating optimized message handlers
+                      // Operations that are only used in code that does not undergo further processing
                       get_capacity(table_var: AnyTableVar, table: AnyTable),
                       get_first_free_assoc_surr(table_var: TableVar),
                       surr_set_size;
@@ -231,6 +233,7 @@ type ObjNatOp       = at(seq: ObjExpr, idx: IntExpr, fast_repr: LowLevelEltRepr)
                       column_lookup(var: AnyTableVar, column: AnyColumn, key: Int32Var, safe: Bool),
                       only_elt(ObjExpr);
 
+## WHY ARE THESE EXPRESSIONS IN A SEPARATE TYPE AND NOT IN BoolNatOp?
 type BoolFnCall     = is_member(pred: MembTestPredId, obj: AtomicExpr),
                       state_is_def(auto_var: AnyAutoVar, type: AutoSymbol);
 
