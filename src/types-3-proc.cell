@@ -418,13 +418,14 @@ type BasicInstr     = init_stream(StreamVar),
                       immediate_insert_tuple(table_var: TableVar, table: AnySurrTable, tuple: Int32Var+),
                       column_insert_immediate(table_var: TableVar, column: AnyColumn, key_surr: Int32Var, value: AnyTypeExpr, forced: Bool),
 
-                      // Instructions that are only used when loading or setting the state of a relational automaton
+                      // Instructions that are only used in code that does not undergo further processing
                       immediate_update_tuple(table_var: TableVar, table: AnySurrTable, tuple: Int32Var+, owned_value_stores: Maybe[(ValueStoreId, ValueStoreType)]+),
                       value_store_apply(store: ValueStoreId, store_type: ValueStoreType), // Also resets the value store auxiliary structure
                       resize_mandatory_column(table_var: AnyTableVar, column: MandatoryColumn, curr_capacity: Int32Expr, new_capacity: Int32Expr),
                       raise_load_error(deferred: Bool),
                       surr_set_try_insert(surr: Int32Var, was_new: BoolVar),
-                      surr_set_clear;
+                      surr_set_clear,
+                      comment(text: String, empty_line_before: Bool, empty_line_after: Bool);
 
 type JumpInstr      = break_loop,
                       exit_block,
