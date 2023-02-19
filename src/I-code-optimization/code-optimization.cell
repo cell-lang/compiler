@@ -352,14 +352,21 @@ NodeInfo rewrite_node(NodeInfo node, PropInfo info) =
     lookup_or_queue_insert_value()  = rewrite_lookup_or_queue_insert_value(instr, instr.res_var, instr.store, instr.store_type, instr.value, info),
     queue_insert_tuple()            = rewrite_queue_insert_tuple(instr, instr.table_var, instr.table, instr.tuple, instr.forced, info),
     // queue_insert_master_tuple()     = undefined, ## IMPLEMENT IMPLEMENT IMPLEMENT
-    // column_insert_deferred()        = rewrite_colum_insert_deferred(instr, instr.table_var, instr.column, instr.key_surr)
-    ## BUG BUG BUG: WHAT ABOUT queue_insert_master_tuple(..) and column_insert_deferred(..)?
-    ## FOR NOW THIS IS FINE, BUT AS SOON AS SLAVE TERNARY TABLE CAN BE IMPLEMENTED AS RAW COLUMNS THIS MAY CHANGE
+    column_insert_deferred()        = rewrite_column_insert_deferred(instr, instr.table_var, instr.column, instr.key_surr, instr.args_surrs, instr.value, instr.forced, info),
     _                               = instr;
 
 
+  BasicInstr rewrite_column_insert_deferred(BasicInstr instr, TableVar, <Column, MandatoryColumn>, Int32Var, Maybe[(Int32Var, Int32Var)], AnyTypeExpr, Bool, PropInfo) = instr;
 
-  // column_insert_deferred(table_var: TableVar, column: AnyColumn, key_surr: <Int32Var, (Int32Var, Int32Var)>, value: AnyTypeExpr, forced: Bool),
+  BasicInstr rewrite_column_insert_deferred(BasicInstr instr, TableVar table_var, SlaveColumn column, Int32Var key_surr, Maybe[(Int32Var, Int32Var)] args_surrs, AnyTypeExpr value_expr, Bool forced, PropInfo info) {
+    if args_surrs != nothing {
+      arg1_surr, arg2_surr = value(args_surrs);
+      maybe_opt_key_surr = lookup_ex_assoc_surr_of(info, column.master, arg1_surr, arg2_surr);
+      if maybe_opt_key_surr != nothing
+        return column_insert_deferred(table_var, column, value(maybe_opt_key_surr), nothing, value_expr, forced);
+    }
+    return instr;
+  }
 
 
   BasicInstr rewrite_queue_insert_tuple(BasicInstr instr, TableVar, Table, Int32Var+, Bool, PropInfo info) = instr;
@@ -370,7 +377,6 @@ NodeInfo rewrite_node(NodeInfo node, PropInfo info) =
       if maybe_var != nothing
         return queue_insert_tuple(table_var, table, (value(maybe_var), tuple(2)), forced);
     }
-
     return instr;
   }
 
