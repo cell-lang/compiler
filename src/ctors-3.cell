@@ -265,8 +265,36 @@ BoolExpr and(BoolExpr+ es)      = if      not (e <- es : e != true) then true
 
 // BoolExpr and(BoolExpr+ es)      = if |es| != 1 then :and(es)      else only(es);
 BoolExpr or(BoolExpr+ es)       = if |es| != 1 then :or(es)       else only(es);
-BoolExpr and_then(BoolExpr+ es) = if |es| != 1 then :and_then(es) else only(es);
-BoolExpr or_else(BoolExpr+ es)  = if |es| != 1 then :or_else(es)  else only(es);
+
+BoolExpr and_then(BoolExpr+ exprs) {
+  non_const_exprs = ();
+  for e <- exprs {
+    if e == false
+      return false;
+    if e != true
+      non_const_exprs = (non_const_exprs | e);
+  }
+  if non_const_exprs == ()
+    return true;
+  if |non_const_exprs| == 1
+    return only(non_const_exprs);
+  return :and_then(non_const_exprs);
+}
+
+BoolExpr or_else(BoolExpr+ exprs) {
+  non_const_exprs = ();
+  for e <- exprs {
+    if e == true
+      return true;
+    if e != false
+      non_const_exprs = (non_const_exprs | e);
+  }
+  if non_const_exprs == ()
+    return false;
+  if |non_const_exprs| == 1
+    return only(non_const_exprs);
+  return :or_else(non_const_exprs);
+}
 
 BoolExpr and([+BoolExpr] es)  = and(rand_sort(es));
 BoolExpr or([+BoolExpr] es)   = or(rand_sort(es));
