@@ -694,6 +694,9 @@ BasicInstr immediate_delete_tuple(TableVar v, AnyTable t, Maybe[Int32Var]+ as) =
 BasicInstr immediate_update_tuple(TableVar v, AnySurrTable t, Int32Var+ as, Maybe[(ValueStoreId, ValueStoreType)]+ vs) =
   immediate_update_tuple(table_var: v, table: t, tuple: as, owned_value_stores: vs);
 
+BasicInstr release_before_delete(TableVar v, AnySurrTable t, Maybe[Int32Var]+ as, Nat i, ValueStoreId s, ValueStoreType st) =
+  release_before_delete(table_var: v, table: t, args: as, col_idx: i, store: s, store_type: st);
+
 BasicInstr value_store_release(ValueStoreId s, ValueStoreType t, Int32Var v) = value_store_release(store: s, store_type: t, surr: v);
 BasicInstr value_store_clear(ValueStoreId s, ValueStoreType t) = value_store_clear(store: s, store_type: t);
 BasicInstr value_store_apply(ValueStoreId s, ValueStoreType t) = value_store_apply(store: s, store_type: t);
@@ -809,6 +812,9 @@ BoolExpr is_not_null(AnyNullableVar v)                        = neg(is_null(v));
 BoolExpr is_neither_blank_nor_null(<AnySignalVar, LocVar> v)  = neg(or(is_null(v), is_blank(v)));
 
 BoolExpr is_between(IntExpr e, IntExpr l, IntExpr u) = and(is_ge(e, l), is_le(e, u));
+
+BoolNatOp is_le(<Int32Var, Int32NatOp> v1, <Int32Var, Int32NatOp> v2) = is_le(upcast_int32(v1), upcast_int32(v2));
+BoolNatOp is_le(<Int32Var, Int32NatOp> e, Int32 n) = is_le(upcast_int32(e), n);
 
 BoolExpr is_true(ObjExpr e)  = are_eq(e, obj_true);
 BoolExpr is_false(ObjExpr e) = are_eq(e, obj_false);
