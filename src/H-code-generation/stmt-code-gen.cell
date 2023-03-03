@@ -297,6 +297,10 @@ implicit program           : Program,
         assert attrs == [];
         table_code = slave_column_delete_code(table_var(v), args_aliases, args_surrs, args_types, assoc_surr_var);
       }
+      else if is_slave_relvar(log_rv) {
+        assert attrs == [];
+        table_code = slave_tern_table_delete_code(table_var(v), args_aliases, args_surrs, args_types, assoc_surr_var);
+      }
       else
         table_code = table_delete_code(table_var(v), args_aliases, args_surrs, args_types, attrs);
 
@@ -452,6 +456,24 @@ implicit program           : Program,
     }
 
 
+    Instr* slave_tern_table_delete_code(TableVar table_var, Maybe[ObjExpr]+ args_aliases, Maybe[Int32Var]+ args_surrs, Maybe[Type]+ args_types, Int32Var assoc_surr_var) {
+      assert |args_aliases| == 3 and |args_surrs| == 3 and |args_types| == 3;
+
+      tbl_info = table_info(table_var);
+      master_table = master_table(table_var);
+      master_table_info = cast_master_bin_table(table_info(master_table));
+
+      code = match (args_surrs)
+        (nothing,   nothing,   a3?) = (queue_deletes(table_var, tbl_info, (nothing, a3))),
+        (just(a1?), just(a2?), a3?) = ( set_ivar32(assoc_surr_var, get_assoc_surr(master_table, master_table_info, (a1, a2))),
+                                        do_if_not(is_null_surr(assoc_surr_var), queue_deletes(table_var, tbl_info, (just(assoc_surr_var), a3)))
+                                      );
+
+      code = add_value_store_lookups(code, table_var, args_aliases, args_surrs, args_types);
+
+      return code;
+    }
+
 
     Instr* table_delete_code(TableVar table_var, Maybe[ObjExpr]+ args_aliases, Maybe[Int32Var]+ args_surrs, Maybe[Type]+ args_types, [PhysRelVar] attributes) {
       spare_surr_var = ivar32(735016505); ## BUG BUG BUG
@@ -502,25 +524,33 @@ implicit program           : Program,
         }
       }
 
-      for a @ ri <- reverse(args_aliases) {
-        if a != nothing {
-          i = nat(|args_aliases| - ri - 1);
-          arg_alias = value(a);
-          arg_type = value_unsafe(args_types(i));
-          store_id = table_col_store_id(table_var, i);
-          store_type = value_store_type(this_db_symbol, store_id);
-          arg_surr = value_unsafe(args_surrs(i));
-          code = opt_do_if(
-            value_store_guard(store_type, arg_alias, arg_type),
-            ( set_ivar32(arg_surr, value_to_surr(store_id, store_type, value_store_encoded_expr(store_type, arg_alias))),
-              do_if_not(is_eq(arg_surr, -1), code)
-            )
-          );
-        }
-      }
+      code = add_value_store_lookups(code, table_var, args_aliases, args_surrs, args_types);
 
       return code;
     }
+  }
+
+
+  Instr* add_value_store_lookups(Instr* inner_code, TableVar table_var, Maybe[ObjExpr]+ args_aliases, Maybe[Int32Var]+ args_surrs, Maybe[Type]+ args_types) {
+    code = inner_code;
+    for a @ ri <- reverse(args_aliases) {
+      if a != nothing {
+        i = nat(|args_aliases| - ri - 1);
+        arg_alias = value(a);
+        arg_type = value_unsafe(args_types(i));
+        store_id = table_col_store_id(table_var, i);
+        store_type = value_store_type(this_db_symbol, store_id);
+        arg_surr = value_unsafe(args_surrs(i));
+        code = opt_do_if(
+          value_store_guard(store_type, arg_alias, arg_type),
+          ( set_ivar32(arg_surr, value_to_surr(store_id, store_type, value_store_encoded_expr(store_type, arg_alias))),
+            do_if_not(is_eq(arg_surr, -1), code)
+          )
+        );
+      }
+    }
+
+    return code;
   }
 
 

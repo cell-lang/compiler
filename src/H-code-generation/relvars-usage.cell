@@ -18,6 +18,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context {
 
   Bool is_ternary_slave_column(AnyRelVar rel_var) = is_ternary_slave_column(rel_auto_type(rel_var), unqualified(rel_var));
 
+  Bool is_slave_relvar(AnyRelVar rel_var) = is_slave_relvar(rel_auto_type(rel_var), unqualified(rel_var));
+
   Bool column_is_mandatory(TableVar table_var)     = column_is_mandatory(this_db_symbol, table_var);
   Bool column_is_mandatory(QualTableVar table_var) = column_is_mandatory(var_type(table_var.db_var), table_var.table_var);
 }
@@ -114,9 +116,9 @@ implicit program : Program {
   }
 
 
-  Bool is_slave_relvar(DBSymbol rel_auto_id, PhysRelVar rel_var) {
+  Bool is_slave_relvar(DBSymbol rel_auto_id, RelVar rel_var) {
     masters_slaves = masters_slaves_relvars;
-    return masters_slaves(rel_auto_id, _, rel_var);
+    return only([masters_slaves(rel_auto_id, _, prv) : prv <- physical_rel_vars(rel_auto_by_id(rel_auto_id), rel_var)]);
   }
 
 
