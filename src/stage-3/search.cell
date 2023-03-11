@@ -69,12 +69,13 @@
 
 
 [T] search_any_nested(Int32NatOp expr, (AnyTypeExpr -> [T]) search) =
-  bool_to_bit(e?)         |
   get_size(e?)            = search(e),
   get_count()             |
   table_lookup()          = union([search(value(a)) : a <- expr.args, a != nothing]),
   cast_int32(e?)          = search(e),
+  minus32(e?)             = search(e),
   add32(e1?, e2?)         = search(e1) & search(e2),
+  if32(c?, e1?, e2?)      = search(c) & search(e1) & search(e2),
   value_to_surr()         = search(expr.value),
   get_arg_by_assoc_surr() = search(expr.surr),
   get_assoc_surr()        = seq_union((search(v) : v <- expr.args));

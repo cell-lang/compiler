@@ -179,19 +179,35 @@ IntNatOp rand_nat(ObjExpr e)  = :rand_nat(get_int_val(e));
 IntNatOp rand_nat(IntExpr e)  = :rand_nat(e);
 IntNatOp ticks                = :ticks;
 
-Int32NatOp bool_to_bit(BoolExpr e)                                                      = :bool_to_bit(e);
 Int32NatOp get_size(ObjExpr e)                                                          = :get_size(e);
 Int32NatOp get_count(AnyTableVar v, AnyTable t, Maybe[Int32Var]+ as)                    = get_count(table_var: v, table: t, args: as);
 Int32NatOp table_lookup(AnyTableVar v, AnySurrTable t, Maybe[Int32Var]+ as)             = table_lookup(table_var: v, table: t, args: as);
-Int32NatOp add32(Int32Expr e1, Int32Expr e2)                                            = :add32(e1, e2);
-Int32NatOp minus32(Int32Expr e)                                                         = :minus32(e);
-Int32NatOp or_0_32(BoolExpr c, Int32Expr v)                                             = :or_0_32(c, v);
+Int32NatOp if32(BoolExpr c, Int32Expr tv, Int32Expr fv)                                 = :if32(c, tv, fv);
 Int32NatOp value_to_surr(AnyValueStoreId s, ValueStoreType t, <AtomicExpr, IntExpr> e)  = value_to_surr(store: s, store_type: t, value: e);
 Int32NatOp get_arg_by_assoc_surr(AnyTableVar v, MasterBinTable t, <0..1> a, Int32Var s) = get_arg_by_assoc_surr(table_var: v, table_type: t, arg: a, surr: s);
 Int32NatOp get_assoc_surr(AnyTableVar v, MasterBinTable t, (Int32Var, Int32Var) as)     = get_assoc_surr(table_var: v, table_type: t, args: as);
 Int32NatOp get_capacity(AnyTableVar v, AnyTable t)                                      = get_capacity(table_var: v, table: t);
 Int32NatOp surr_set_size                                                                = :surr_set_size;
 Int32NatOp get_first_free_assoc_surr(TableVar v)                                        = get_first_free_assoc_surr(table_var: v);
+
+Int32NatOp add32(Int32Expr e1, Int32Expr e2)                                            = :add32(e1, e2);
+
+Int32Expr add32(Int32Expr+ exprs) {
+  expr = exprs(0);
+  for e <- drop(exprs, 1)
+    expr = add32(expr, e);
+  return expr;
+}
+
+Int32Expr minus32(Int32Expr expr) =
+  0                                   = 0,
+  minus32(e?)                         = e,
+  add32(e1?, e2?)                     = add32(minus32(e1), minus32(e2)),
+  // add32(minus32(e1?), e2?)            = add32(e1, minus32(e2)),
+  // add32(e1?,          minus32(e2?))   = add32(minus32(e1), e2),
+  if32(c?, e1?, e2?)                  = if32(c, minus32(e1), minus32(e2)),
+  _                                   = :minus32(expr);
+
 
 <Int32Var, Int32NatOp> cast_int32(IntExpr expr) =
   upcast_int32(e?)  = e,

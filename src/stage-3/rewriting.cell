@@ -69,12 +69,13 @@ Int32Expr rewrite_nested(Int32Var expr, (AnyTypeExpr -> AnyTypeExpr) rewrite) = 
 
 
 Int32Expr rewrite_nested(Int32NatOp expr, (AnyTypeExpr -> AnyTypeExpr) rewrite) =
-  bool_to_bit(e?)         = bool_to_bit(cast_bool_expr(rewrite(e))),
   get_size(e?)            = get_size(cast_obj_expr(rewrite(e))),
   get_count()             = get_count(expr.table_var, expr.table, (apply(a, cast_int32_var(rewrite($))) : a <- expr.args)),
   table_lookup()          = table_lookup(expr.table_var, expr.table, (apply(a, cast_int32_var(rewrite($))) : a <- expr.args)),
   cast_int32(e?)          = cast_int32(cast_int_expr(rewrite(e))),
+  minus32(e?)             = minus32(cast_int32_expr(rewrite(e))),
   add32(e1?, e2?)         = add32(cast_int32_expr(rewrite(e1)), cast_int32_expr(rewrite(e2))),
+  if32(c?, e1?, e2?)      = if32(cast_bool_expr(rewrite(c)), cast_int32_expr(rewrite(e1)), cast_int32_expr(rewrite(e2))),
   value_to_surr()         = value_to_surr(expr.store, expr.store_type, rewrite_nested(expr.value, rewrite)),
   get_arg_by_assoc_surr() = get_arg_by_assoc_surr(expr.table_var, expr.table_type, expr.arg, cast_int32_var(rewrite(expr.surr))),
   get_assoc_surr()        = get_assoc_surr(expr.table_var, expr.table_type, (cast_int32_var(rewrite(v)) : v <- expr.args));
