@@ -430,6 +430,16 @@ type BasicInstr     = init_stream(StreamVar),
                       value_store_clear(store: ValueStoreId, store_type: ValueStoreType),
                       value_store_apply(store: ValueStoreId, store_type: ValueStoreType), // Also resets the value store auxiliary structure
 
+                      table_apply(
+                        table_var:          TableVar,
+                        table:              AnyTable,
+                        owned_value_stores: Maybe[(ValueStoreId, ValueStoreType)]+,
+                        has_deletions:      Bool,
+                        has_updates:        Bool,
+                        has_insertions:     Bool
+                      ),
+                      table_reset(table_var: TableVar, table: AnyTable),
+
                       resize_mandatory_column(table_var: AnyTableVar, column: MandatoryColumn, curr_capacity: Int32Expr, new_capacity: Int32Expr),
                       raise_load_error(deferred: Bool),
                       surr_set_try_insert(surr: Int32Var, was_new: BoolVar),
