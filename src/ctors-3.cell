@@ -720,9 +720,10 @@ BasicInstr release_before_delete(TableVar v, AnySurrTable t, Maybe[Int32Var]+ as
 BasicInstr value_store_release(ValueStoreId s, ValueStoreType t, Int32Var v) = value_store_release(store: s, store_type: t, surr: v);
 BasicInstr value_store_clear(ValueStoreId s, ValueStoreType t) = value_store_clear(store: s, store_type: t);
 BasicInstr value_store_apply(ValueStoreId s, ValueStoreType t) = value_store_apply(store: s, store_type: t);
+BasicInstr value_store_reset(ValueStoreId s, ValueStoreType t) = value_store_reset(store: s, store_type: t);
 
-BasicInstr table_apply(TableVar v, AnyTable t, Maybe[(ValueStoreId, ValueStoreType)]+ vs, Bool d, Bool u, Bool i) =
-  table_apply(table_var: v, table: t, owned_value_stores: vs, has_deletions: d, has_updates: u, has_insertions: i);
+BasicInstr table_apply(TableVar v, AnyTable t, Maybe[(ValueStoreId, ValueStoreType)]+ vs, [+<insertion, update, deletion>] as) =
+  table_apply(table_var: v, table: t, owned_value_stores: vs, actions: as);
 
 BasicInstr table_reset(TableVar v, AnyTable t) = table_reset(table_var: v, table: t);
 
