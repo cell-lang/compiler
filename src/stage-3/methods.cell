@@ -59,6 +59,11 @@ PhysRelVar original_rel_var(TableVar var) =
 [[+Nat]] keys(<MandatoryColumn, Column> column)               = [[0]];
 [[+Nat]] keys(SlaveColumn column)                             = [[0, 1]];
 
+
+Bool is_key(AnyTable table, [+Nat] col_idxs) = keys(table)(col_idxs);
+
+Bool is_key(AnyTable table, Nat col_idx) = is_key(table, [col_idx]);
+
 ////////////////////////////////////////////////////////////////////////////////
 
 True  is_atomic_expr(AtomicExpr) = true;
@@ -75,6 +80,10 @@ Bool has_opt_fields(OptRecRepr) =
   opt_rec_repr(fs?) = (_ f <- fs : f.optional);
 
 ////////////////////////////////////////////////////////////////////////////////
+
+Table cast_table(AnyTable table) =
+  table()   = table,
+  _         = undefined;
 
 AnySurrTable cast_any_surr_table(AnyTable table) =
   table()             |
