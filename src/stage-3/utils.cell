@@ -63,6 +63,26 @@ Bool may_break(Instr+ loop_body) = in(breaks_loop, code_outcomes(loop_body));
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
+[Int32Var] updated_int32_vars(Instr* instrs) = union([updated_int32_vars(instr) : instr <- instrs]);
+
+
+[Int32Var] updated_int32_vars(BasicInstr instr) =
+  set_ivar32()  = [instr.var],
+  _             = [];
+
+[Int32Var] updated_int32_vars(JumpInstr) = [];
+
+[Int32Var] updated_int32_vars(CompInstr instr) =
+  branch()            = updated_int32_vars(instr.when_true) & updated_int32_vars(instr.when_false),
+  switch_on_nat()     = [v : c <- instr.cases, v <- updated_int32_vars(c)],
+  symb_switch()       = [v : c <- instr.cases, v <- updated_int32_vars(right(c))] & updated_int32_vars(instr.else),
+  repeat(is?)         = updated_int32_vars(is),
+  execute_block(is?)  = updated_int32_vars(is),
+  try_block()         = updated_int32_vars(instr.body),
+  foreach()           = updated_int32_vars(instr.body);
+
+////////////////////////////////////////////////////////////////////////////////
+
 [MembVar] updated_memb_vars(CompiledHandler handler) {
   return search_instrs(handler.body, updated_memb_vars);
 

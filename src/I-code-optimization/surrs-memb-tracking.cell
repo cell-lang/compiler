@@ -126,7 +126,7 @@ implicit cols_subset_map : [PhysCol, PhysCol], value_stores_owners : [ValueStore
       else_branch_entry_membs, else_branch_entry_maybe_membs = updated_memberships_when_false(cond, memberships, maybe_memberships);
 
       then_branch_exit_membs, then_branch_exit_maybe_membs = updated_memberships(when_true, then_branch_entry_membs, then_branch_entry_maybe_membs);
-      else_branch_exit_membs, else_branch_exit_maybe_membs = updated_memberships(when_true, else_branch_entry_membs, else_branch_entry_maybe_membs);
+      else_branch_exit_membs, else_branch_exit_maybe_membs = updated_memberships(when_false, else_branch_entry_membs, else_branch_entry_maybe_membs);
 
       then_branch_outcomes = code_outcomes(when_true);
       else_branch_outcomes = code_outcomes(when_false);
@@ -191,8 +191,24 @@ implicit cols_subset_map : [PhysCol, PhysCol], value_stores_owners : [ValueStore
     _             = instr;
 
 
-  BasicInstr optimize_by_tracking_surrs_membs(BasicInstr instr, [Int32Var, PhysCol] memberships, [Int32Var, PhysCol] maybe_memberships) =
-    rewrite_exprs(instr, optimize_by_tracking_surrs_membs($, memberships), rewrite_nested($, optimize_by_tracking_surrs_membs($, memberships)));
+  BasicInstr optimize_by_tracking_surrs_membs(BasicInstr instr, [Int32Var, PhysCol] memberships, [Int32Var, PhysCol] maybe_memberships) {
+    return match (instr)
+      column_insert_deferred()  = optimize_column_insert_deferred(instr, memberships, maybe_memberships),
+      _                         = rewrite_exprs(instr, optimize_by_tracking_surrs_membs($, memberships), rewrite_nested($, optimize_by_tracking_surrs_membs($, memberships)));
+
+
+    BasicInstr optimize_column_insert_deferred(BasicInstr instr_untyped, [Int32Var, PhysCol] memberships, [Int32Var, PhysCol] maybe_memberships) {
+      instr = match (instr_untyped) column_insert_deferred() = instr_untyped;
+
+      safe_cols = follow([c : c <- memberships(instr.key_surr, ?)], cols_subset_map);
+      key_col = phys_col(instr.table_var, 0);
+      if safe_cols(key_col) {
+        info = (exists: true, unique: instr.key_surr_info.unique, safe: instr.key_surr_info.safe);
+        instr = column_insert_deferred(instr.table_var, instr.column, instr.key_surr, info, instr.args_surrs, instr.value, instr.forced);
+      }
+      return instr;
+    }
+  }
 
 
   AnyTypeExpr optimize_by_tracking_surrs_membs(AnyTypeExpr expr, [Int32Var, PhysCol] memberships) {

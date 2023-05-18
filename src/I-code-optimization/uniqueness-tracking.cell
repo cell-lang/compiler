@@ -1,0 +1,312 @@
+CompiledPrg optimize_by_tracking_uniqueness(CompiledPrg prg) {
+  opt_static_blocks = [optimize_static_block(b) : b <- prg.static_blocks];
+  return compiled_prg(
+    typedefs:       prg.typedefs,
+    opt_reprs:      prg.opt_reprs,
+    bool_procs:     prg.bool_procs,
+    procs:          prg.procs,
+    react_blocks:   prg.react_blocks,
+    static_blocks:  [optimize_static_block_by_tracking_uniqueness(b) : b <- prg.static_blocks],
+    int_seqs:       prg.int_seqs
+  );
+}
+
+
+StaticBlock optimize_static_block_by_tracking_uniqueness(StaticBlock block) {
+  let cols_subset_map = block.cols_subset_map, value_stores_owners = block.value_stores_owners
+    opt_handlers = [id -> optimize_static_block_handler_by_tracking_uniqueness(def) : id def <- block.handlers];
+
+  return static_block(
+    name:                         block.name,
+    links:                        block.links,
+    state_vars:                   block.state_vars,
+    value_stores:                 block.value_stores,
+    value_stores_owners:          block.value_stores_owners,
+    tables:                       block.tables,
+    foreign_keys:                 block.foreign_keys,
+    cols_subset_map:              block.cols_subset_map,
+    init_code:                    block.init_code,
+    cleanup_code:                 block.cleanup_code,
+    copy_state_code:              block.copy_state_code,
+    set_state_code:               block.set_state_code,
+    memb_var_check_exprs:         block.memb_var_check_exprs,
+    rel_vars_load_code:           block.rel_vars_load_code,
+    foreign_keys_check_code:      block.foreign_keys_check_code,
+    methods:                      block.methods,
+    handlers:                     opt_handlers,
+    handler_dispatch_resolver:    block.handler_dispatch_resolver,
+    exported_handlers:            block.exported_handlers,
+    msg_memb_pred:                block.msg_memb_pred
+  );
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+implicit cols_subset_map : [PhysCol, PhysCol], value_stores_owners : [ValueStoreId -> PhysCol] {
+  CompiledHandler optimize_static_block_handler_by_tracking_uniqueness(CompiledHandler handler) {
+    opt_body = optimize_by_tracking_uniqueness(handler.body, [], false);
+    return compiled_handler(handler.msg_type, opt_body);
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  () optimize_by_tracking_uniqueness((), [Int32Var], Bool) = ();
+
+  Instr+ optimize_by_tracking_uniqueness(Instr+ instrs, [Int32Var] unique_vars, Bool may_be_executed_more_than_once) {
+    curr_unique_vars = unique_vars;
+    opt_instrs = ();
+    for instr <- instrs {
+      opt_instr = optimize_by_tracking_uniqueness(instr, curr_unique_vars, may_be_executed_more_than_once);
+      opt_instrs = (opt_instrs | opt_instr);
+      curr_unique_vars = updated_uniqueness_status(instr, curr_unique_vars);
+    }
+    return nonempty(opt_instrs);
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  [Int32Var] updated_uniqueness_status(Instr* instrs, [Int32Var] unique_vars) {
+    curr_unique_vars = unique_vars;
+    for instr <- instrs
+      curr_unique_vars = updated_uniqueness_status(instr, curr_unique_vars);
+    return curr_unique_vars;
+  }
+
+
+  [Int32Var] updated_uniqueness_status(BasicInstr instr, [Int32Var] unique_vars) =
+    set_ivar32()  = if instr.value :: Int32Var and unique_vars(instr.value)
+                      then _insert_(unique_vars, instr.var)
+                      else _remove_(unique_vars, instr.var),
+    _             = unique_vars;
+
+
+  [Int32Var] updated_uniqueness_status(JumpInstr, [Int32Var] unique_vars) = unique_vars;
+
+
+  [Int32Var] updated_uniqueness_status(CompInstr instr, [Int32Var] unique_vars) {
+    return match (instr)
+      branch()            = branch_updated_uniqueness_status(instr.cond, instr.when_true, instr.when_false, unique_vars),
+      switch_on_nat()     = switch_on_nat_updated_unique_status(instr.value, instr.cases, unique_vars),
+      symb_switch()       = symb_switch_updated_unique_status(instr.value, instr.cases, instr.else, unique_vars),
+      repeat(is?)         = repeat_updated_unique_status(is, unique_vars),
+      execute_block(is?)  = execute_block_updated_unique_status(is, unique_vars),
+      try_block()         = try_block_updated_unique_status(instr.var, instr.body, unique_vars),
+      foreach()           = foreach_updated_unique_status(instr, unique_vars);
+
+
+    [Int32Var] branch_updated_uniqueness_status(BoolExpr cond, Instr+ when_true, Instr* when_false, [Int32Var] unique_vars) {
+      then_branch_outcomes = code_outcomes(when_true);
+      else_branch_outcomes = code_outcomes(when_false);
+
+      if then_branch_outcomes(falls_through)
+        if else_branch_outcomes(falls_through) {
+          // A sufficient condition for uniqueness after the branch is uniqueness before it and not being updated in either branch
+          updated_vars = updated_int32_vars(when_true) & updated_int32_vars(when_false);
+          return unique_vars - updated_vars;
+        }
+        else
+          return updated_uniqueness_status(when_true, unique_vars);
+      else
+        if else_branch_outcomes(falls_through)
+          return updated_uniqueness_status(when_false, unique_vars);
+        else
+          return []; ## SHOULD I FAIL HERE INSTEAD?
+    }
+
+
+    [Int32Var] switch_on_nat_updated_unique_status(IntExpr value, Instr*+ cases, [Int32Var] unique_vars) {
+      updated_vars = [v : c <- cases, v <- updated_int32_vars(c)];
+      return unique_vars - updated_vars;
+    }
+
+
+    [Int32Var] symb_switch_updated_unique_status(ObjExpr value, [+([+SymbObj], Instr+)] cases, Instr* else, [Int32Var] unique_vars) {
+      updated_vars = [v : c <- cases, v <- updated_int32_vars(right(c))];
+      return unique_vars - updated_vars;
+    }
+
+
+    [Int32Var] repeat_updated_unique_status(Instr+ body, [Int32Var] unique_vars) {
+      updated_vars = updated_int32_vars(body);
+      return unique_vars - updated_vars;
+    }
+
+
+    [Int32Var] execute_block_updated_unique_status(Instr+ body, [Int32Var] unique_vars) {
+      ## BAD BAD BAD: THIS CAN PROBABLY BE IMPROVED
+      updated_vars = updated_int32_vars(body);
+      return unique_vars - updated_vars;
+    }
+
+
+    [Int32Var] try_block_updated_unique_status(LocVar var, Instr+ body, [Int32Var] unique_vars) {
+      updated_vars = updated_int32_vars(body);
+      return unique_vars - updated_vars;
+    }
+
+
+    [Int32Var] foreach_updated_unique_status(ForeachInstr instr, [Int32Var] unique_vars) {
+      updated_vars = updated_int32_vars(instr.body);
+      return unique_vars - updated_vars;
+    }
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  JumpInstr optimize_by_tracking_uniqueness(JumpInstr instr, [Int32Var] unique_vars, Bool may_be_executed_more_than_once) = instr;
+
+
+  BasicInstr optimize_by_tracking_uniqueness(BasicInstr instr, [Int32Var] unique_vars, Bool may_be_executed_more_than_once) {
+    return match (instr)
+      column_insert_deferred()  = optimize_column_insert_deferred(instr, unique_vars, may_be_executed_more_than_once),
+      _                         = instr;
+
+
+    BasicInstr optimize_column_insert_deferred(BasicInstr instr_untyped, [Int32Var] unique_vars, Bool may_be_executed_more_than_once) {
+      instr = match (instr_untyped) column_insert_deferred() = instr_untyped;
+      if not may_be_executed_more_than_once or unique_vars(instr.key_surr) {
+        info = (exists: instr.key_surr_info.exists, unique: true, safe: instr.key_surr_info.safe);
+        instr = column_insert_deferred(instr.table_var, instr.column, instr.key_surr, info, instr.args_surrs, instr.value, instr.forced);
+      }
+      return instr;
+    }
+  }
+
+
+  CompInstr optimize_by_tracking_uniqueness(CompInstr instr, [Int32Var] unique_vars, Bool may_be_executed_more_than_once) {
+    return match (instr)
+      branch()            = optimized_branch(instr.cond, instr.when_true, instr.when_false, unique_vars, may_be_executed_more_than_once),
+      switch_on_nat()     = optimized_switch_on_nat(instr.value, instr.cases, unique_vars, may_be_executed_more_than_once),
+      symb_switch()       = optimized_symb_switch(instr.value, instr.cases, instr.else, unique_vars, may_be_executed_more_than_once),
+      repeat()            = instr,
+      execute_block(is?)  = execute_block(optimize_by_tracking_uniqueness(is, unique_vars, may_be_executed_more_than_once)),
+      try_block()         = instr, ## CAN THIS BE OPTIMIZED?
+      foreach()           = optimized_foreach(instr.iter, instr.body, unique_vars, may_be_executed_more_than_once);
+
+
+    CompInstr optimized_branch(BoolExpr cond, Instr+ when_true, Instr* when_false, [Int32Var] unique_vars, Bool may_be_executed_more_than_once) {
+      opt_then_branch = optimize_by_tracking_uniqueness(when_true, unique_vars, may_be_executed_more_than_once);
+      opt_else_branch = optimize_by_tracking_uniqueness(when_false, unique_vars, may_be_executed_more_than_once);
+      return branch(cond, opt_then_branch, opt_else_branch);
+    }
+
+
+    CompInstr optimized_switch_on_nat(IntExpr value, Instr*+ cases, [Int32Var] unique_vars, Bool may_be_executed_more_than_once) {
+      opt_cases = (optimize_by_tracking_uniqueness(c, unique_vars, may_be_executed_more_than_once) : c <- cases);
+      return switch_on_nat(value, opt_cases);
+    }
+
+
+    CompInstr optimized_symb_switch(ObjExpr value, [+([+SymbObj], Instr+)] cases, Instr* else, [Int32Var] unique_vars, Bool may_be_executed_more_than_once) {
+      opt_cases = [(c(0), optimize_by_tracking_uniqueness(c(1), unique_vars, may_be_executed_more_than_once)) : c <- cases];
+      opt_else = optimize_by_tracking_uniqueness(else, unique_vars, may_be_executed_more_than_once);
+      return symb_switch(value, opt_cases, else);
+    }
+
+
+    CompInstr optimized_foreach(ForeachIter iter, Instr* body, [Int32Var] unique_vars, Bool may_be_executed_more_than_once) {
+      return foreach(iter, body) if may_be_executed_more_than_once;
+      body_unique_vars = foreach_body_unique_vars(iter);
+      opt_body = optimize_by_tracking_uniqueness(body, body_unique_vars, true);
+      return foreach(iter, opt_body);
+    }
+
+    ////////////////////////////////////////////////////////////////////////////
+
+    [Int32Var] foreach_body_unique_vars(SeqIter iter) = [];
+
+
+    // type UnaryTableIter       = unary_table_iter(table_var: AnyTableVar, var: Int32Var?);
+    [Int32Var] foreach_body_unique_vars(UnaryTableIter iter) = [iter.var if iter.var?];
+
+
+    // type BinTableIter         = bin_table_iter(
+    //                               table_var:  AnyTableVar,
+    //                               table:      Table,
+    //                               args:       (TableArgStatus, TableArgStatus)
+    //                             );
+    [Int32Var] foreach_body_unique_vars(BinTableIter iter) {
+      keys = iter.table.keys;
+      arg1, arg2 = iter.args;
+      return match (arg1, arg2)
+        read(v1?),  read(v2?)   = [v1 if keys([0]), v2 if keys([1])],
+        read(v1?),  bound()     = [v1],
+        read(v1?),  ignored     = [v1 if keys([0])], ## BUG BUG BUG: NOT SURE HERE. HOW IS THIS IMPLEMENTED? THERE COULD BE A BUG IN THE IMPLEMENTATION
+        bound(),    read(v2?)   = [v2],
+        ignored,    read(v2?)   = [v2 if keys([1])], ## DITTO
+        _,          _           = [];
+    }
+
+    // type SymBinTableIter      = sym_bin_table_iter(
+    //                               table_var:  AnyTableVar,
+    //                               table:      Table,
+    //                               args:       (TableArgStatus, TableArgStatus)
+    //                             );
+    [Int32Var] foreach_body_unique_vars(SymBinTableIter iter) {
+      assert iter.table.keys == [];
+      arg1, arg2 = iter.args;
+      return match (arg1, arg2)
+        read(v1?),  bound()   = [v1],
+        bound(),    read(v2?) = [v2],
+        _,          _         = [];
+    }
+
+    // type MasterBinTableIter   = master_bin_table_iter(
+    //                               table_var:  AnyTableVar,
+    //                               table:      MasterBinTable,
+    //                               args:       (TableArgStatus, TableArgStatus),
+    //                               surr_var:   Int32Var?
+    //                             );
+    [Int32Var] foreach_body_unique_vars(MasterBinTableIter iter) {
+      arg1, arg2 = iter.args;
+      unique_vars = match (arg1, arg2)
+        read(v1?),  bound()   = [v1],
+        bound(),    read(v2?) = [v2],
+        _,          _         = [];
+      unique_vars = unique_vars & [iter.surr_var] if iter.surr_var?;
+      return unique_vars;
+    }
+
+    // type SlaveTernTableIter   = slave_tern_table_iter(
+    //                               table_var:  AnyTableVar,
+    //                               table:      SlaveTernTable,
+    //                               args:       (TableArgStatus, TableArgStatus)
+    //                             );
+    [Int32Var] foreach_body_unique_vars(SlaveTernTableIter iter) {
+      keys = iter.table.keys;
+      surr12, arg3 = iter.args;
+      return match (surr12, arg3)
+        read(v12?), read(v3?) = [v12 if keys([0, 1]), v3 if keys([2])],
+        read(v12?), bound()   = [v12],
+        read(v12?), ignored   = [v12 if keys([0, 1])],
+        bound(),    read(v3?) = [v3],
+        ignored,    read(v3?) = [v3 if keys([2])],
+        _,          _         = [];
+    }
+
+    // type TernTableIter        = tern_table_iter(
+    //                               table_var:  AnyTableVar,
+    //                               table:      Table,
+    //                               args:       (TableArgStatus, TableArgStatus, TableArgStatus)
+    //                             );
+    [Int32Var] foreach_body_unique_vars(TernTableIter iter) {
+      keys = iter.table.keys;
+      arg1, arg2, arg3 = iter.args;
+      return match (arg1, arg2, arg3)
+        read(v1?),  bound(),    bound()     = [v1],
+        bound(),    read(v2?),  bound()     = [v2],
+        bound(),    bound(),    read(v3?)   = [v3],
+        _,          _,          read(v3?)   = [v3 if keys([2])],
+        _,          _,          _           = [];
+    }
+
+    // type SemiSymTernTableIter = semi_sym_tern_table_iter(
+    //                               table_var:  AnyTableVar,
+    //                               table:      Table,
+    //                               args:       (TableArgStatus, TableArgStatus, TableArgStatus)
+    //                             );
+    [Int32Var] foreach_body_unique_vars(SemiSymTernTableIter iter) {
+      return [];
+    }
+  }
+}

@@ -696,7 +696,10 @@ BasicInstr queue_insert_any_tuple(TableVar v, MasterBinTable t, Int32Var+ as, In
   queue_insert_master_tuple(s, v, t, if |as| == 2 then as else undefined);
 
 BasicInstr column_insert_deferred(TableVar v, AnyColumn c, Int32Var k, Maybe[(Int32Var, Int32Var)] as, AnyTypeExpr e, Bool f) =
-  column_insert_deferred(table_var: v, column: c, key_surr: k, args_surrs: as, value: e, forced: f);
+  column_insert_deferred(v, c, k, (exists: false, unique: false, safe: false), as, e, f);
+
+BasicInstr column_insert_deferred(TableVar v, AnyColumn c, Int32Var k, (exists: Bool, unique: Bool, safe: Bool) ki, Maybe[(Int32Var, Int32Var)] as, AnyTypeExpr e, Bool f) =
+  column_insert_deferred(table_var: v, column: c, key_surr: k, key_surr_info: ki, args_surrs: as, value: e, forced: f);
 
 BasicInstr immediate_insert_or_add_ref(Int32Var sv, ValueStoreId s, ValueStoreType t, <AtomicExpr, IntExpr> v) = immediate_insert_or_add_ref(res_var: sv, store: s, store_type: t, value: v);
 BasicInstr immediate_insert_tuple(TableVar v, AnySurrTable t, Int32Var+ as) = immediate_insert_tuple(table_var: v, table: t, tuple: as);
