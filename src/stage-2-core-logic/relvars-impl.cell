@@ -1,0 +1,134 @@
+implicit typedefs : [TypeName -> NeType] {
+  [PhysRelVar -> AnyTable] relvars_impl([PhysRelVar -> RelVarInfo] relvars, [ForeignKey] foreign_keys, [RelVar, Bool+] relvars_usages, [PhysCol -> ValueStoreId] table_col_value_store_map) {
+    unary_relvars   = [v : v info <- relvars, arity(info) == 1];
+    binary_relvars  = [v : v info <- relvars, arity(info) == 2];
+    ternary_relvars = [v : v info <- relvars, arity(info) == 3];
+
+    foreign_keys_map = [fk.source_rel_var, only(fk.target_rel_vars), (fk.source_args, fk.target_args) : fk <- foreign_keys];
+
+    impls = [];
+    binary_masters = [];
+
+    for v <- unary_relvars {
+      info = relvars(v);
+      assert info.keys == [] and not info.symmetric;
+      value_store = table_col_value_store_map(phys_col(v, 0));
+      table = table((value_store), [], info.signature, false);
+      impls = _put_(impls, v, table);
+    }
+
+    for v <- ternary_relvars {
+      info = relvars(v);
+      keys = info.keys;
+      signature = cast_triple(info.signature);
+      value_stores = cast_triple((table_col_value_store_map(phys_col(v, i)) : i < 3));
+
+      // In order to be implemented as a slave, a ternary relation:
+      //   Must have a single foreign key of the form r3(a, b, _) -> r2(a, b), and r2 cannot have keys (for now)
+      //   May have another foreign key of the form r3(_, _, c) -> r1(c).
+      //   Must not have any other foreign keys
+      //   May have a key on the first two columns
+      //   May have a key on the third column
+      //   Must not be declared symmetric ## BAD BAD BAD: IS THIS NECESSARY? I THINK THE IMPLEMENTATION FOR SYMMETRIC MASTER/SLAVES IS THERE
+
+      // This is the default that will be overridden if possible
+      table = table(value_stores, info.keys, info.signature, info.symmetric);
+
+      if not info.symmetric {
+        if keys == [[0, 1]] or keys == [[0, 1], [2]] {
+          relvar_foreign_keys = [t, as : t as <- foreign_keys_map(v, ?, ?)];
+
+          unary_targets  = [t : t _ <- relvar_foreign_keys, arity(relvars(t)) == 1];
+          binary_targets = [t : t _ <- relvar_foreign_keys, arity(relvars(t)) == 2];
+          assert unary_targets & binary_targets == [t : t _ <- relvar_foreign_keys];
+
+          if |binary_targets| == 1 {
+            binary_target = only(binary_targets);
+            binary_target_info = relvars(binary_target);
+
+            if binary_target_info.keys == [] and |unary_targets| <= 1 {
+              master_table = table_var(binary_target);
+
+              // The relation can be implemented as a slave. It can be implemented as a column if:
+              //   Its usage is compatible with the capabilities of a column
+              //   There's no key on the third column
+              //   There's no foreign key involving the third column
+              if keys == [[0, 1]] and unary_targets == [] and not (u <- relvars_usages(logical_rel_var(v), ?) : not is_valid_slave_column_usage(u))
+                table = slave_column(master_table, cast_pair(take(value_stores, 2)), column_repr(signature(2)), signature);
+              else
+                table = slave_tern_table(master_table, value_stores, keys, signature, false);
+
+              // We also record the fact that the binary target will have to be a master table
+              binary_masters = _insert_(binary_masters, binary_target);
+            }
+          }
+        }
+      }
+
+      impls = _put_(impls, v, table);
+    }
+
+    for v <- binary_relvars {
+      info = relvars(v);
+      keys = info.keys;
+      signature = cast_pair(info.signature);
+      value_stores = cast_pair((table_col_value_store_map(phys_col(v, i)) : i < 2));
+
+      // A binary relation can be implemented as a column if and only if:
+      //   It has one and only one key, and it's on the first column
+      //   It's not symmetric
+      //   There are no expressions, clauses, iterators, statements, or keys of the form:
+      //     |relvar(?, y)|
+      //     relvar(*, y)
+      //     relvar(!, y)
+      //     x <- relvar(?, y) (both in clauses and for loops)
+      //     delete relvar(*, y)
+      //     relvar(_, a) -> ...
+      //     ... -> relvar(_, a)
+
+      if binary_masters(v) {
+        assert keys == [] and not info.symmetric;
+        table = master_bin_table(value_stores, [], signature, false);
+      }
+      else if keys == [[0]] and not info.symmetric and not relvars_usages(logical_rel_var(v), (false, true)) {
+        value_store, _ = value_stores;
+        repr = column_repr(signature(1));
+
+        // Default type of column, to be overridden if it can be made mandatory
+        table = column(value_store, repr, signature);
+
+        candidate_masters = [u : u <- unary_relvars, as <- foreign_keys_map(v, u, ?), is_bin_left_unary_foreign_key(as)];
+        if |candidate_masters| == 1 {
+          master = only(candidate_masters);
+          if (as <- foreign_keys_map(master, v, ?) : is_unary_bin_left_foreign_key(as))
+            table = mandatory_column(table_var(master), value_store, repr, signature);
+        }
+      }
+      else
+        table = table(value_stores, keys, signature, info.symmetric);
+
+      impls = _put_(impls, v, table);
+    }
+
+    return impls;
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+Bool is_valid_slave_column_usage(Bool+ usage) =
+  (false, false, false) |
+  (true,  true,  true)  |
+  (true,  _,     false) |
+  (_,     true,  false) = true,
+  _                     = false;
+
+
+Bool is_bin_left_unary_foreign_key((Maybe[Symbol]+, Maybe[Symbol]+)) =
+  ((just(s1?), nothing), (just(s2?))) = {assert s1 == s2; return true;},
+  ((_,         _      ), (just()   )) = false;
+
+
+Bool is_unary_bin_left_foreign_key((Maybe[Symbol]+, Maybe[Symbol]+)) =
+  ((just(s1?)), (just(s2?), nothing)) = {assert s1 == s2; return true;},
+  ((_        ), (_,         _      )) = false;

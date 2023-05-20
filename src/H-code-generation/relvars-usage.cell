@@ -1,15 +1,3 @@
-// A binary relation can be implemented as a column if and only if:
-//   It has one and only one key, and it's on the first column
-//   It's not symmetric
-//   There are no expressions, clauses, iterators, statements, or keys of the form:
-//     |relvar(?, y)|
-//     relvar(*, y)
-//     relvar(!, y)
-//     x <- relvar(?, y) (both in clauses and for loops)
-//     delete relvar(*, y)
-//     relvar(_, a) -> ...
-//     ... -> relvar(_, a)
-
 ## THIS CODE IS AWARE OF THE Table TYPE DEFINED IN THE LOW-LEVEL LAYER
 ## IT SHOULD ONLY KNOW ABOUT PhysRelVar
 
@@ -66,6 +54,7 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
     return nothing if not is_columnar_relvar(rel_auto_id, logical_rel_var(relvar));
 
     rel_auto = automaton_by_id(rel_auto_id);
+    rel_vars = rel_auto.rel_vars;
 
     // type ForeignKey = foreign_key(
     //                     source_rel_var:   PhysRelVar,
@@ -76,9 +65,11 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
 
     ## IMPLEMENT IMPLEMENT IMPLEMENT: THIS IS SUPER SLOW, IMPLEMENT THE MEMOIZATION
 
+    arity = |rel_vars(relvar).signature|;
+
     fks = [fk : fk <- rel_auto.foreign_keys, fk.source_rel_var == relvar];
     assert not (fk <- fks : |fk.target_rel_vars| != 1);
-    masters = [rv : fk <- fks, rv <- fk.target_rel_vars];
+    masters = [rv : fk <- fks, rv <- fk.target_rel_vars, |rel_vars(rv).signature| == arity - 1];
     return nothing if |masters| != 1;
     master = only(masters);
     mandatory = (fk <- rel_auto.foreign_keys : fk.source_rel_var == master and fk.target_rel_vars == [relvar]);

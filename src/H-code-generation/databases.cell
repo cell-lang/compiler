@@ -1204,57 +1204,61 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 
 
   [TableVar -> AnyTable] tables_info {
-    auto_id = database.name;
-    col_to_vs_map = table_col_value_store_map;
-    return [
-      tv -> {
-        if is_columnar_relvar(auto_id, logical_rel_var(rv)) {
-          value_store = col_to_vs_map(phys_col(tv, 0));
-          signature = info.signature;
-          fail if |signature| != 2;
-          repr = column_repr(signature(1));
-          master_info = bin_rel_only_master_info(auto_id, rv);
-          if master_info != nothing {
-            master, mandatory = value(master_info);
-            return mandatory_column(table_var(master), value_store, repr, signature) if mandatory;
-          }
-          return column(value_store, repr, signature);
-        }
-        else if is_ternary_slave_column(auto_id, logical_rel_var(rv)) {
-          masters_slaves = masters_ternary_slave_columns;
-          master = table_var(masters_slaves(auto_id, !, rv));
-          value_stores = (col_to_vs_map(phys_col(tv, i)) : i <- (0, 1));
-          signature = info.signature;
-          fail if |signature| != 3;
-          return slave_column(master, value_stores, column_repr(signature(2)), signature);
-        }
-        else if is_master_relvar(auto_id, rv) {
-          signature = info.signature;
-          fail if |signature| != 2;
-          return master_bin_table(
-            (col_to_vs_map(phys_col(tv, i)) : i <- (0, 1)),
-            info.keys,
-            signature,
-            info.symmetric
-          );
-        }
-        else if is_slave_relvar(auto_id, logical_rel_var(rv)) {
-          signature = info.signature;
-          fail if |signature| != 3;
-          return slave_tern_table(
-            table_var(master_relvar(auto_id, rv)),
-            (col_to_vs_map(phys_col(tv, i)) : i <- (0, 1, 2)),
-            info.keys,
-            signature,
-            info.symmetric
-          );
-        }
-        else {
-          value_stores = (col_to_vs_map(phys_col(tv, i)) : i < |info.signature|);
-          return table(value_stores, info.keys, info.signature, info.symmetric);
-        }
-      } : rv info <- database.rel_vars, tv = table_var(rv)
-    ];
+    usages = [v, as : v as <- relvars_usages(database.name, ?, ?)];
+    impls = relvars_impl(database.rel_vars, database.foreign_keys, usages, table_col_value_store_map);
+    return [table_var(v) -> t : v t <- impls];
+
+    // auto_id = database.name;
+    // col_to_vs_map = table_col_value_store_map;
+    // return [
+    //   tv -> {
+    //     if is_columnar_relvar(auto_id, logical_rel_var(rv)) {
+    //       value_store = col_to_vs_map(phys_col(tv, 0));
+    //       signature = info.signature;
+    //       fail if |signature| != 2;
+    //       repr = column_repr(signature(1));
+    //       master_info = bin_rel_only_master_info(auto_id, rv);
+    //       if master_info != nothing {
+    //         master, mandatory = value(master_info);
+    //         return mandatory_column(table_var(master), value_store, repr, signature) if mandatory;
+    //       }
+    //       return column(value_store, repr, signature);
+    //     }
+    //     else if is_ternary_slave_column(auto_id, logical_rel_var(rv)) {
+    //       masters_slaves = masters_ternary_slave_columns;
+    //       master = table_var(masters_slaves(auto_id, !, rv));
+    //       value_stores = (col_to_vs_map(phys_col(tv, i)) : i <- (0, 1));
+    //       signature = info.signature;
+    //       fail if |signature| != 3;
+    //       return slave_column(master, value_stores, column_repr(signature(2)), signature);
+    //     }
+    //     else if is_master_relvar(auto_id, rv) {
+    //       signature = info.signature;
+    //       fail if |signature| != 2;
+    //       return master_bin_table(
+    //         (col_to_vs_map(phys_col(tv, i)) : i <- (0, 1)),
+    //         info.keys,
+    //         signature,
+    //         info.symmetric
+    //       );
+    //     }
+    //     else if is_slave_relvar(auto_id, logical_rel_var(rv)) {
+    //       signature = info.signature;
+    //       fail if |signature| != 3;
+    //       return slave_tern_table(
+    //         table_var(master_relvar(auto_id, rv)),
+    //         (col_to_vs_map(phys_col(tv, i)) : i <- (0, 1, 2)),
+    //         info.keys,
+    //         signature,
+    //         info.symmetric
+    //       );
+    //     }
+    //     else {
+    //       value_stores = (col_to_vs_map(phys_col(tv, i)) : i < |info.signature|);
+    //       return table(value_stores, info.keys, info.signature, info.symmetric);
+    //     }
+    //   } : rv info <- database.rel_vars, tv = table_var(rv)
+    // ];
   }
 }
 
