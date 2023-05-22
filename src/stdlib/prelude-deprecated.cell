@@ -694,10 +694,15 @@ T reduce(T+ xs, (T T -> T) f) {
   return [k -> nonempty([v : v <- rel(k, ?)]) : k <- keys];
 }
 
+
 [[+A] -> B] group_by_right_arg([A, B] rel) {
   values = [v : _ v <- rel];
   return [nonempty([k : k <- rel(?, v)]) -> v : v <- values];
 }
+
+
+[C -> [+B]] group_by_left_arg([A, B] r, (A -> C) f) = group_by_left_arg([f(a), b : a b <- r]);
+
 
 // [RT] map_pairs([T*] seq, (T, T -> Maybe[RT]) f)
 // {

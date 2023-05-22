@@ -46,8 +46,24 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
   }
 
 
-  TableVar master_table(DBSymbol rel_auto_id, TableVar var) =
-    table_var(master_relvar(rel_auto_id, original_rel_var(var)));
+  Bool has_master(DBSymbol rel_auto_id, TableVar var) {
+    table = rel_auto_relvar_impl_tables(rel_auto_id, !)(var);
+    return match (table)
+      mandatory_column()  |
+      slave_column()      = true,
+      column()            = table.master?,
+      _                   = false;
+  }
+
+
+  TableVar master_table(DBSymbol rel_auto_id, TableVar var) {
+    table = rel_auto_relvar_impl_tables(rel_auto_id, !)(var);
+    return match (table)
+      mandatory_column()  = table.master,
+      slave_column()      = table.master,
+      column()            = if table.master? then table.master else undefined,
+      _                   = undefined;
+  }
 
 
   NeType+ table_signature(DBSymbol rel_auto_id, TableVar table_var) =
@@ -59,7 +75,7 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
 
 
   ValueStoreId table_col_store_id(DBSymbol rel_auto_id, TableVar var, Nat col_idx) {
-    table = tables_by_db(rel_auto_id, !)(var);
+    table = rel_auto_relvar_impl_tables(rel_auto_id, !)(var);
     return match (table, col_idx)
       table(),              _   = table.value_stores(col_idx),
       master_bin_table(),   _   = table.value_stores(col_idx),
@@ -70,7 +86,7 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
   }
 
 
-  AnyTable table_info(DBSymbol rel_auto_id, TableVar var) = tables_by_db(rel_auto_id, !)(var);
+  AnyTable table_info(DBSymbol rel_auto_id, TableVar var) = rel_auto_relvar_impl_tables(rel_auto_id, !)(var);
 
 
   [TableVar] overlapping_tables(DBSymbol rel_auto_id, RelVar rel_var, Maybe[NeType]+ args_types) {
@@ -142,9 +158,23 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
   ];
 
 
-  ## DEPRECATED
-  [DBSymbol -> [TableVar -> AnyTable]] tables_by_db = [
-    db.name -> tables_info(database=db) : db <- program.data_bases
+  [DBSymbol -> [TableVar -> AnyTable]] rel_auto_relvar_impl_tables = [
+    db.name -> relvars_impl_tables(database=db) : db <- program.data_bases
+  ];
+
+
+  [DBSymbol -> [RelVar]] rel_auto_relvars_implemented_as_bin_columns_of_any_type = [
+    db.name -> relvars_implemented_as_bin_columns_of_any_type(database=db) : db <- program.data_bases
+  ];
+
+
+  [DBSymbol -> [RelVar]] rel_auto_relvars_implemented_as_tern_columns = [
+    db.name -> relvars_implemented_as_tern_columns(database=db) : db <- program.data_bases
+  ];
+
+
+  [DBSymbol -> [RelVar]] rel_auto_ternary_relvars_implemented_as_slaves = [
+    db.name -> ternary_relvars_implemented_as_slaves(database=db) : db <- program.data_bases
   ];
 }
 

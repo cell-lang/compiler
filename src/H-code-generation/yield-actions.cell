@@ -76,9 +76,9 @@ implicit program           : Program,
     yield_value_action()    = yield_value_action_opt_code(action, var_gen),
     set_yield_action()      = set_yield_action_opt_code(action, var_gen),
     rel_yield_action()      = rel_yield_action_opt_code(action, var_gen),
-    relvar_yield_action()   = if is_columnar_relvar(action.relvar) then
+    relvar_yield_action()   = if is_any_bin_column(action.relvar) then
                                 columnar_relvar_yield_action_opt_code(action, var_gen)
-                              else if is_ternary_slave_column(action.relvar) then
+                              else if is_tern_column(action.relvar) then
                                 ternary_slave_column_yield_action_opt_code(action, var_gen)
                               else
                                 relvar_yield_action_opt_code(action, var_gen),
@@ -458,7 +458,7 @@ implicit program           : Program,
               )
             );
           }
-          iter = unary_table_iter(table_var: column_master(tv), var: surr_var_0);
+          iter = unary_table_iter(table_var: master_table(tv), var: surr_var_0);
           table_code = (foreach(iter, loop_body_code));
         }
         else {

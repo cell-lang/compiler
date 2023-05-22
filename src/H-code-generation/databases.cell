@@ -7,7 +7,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
     msg_memb_pred = if msg_types != [] then just(memb_test_preds_map[ne_union_type(msg_types)]) else nothing;
 
     foreign_keys = [bk -> {
-        insertion_is_checked = not insertion_is_statically_checked(k) and not is_mandatory_slave_of(database.name, bk.origin, bk.target);
+        insertion_is_checked = not insertion_is_statically_checked(k) and not is_mandatory_slave_of(relvars_impl_tables(bk.origin, !), bk.target);
         deletion_is_checked =
           // If the source is an attribute of the target then cascade delete is enought to automatically enforce the constraint
           not database.attr_map(only(k.target_rel_vars), k.source_rel_var) and
@@ -32,7 +32,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
       state_vars:                   [v -> info.type : v info <- database.state_vars],
       value_stores:                 used_value_stores,
       value_stores_owners:          value_stores_owners,
-      tables:                       tables_info,
+      tables:                       relvars_impl_tables,
       foreign_keys:                 foreign_keys,
       cols_subset_map:              cols_subset_map,
       init_code:                    database_init_code,
@@ -48,6 +48,11 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
       exported_handlers:            exported_handlers,
       msg_memb_pred:                msg_memb_pred
     );
+
+
+    Bool is_mandatory_slave_of(AnyTable table_info, TableVar target) =
+      mandatory_column()  = table_info.master == target,
+      _                   = false;
   }
 
   Instr* database_init_code {
@@ -63,7 +68,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
     }
 
     value_stores_init_code = (init_value_store(vs) : vs <- rand_sort(keys(value_stores)));
-    tables_init_code = rand_sort([init_table(v, t) : v t <- tables_info]);
+    tables_init_code = rand_sort([init_table(v, t) : v t <- relvars_impl_tables]);
 
     return vars_pre_init_code & vars_init_code & value_stores_init_code & tables_init_code;
   }
@@ -74,7 +79,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 
     vars_cleanup_code = rand_sort([reset_memb_var(v, :blank) : v _ <- state_vars]);
     value_stores_cleanup_code = (cleanup_value_store(vs) : vs <- rand_sort(keys(value_stores)));
-    tables_cleanup_code = rand_sort([cleanup_table(v, t) : v t <- tables_info]);
+    tables_cleanup_code = rand_sort([cleanup_table(v, t) : v t <- relvars_impl_tables]);
 
     return vars_cleanup_code & value_stores_cleanup_code & tables_cleanup_code;
   }
@@ -100,7 +105,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
         set_value_instr = match (var)
           memb_var()      = set_var(value_var, var),
           rel_var()       = { table_vars = [table_var(v) : v <- physical_rel_vars(database, var)];
-                              tables = nonempty_map(select_by_key(tables_info, table_vars));
+                              tables = nonempty_map(select_by_key(relvars_impl_tables, table_vars));
                               return copy_rel(value_var, database.name, tables, rel_vars_args_perms(var));
                             };
         return (set_label_instr, set_value_instr);
@@ -121,10 +126,10 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
       arity = arity(rel_auto_id, v);
       args_perm = rel_vars_args_perms(v);
 
-      if is_columnar_relvar(rel_auto_id, v) {
+      if in(v, relvars_implemented_as_bin_columns_of_any_type) {
         entry_code, core_loop_code, exit_code = column_core_loop_code(rel_auto_id, v, arity, args_vars, surr_vars(0), false);
       }
-      else if is_ternary_slave_column(rel_auto_id, v) {
+      else if in(v, relvars_implemented_as_tern_columns) {
         entry_code = ();
         exit_code = ();
         core_loop_code = ternary_slave_column_core_loop_code(rel_auto_id, v, arity, args_vars, surr_vars, false);
@@ -187,15 +192,14 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
       exit_code = ();
 
       if arity == 1 {
-        slaves = slave_columns(rel_auto_id, original_rel_var(tbl_var));
+        slaves = [s : s <- masters_slaves(tbl_var, ?)];
         if slaves != [] {
           init_cpty_var = ivar32(3);
           entry_code = (set_ivar32(init_cpty_var, get_capacity(tbl_var, tbl_info)));
           exit_code = ({
-            tv = table_var(v);
             table = cast_mandatory_column(table_info(rel_auto_id, tv));
             return resize_mandatory_column(tv, table, init_cpty_var, get_capacity(tbl_var, tbl_info));
-          } : v <- isort(slaves));
+          } : tv <- isort(slaves));
         }
       }
     }
@@ -235,16 +239,15 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 
       if arity == 1 {
         for master_var @ i <- isort(tables) {
-          slaves = slave_columns(rel_auto_id, original_rel_var(master_var));
+          slaves = [v : v <- masters_slaves(master_var, ?)];
           if slaves != [] {
             init_cpty_var = ivar32(nat(3 + i));
             tbl_info = cast_any_surr_table(table_info(rel_auto_id, master_var));
             entry_code = (entry_code | set_ivar32(init_cpty_var, get_capacity(master_var, tbl_info)));
             exit_code = exit_code & ({
-              slave_var = table_var(v);
               slave_table = cast_mandatory_column(table_info(rel_auto_id, slave_var));
               return resize_mandatory_column(slave_var, slave_table, init_cpty_var, get_capacity(master_var, tbl_info));
-            } : v <- isort(slaves));
+            } : slave_var <- isort(slaves));
           }
         }
       }
@@ -321,30 +324,28 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
     if |tables| == 1 {
       tbl_var = only(tables);
       column = cast_any_column(table_info(tbl_var, context = database));
-      is_mandatory = column_is_mandatory(rel_auto_id, tbl_var);
       store_id = table_col_store_id(rel_auto_id, tbl_var, 0);
       store_type = value_store_type(rel_auto_id, store_id);
       store_arg = value_store_encoded_expr(store_type, args_vars(0));
       col_repr = column_repr(table_signature(rel_auto_id, tbl_var)(1));
       core_loop_code = (immediate_insert_or_add_ref(key_surr_var, store_id, store_type, store_arg));
-      if is_mandatory {
+      if is_mandatory(column) {
         if not ordered {
-          master = column_master(rel_auto_id, tbl_var);
-          master_table = table_var(master);
-          master_info = table_info(rel_auto_id, master_table);
+          master = column.master;
+          master_info = table_info(rel_auto_id, master);
           assert |master_info.col_types| == 1;
 
           core_loop_code = (
             core_loop_code |
               do_if_not(
-                table_contains(table_var(master), master_info, (just(key_surr_var))),
+                table_contains(master, master_info, (just(key_surr_var))),
                 raise_load_error(false)
               ),
               surr_set_try_insert(key_surr_var, bvar),
               do_if_not(bvar, raise_load_error(false))
           );
 
-          master_size_expr = get_count(master_table, master_info, (nothing));
+          master_size_expr = get_count(master, master_info, (nothing));
           entry_code = (do_if(are_eq(master_size_expr, 0), raise_load_error(false)));
           exit_code = (
             do_if_not(are_eq(surr_set_size, master_size_expr), raise_load_error(false)),
@@ -436,10 +437,10 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
       // phys_args_vars = (log_args_vars(args_perm(i)) : i < arity);
       it_var = it_vars[arity]; // Need to use [] instead of () because of the typechecker...
 
-      if is_columnar_relvar(rel_auto_id, v) {
+      if in(v, relvars_implemented_as_bin_columns_of_any_type) {
         entry_code, core_loop_code, exit_code = column_core_loop_code(rel_auto_id, v, arity, args_vars, surr_vars(0), true);
       }
-      else if is_ternary_slave_column(rel_auto_id, v) {
+      else if in(v, relvars_implemented_as_tern_columns) {
         entry_code = ();
         exit_code = ();
         core_loop_code = ternary_slave_column_core_loop_code(rel_auto_id, v, arity, args_vars, surr_vars, true);
@@ -523,7 +524,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
         conds = ({
           target_table_info = table_info(rel_auto_id, fk.target);
 
-          if fk.type == :binary_ternary and is_ternary_slave_column(rel_auto_id, logical_rel_var(original_rel_var(fk.target))) {
+          if fk.type == :binary_ternary and is_tern_column(relvars_impl_tables(fk.target, !)) {
             target_table_info = cast_slave_column(target_table_info);
             if target_table_info.master == tv {
               assert src_table_info :: MasterBinTable;
@@ -558,7 +559,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
         ## MAKE SURE THE TWO ARE ALWAYS SINCRONIZED WHEN MODIFYING THE CODE
         assoc_surr_is_needed = false;
         for fk <- foreign_keys {
-          if fk.type == :binary_ternary and is_ternary_slave_column(rel_auto_id, logical_rel_var(original_rel_var(fk.target))) {
+          if fk.type == :binary_ternary and is_tern_column(relvars_impl_tables(fk.target, !)) {
             target_table_info = cast_slave_column(table_info(rel_auto_id, fk.target));
             if target_table_info.master == tv {
               assert src_table_info :: MasterBinTable;
@@ -1045,7 +1046,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
     table_vars = [table_var(r), arity(auto_id, r), info.symmetric : r info <- database.rel_vars];
     direct_supercols = direct_supercolumns(table_vars, physical_foreign_keys);
     clusters = column_clusters(table_vars, physical_foreign_keys);
-    surr_cols = [phys_col(v, c) : v t <- tables_info, c _ <- table_cols_store_ids_map(t)];
+    surr_cols = [phys_col(v, c) : v t <- relvars_impl_tables, c _ <- table_cols_store_ids_map(t)];
     surr_cols_clusters = [];
     for clst <- clusters {
       is_surr_cluster = only([surr_cols(c) : c <- clst]);
@@ -1189,7 +1190,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 
   [ValueStoreId -> ValueStoreType] used_value_stores {
     value_stores = value_stores;
-    value_stores_in_use = [vs : _ t <- tables_info, _ vs <- table_cols_store_ids_map(t)];
+    value_stores_in_use = [vs : _ t <- relvars_impl_tables, _ vs <- table_cols_store_ids_map(t)];
     return [vs -> value_stores(vs) : vs <- value_stores_in_use];
   }
 
@@ -1203,62 +1204,39 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
   }
 
 
-  [TableVar -> AnyTable] tables_info {
+  [TableVar -> AnyTable] relvars_impl_tables {
     usages = [v, as : v as <- relvars_usages(database.name, ?, ?)];
     impls = relvars_impl(database.rel_vars, database.foreign_keys, usages, table_col_value_store_map);
     return [table_var(v) -> t : v t <- impls];
+  }
 
-    // auto_id = database.name;
-    // col_to_vs_map = table_col_value_store_map;
-    // return [
-    //   tv -> {
-    //     if is_columnar_relvar(auto_id, logical_rel_var(rv)) {
-    //       value_store = col_to_vs_map(phys_col(tv, 0));
-    //       signature = info.signature;
-    //       fail if |signature| != 2;
-    //       repr = column_repr(signature(1));
-    //       master_info = bin_rel_only_master_info(auto_id, rv);
-    //       if master_info != nothing {
-    //         master, mandatory = value(master_info);
-    //         return mandatory_column(table_var(master), value_store, repr, signature) if mandatory;
-    //       }
-    //       return column(value_store, repr, signature);
-    //     }
-    //     else if is_ternary_slave_column(auto_id, logical_rel_var(rv)) {
-    //       masters_slaves = masters_ternary_slave_columns;
-    //       master = table_var(masters_slaves(auto_id, !, rv));
-    //       value_stores = (col_to_vs_map(phys_col(tv, i)) : i <- (0, 1));
-    //       signature = info.signature;
-    //       fail if |signature| != 3;
-    //       return slave_column(master, value_stores, column_repr(signature(2)), signature);
-    //     }
-    //     else if is_master_relvar(auto_id, rv) {
-    //       signature = info.signature;
-    //       fail if |signature| != 2;
-    //       return master_bin_table(
-    //         (col_to_vs_map(phys_col(tv, i)) : i <- (0, 1)),
-    //         info.keys,
-    //         signature,
-    //         info.symmetric
-    //       );
-    //     }
-    //     else if is_slave_relvar(auto_id, logical_rel_var(rv)) {
-    //       signature = info.signature;
-    //       fail if |signature| != 3;
-    //       return slave_tern_table(
-    //         table_var(master_relvar(auto_id, rv)),
-    //         (col_to_vs_map(phys_col(tv, i)) : i <- (0, 1, 2)),
-    //         info.keys,
-    //         signature,
-    //         info.symmetric
-    //       );
-    //     }
-    //     else {
-    //       value_stores = (col_to_vs_map(phys_col(tv, i)) : i < |info.signature|);
-    //       return table(value_stores, info.keys, info.signature, info.symmetric);
-    //     }
-    //   } : rv info <- database.rel_vars, tv = table_var(rv)
-    // ];
+
+  [TableVar, TableVar] masters_slaves {
+    return [value(m), v : v t <- relvars_impl_tables, m = maybe_master(t), m != nothing];
+
+
+    Maybe[TableVar] maybe_master(AnyTable table) =
+      mandatory_column()  = just(table.master),
+      column()            = if table.master? then just(table.master) else nothing,
+      _                   = nothing;
+  }
+
+
+  [RelVar] relvars_implemented_as_bin_columns_of_any_type {
+    impl_tables = group_by_left_arg(relvars_impl_tables, logical_rel_var(original_rel_var($)));
+    return [v : v ts <- impl_tables, only([is_any_bin_column(t) : t <- ts])];
+  }
+
+
+  [RelVar] relvars_implemented_as_tern_columns {
+    impl_tables = group_by_left_arg(relvars_impl_tables, logical_rel_var(original_rel_var($)));
+    return [v : v ts <- impl_tables, only([is_tern_column(t) : t <- ts])];
+  }
+
+
+  [RelVar] ternary_relvars_implemented_as_slaves {
+    impl_tables = group_by_left_arg(relvars_impl_tables, logical_rel_var(original_rel_var($)));
+    return [v : v ts <- impl_tables, only([is_ternary_slave(t) : t <- ts])];
   }
 }
 

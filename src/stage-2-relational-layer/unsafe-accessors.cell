@@ -95,8 +95,9 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context {
   AnyTable table_info(QualTableVar var) = table_info(var_type(var.db_var), var.table_var);
   AnyTable table_info(CaptTableVar var) = undefined; ## IS THIS ONE EVER NEEDED?
 
+
   ColumnRepr column_repr(TableVar var) =
-    match (tables_by_db(this_db_symbol, !)(var))
+    match (rel_auto_relvar_impl_tables(this_db_symbol, !)(var))
       column() c?           |
       mandatory_column() c? |
       slave_column() c?     = c.repr,
@@ -122,25 +123,35 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context {
   }
 
 
-  Bool column_has_master(TableVar var)      = column_has_master(this_db_symbol, var);
-  Bool column_has_master(QualTableVar var)  = column_has_master(var_type(var.db_var), var.table_var);
+  Bool column_has_master(TableVar var)      = has_master(this_db_symbol, var);
+  Bool column_has_master(QualTableVar var)  = has_master(var_type(var.db_var), var.table_var);
 
 
-  TableVar column_master(TableVar var) = table_var(column_master(this_db_symbol, var));
-
-  QualTableVar column_master(QualTableVar var) {
-    master_relvar = column_master(var_type(var.db_var), var.table_var);
-    return qual_table_var(var.db_var, table_var(master_relvar));
-  }
-
-
-  TableVar master_table(TableVar var) {
-    master_phys_relvar = master_relvar(this_db_symbol, original_rel_var(var));
-    return table_var(master_phys_relvar);
-  }
+  TableVar master_table(TableVar var) = master_table(this_db_symbol, var);
 
   QualTableVar master_table(QualTableVar var) {
-    master_phys_relvar = master_relvar(var_type(var.db_var), original_rel_var(var.table_var));
-    return qual_table_var(var.db_var, table_var(master_phys_relvar));
+    master = master_table(var_type(var.db_var), var.table_var);
+    return qual_table_var(var.db_var, master);
   }
+
+  //////////////////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////
+
+  Bool is_any_bin_column(AnyRelVar relvar) {
+    rel_auto_relvars = rel_auto_relvars_implemented_as_bin_columns_of_any_type;
+    return rel_auto_relvars(rel_auto_type(relvar))(unqualified(relvar));
+  }
+
+  Bool is_tern_column(AnyRelVar relvar) {
+    rel_auto_relvars = rel_auto_relvars_implemented_as_tern_columns;
+    return rel_auto_relvars(rel_auto_type(relvar))(unqualified(relvar));
+  }
+
+  Bool is_slave_relvar(AnyRelVar relvar) {
+    rel_auto_relvars = rel_auto_ternary_relvars_implemented_as_slaves;
+    return rel_auto_relvars(rel_auto_type(relvar))(unqualified(relvar));
+  }
+
+  Bool column_is_mandatory(TableVar table_var)      = is_mandatory(cast_any_column(table_info(table_var)));
+  Bool column_is_mandatory(QualTableVar table_var)  = is_mandatory(cast_any_column(table_info(table_var)));
 }

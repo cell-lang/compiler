@@ -102,9 +102,9 @@ implicit program           : Program,
     rel_memb_test()     = rel_memb_test_opt_eval_info(expr.rel, expr.args, var_gen),
     rel_lookup()        = rel_lookup_opt_eval_info(expr, var_gen),
     relvar_memb_test()  = relvar_memb_test_opt_eval_info(expr.rel_var, expr.args, var_gen),
-    relvar_lookup()     = if is_columnar_relvar(expr.rel_var) then
+    relvar_lookup()     = if is_any_bin_column(expr.rel_var) then
                             columnar_relvar_lookup_opt_eval_info(expr.rel_var, expr.args, var_gen)
-                          else if is_ternary_slave_column(expr.rel_var) then
+                          else if is_tern_column(expr.rel_var) then
                             ternary_slave_column_lookup_opt_eval_info(expr.rel_var, expr.args, var_gen)
                           else
                             relvar_lookup_opt_eval_info(expr.rel_var, expr.args, var_gen),
@@ -201,7 +201,7 @@ implicit program           : Program,
     for tv @ i <- isort(candidate_tables) {
       subst_table_var = substitute(tv);
       target_table_info = table_info(tv);
-      if is_ternary_slave_column(rel_var) {
+      if is_tern_column(rel_var) {
         assert surr_args(2) == nothing;
         master_table = master_table(tv);
         master_table_info = cast_master_bin_table(table_info(master_table));

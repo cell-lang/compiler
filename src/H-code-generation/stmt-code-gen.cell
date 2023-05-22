@@ -72,15 +72,15 @@ implicit program           : Program,
     try_update_stmt()     = try_update_stmt_opt_code(stmt.name, stmt.args, env, var_gen),
     set_memb_var_stmt()   = set_memb_var_stmt_opt_code(stmt.var, stmt.value, env, var_gen),
     delete_stmt()         = delete_stmt_opt_code(stmt.var, stmt.args, env, var_gen),
-    insert_stmt()         = if is_columnar_relvar(stmt.var) then
+    insert_stmt()         = if is_any_bin_column(stmt.var) then
                               columnar_relvar_insert_stmt_opt_code(stmt.var, stmt.args, false, env, var_gen)
-                            else if is_ternary_slave_column(stmt.var) then
+                            else if is_tern_column(stmt.var) then
                               ternary_slave_column_insert_stmt_opt_code(stmt.var, stmt.args, false, env, var_gen)
                             else
                               insert_stmt_opt_code(stmt.var, stmt.args, env, var_gen),
-    update_stmt()         = if is_columnar_relvar(stmt.var) then
+    update_stmt()         = if is_any_bin_column(stmt.var) then
                               columnar_relvar_insert_stmt_opt_code(stmt.var, stmt.args, true, env, var_gen)
-                            else if is_ternary_slave_column(stmt.var) then
+                            else if is_tern_column(stmt.var) then
                               ternary_slave_column_insert_stmt_opt_code(stmt.var, stmt.args, true, env, var_gen)
                             else
                               update_stmt_opt_code(stmt.var, stmt.args, env, var_gen),
@@ -289,11 +289,11 @@ implicit program           : Program,
       log_rv = logical_rel_var(v);
       attrs = [a : a <- rel_auto.attr_map(v, ?)];
 
-      if is_columnar_relvar(log_rv) {
+      if is_any_bin_column(log_rv) {
         assert attrs == [];
         table_code = column_delete_code(table_var(v), args_aliases, args_surrs, args_types);
       }
-      else if is_ternary_slave_column(log_rv) {
+      else if is_tern_column(log_rv) {
         assert attrs == [];
         table_code = slave_column_delete_code(table_var(v), args_aliases, args_surrs, args_types, assoc_surr_var);
       }
@@ -1215,9 +1215,9 @@ implicit program           : Program,
     return match (iter)
       coll_value_iter() = opt_code(iter, stmt.body, env, var_gen),
       rel_subset_iter() = unord_coll_iter_opt_code(iter.vars, iter.src_expr, iter.args, stmt.body, env, var_gen),
-      rel_var_iter()    = if is_columnar_relvar(iter.rel_var) then
+      rel_var_iter()    = if is_any_bin_column(iter.rel_var) then
                             columnar_rel_var_iter_opt_code(iter, stmt.body, env, var_gen)
-                          else if is_ternary_slave_column(iter.rel_var) then
+                          else if is_tern_column(iter.rel_var) then
                             ternary_slave_column_iter_opt_code(iter, stmt.body, env, var_gen)
                           else
                             rel_var_iter_opt_code(iter, stmt.body, env, var_gen);
@@ -1577,7 +1577,7 @@ implicit program           : Program,
                 )
               );
             }
-            iter = unary_table_iter(table_var: column_master(tv), var: surr_var_0);
+            iter = unary_table_iter(table_var: master_table(tv), var: surr_var_0);
             table_code = (foreach(iter, loop_body_code));
           }
           else {

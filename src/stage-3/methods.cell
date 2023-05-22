@@ -55,6 +55,17 @@ PhysRelVar original_rel_var(TableVar var) =
 
 ////////////////////////////////////////////////////////////////////////////////
 
+True  is_any_bin_column(<Column, MandatoryColumn>)    = true;
+False is_any_bin_column(<AnySurrTable, SlaveColumn>)  = false;
+
+True  is_tern_column(SlaveColumn)                             = true;
+False is_tern_column(<AnySurrTable, Column, MandatoryColumn>) = false;
+
+True  is_ternary_slave(<SlaveTernTable, SlaveColumn>)                     = true;
+False is_ternary_slave(<Table, MasterBinTable, Column, MandatoryColumn>)  = false;
+
+////////////////////////////////////////////////////////////////////////////////
+
 [[+Nat]] keys(<Table, MasterBinTable, SlaveTernTable> table)  = table.keys;
 [[+Nat]] keys(<MandatoryColumn, Column> column)               = [[0]];
 [[+Nat]] keys(SlaveColumn column)                             = [[0, 1]];
@@ -166,14 +177,6 @@ AnyNullableVar cast_nullable_var(ObjExpr expr) = if expr :: AnyNullableVar then 
 
 True  is_value_store_id(ValueStoreId)                           = true;
 False is_value_store_id(<NestedValueStoreId, CaptValueStoreId>) = false;
-
-////////////////////////////////////////////////////////////////////////////////
-
-True  is_mandatory_column(MandatoryColumn)                      = true;
-False is_mandatory_column(<AnySurrTable, Column, SlaveColumn>)  = false;
-
-True  is_slave_column(SlaveColumn)                              = true;
-False is_slave_column(<AnySurrTable, Column, MandatoryColumn>)  = false;
 
 ////////////////////////////////////////////////////////////////////////////////
 

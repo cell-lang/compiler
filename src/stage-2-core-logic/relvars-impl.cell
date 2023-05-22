@@ -94,15 +94,16 @@ implicit typedefs : [TypeName -> NeType] {
         value_store, _ = value_stores;
         repr = column_repr(signature(1));
 
-        // Default type of column, to be overridden if it can be made mandatory
-        table = column(value_store, repr, signature);
-
         candidate_masters = [u : u <- unary_relvars, as <- foreign_keys_map(v, u, ?), is_bin_left_unary_foreign_key(as)];
         if |candidate_masters| == 1 {
           master = only(candidate_masters);
-          if (as <- foreign_keys_map(master, v, ?) : is_unary_bin_left_foreign_key(as))
-            table = mandatory_column(table_var(master), value_store, repr, signature);
+          is_mandatory = (as <- foreign_keys_map(master, v, ?) : is_unary_bin_left_foreign_key(as));
+          table = if is_mandatory
+            then mandatory_column(table_var(master), value_store, repr, signature)
+            else column(table_var(master), value_store, repr, signature);
         }
+        else
+          table = column(value_store, repr, signature);
       }
       else
         table = table(value_stores, keys, signature, info.symmetric);
