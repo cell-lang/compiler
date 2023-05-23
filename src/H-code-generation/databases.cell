@@ -192,7 +192,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
       exit_code = ();
 
       if arity == 1 {
-        slaves = [s : s <- masters_slaves(tbl_var, ?)];
+        slaves = [s : s <- unary_masters_mandatory_slave_columns(tbl_var, ?)];
         if slaves != [] {
           init_cpty_var = ivar32(3);
           entry_code = (set_ivar32(init_cpty_var, get_capacity(tbl_var, tbl_info)));
@@ -239,7 +239,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
 
       if arity == 1 {
         for master_var @ i <- isort(tables) {
-          slaves = [v : v <- masters_slaves(master_var, ?)];
+          slaves = [v : v <- unary_masters_mandatory_slave_columns(master_var, ?)];
           if slaves != [] {
             init_cpty_var = ivar32(nat(3 + i));
             tbl_info = cast_any_surr_table(table_info(rel_auto_id, master_var));
@@ -1211,15 +1211,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], database : Database
   }
 
 
-  [TableVar, TableVar] masters_slaves {
-    return [value(m), v : v t <- relvars_impl_tables, m = maybe_master(t), m != nothing];
-
-
-    Maybe[TableVar] maybe_master(AnyTable table) =
-      mandatory_column()  = just(table.master),
-      column()            = if table.master? then just(table.master) else nothing,
-      _                   = nothing;
-  }
+  [TableVar, TableVar] unary_masters_mandatory_slave_columns = [t.master, v : v t <- relvars_impl_tables, is_mandatory_column(t)];
 
 
   [RelVar] relvars_implemented_as_bin_columns_of_any_type {
