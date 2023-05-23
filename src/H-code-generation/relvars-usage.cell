@@ -13,13 +13,7 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
       search_stmts(u.body, relvars_usages($))
       : u <- rel_auto.handlers | u <- rel_auto.updates
     ]);
-    foreign_keys_usages = union([
-      [(logical_rel_var(k.source_rel_var), (a != nothing : a <- k.source_args))] &
-      [(logical_rel_var(v), (a != nothing : a <- k.target_args)) : v <- k.target_rel_vars]
-      : k <- rel_auto.foreign_keys
-    ]);
-
-    usages = methods_usages & updates_usages & foreign_keys_usages;
+    usages = methods_usages & updates_usages;
 
     let context = rel_auto
       usages_by_auto_type_and_relvar = [(rel_auto_type(left(u)), unqualified(left(u)), right(u)) : u <- usages];
