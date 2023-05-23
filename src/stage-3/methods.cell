@@ -66,9 +66,10 @@ False is_ternary_slave(<Table, MasterBinTable, Column, MandatoryColumn>)  = fals
 
 ////////////////////////////////////////////////////////////////////////////////
 
-[[+Nat]] keys(<Table, MasterBinTable, SlaveTernTable> table)  = table.keys;
-[[+Nat]] keys(<MandatoryColumn, Column> column)               = [[0]];
-[[+Nat]] keys(SlaveColumn column)                             = [[0, 1]];
+[[+Nat]] keys(<Table, SlaveTernTable> table)    = table.keys;
+[]       keys(MasterBinTable)                   = [];
+[[+Nat]] keys(<MandatoryColumn, Column> column) = [[0]];
+[[+Nat]] keys(SlaveColumn column)               = [[0, 1]];
 
 
 Bool is_key(AnyTable table, [+Nat] col_idxs) = keys(table)(col_idxs);
@@ -117,12 +118,17 @@ SlaveColumn cast_slave_column(AnyTable table) =
   _               = undefined;
 
 <Column, MandatoryColumn> cast_any_bin_col(AnyTable table) =
-  column()            = table,
+  column()            |
   mandatory_column()  = table,
   _                   = undefined;
 
 MandatoryColumn cast_mandatory_column(AnyTable table) =
   mandatory_column()  = table,
+  _                   = undefined;
+
+<Table, SlaveTernTable> cast_table_or_slave_ternary_table(AnyTable table) =
+  table()             |
+  slave_tern_table()  = table,
   _                   = undefined;
 
 ////////////////////////////////////////////////////////////////////////////////

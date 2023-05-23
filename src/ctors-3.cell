@@ -716,7 +716,7 @@ BasicInstr resize_mandatory_column(AnyTableVar v, MandatoryColumn c, Int32Expr c
 
 BasicInstr immediate_delete_tuple(TableVar v, AnyTable t, Maybe[Int32Var]+ as) = immediate_delete_tuple(table_var: v, table: t, tuple: as);
 
-BasicInstr immediate_update_tuple(TableVar v, AnySurrTable t, Int32Var+ as, Maybe[(ValueStoreId, ValueStoreType)]+ vs) =
+BasicInstr immediate_update_tuple(TableVar v, <Table, SlaveTernTable> t, Int32Var+ as, Maybe[(ValueStoreId, ValueStoreType)]+ vs) =
   immediate_update_tuple(table_var: v, table: t, tuple: as, owned_value_stores: vs);
 
 BasicInstr release_before_delete(TableVar v, AnySurrTable t, Maybe[Int32Var]+ as, Nat i, ValueStoreId s, ValueStoreType st) =
@@ -781,10 +781,9 @@ Table table(ValueStoreId+ vs, [[+Nat]] ks, NeType+ ts, Bool s) {
   return table(value_stores: vs, keys: ks, col_types: ts, symmetric: s);
 }
 
-MasterBinTable master_bin_table((ValueStoreId, ValueStoreId) vs, [[+Nat]] ks, (NeType, NeType) ts, Bool s) =
+MasterBinTable master_bin_table((ValueStoreId, ValueStoreId) vs, (NeType, NeType) ts, Bool s) =
   master_bin_table(
     value_stores: vs,
-    keys:         ks,
     col_types:    ts,
     symmetric:    s
   );
