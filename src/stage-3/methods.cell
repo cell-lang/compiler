@@ -53,6 +53,29 @@ NzNat arity(SlaveColumn)      = 3;
 PhysRelVar original_rel_var(TableVar var) =
   table_var(v?) = v;
 
+
+ForeignKey original_foreign_key(BlockForeignKey foreign_key) {
+  source = original_rel_var(foreign_key.origin);
+  target = original_rel_var(foreign_key.target);
+  src_args, tgt_args = match (foreign_key.type)
+    unary_unary             = ((just(:a)), (just(:a))),
+    unary_binary(i?)        = ((just(:a)), (maybe(:a, j == i) : j < 2)),
+    unary_ternary(i?)       = ((just(:a)), (maybe(:a, j == i) : j < 3)),
+    binary_unary(i?)        = ((maybe(:a, j == i) : j < 2), (just(:a))),
+    ternary_unary(i?)       = ((maybe(:a, j == i) : j < 3), (just(:a))),
+    binary_ternary          = ((just(:a), just(:b)), (just(:a), just(:b), nothing)),
+    ternary_binary          = ((just(:a), just(:b), nothing), (just(:a), just(:b))),
+    unary_sym_binary        = ((just(:a)), (just(:a), nothing)),
+    unary_sym_ternary_12    = ((just(:a)), (just(:a), nothing, nothing)),
+    unary_sym_ternary_3     = ((just(:a)), (nothing, nothing, just(:a))),
+    sym_binary_unary        = ((just(:a), nothing), (just(:a))),
+    sym_ternary_unary_12    = ((just(:a), nothing, nothing), (just(:a))),
+    sym_ternary_unary_3     = ((nothing, nothing, just(:a)), (just(:a))),
+    sym_binary_sym_ternary  = ((just(:a), just(:b)), (just(:a), just(:b), nothing)),
+    sym_ternary_sym_binary  = ((just(:a), just(:b), nothing), (just(:a), just(:b)));
+  return foreign_key(source, src_args, [target], tgt_args);
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 
 True  is_any_bin_column(<Column, MandatoryColumn>)    = true;
