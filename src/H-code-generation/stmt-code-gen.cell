@@ -464,14 +464,24 @@ implicit program           : Program,
       master_table_info = cast_master_bin_table(table_info(master_table));
 
       code = match (args_surrs)
-        (nothing,   nothing,   a3?) = (queue_deletes(table_var, tbl_info, (nothing, a3))),
-        (just(a1?), just(a2?), a3?) = ( set_ivar32(assoc_surr_var, get_assoc_surr(master_table, master_table_info, (a1, a2))),
-                                        do_if_not(is_null_surr(assoc_surr_var), queue_deletes(table_var, tbl_info, (just(assoc_surr_var), a3)))
-                                      );
+        (nothing,   nothing,   a3?)   = (queue_deletes(table_var, tbl_info, (nothing, a3))),
+        (just(a1?), just(a2?), a3?)   = ( set_ivar32(assoc_surr_var, get_assoc_surr(master_table, master_table_info, (a1, a2))),
+                                          do_if_not(is_null_surr(assoc_surr_var), queue_deletes(table_var, tbl_info, (just(assoc_surr_var), a3)))
+                                        ),
+        (just(a1?), nothing,   a3?)   = slave_tern_table_delete_code_by_master_arg(table_var, tbl_info, master_table, master_table_info, a1, 0, a3, assoc_surr_var),
+        (nothing,   just(a2?), a3?)   = slave_tern_table_delete_code_by_master_arg(table_var, tbl_info, master_table, master_table_info, a2, 1, a3, assoc_surr_var);
 
       code = add_value_store_lookups(code, table_var, args_aliases, args_surrs, args_types);
 
       return code;
+    }
+
+
+    Instr* slave_tern_table_delete_code_by_master_arg(TableVar table_var, AnyTable table_info, TableVar master_table, MasterBinTable master_table_info, Int32Var arg_surr, <0..1> bound_arg_idx, Maybe[Int32Var] arg3, Int32Var assoc_surr_var) {
+      iter_args = (if i == bound_arg_idx then :bound(arg_surr) else :ignored : i <- (0, 1));
+      iter = master_bin_table_iter(master_table, master_table_info, iter_args, assoc_surr_var);
+      body = (queue_deletes(table_var, table_info, (just(assoc_surr_var), arg3)));
+      return (foreach(iter, body));
     }
 
 
