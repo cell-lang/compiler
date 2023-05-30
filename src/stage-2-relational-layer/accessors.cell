@@ -49,6 +49,7 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
   Bool has_master(DBSymbol rel_auto_id, TableVar var) {
     table = rel_auto_relvar_impl_tables(rel_auto_id, !)(var);
     return match (table)
+      slave_tern_table()  |
       mandatory_column()  |
       slave_column()      = true,
       column()            = table.master?,
@@ -59,7 +60,8 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
   TableVar master_table(DBSymbol rel_auto_id, TableVar var) {
     table = rel_auto_relvar_impl_tables(rel_auto_id, !)(var);
     return match (table)
-      mandatory_column()  = table.master,
+      slave_tern_table()  |
+      mandatory_column()  |
       slave_column()      = table.master,
       column()            = if table.master? then table.master else undefined,
       _                   = undefined;
