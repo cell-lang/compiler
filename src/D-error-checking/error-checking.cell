@@ -188,6 +188,12 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
           return [tern_bin_foreign_key_target_has_keys(key)];
       }
 
+    if |src_args| == 2 and |tgt_args| == 3 {
+      src_info = database.rel_vars(key.source_rel_var);
+      if src_info.keys != []
+        return [bin_tern_foreign_key_origin_has_keys(key)];
+    }
+
     perm_map = rel_vars_perm_map(database.name, !);
     src_perm = perm_map(logical_rel_var(key.source_rel_var));
     src_is_perm = (i j <- src_perm : i != j);
