@@ -181,6 +181,12 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
 
     return [unsupported_foreign_key_type(key)] if not is_supported;
 
+    if |src_args| == 3 and |tgt_args| == 2
+      for r <- key.target_rel_vars {
+        tgt_info = database.rel_vars(r);
+        if tgt_info.keys != []
+          return [tern_bin_foreign_key_target_has_keys(key)];
+      }
 
     perm_map = rel_vars_perm_map(database.name, !);
     src_perm = perm_map(logical_rel_var(key.source_rel_var));

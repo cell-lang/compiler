@@ -16,6 +16,7 @@ type CoreWFError  = error_cluster(AnyAuto, [+CoreWFError]),
                     multiple_signature_matches(key: ForeignKey, rel_var: RelVar, signatures: [+NeType+], args: Maybe[NeType]+),
                     no_exact_signature_match(key: ForeignKey, rel_var: RelVar, signature: NeType+, args: Maybe[NeType]+),
                     unsupported_foreign_key_type(key: ForeignKey),
+                    tern_bin_foreign_key_target_has_keys(key: ForeignKey),
                     unsupported_combination_of_keys_and_foreign_keys(key: ForeignKey),
                     foreign_key_symmetry_mismatch(key: ForeignKey, src_is_sym: Bool),
                     target_type_not_a_superset_of_src_type(key: ForeignKey, arg: Symbol, src_type: NeType, tgt_type: NeType),
@@ -45,6 +46,7 @@ CoreWFError no_signature_match(ForeignKey k, RelVar v, [+NeType+] ss, Maybe[NeTy
 CoreWFError multiple_signature_matches(ForeignKey k, RelVar v, [+NeType+] ss, Maybe[NeType]+ as) = multiple_signature_matches(key: k, rel_var: v, signatures: ss, args: as);
 CoreWFError no_exact_signature_match(ForeignKey k, RelVar v, NeType+ s, Maybe[NeType]+ as) = no_exact_signature_match(key: k, rel_var: v, signature: s, args: as);
 CoreWFError unsupported_foreign_key_type(ForeignKey k) = unsupported_foreign_key_type(key: k);
+CoreWFError tern_bin_foreign_key_target_has_keys(ForeignKey k) = tern_bin_foreign_key_target_has_keys(key: k);
 CoreWFError unsupported_combination_of_keys_and_foreign_keys(ForeignKey k) = unsupported_combination_of_keys_and_foreign_keys(key: k);
 CoreWFError foreign_key_symmetry_mismatch(ForeignKey k, Bool s) = foreign_key_symmetry_mismatch(key: k, src_is_sym: s);
 CoreWFError target_type_not_a_superset_of_src_type(ForeignKey k, Symbol a, NeType s, NeType t) = target_type_not_a_superset_of_src_type(key: k, arg: a, src_type: s, tgt_type: t);
@@ -75,6 +77,7 @@ String* error_message(CoreWFError err) =
   multiple_signature_matches()        = multiple_signature_matches_error_message(err.key, err.rel_var, err.signatures, err.args),
   no_exact_signature_match()          = no_exact_signature_match_error_message(err.key, err.rel_var, err.signature, err.args),
   unsupported_foreign_key_type()      = unsupported_foreign_key_type_error_message(err.key),
+  tern_bin_foreign_key_target_has_keys()  = tern_bin_foreign_key_target_has_keys_error_message(err.key),
   unsupported_combination_of_keys_and_foreign_keys() = unsupported_combination_of_keys_and_foreign_keys_error_message(err.key),
   foreign_key_symmetry_mismatch()     = foreign_key_symmetry_mismatch_error_message(err.key, err.src_is_sym),
   target_type_not_a_superset_of_src_type()  = target_type_not_a_superset_of_src_type_error_message(err.key, err.arg, err.src_type, err.tgt_type),
@@ -162,6 +165,33 @@ String* unsupported_foreign_key_type_error_message(ForeignKey key) = (
   "Unsupported foreign key type: " & user_repr(key)
 );
 
+
+String* tern_bin_foreign_key_target_has_keys_error_message(ForeignKey key) = (
+  "There's a problem with following foreign key: " & user_repr(key),
+  "The binary relation " & user_repr(any(key.target_rel_vars)) & " that is the target of the",
+  "foreign key has keys, and this combination is currenty unsupported,",
+  "mostly because it's unnecessary. Take for example the following schema:",
+  "",
+  "  r1(Type1);",
+  "  r2(Type1, Type2) [key: 0];",
+  "  r3(Type1, Type2, Type3);",
+  "",
+  "  r2(a, _) -> r1(a);",
+  "  r3(a, b, _) -> r2(a, b, _);",
+  "",
+  "Taking advantage of the fact that the elements of the first column of r2(..) are unique,",
+  "the above code can be rewritten without any loss of information like this:",
+  "",
+  "  r1(Type1);",
+  "  r2(Type1, Type2) [key: 0];",
+  "  r3(Type1, Type3);",
+  "",
+  "  r2(a, _) -> r1(a);",
+  "  r3(a, _) -> r1(a);",
+  "",
+  "While second schema is not 100% equivalent to the first it's close enough, and it is",
+  "in general preferrable, as it contains less redundant information and it's more efficient"
+);
 
 String* unsupported_combination_of_keys_and_foreign_keys_error_message(ForeignKey key) = (
   "There's a problem with the following foreign key: " & user_repr(key),
