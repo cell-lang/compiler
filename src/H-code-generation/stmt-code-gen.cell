@@ -216,7 +216,7 @@ implicit program           : Program,
     Instr* compiled_update_body(Update update, ObjExpr* actual_args, [EnvVar -> Type] env, VarGen init_var_gen) {
       return () if update.body == ();
 
-      assert select(update.body, $ :: FnArg) == [];
+      assert not (e <- select(update.body, $ :: FnArg or $ :: ClsExpr) : e :: FnArg);
 
       local_vars = select(update.body, $ :: StdVar);
       fail if not local_vars :: [StdVar];
