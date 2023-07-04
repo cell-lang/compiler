@@ -500,10 +500,8 @@ implicit program           : Program,
           // Checking that the master table actually contains a matching entry before queuing the deletions
           code = (do_if(table_contains(table_var, tbl_info, args_surrs), code));
         }
-        else {
-          assert arity(tbl_info) == 2 and tbl_info :: MasterBinTable;
-
-          fail if not tbl_info :: MasterBinTable;
+        else if tbl_info :: MasterBinTable {
+          assert arity(tbl_info) == 2;
 
           arg_0_surr = args_surrs(0);
           arg_1_surr = args_surrs(1);
@@ -531,6 +529,14 @@ implicit program           : Program,
               fail; ## IMPLEMENT IMPLEMENT IMPLEMENT
             }
           }
+        }
+        else {
+          fail if not tbl_info :: Table;
+          assert arity(tbl_info) == 2 and tbl_info.symmetric;
+
+          attrs_args_surrs =  (args_surrs | nothing);
+          attrs_del_code = (queue_deletes(:table_var(a), table_info(:table_var(a)), attrs_args_surrs) : a <- isort(attributes));
+          code = code & attrs_del_code;
         }
       }
 
